@@ -26,7 +26,7 @@ sealed class BubbleWindow : Window
 
     public BubbleWindow()
     {
-        Title = "Uso de Claude";
+        Title = "Claupet";
         SystemDecorations = SystemDecorations.None;
         CanResize = false;
         ShowInTaskbar = false;

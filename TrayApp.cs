@@ -57,6 +57,8 @@ sealed class TrayApp : ApplicationContext
     LocalTotals? _local;
     DateTime? _updated;
     bool _busy, _scanning, _counting;
+    /// <summary>Las sesiones vencidas se renuevan al abrir la app; si no había conexión, en la próxima actualización.</summary>
+    bool _renewAtStart = true;
     Icon? _icon;
     Action? _pendingApply;
     IReadOnlyList<SessionInfo>? _lastSessions;
@@ -79,13 +81,13 @@ sealed class TrayApp : ApplicationContext
 
         // El menú del ícono queda corto: lo demás está en la vista Ajustes (botón del pie).
         var menu = _menu;
-        menu.Items.Add("Abrir", null, (_, _) => ShowForm());
-        menu.Items.Add("Actualizar", null, async (_, _) => await RefreshAsync());
-        menu.Items.Add("Nueva sesión…", null, (_, _) => NewSession(null));
+        menu.Items.Add(L.T("Abrir"), null, (_, _) => ShowForm());
+        menu.Items.Add(L.T("Actualizar"), null, async (_, _) => await RefreshAsync(renewSelected: true));
+        menu.Items.Add(L.T("Nueva sesión…"), null, (_, _) => NewSession(null));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Ajustes…", null, (_, _) => { ShowForm(); _form.ShowSettings(); });
+        menu.Items.Add(L.T("Ajustes…"), null, (_, _) => { ShowForm(); _form.ShowSettings(); });
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Salir", null, (_, _) => Quit());
+        menu.Items.Add(L.T("Salir"), null, (_, _) => Quit());
         foreach (var (id, label) in Sounds.Packs)
             _packMenu.Items.Add(new ToolStripMenuItem(label, null, (_, _) => SetSoundPack(id)) { Tag = id });
         foreach (var (id, label, _, _) in Theme.Palettes)
@@ -97,12 +99,12 @@ sealed class TrayApp : ApplicationContext
         ApplyMenus();
 
         _tray.ContextMenuStrip = menu;
-        _tray.Text = "Uso de Claude";
+        _tray.Text = "Claupet";
         SetIcon(null, _form.Theme.Tertiary);
         _tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) Toggle(); };
         _tray.Visible = true;
 
-        _form.RefreshRequested += async () => await RefreshAsync();
+        _form.RefreshRequested += async () => await RefreshAsync(renewSelected: true);
         _form.AddRequested += AddAccount;
         _form.RemoveRequested += RemoveAccount;
         _form.RenameRequested += RenameAccount;
@@ -186,7 +188,8 @@ sealed class TrayApp : ApplicationContext
         first.Start();
     }
 
-    async Task RefreshAsync()
+    /// <summary>renewSelected: «Actualizar» renueva la sesión vencida de la cuenta que se está viendo.</summary>
+    async Task RefreshAsync(bool renewSelected = false)
     {
         if (_busy) return;
         _busy = true;
@@ -198,6 +201,9 @@ sealed class TrayApp : ApplicationContext
             var accounts = _settings.Accounts.ToList();
 
             var results = await Task.WhenAll(accounts.Select(a => UsageClient.FetchAsync(a)));
+            var offline = await SessionRenewal.RenewExpiredAsync(accounts, results, a => _renewAtStart
+                || (renewSelected && _settings.Selected is { } selected && Account.SamePath(a.ConfigDir, selected)));
+            if (!offline) _renewAtStart = false;
             var profiles = await Task.Run(() => accounts.Select(UsageClient.ReadProfile).ToList());
             var local = await Task.Run(() => LocalUsage.ScanToday(accounts.Select(a => a.ConfigDir)));
             var updated = DateTime.Now;
@@ -211,7 +217,7 @@ sealed class TrayApp : ApplicationContext
                     var fresh = results[i];
                     // Si la consulta falla, se siguen mostrando los últimos datos buenos con el aviso.
                     if (fresh.Error is not null && _snapshots.TryGetValue(dir, out var old) && old.Limits.Count > 0)
-                        fresh = old.WithError(fresh.Error);
+                        fresh = old.WithError(fresh.Error, fresh.SessionExpired);
                     _snapshots[dir] = fresh;
                     _profiles[dir] = profiles[i];
                 }
@@ -326,25 +332,26 @@ sealed class TrayApp : ApplicationContext
             Approvals = ApprovalsText(),
             StartWithWindows = StartupRegistration.IsEnabled,
             Accounts = s.Accounts.Count,
+            Language = L.Label,
         });
     }
 
     string AssistantAccountLabel() =>
         _settings.AssistantAccount is { } dir && _settings.Accounts.FirstOrDefault(a => Account.SamePath(a.ConfigDir, dir)) is { } account
-            ? account.Label : "La elegida en Uso";
+            ? account.Label : L.T("La elegida en Uso");
 
     string TaskFolderLabel()
     {
         var folder = _settings.TaskFolder ?? _settings.Launch.Folder;
-        return string.IsNullOrEmpty(folder) ? "Elegir…" : Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : folder;
+        return string.IsNullOrEmpty(folder) ? L.T("Elegir…") : Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : folder;
     }
 
     /// <summary>La fila del modelo de voz en Ajustes: qué dice y qué enlace lleva.</summary>
     (string Status, string Action) VoiceStatusText() =>
-        VoiceModel.Ready ? ("Modelo de voz: listo, en este equipo", "")
-        : _modelDownload is not null ? ($"Descargando el modelo de voz… {_modelPercent ?? 0} %", "Cancelar")
-        : _modelError is not null ? ($"No se pudo descargar ({_modelError})", "Reintentar")
-        : ("Modelo de voz (488 MB, una sola vez)", "Descargar");
+        VoiceModel.Ready ? (L.T("Modelo de voz: listo, en este equipo"), "")
+        : _modelDownload is not null ? (L.T("Descargando el modelo de voz… {0} %", _modelPercent ?? 0), L.T("Cancelar"))
+        : _modelError is not null ? (L.T("No se pudo descargar ({0})", _modelError), L.T("Reintentar"))
+        : (L.T("Modelo de voz (488 MB, una sola vez)"), L.T("Descargar"));
 
     /// <summary>Baja el modelo de voz (retoma lo que haya quedado de antes) y muestra el avance en Ajustes.</summary>
     async Task DownloadVoiceModelAsync()
@@ -366,7 +373,7 @@ sealed class TrayApp : ApplicationContext
         catch (Exception ex)
         {
             ErrorLog.Write(ex);
-            _modelError = ex is IOException ? ex.Message.TrimEnd('.') : "el servidor no respondió";
+            _modelError = ex is IOException ? ex.Message.TrimEnd('.') : L.T("el servidor no respondió");
         }
         finally
         {
@@ -380,9 +387,9 @@ sealed class TrayApp : ApplicationContext
     /// <summary>La fila de la voz de Claupet en Ajustes; vacía si no hace falta (ya está, o se eligió la de Windows).</summary>
     (string Status, string Action) SpeechStatusText() =>
         !ClaupetVoices.IsClaupet(_settings.ReadAloudVoice) || ClaupetVoiceModel.Ready ? ("", "")
-        : _speechDownload is not null ? ($"Descargando la voz… {_speechPercent ?? 0} %", "Cancelar")
-        : _speechError is not null ? ($"No se pudo descargar ({_speechError})", "Reintentar")
-        : ($"Voz de Claupet ({ClaupetVoiceModel.Size / 1_000_000} MB, una sola vez)", "Descargar");
+        : _speechDownload is not null ? (L.T("Descargando la voz… {0} %", _speechPercent ?? 0), L.T("Cancelar"))
+        : _speechError is not null ? (L.T("No se pudo descargar ({0})", _speechError), L.T("Reintentar"))
+        : (L.T("Voz de Claupet ({0} MB, una sola vez)", ClaupetVoiceModel.Size / 1_000_000), L.T("Descargar"));
 
     /// <summary>Baja la voz de Claupet (retoma lo que haya quedado de antes) y muestra el avance en Ajustes. Mientras tanto lee la de Windows.</summary>
     async Task DownloadSpeechAsync()
@@ -404,7 +411,7 @@ sealed class TrayApp : ApplicationContext
         catch (Exception ex)
         {
             ErrorLog.Write(ex);
-            _speechError = ex is IOException ? ex.Message.TrimEnd('.') : "el servidor no respondió";
+            _speechError = ex is IOException ? ex.Message.TrimEnd('.') : L.T("el servidor no respondió");
         }
         finally
         {
@@ -419,7 +426,7 @@ sealed class TrayApp : ApplicationContext
     string ApprovalsText()
     {
         var dirs = SetupDirs().ToList();
-        return dirs.Count > 0 && dirs.All(d => HookInstaller.ApprovalsStatus(d, ExePath) == HookInstaller.State.Installed) ? "Listo" : "Configurar…";
+        return dirs.Count > 0 && dirs.All(d => HookInstaller.ApprovalsStatus(d, ExePath) == HookInstaller.State.Installed) ? L.T("Listo") : L.T("Configurar…");
     }
 
     /// <summary>Agrega (o quita) el hook PermissionRequest en cada carpeta de Claude Code, con respaldo, después de preguntar.</summary>
@@ -434,35 +441,35 @@ sealed class TrayApp : ApplicationContext
             var lines = new List<string>();
             if (dirs.All(d => HookInstaller.ApprovalsStatus(d, ExePath) == HookInstaller.State.Installed))
             {
-                if (MessageBox.Show("Los permisos y las preguntas ya se responden en la isla. ¿Quitar ese hook de Claude Code?",
-                        "Uso de Claude", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                if (MessageBox.Show(L.T("Los permisos y las preguntas ya se responden en la isla. ¿Quitar ese hook de Claude Code?"),
+                        "Claupet", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
                 foreach (var dir in dirs)
                 {
-                    try { HookInstaller.UninstallApprovals(dir); lines.Add($"{Name(dir)}: quitado."); }
-                    catch (Exception ex) { lines.Add($"{Name(dir)}: no se pudo ({ex.Message})."); }
+                    try { HookInstaller.UninstallApprovals(dir); lines.Add(L.T("{0}: quitado.", Name(dir))); }
+                    catch (Exception ex) { lines.Add(L.T("{0}: no se pudo ({1}).", Name(dir), ex.Message)); }
                 }
             }
             else
             {
                 var list = string.Join(Environment.NewLine, dirs.Select(d => "• " + Name(d)));
                 if (MessageBox.Show(
-                        "Se agrega el hook PermissionRequest al settings.json de Claude Code (antes se guarda un respaldo) en:"
+                        L.T("Se agrega el hook PermissionRequest al settings.json de Claude Code (antes se guarda un respaldo) en:")
                         + Environment.NewLine + Environment.NewLine + list + Environment.NewLine + Environment.NewLine
-                        + "Así los permisos y las preguntas de Claude Code se responden en la isla. Si la app está cerrada o nadie "
-                        + "responde en 110 s, Claude Code pregunta en la terminal como siempre. ¿Continuar?",
-                        "Uso de Claude", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+                        + L.T("Así los permisos y las preguntas de Claude Code se responden en la isla. Si la app está cerrada o nadie "
+                        + "responde en 110 s, Claude Code pregunta en la terminal como siempre. ¿Continuar?"),
+                        "Claupet", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
                 foreach (var dir in dirs)
                 {
                     try
                     {
                         var backup = HookInstaller.InstallApprovals(dir, ExePath);
-                        lines.Add($"{Name(dir)}: listo{(backup is null ? "" : " (con respaldo)")}.");
+                        lines.Add(backup is null ? L.T("{0}: listo.", Name(dir)) : L.T("{0}: listo (con respaldo).", Name(dir)));
                     }
-                    catch (Exception ex) { lines.Add($"{Name(dir)}: no se pudo ({ex.Message})."); }
+                    catch (Exception ex) { lines.Add(L.T("{0}: no se pudo ({1}).", Name(dir), ex.Message)); }
                 }
-                lines.Add("Funciona en las sesiones de Claude Code que se abran desde ahora.");
+                lines.Add(L.T("Funciona en las sesiones de Claude Code que se abran desde ahora."));
             }
-            MessageBox.Show(string.Join(Environment.NewLine, lines), "Uso de Claude", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(string.Join(Environment.NewLine, lines), "Claupet", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         finally { _form.HoldOpen = false; }
     }
@@ -530,7 +537,7 @@ sealed class TrayApp : ApplicationContext
                 if (_settings.Mic) _ = DownloadVoiceModelAsync(); // se descarga una vez, al encenderlo
                 break;
             case "mickey":
-                ShowOptions(KeyChoices(MicKeys.Choices, _settings.MicKey, "Grabar otra tecla…"), _settings.MicKey, k =>
+                ShowOptions(KeyChoices(MicKeys.Choices, _settings.MicKey, L.T("Grabar otra tecla…")), _settings.MicKey, k =>
                 {
                     // Después de que se cierre el menú: la ventanita de grabar es modal.
                     if (k == RecordChoice) _form.BeginInvoke(() => RecordKey(talk: true, combo => Change(s => s.MicKey = combo)));
@@ -538,7 +545,7 @@ sealed class TrayApp : ApplicationContext
                 });
                 break;
             case "chatkey":
-                ShowOptions(KeyChoices([(KeyNames.DefaultChat, KeyNames.Label(KeyNames.DefaultChat))], _settings.ChatKey, "Grabar otra combinación…"),
+                ShowOptions(KeyChoices([(KeyNames.DefaultChat, KeyNames.Label(KeyNames.DefaultChat))], _settings.ChatKey, L.T("Grabar otra combinación…")),
                     _settings.ChatKey, k =>
                     {
                         if (k == RecordChoice) _form.BeginInvoke(() => RecordKey(talk: false, SetChatKey));
@@ -575,6 +582,7 @@ sealed class TrayApp : ApplicationContext
             case "shortcuts": ShowShortcuts(); break;
             case "recapnow": MaybeShowRecap(true); break;
             case "startup": ToggleStartup(); break;
+            case "language": ShowOptions(L.Choices, L.Language, SetLanguage); break;
             case "sample": ShowNextSample(); break;
             case "sounds": OpenSoundsFolder(); break;
             case "add": AddAccount(); break;
@@ -643,8 +651,8 @@ sealed class TrayApp : ApplicationContext
             voice.Heard += OnVoiceHeard;
             voice.Canceled += OnVoiceCanceled;
             voice.NeedsModel += () => VoiceNote(_modelDownload is not null
-                ? $"El modelo de voz se está descargando ({_modelPercent ?? 0} %)."
-                : "Falta el modelo de voz: se descarga en Ajustes › Asistente.");
+                ? L.T("El modelo de voz se está descargando ({0} %).", _modelPercent ?? 0)
+                : L.T("Falta el modelo de voz: se descarga en Ajustes › Asistente."));
             voice.Failed += VoiceNote;
         }
         // Una grabada (F13, Win+H…) la vigila KeyHook; la de mantener, VoiceInput (y si no se entiende, Ctrl derecho).
@@ -729,7 +737,7 @@ sealed class TrayApp : ApplicationContext
         {
             if (_island is not { } island) return;
             if (_mascotWindow is not null && !_carrying) _director.SetMood(null);
-            island.StopListening(text.Length == 0 ? "No se entendió nada. Pruebe otra vez, más cerca del micrófono." : null);
+            island.StopListening(text.Length == 0 ? L.T("No se entendió nada. Pruebe otra vez, más cerca del micrófono.") : null);
             if (text.Length > 0) _ = AskIslandAsync(text);
             return;
         }
@@ -739,7 +747,7 @@ sealed class TrayApp : ApplicationContext
             _ = AskMascotAsync(text);
             return;
         }
-        bubble.Say(mascot.Bounds, "No te entendí… ¿me lo repites? (._.)");
+        bubble.Say(mascot.Bounds, L.T("No te entendí… ¿me lo repites? (._.)"));
         _director.SetMood(null);
     }
 
@@ -772,18 +780,28 @@ sealed class TrayApp : ApplicationContext
         }
     }
 
-    /// <summary>Lee la respuesta en voz alta, si se pidió (Ajustes › Asistente › Voz).</summary>
-    void ReadAloudIfOn(string text)
+    /// <summary>
+    /// Lee la respuesta en voz alta, si se pidió (Ajustes › Asistente › Voz). show corre en este hilo cuando
+    /// la voz empieza a sonar, para mostrar el texto a la vez; sin voz, enseguida.
+    /// </summary>
+    void ReadAloudIfOn(string text, Action? show = null)
     {
-        if (_settings.ReadAloud && text.Length > 0) (_readAloud ??= new ReadAloud()).Say(text, _settings.ReadAloudVoice);
+        if (!_settings.ReadAloud || text.Length == 0)
+        {
+            show?.Invoke();
+            return;
+        }
+        var ui = SynchronizationContext.Current;
+        Action? started = show is null ? null : ui is null ? show : () => ui.Post(_ => show(), null);
+        (_readAloud ??= new ReadAloud()).Say(text, _settings.ReadAloudVoice, started);
     }
 
     /// <summary>
     /// Lee lo que se mostró: si es la respuesta de Claude, con sus risas o suspiros (Spoken); si no (la
     /// acción falló), tal cual.
     /// </summary>
-    void ReadAloudIfOn(AssistantResult result, string shown) =>
-        ReadAloudIfOn(shown == result.Text && result.Spoken is { } spoken ? spoken : shown);
+    void ReadAloudIfOn(AssistantResult result, string shown, Action? show = null) =>
+        ReadAloudIfOn(shown == result.Text && result.Spoken is { } spoken ? spoken : shown, show);
 
     /// <summary>La respuesta se leerá con la voz de Claupet: Claude puede ponerle risas o suspiros.</summary>
     bool Expressive => _settings.ReadAloud && ClaupetVoices.IsClaupet(_settings.ReadAloudVoice);
@@ -819,16 +837,16 @@ sealed class TrayApp : ApplicationContext
         if (_hotkeys is not null) return;
         _hotkeys = new Hotkeys();
         _hotkeys.Add(KeyCombo.TryParse(_settings.ChatKey, out var chat) ? chat : new KeyCombo(Keys.Space, Ctrl: true, Alt: true),
-            "Abrir el chat", FocusChat);
-        _hotkeys.Add(Keys.A, "Ir al permiso o la pregunta pendiente", () => _island?.ShowPending());
-        _hotkeys.Add(Keys.T, "Traer la terminal de la sesión", () =>
+            L.T("Abrir el chat"), FocusChat);
+        _hotkeys.Add(Keys.A, L.T("Ir al permiso o la pregunta pendiente"), () => _island?.ShowPending());
+        _hotkeys.Add(Keys.T, L.T("Traer la terminal de la sesión"), () =>
         {
             var session = (_lastSessions ?? []).Where(s => s.State is SessionState.Waiting or SessionState.Working).FirstOrDefault()
                 ?? (_lastSessions ?? []).OrderByDescending(s => s.TurnEndedAt ?? s.StatusAt).FirstOrDefault();
             if (session is not null) Terminals.Focus(session.Pid);
         });
-        _hotkeys.Add(Keys.N, "Abrir o plegar la isla", () => _island?.ToggleOpen());
-        _hotkeys.Add(Keys.S, "Silenciar o volver a sonar", () => _island?.ToggleMute());
+        _hotkeys.Add(Keys.N, L.T("Abrir o plegar la isla"), () => _island?.ToggleOpen());
+        _hotkeys.Add(Keys.S, L.T("Silenciar o volver a sonar"), () => _island?.ToggleMute());
     }
 
     /// <summary>Otro atajo del chat: los atajos se vuelven a registrar.</summary>
@@ -854,7 +872,7 @@ sealed class TrayApp : ApplicationContext
         _form.HoldOpen = true;
         try
         {
-            if (KeyRecorder.Record(_form.Theme, talk, talk ? "Tecla para hablar" : "Atajo del chat") is { } combo) save(combo);
+            if (KeyRecorder.Record(_form.Theme, talk, talk ? L.T("Tecla para hablar") : L.T("Atajo del chat")) is { } combo) save(combo);
         }
         finally { _form.HoldOpen = false; }
     }
@@ -872,16 +890,16 @@ sealed class TrayApp : ApplicationContext
 
     void ShowShortcuts()
     {
-        var lines = (_hotkeys?.List ?? []).Select(s => $"{s.Keys}: {s.What}{(s.Registered ? "" : " (en uso por otra app)")}").ToList();
+        var lines = (_hotkeys?.List ?? []).Select(s => s.Registered ? $"{s.Keys}: {s.What}" : L.T("{0}: {1} (en uso por otra app)", s.Keys, s.What)).ToList();
         if (_settings.Mic)
             lines.Add(MicKeys.IsHold(_settings.MicKey)
-                ? $"Mantener {MicKeys.Label(_settings.MicKey)}: hablarle a la mascota o a la isla"
-                : $"{MicKeys.Label(_settings.MicKey)}: hablarle (un toque, o mantenerla)");
+                ? L.T("Mantener {0}: hablarle a la mascota o a la isla", MicKeys.Label(_settings.MicKey))
+                : L.T("{0}: hablarle (un toque, o mantenerla)", MicKeys.Label(_settings.MicKey)));
         if (_keyHook?.Combos.Contains(KeyCombo.Copilot) == true && !(_settings.Mic && _settings.MicKey == KeyNames.Copilot))
-            lines.Add(_voice is not null ? "Tecla Copilot: hablarle (un toque, o mantenerla)" : "Tecla Copilot: abrir el chat");
-        if (lines.Count == 0) lines.Add("Los atajos funcionan con la isla o el chat encendidos.");
+            lines.Add(_voice is not null ? L.T("Tecla Copilot: hablarle (un toque, o mantenerla)") : L.T("Tecla Copilot: abrir el chat"));
+        if (lines.Count == 0) lines.Add(L.T("Los atajos funcionan con la isla o el chat encendidos."));
         _form.HoldOpen = true;
-        try { MessageBox.Show(string.Join(Environment.NewLine, lines), "Atajos de teclado", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+        try { MessageBox.Show(string.Join(Environment.NewLine, lines), L.T("Atajos de teclado"), MessageBoxButtons.OK, MessageBoxIcon.Information); }
         finally { _form.HoldOpen = false; }
     }
 
@@ -979,6 +997,8 @@ sealed class TrayApp : ApplicationContext
         _chat.Add(new ChatTurn(true, text));
         _islandStreaming = "";
         PushIslandChat(true);
+        // Con la voz encendida, la respuesta no se muestra mientras llega: sale cuando empieza a sonar.
+        var speaking = _settings.ReadAloud;
         var result = await Assistant.AskAsync(new AssistantRequest
         {
             Prompt = text,
@@ -991,7 +1011,7 @@ sealed class TrayApp : ApplicationContext
             Expressive = Expressive,
         }, piece =>
         {
-            if (cancel.IsCancellationRequested) return;
+            if (cancel.IsCancellationRequested || speaking) return;
             _islandStreaming += piece;
             PushIslandChat(true);
         }, cancel: cancel.Token);
@@ -1009,15 +1029,20 @@ sealed class TrayApp : ApplicationContext
         if (result.Failed) _chat.Add(new ChatTurn(false, $"{result.Error} (._.)"));
         else if (result.Task is { } task)
         {
-            _chat.Add(new ChatTurn(false, result.Text.Length > 0 ? result.Text : "Eso es una tarea para Claude Code."));
+            _chat.Add(new ChatTurn(false, result.Text.Length > 0 ? result.Text : L.T("Eso es una tarea para Claude Code.")));
             OfferTask(task);
         }
         else
         {
             var answer = await RunActionAsync(result);
             if (cancel.IsCancellationRequested) return;
-            _chat.Add(new ChatTurn(false, answer));
-            ReadAloudIfOn(result, answer);
+            ReadAloudIfOn(result, answer, () =>
+            {
+                if (cancel.IsCancellationRequested) return;
+                _chat.Add(new ChatTurn(false, answer));
+                PushIslandChat(false);
+            });
+            return;
         }
         PushIslandChat(false);
     }
@@ -1030,11 +1055,11 @@ sealed class TrayApp : ApplicationContext
     {
         if (result.Action is not { } action) return result.Text;
         var problem = await SystemActions.RunAsync(action, SetPalette);
-        return problem is null ? (result.Text.Length > 0 ? result.Text : "¡Listo! (^_^)") : $"{problem} (._.)";
+        return problem is null ? (result.Text.Length > 0 ? result.Text : L.T("¡Listo! (^_^)")) : $"{problem} (._.)";
     }
 
     /// <summary>El nombre de la carpeta donde se abriría una tarea, para la nubecita.</summary>
-    static string FolderLabel(string? folder) => folder is null ? "una carpeta" : Path.GetFileName(folder.TrimEnd('\\', '/'));
+    static string FolderLabel(string? folder) => folder is null ? L.T("una carpeta") : Path.GetFileName(folder.TrimEnd('\\', '/'));
 
     /// <summary>Una tarea pedida en la isla (o un archivo que hay que encargar): la mascota la ofrece en su nubecita; sin mascota, se pregunta aquí.</summary>
     void OfferTask(TaskProposal task)
@@ -1048,12 +1073,12 @@ sealed class TrayApp : ApplicationContext
             return;
         }
         var folder = task.Folder ?? TaskFolderPath;
-        var where = folder is null ? "una carpeta que elija" : $"«{FolderLabel(folder)}»";
-        if (MessageBox.Show($"¿Abro Claude Code en {where} con esta tarea?\n\n«{task.Prompt}»", "Uso de Claude",
+        var where = folder is null ? L.T("una carpeta que elija") : L.T("«{0}»", FolderLabel(folder));
+        if (MessageBox.Show(L.T("¿Abro Claude Code en {0} con esta tarea?\n\n«{1}»", where, task.Prompt), "Claupet",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
         if (folder is null)
         {
-            using var dialog = new FolderBrowserDialog { Description = "Carpeta donde se abre la sesión.", UseDescriptionForTitle = true };
+            using var dialog = new FolderBrowserDialog { Description = L.T("Carpeta donde se abre la sesión."), UseDescriptionForTitle = true };
             if (dialog.ShowDialog() != DialogResult.OK) return;
             folder = dialog.SelectedPath;
             Change(s => s.TaskFolder = folder);
@@ -1066,7 +1091,7 @@ sealed class TrayApp : ApplicationContext
                 Model = _settings.Launch.Model, Effort = _settings.Launch.Effort, Advisor = _settings.Launch.Advisor,
             });
         }
-        catch (Exception ex) { MessageBox.Show($"No se pudo abrir la sesión: {ex.Message}", "Uso de Claude"); }
+        catch (Exception ex) { MessageBox.Show(L.T("No se pudo abrir la sesión: {0}", ex.Message), "Claupet"); }
     }
 
     /// <summary>
@@ -1091,7 +1116,7 @@ sealed class TrayApp : ApplicationContext
         }, piece => island?.AppendAnalysis(piece), stage => island?.SetAnalysisStage(stage), cancel.Token);
         if (cancel.IsCancellationRequested)
         {
-            island?.FinishAnalysis("", "Cancelado.", null);
+            island?.FinishAnalysis("", L.T("Cancelado."), null);
             _director.SetMood(null);
             return;
         }
@@ -1141,7 +1166,7 @@ sealed class TrayApp : ApplicationContext
         if (!_settings.AnalyzeDrops)
         {
             _director.SetMood(null);
-            ChatBubbleFor().Say(mascot.Bounds, "Tengo apagado lo de mirar archivos (Ajustes › Asistente). (._.)");
+            ChatBubbleFor().Say(mascot.Bounds, L.T("Tengo apagado lo de mirar archivos (Ajustes › Asistente). (._.)"));
             return;
         }
         _carrying = true;
@@ -1225,7 +1250,7 @@ sealed class TrayApp : ApplicationContext
         switch (action)
         {
             case "ask":
-                _chat.Add(new ChatTurn(false, $"(Resumen de {Path.GetFileName(file)}) {analysis}"));
+                _chat.Add(new ChatTurn(false, L.T("(Resumen de {0}) {1}", Path.GetFileName(file), analysis)));
                 PushIslandChat(false);
                 _island?.ShowPage(IslandForm.Page.Chat);
                 break;
@@ -1239,11 +1264,11 @@ sealed class TrayApp : ApplicationContext
                     Launcher.Start(new LaunchOptions
                     {
                         ConfigDir = AssistantConfigDir, Folder = folder,
-                        Prompt = $"Revisa «{file}». Ya lo resumí así: {analysis.ReplaceLineEndings(" ")} Dime qué ves y pregúntame qué hacer con él.",
+                        Prompt = L.T("Revisa «{0}». Ya lo resumí así: {1} Dime qué ves y pregúntame qué hacer con él.", file, analysis.ReplaceLineEndings(" ")),
                         Model = _settings.Launch.Model, Effort = _settings.Launch.Effort, Advisor = _settings.Launch.Advisor,
                     });
                 }
-                catch (Exception ex) { MessageBox.Show($"No se pudo abrir la sesión: {ex.Message}", "Uso de Claude"); }
+                catch (Exception ex) { MessageBox.Show(L.T("No se pudo abrir la sesión: {0}", ex.Message), "Claupet"); }
                 break;
         }
     }
@@ -1341,9 +1366,11 @@ sealed class TrayApp : ApplicationContext
             Expressive = Expressive,
         };
         _chat.Add(new ChatTurn(true, text));
+        // Con la voz encendida, la nubecita sigue pensando hasta que la voz empieza: el texto sale con ella.
+        var speaking = _settings.ReadAloud;
         var result = await Assistant.AskAsync(request, piece =>
         {
-            if (cancel.IsCancellationRequested) return;
+            if (cancel.IsCancellationRequested || speaking) return;
             bubble.Append(piece);
             _director.SetMood(ChibiMove.Talk);
         }, cancel: cancel.Token);
@@ -1358,7 +1385,7 @@ sealed class TrayApp : ApplicationContext
         }
         if (result.Task is { } task)
         {
-            _chat.Add(new ChatTurn(false, $"(Propuse abrir una sesión de Claude Code con: {task.Prompt})"));
+            _chat.Add(new ChatTurn(false, L.T("(Propuse abrir una sesión de Claude Code con: {0})", task.Prompt)));
             _pendingTask = task;
             bubble.Finish("", _settings.Island, task.Prompt, FolderLabel(TaskFolderPath));
             _director.SetMood(ChibiMove.Think);
@@ -1367,8 +1394,12 @@ sealed class TrayApp : ApplicationContext
         var answer = await RunActionAsync(result);
         if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
         _chat.Add(new ChatTurn(false, answer));
-        bubble.Finish(answer, _settings.Island);
-        ReadAloudIfOn(result, answer);
+        ReadAloudIfOn(result, answer, () =>
+        {
+            if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
+            if (speaking) _director.SetMood(ChibiMove.Talk);
+            bubble.Finish(answer, _settings.Island);
+        });
     }
 
     /// <summary>La tarea que propuso: se abre en su carpeta (la del archivo, si vino de uno), en la de las tareas o en otra que se elija.</summary>
@@ -1383,7 +1414,7 @@ sealed class TrayApp : ApplicationContext
             {
                 using var dialog = new FolderBrowserDialog
                 {
-                    Description = "Carpeta donde se abre la sesión de Claude Code con la tarea.",
+                    Description = L.T("Carpeta donde se abre la sesión de Claude Code con la tarea."),
                     UseDescriptionForTitle = true,
                     InitialDirectory = TaskFolderPath ?? Account.Home,
                 };
@@ -1401,13 +1432,13 @@ sealed class TrayApp : ApplicationContext
                 ConfigDir = AssistantConfigDir, Folder = folder, Prompt = task.Prompt,
                 Model = _settings.Launch.Model, Effort = _settings.Launch.Effort, Advisor = _settings.Launch.Advisor,
             });
-            bubble.Say(mascot.Bounds, "¡Va! Abrí la sesión. Bailo mientras trabaja y te aviso al terminar \\(^o^)/");
+            bubble.Say(mascot.Bounds, L.T("¡Va! Abrí la sesión. Bailo mientras trabaja y te aviso al terminar \\(^o^)/"));
             _director.SetMood(null);
             _director.Gesture(ChibiMove.Cheer, 1200);
         }
         catch (Exception ex)
         {
-            bubble.Finish($"No pude abrir la sesión: {ex.Message} (._.)", island: false, error: true);
+            bubble.Finish(L.T("No pude abrir la sesión: {0} (._.)", ex.Message), island: false, error: true);
             _director.SetMood(null);
         }
     }
@@ -1450,7 +1481,7 @@ sealed class TrayApp : ApplicationContext
     }
 
     IEnumerable<(string Id, string Label)> AssistantAccountChoices() =>
-        _settings.Accounts.Select(a => (a.ConfigDir, a.Label)).Prepend(("", "La elegida en Uso"));
+        _settings.Accounts.Select(a => (a.ConfigDir, a.Label)).Prepend(("", L.T("La elegida en Uso")));
 
     /// <summary>Las carpetas de las sesiones abiertas y la última de «Nueva sesión», y elegir otra.</summary>
     IEnumerable<(string Id, string Label)> TaskFolderChoices()
@@ -1459,7 +1490,7 @@ sealed class TrayApp : ApplicationContext
             .Prepend(_settings.Launch.Folder ?? "").Prepend(_settings.TaskFolder ?? "")
             .Where(f => f.Length > 0 && Directory.Exists(f))
             .Distinct(StringComparer.OrdinalIgnoreCase).Take(8);
-        return folders.Select(f => (f, f.Replace(Account.Home, "~"))).Append(("…", "Elegir otra carpeta…"));
+        return folders.Select(f => (f, f.Replace(Account.Home, "~"))).Append(("…", L.T("Elegir otra carpeta…")));
     }
 
     void PickTaskFolder(string folder)
@@ -1471,7 +1502,7 @@ sealed class TrayApp : ApplicationContext
             {
                 using var dialog = new FolderBrowserDialog
                 {
-                    Description = "Carpeta donde se abren las tareas que le pida a la mascota.",
+                    Description = L.T("Carpeta donde se abren las tareas que le pida a la mascota."),
                     UseDescriptionForTitle = true,
                     InitialDirectory = _settings.TaskFolder ?? _settings.Launch.Folder ?? Account.Home,
                 };
@@ -1668,11 +1699,11 @@ sealed class TrayApp : ApplicationContext
         try
         {
             Clipboard.SetText(report);
-            _tray.ShowBalloonTip(3000, "Uso de Claude", "Diagnóstico copiado al portapapeles.", ToolTipIcon.None);
+            _tray.ShowBalloonTip(3000, "Claupet", L.T("Diagnóstico copiado al portapapeles."), ToolTipIcon.None);
         }
         catch (Exception)
         {
-            MessageBox.Show(report, "Diagnóstico de Uso de Claude");
+            MessageBox.Show(report, L.T("Diagnóstico de Claupet"));
         }
     }
 
@@ -1714,10 +1745,10 @@ sealed class TrayApp : ApplicationContext
         {
             _snapshots.TryGetValue(a.ConfigDir, out var s);
             if (s?.Session is null) return $"{a.Label}  —";
-            var weekly = s.Weekly is null ? "" : $" · {s.Weekly.Percent:0} % semana";
-            return $"{a.Label}  {s.Session.Percent:0} % sesión{weekly}";
+            var weekly = s.Weekly is null ? "" : " · " + L.T("{0:0} % semana", s.Weekly.Percent);
+            return $"{a.Label}  " + L.T("{0:0} % sesión", s.Session.Percent) + weekly;
         });
-        var text = string.Join("\n", lines.Prepend("Uso de Claude"));
+        var text = string.Join("\n", lines.Prepend("Claupet"));
         _tray.Text = text.Length > 127 ? text[..127] : text;
     }
 
@@ -1752,7 +1783,7 @@ sealed class TrayApp : ApplicationContext
         {
             using var dialog = new FolderBrowserDialog
             {
-                Description = "Elija la carpeta de configuración de Claude Code de la cuenta (la de CLAUDE_CONFIG_DIR, con .credentials.json).",
+                Description = L.T("Elija la carpeta de configuración de Claude Code de la cuenta (la de CLAUDE_CONFIG_DIR, con .credentials.json)."),
                 UseDescriptionForTitle = true,
                 InitialDirectory = Account.Home,
             };
@@ -1766,8 +1797,8 @@ sealed class TrayApp : ApplicationContext
             else
             {
                 if (!File.Exists(Path.Combine(dir, ".credentials.json"))
-                    && MessageBox.Show(_form, "Esa carpeta no tiene .credentials.json todavía. ¿La agrego de todas formas?",
-                        "Uso de Claude", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                    && MessageBox.Show(_form, L.T("Esa carpeta no tiene .credentials.json todavía. ¿La agrego de todas formas?"),
+                        "Claupet", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                     return;
                 _settings.Ignored.RemoveAll(i => Account.SamePath(i, dir));
                 _settings.Accounts.Add(new Account { Label = Account.LabelFor(dir), ConfigDir = dir });
@@ -1788,8 +1819,8 @@ sealed class TrayApp : ApplicationContext
         _form.HoldOpen = true;
         try
         {
-            if (MessageBox.Show(_form, $"¿Quitar «{account.Label}» de la lista? No se borra nada de la carpeta.",
-                    "Uso de Claude", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            if (MessageBox.Show(_form, L.T("¿Quitar «{0}» de la lista? No se borra nada de la carpeta.", account.Label),
+                    "Claupet", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
         }
         finally
@@ -1812,7 +1843,7 @@ sealed class TrayApp : ApplicationContext
     {
         _form.HoldOpen = true;
         string? name;
-        try { name = Prompt.Ask(_form, "Renombrar cuenta", "Nombre de la pestaña:", account.Label); }
+        try { name = Prompt.Ask(_form, L.T("Renombrar cuenta"), L.T("Nombre de la pestaña:"), account.Label); }
         finally { _form.HoldOpen = false; }
         if (name is null) return;
         account.Label = name;
@@ -1844,7 +1875,7 @@ sealed class TrayApp : ApplicationContext
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"No se pudo abrir la sesión: {ex.Message}", "Uso de Claude", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(L.T("No se pudo abrir la sesión: {0}", ex.Message), "Claupet", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
         finally
         {
@@ -1886,27 +1917,30 @@ sealed class TrayApp : ApplicationContext
         SettingsStore.Save(_settings);
         if (!accepted) return;
 
+        // Las carpetas sin el hook al día: si alguna lo tiene después, se agregó o se actualizó ahora.
+        var pending = SetupDirs().Where(d => HookInstaller.Status(d, ExePath) != HookInstaller.State.Installed).ToList();
         var lines = setup.ApplyHooks(ExePath);
+        var hooked = pending.Any(d => HookInstaller.Status(d, ExePath) == HookInstaller.State.Installed);
         try
         {
             StartupRegistration.Set(setup.StartWithWindows);
-            lines.Add(setup.StartWithWindows ? "Iniciará con Windows." : "No iniciará con Windows.");
+            lines.Add(setup.StartWithWindows ? L.T("Iniciará con Windows.") : L.T("No iniciará con Windows."));
         }
-        catch (Exception ex) { lines.Add($"Inicio con Windows: no se pudo cambiar ({ex.Message})."); }
+        catch (Exception ex) { lines.Add(L.T("Inicio con Windows: no se pudo cambiar ({0}).", ex.Message)); }
         PushSettings();
         if (setup.NotificationsOn != _settings.Notifications) ToggleNotifications();
-        lines.Add(_settings.Notifications ? "Notificaciones encendidas." : "Notificaciones apagadas.");
-        if (lines.Any(l => l.Contains("hook")))
-            lines.Add("Los avisos de permisos funcionan en las sesiones de Claude Code que se abran desde ahora.");
-        MessageBox.Show(string.Join(Environment.NewLine, lines), "Uso de Claude", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        lines.Add(_settings.Notifications ? L.T("Notificaciones encendidas.") : L.T("Notificaciones apagadas."));
+        if (hooked)
+            lines.Add(L.T("Los avisos de permisos funcionan en las sesiones de Claude Code que se abran desde ahora."));
+        MessageBox.Show(string.Join(Environment.NewLine, lines), "Claupet", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     void RemoveSetup()
     {
         var answer = MessageBox.Show(
-            "Se quitará el hook de avisos de permisos de cada settings.json (con respaldo) y el inicio con Windows. "
-            + "La app sigue funcionando hasta que la cierre. ¿Continuar?",
-            "Uso de Claude", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            L.T("Se quitará el hook de avisos de permisos de cada settings.json (con respaldo) y el inicio con Windows. "
+            + "La app sigue funcionando hasta que la cierre. ¿Continuar?"),
+            "Claupet", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
         if (answer != DialogResult.Yes) return;
 
         var lines = new List<string>();
@@ -1915,13 +1949,39 @@ sealed class TrayApp : ApplicationContext
             var state = HookInstaller.Status(dir, ExePath);
             if (state is not (HookInstaller.State.Installed or HookInstaller.State.Outdated)) continue;
             var name = dir.Replace(Account.Home, "~");
-            try { HookInstaller.Uninstall(dir); lines.Add($"{name}: hook quitado."); }
-            catch (Exception ex) { lines.Add($"{name}: no se pudo quitar ({ex.Message})."); }
+            try { HookInstaller.Uninstall(dir); lines.Add(L.T("{0}: hook quitado.", name)); }
+            catch (Exception ex) { lines.Add(L.T("{0}: no se pudo quitar ({1}).", name, ex.Message)); }
         }
-        try { StartupRegistration.Set(false); lines.Add("Ya no inicia con Windows."); }
-        catch (Exception ex) { lines.Add($"Inicio con Windows: no se pudo quitar ({ex.Message})."); }
+        try { StartupRegistration.Set(false); lines.Add(L.T("Ya no inicia con Windows.")); }
+        catch (Exception ex) { lines.Add(L.T("Inicio con Windows: no se pudo quitar ({0}).", ex.Message)); }
         PushSettings();
-        MessageBox.Show(string.Join(Environment.NewLine, lines), "Uso de Claude", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        MessageBox.Show(string.Join(Environment.NewLine, lines), "Claupet", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    /// <summary>El idioma se fija al abrir la app: se guarda y la app se reinicia, cuando el menú ya se cerró.</summary>
+    void SetLanguage(string language)
+    {
+        if (language == L.Language) return;
+        Change(s => s.Language = language);
+        var later = new System.Windows.Forms.Timer { Interval = 300 };
+        later.Tick += (_, _) =>
+        {
+            later.Dispose();
+            Restart();
+        };
+        later.Start();
+    }
+
+    /// <summary>Abre otra instancia, que espera a que esta termine de cerrarse (--reiniciar), y se cierra.</summary>
+    void Restart()
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ExePath) { ArgumentList = { "--reiniciar" }, UseShellExecute = false })?.Dispose(); }
+        catch (Exception ex)
+        {
+            ErrorLog.Write(ex);
+            return;
+        }
+        Quit();
     }
 
     void Quit()

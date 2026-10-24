@@ -62,7 +62,7 @@ static class RefreshSprite
     const string Chibi = "chibi", SmallChibi = "chibi-chico";
 
     public static readonly (string Id, string Label)[] Styles =
-        [("mascota", "Mascota"), ("asterisco", "Asterisco"), ("puntos", "Puntos"), (None, "Ninguna")];
+        [("mascota", L.T("Mascota")), ("asterisco", L.T("Asterisco")), ("puntos", L.T("Puntos")), (None, L.T("Ninguna"))];
 
     public static string Label(string id) => Styles.FirstOrDefault(s => s.Id == id).Label ?? Styles[0].Label;
 

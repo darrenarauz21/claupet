@@ -71,7 +71,7 @@ sealed class IslandForm : Form
     // Datos
     IReadOnlyList<SessionInfo> _sessions = [];
     double? _sessionPercent, _weekPercent;
-    string _model = "El de sus sesiones";
+    string _model = L.T("El de sus sesiones");
     string _account = "";
     IReadOnlyList<ChatTurn> _turns = [];
     string? _streaming;
@@ -710,7 +710,7 @@ sealed class IslandForm : Form
 
         if (_sessionPercent is { } percent)
         {
-            var label = $"{percent:0} %";
+            var label = L.T("{0:0} %", percent);
             var w = Measure(g, label, _smallStrong).Width + S(18);
             var pill = new RectangleF(right - w, b.Y + (b.Height - S(22)) / 2f, w, S(22));
             Fill(g, Color.FromArgb(46, _accent), pill, pill.Height / 2);
@@ -729,18 +729,18 @@ sealed class IslandForm : Form
 
     string CompactStatus()
     {
-        if (_approval is { } pending) return pending.IsQuestion ? "Una pregunta le espera · clic para verla" : "Un permiso le espera · clic para verlo";
-        if (_receiving) return "Recibiendo archivo…";
-        if (Analyzing) return $"Analizando {Path.GetFileName(_file)}…";
-        if (_file is not null && !_analysisSeen) return _analysisError is null ? "Análisis listo · clic para ver" : "No pude analizarlo · clic para ver";
+        if (_approval is { } pending) return pending.IsQuestion ? L.T("Una pregunta le espera · clic para verla") : L.T("Un permiso le espera · clic para verlo");
+        if (_receiving) return L.T("Recibiendo archivo…");
+        if (Analyzing) return L.T("Analizando {0}…", Path.GetFileName(_file));
+        if (_file is not null && !_analysisSeen) return _analysisError is null ? L.T("Análisis listo · clic para ver") : L.T("No pude analizarlo · clic para ver");
         var working = _sessions.Count(s => s.State == SessionState.Working);
         var waiting = _sessions.Count(s => s.State == SessionState.Waiting);
         var parts = new List<string>();
-        if (working > 0) parts.Add(working == 1 ? "1 trabajando" : $"{working} trabajando");
-        if (waiting > 0) parts.Add(waiting == 1 ? "1 le espera" : $"{waiting} le esperan");
+        if (working > 0) parts.Add(working == 1 ? L.T("1 trabajando") : L.T("{0} trabajando", working));
+        if (waiting > 0) parts.Add(waiting == 1 ? L.T("1 le espera") : L.T("{0} le esperan", waiting));
         if (parts.Count > 0) return string.Join(" · ", parts);
         var done = _sessions.Where(s => s.State == SessionState.Done).OrderByDescending(s => s.TurnEndedAt).FirstOrDefault();
-        return done is not null ? $"«{Short(done.DisplayTitle, 28)}» terminó" : "Todo tranquilo";
+        return done is not null ? L.T("«{0}» terminó", Short(done.DisplayTitle, 28)) : L.T("Todo tranquilo");
     }
 
     /// <summary>La cabeza de la mascota: parpadea, mira a los lados mientras analiza y hace &gt; &lt; al terminar.</summary>
@@ -822,7 +822,7 @@ sealed class IslandForm : Form
         var y = b.Y + S(8);
         var x = b.X + S(10);
         var height = S(28);
-        foreach (var (key, label, page) in new (string, string, Page?)[] { ("tab:home", "Inicio", Page.Home), ("tab:chat", "Chat", Page.Chat), ("tab:new", "+ Sesión", null) })
+        foreach (var (key, label, page) in new (string, string, Page?)[] { ("tab:home", L.T("Inicio"), Page.Home), ("tab:chat", L.T("Chat"), Page.Chat), ("tab:new", L.T("+ Sesión"), null) })
         {
             var w = Measure(g, label, _small).Width + S(24);
             var rect = new Rectangle(x, y, (int)w, height);
@@ -850,8 +850,8 @@ sealed class IslandForm : Form
             right = rect.X;
         }
         right -= S(4);
-        if (_weekPercent is { } week) right = UsagePill(g, $"Semana {week:0} %", week, right, y + (height - S(22)) / 2, draw, accent: false) - S(6);
-        if (_sessionPercent is { } session) UsagePill(g, $"Sesión {session:0} %", session, right, y + (height - S(22)) / 2, draw, accent: true);
+        if (_weekPercent is { } week) right = UsagePill(g, L.T("Semana {0:0} %", week), week, right, y + (height - S(22)) / 2, draw, accent: false) - S(6);
+        if (_sessionPercent is { } session) UsagePill(g, L.T("Sesión {0:0} %", session), session, right, y + (height - S(22)) / 2, draw, accent: true);
         return y + height + S(8);
     }
 
@@ -880,8 +880,8 @@ sealed class IslandForm : Form
         {
             if (draw)
             {
-                Write(g, "No hay sesiones activas.", _body, Soft, new RectangleF(x + S(4), y + S(6), width, S(20)), StringAlignment.Near);
-                Write(g, "Abra una con «+ Sesión», escríbale en el Chat o suelte un archivo aquí.", _small, Faint,
+                Write(g, L.T("No hay sesiones activas."), _body, Soft, new RectangleF(x + S(4), y + S(6), width, S(20)), StringAlignment.Near);
+                Write(g, L.T("Abra una con «+ Sesión», escríbale en el Chat o suelte un archivo aquí."), _small, Faint,
                     new RectangleF(x + S(4), y + S(28), width, S(18)), StringAlignment.Near);
             }
             return y + S(50);
@@ -903,7 +903,7 @@ sealed class IslandForm : Form
         // Primera línea: estado, título, cuenta y modelo, y el botón de la terminal.
         var tag = s.Account.Label + (s.Model is { } model ? " · " + Format.Model(model) : "");
         var tagW = Measure(g, tag, _small).Width;
-        var termW = Measure(g, "Terminal", _small).Width + S(18);
+        var termW = Measure(g, L.T("Terminal"), _small).Width + S(18);
         var bodyY = row + lineH + S(4);
         var card = new Rectangle(x, top, width, ComposeSessionBody(g, s, textX, bodyY, textW, draw: false) + pad - top);
         if (draw)
@@ -923,7 +923,7 @@ sealed class IslandForm : Form
             Write(g, s.DisplayTitle, _bodyStrong, Ink, new RectangleF(textX, row, textW - tagW - termW - S(16), lineH), StringAlignment.Near, ellipsis: true);
             Write(g, tag, _small, Dim, new RectangleF(term.X - S(8) - tagW, row, tagW + S(2), lineH), StringAlignment.Near);
             Outline(g, _hoverKey == "term:" + s.SessionId ? Soft : Edge, term, S(11));
-            Write(g, "Terminal", _small, Soft, term, StringAlignment.Center);
+            Write(g, L.T("Terminal"), _small, Soft, term, StringAlignment.Center);
             ComposeSessionBody(g, s, textX, bodyY, textW, draw: true);
         }
         Hit(card, key, s);
@@ -977,21 +977,21 @@ sealed class IslandForm : Form
                     y += S(22) + S(6);
                 }
                 var progress = new List<string>();
-                if (s.TodoTotal > 0) progress.Add($"{s.TodoDone} de {s.TodoTotal} tareas");
-                progress.Add(s.Steps == 1 ? "1 paso" : $"{s.Steps} pasos");
+                if (s.TodoTotal > 0) progress.Add(L.T("{0} de {1} tareas", s.TodoDone, s.TodoTotal));
+                progress.Add(s.Steps == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Steps));
                 if (s.TurnStartedAt is { } start) progress.Add(Format.Duration(DateTimeOffset.Now - start));
                 if (draw) Write(g, string.Join(" · ", progress), _small, Faint, new RectangleF(x, y, width, lineH), StringAlignment.Near);
                 return y + lineH;
             }
             case SessionState.Waiting:
-                if (draw) Write(g, s.AwaitingAnswer ? "Le está preguntando · clic para ver" : "Necesita su permiso · clic para ver", _small, Hex(0xF0C27A),
+                if (draw) Write(g, s.AwaitingAnswer ? L.T("Le está preguntando · clic para ver") : L.T("Necesita su permiso · clic para ver"), _small, Hex(0xF0C27A),
                     new RectangleF(x, y, width, lineH), StringAlignment.Near);
                 return y + lineH;
             case SessionState.Failed:
-                if (draw) Write(g, "Falló · " + (s.ErrorText ?? "error de la API"), _small, Bad, new RectangleF(x, y, width, lineH), StringAlignment.Near, ellipsis: true);
+                if (draw) Write(g, L.T("Falló · {0}", s.ErrorText ?? L.T("error de la API")), _small, Bad, new RectangleF(x, y, width, lineH), StringAlignment.Near, ellipsis: true);
                 return y + lineH;
             default:
-                var done = "Terminó " + Format.Ago(s.TurnEndedAt ?? s.StatusAt) + (s.LastTurn is { } d2 ? $" · {Format.Duration(d2)}" : "");
+                var done = L.T("Terminó {0}", Format.Ago(s.TurnEndedAt ?? s.StatusAt)) + (s.LastTurn is { } d2 ? $" · {Format.Duration(d2)}" : "");
                 if (draw) Write(g, done, _small, Good, new RectangleF(x, y, width, lineH), StringAlignment.Near);
                 if (s.LastAnswer is not { Length: > 0 } answer) return y + lineH;
                 if (draw) Write(g, answer, _small, Dim, new RectangleF(x, y + lineH + S(2), width, lineH), StringAlignment.Near, ellipsis: true);
@@ -1032,7 +1032,7 @@ sealed class IslandForm : Form
         var turns = _turns.TakeLast(6).ToList();
         if (turns.Count == 0 && _streaming is null)
         {
-            if (draw) Write(g, "Pregúntele por su uso, sus sesiones o lo que quiera. También puede soltar un archivo aquí o pedirle una tarea.",
+            if (draw) Write(g, L.T("Pregúntele por su uso, sus sesiones o lo que quiera. También puede soltar un archivo aquí o pedirle una tarea."),
                 _small, Faint, new RectangleF(x + S(4), y, width - S(8), S(36)), StringAlignment.Near, wrap: true);
             y += S(40);
         }
@@ -1071,7 +1071,7 @@ sealed class IslandForm : Form
                         string[] frames = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
                         Write(g, frames[(int)((Environment.TickCount64 - _thinkingAt) / 110 % frames.Length)], _spinner, _accent,
                             new RectangleF(rect.X + S(10), rect.Y, S(18), rect.Height), StringAlignment.Center);
-                        Shimmer(g, "Pensando…", _body, new RectangleF(rect.X + S(32), rect.Y, rect.Width - S(38), rect.Height));
+                        Shimmer(g, L.T("Pensando…"), _body, new RectangleF(rect.X + S(32), rect.Y, rect.Width - S(38), rect.Height));
                     }
                 }
                 else if (person)
@@ -1126,9 +1126,9 @@ sealed class IslandForm : Form
             Write(g, chipLabel, _small, Soft, new RectangleF(chip.X + S(10), chip.Y, chipW - S(26), chip.Height), StringAlignment.Near);
             Chevron(g, new PointF(chip.Right - S(14), chip.Y + chip.Height / 2f), Soft);
             if (_account.Length > 0)
-                Write(g, "con " + _account, _small, Faint, new RectangleF(chip.Right + S(8), chip.Y, S(160), chip.Height), StringAlignment.Near);
+                Write(g, L.T("con {0}", _account), _small, Faint, new RectangleF(chip.Right + S(8), chip.Y, S(160), chip.Height), StringAlignment.Near);
         }
-        const string reset = "Nueva conversación";
+        var reset = L.T("Nueva conversación");
         var resetW = Measure(g, reset, _small).Width + S(12);
         var resetRect = new Rectangle(x + width - (int)resetW, y, (int)resetW, S(24));
         Hit(resetRect, "newchat");
@@ -1149,7 +1149,7 @@ sealed class IslandForm : Form
             Outline(g, _listening ? Hex(0xD94B3F) : _input.Focused ? Color.FromArgb(160, _accent) : Edge, field, S(10));
             var text = new RectangleF(field.X + S(12), field.Y, textRight - field.X - S(20), field.Height);
             if (_listening) DrawListening(g, text);
-            else if (_converting) Shimmer(g, _heard.Length > 0 ? Tail(g, _heard, _body, text.Width) : "Pasando a texto…", _body, text);
+            else if (_converting) Shimmer(g, _heard.Length > 0 ? Tail(g, _heard, _body, text.Width) : L.T("Pasando a texto…"), _body, text);
             else if (VoiceNoteShown) Write(g, _voiceNote!, _small, Warn, text, StringAlignment.Near, ellipsis: true);
             if (_micEnabled)
             {
@@ -1180,7 +1180,7 @@ sealed class IslandForm : Form
         Write(g, _voiceHint, _small, Hex(0xE8A39B), hint, StringAlignment.Far);
         var bars = periods.Length * S(6) + S(6);
         var said = new RectangleF(text.X + bars, text.Y, hint.X - text.X - bars - S(8), text.Height);
-        Write(g, _heard.Length > 0 ? Tail(g, _heard, _body, said.Width) : "Escuchando…", _body, _heard.Length > 0 ? Ink : Faint, said, StringAlignment.Near);
+        Write(g, _heard.Length > 0 ? Tail(g, _heard, _body, said.Width) : L.T("Escuchando…"), _body, _heard.Length > 0 ? Ink : Faint, said, StringAlignment.Near);
     }
 
     /// <summary>El final de un texto que no cabe en una línea («…lo último que se dijo»).</summary>
@@ -1217,9 +1217,9 @@ sealed class IslandForm : Form
             ? name
             : _stage switch
             {
-                AssistantStage.Opening => $"Abriendo {name}",
-                AssistantStage.Reading => $"Leyendo {name}",
-                _ => "Escribiendo el resumen",
+                AssistantStage.Opening => L.T("Abriendo {0}", name),
+                AssistantStage.Reading => L.T("Leyendo {0}", name),
+                _ => L.T("Escribiendo el resumen"),
             };
         var elapsed = (_analysisDone ? _analysisEnd : Environment.TickCount64) - _analysisAt;
         var time = $"{elapsed / 60000}:{elapsed / 1000 % 60:00}";
@@ -1228,7 +1228,7 @@ sealed class IslandForm : Form
         var row = ty;
         var stepsY = row + titleH + S(8);
         var textY = stepsY + S(16) + S(10);
-        var text = _analysisError ?? (_analysis.Length > 0 ? _analysis : _analysisDone ? "" : "Claude está leyendo; el resumen aparece aquí mientras lo escribe.");
+        var text = _analysisError ?? (_analysis.Length > 0 ? _analysis : _analysisDone ? "" : L.T("Claude está leyendo; el resumen aparece aquí mientras lo escribe."));
         var textH = Math.Max(S(38), MeasureWrapped(g, text, _body, tw).Height);
         var footY = textY + textH + S(10);
         var bottom = footY + S(_analysisDone ? 28 : 18) + pad;
@@ -1272,7 +1272,7 @@ sealed class IslandForm : Form
         if (_analysisDone)
         {
             var ax = tx;
-            foreach (var (key, label) in new[] { ("res:ask", "Preguntar algo más"), ("res:copy", "Copiar"), ("res:session", "Seguir en una sesión") })
+            foreach (var (key, label) in new[] { ("res:ask", L.T("Preguntar algo más")), ("res:copy", L.T("Copiar")), ("res:session", L.T("Seguir en una sesión")) })
             {
                 var w = Measure(g, label, _small).Width + S(24);
                 var rect = new Rectangle(ax, footY, (int)w, S(28));
@@ -1287,8 +1287,8 @@ sealed class IslandForm : Form
         }
         else
         {
-            var info = $"{_analysisModel} · solo puede leer la carpeta del archivo";
-            const string cancel = "Cancelar · Esc";
+            var info = L.T("{0} · solo puede leer la carpeta del archivo", _analysisModel);
+            var cancel = L.T("Cancelar · Esc");
             var cw = Measure(g, cancel, _small).Width + S(12);
             var cancelRect = new Rectangle(card.Right - pad - (int)cw, footY - S(2), (int)cw, S(22));
             Hit(cancelRect, "cancel");
@@ -1352,12 +1352,12 @@ sealed class IslandForm : Form
         var row = top + pad;
         var stats = new (string Value, string Label)[]
         {
-            (Format.Tokens(w.Tokens), "tokens"),
-            (w.Sessions.ToString(), w.Sessions == 1 ? "sesión" : "sesiones"),
-            (w.Prompts.ToString(), w.Prompts == 1 ? "pedido" : "pedidos"),
-            (w.ToolCalls.ToString(), "pasos"),
-            (w.BusiestDay is { } d ? $"{d:dddd}" : "—", "día más activo"),
-            (w.FavoriteModel ?? "—", "modelo favorito"),
+            (Format.Tokens(w.Tokens), L.T("tokens")),
+            (w.Sessions.ToString(), w.Sessions == 1 ? L.T("sesión") : L.T("sesiones")),
+            (w.Prompts.ToString(), w.Prompts == 1 ? L.T("pedido") : L.T("pedidos")),
+            (w.ToolCalls.ToString(), L.T("pasos")),
+            (w.BusiestDay is { } d ? $"{d:dddd}" : "—", L.T("día más activo")),
+            (w.FavoriteModel ?? "—", L.T("modelo favorito")),
         };
         var cellW = tw / 3;
         var gridY = row + S(28);
@@ -1368,7 +1368,7 @@ sealed class IslandForm : Form
         {
             Fill(g, Card, card, S(14));
             DrawHead(g, new Rectangle(x + pad, row, head, head), small: false, talking: false);
-            Write(g, "Su semana con Claude", _bodyStrong, Ink, new RectangleF(tx, row, tw * 0.55f, S(22)), StringAlignment.Near);
+            Write(g, L.T("Su semana con Claude"), _bodyStrong, Ink, new RectangleF(tx, row, tw * 0.55f, S(22)), StringAlignment.Near);
             Write(g, w.Range, _small, Dim, new RectangleF(tx + tw * 0.55f, row, tw * 0.45f, S(22)), StringAlignment.Far, ellipsis: true);
             for (var i = 0; i < stats.Length; i++)
             {
@@ -1379,7 +1379,7 @@ sealed class IslandForm : Form
             }
         }
         var bx = tx;
-        foreach (var (key, label) in new[] { ("week:copy", "Copiar"), ("week:close", "Listo") })
+        foreach (var (key, label) in new[] { ("week:copy", L.T("Copiar")), ("week:close", L.T("Listo")) })
         {
             var bw = Measure(g, label, _small).Width + S(26);
             var rect = new Rectangle(bx, buttonsY, (int)bw, S(28));
@@ -1407,7 +1407,7 @@ sealed class IslandForm : Form
         var back = new Rectangle(x, row, S(28), S(28));
         Hit(back, "diff:back");
         var name = d.Edit.File.Replace(Account.Home, "~");
-        const string open = "Abrir en VS Code ↗";
+        var open = L.T("Abrir en VS Code ↗");
         var openW = Measure(g, open, _small).Width + S(24);
         var openRect = new Rectangle(x + width - (int)openW, row, (int)openW, S(28));
         Hit(openRect, "diff:open");
@@ -1449,7 +1449,7 @@ sealed class IslandForm : Form
                 g.DrawString(line, _mono, ink, new RectangleF(box.X + S(10), ly, box.Width - S(20), lineH), format);
                 ly += lineH;
             }
-            if (rest > 0) Write(g, $"… {rest} líneas más", _small, Faint, new RectangleF(box.X + S(10), ly, box.Width - S(20), lineH), StringAlignment.Near);
+            if (rest > 0) Write(g, L.T("… {0} líneas más", rest), _small, Faint, new RectangleF(box.X + S(10), ly, box.Width - S(20), lineH), StringAlignment.Near);
         }
         return box.Bottom;
     }
@@ -1489,7 +1489,7 @@ sealed class IslandForm : Form
 
         var title = ApprovalSession?.DisplayTitle ?? _approvalTitle;
         var titleW = Math.Min(Measure(g, title, _bodyStrong).Width, tw * 0.55f);
-        var what = $"necesita su permiso para {a.Tool}";
+        var what = L.T("necesita su permiso para {0}", a.Tool);
         var code = a.Target.ReplaceLineEndings(" ⏎ ");
         var codeH = Math.Min(MeasureWrapped(g, code, _mono, tw - S(20)).Height, S(52)) + S(14);
         var codeY = row + S(24);
@@ -1510,7 +1510,7 @@ sealed class IslandForm : Form
         FoldButton(g, x + width - pad + S(6), row, draw);
 
         var bx = tx;
-        foreach (var (key, label, primary) in new[] { ("ap:deny", "Denegar", false), ("ap:allow", "Permitir", true), ("ap:always", "Siempre en esta sesión", false) })
+        foreach (var (key, label, primary) in new[] { ("ap:deny", L.T("Denegar"), false), ("ap:allow", L.T("Permitir"), true), ("ap:always", L.T("Siempre en esta sesión"), false) })
         {
             var w = Measure(g, label, primary ? _smallStrong : _small).Width + S(26);
             var rect = new Rectangle(bx, buttonsY, (int)w, S(32));
@@ -1523,7 +1523,7 @@ sealed class IslandForm : Form
             }
             bx = rect.Right + S(8);
         }
-        const string terminal = "Abrir terminal";
+        var terminal = L.T("Abrir terminal");
         var termW = Measure(g, terminal, _small).Width + S(12);
         var termRect = new Rectangle(x + width - pad - (int)termW, buttonsY, (int)termW, S(32));
         if (bx < termRect.X)
@@ -1546,7 +1546,7 @@ sealed class IslandForm : Form
         var inner = width - pad * 2;
 
         var title = ApprovalSession?.DisplayTitle ?? _approvalTitle;
-        var header = questions.Count > 1 ? $"{title} pregunta · {_questionIndex + 1} de {questions.Count}" : $"{title} pregunta";
+        var header = questions.Count > 1 ? L.T("{0} pregunta · {1} de {2}", title, _questionIndex + 1, questions.Count) : L.T("{0} pregunta", title);
         var qy = row + S(40);
         var qh = MeasureWrapped(g, q.Question, _bodyStrong, inner).Height;
         var gridY = qy + qh + S(10);
@@ -1593,7 +1593,7 @@ sealed class IslandForm : Form
         var fx = x + pad;
         if (q.MultiSelect)
         {
-            var label = _questionIndex == questions.Count - 1 ? "Enviar" : "Siguiente";
+            var label = _questionIndex == questions.Count - 1 ? L.T("Enviar") : L.T("Siguiente");
             var w = Measure(g, label, _smallStrong).Width + S(28);
             var rect = new Rectangle(fx, footY, (int)w, S(30));
             if (chosen.Count > 0) Hit(rect, "q:next");
@@ -1604,7 +1604,7 @@ sealed class IslandForm : Form
             }
             fx = rect.Right + S(12);
         }
-        const string terminal = "Responder en la terminal";
+        var terminal = L.T("Responder en la terminal");
         var tw = Measure(g, terminal, _small).Width + S(12);
         var termRect = new Rectangle(fx, footY, (int)tw, S(30));
         Hit(termRect, "ap:terminal");
@@ -1647,7 +1647,7 @@ sealed class IslandForm : Form
     /// <summary>Los pasos reales del análisis: Abrir, Leer y Resumir (hecho, en curso o pendiente).</summary>
     void Stepper(Graphics g, int x, int y, int width)
     {
-        string[] labels = ["Abrir", "Leer", "Resumir"];
+        string[] labels = [L.T("Abrir"), L.T("Leer"), L.T("Resumir")];
         var current = _analysisDone ? 3 : (int)_stage;
         var cx = (float)x;
         var dot = S(16);
@@ -1799,7 +1799,7 @@ sealed class IslandForm : Form
         var area = _screen.WorkingArea;
         var origin = new Point(area.Left + (area.Width - S(_w)) / 2 - S(ShadowMargin), area.Top + S(_y));
         var bounds = new Rectangle(origin.X + _inputBounds.X, origin.Y + _inputBounds.Y, _inputBounds.Width, _inputBounds.Height);
-        _input.Place(bounds, _asking ? "Respondiendo… (clic en el botón para cancelar)" : "Pregunte algo o suelte un archivo aquí…");
+        _input.Place(bounds, _asking ? L.T("Respondiendo… (clic en el botón para cancelar)") : L.T("Pregunte algo o suelte un archivo aquí…"));
     }
 
     // ── Ayudas de dibujo ────────────────────────────────────────────────────────────────────

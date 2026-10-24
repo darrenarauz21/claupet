@@ -37,6 +37,8 @@ sealed class TrayController
     LocalTotals? _local;
     DateTime? _updated;
     bool _busy, _scanning, _counting;
+    /// <summary>Las sesiones vencidas se renuevan al abrir la app; si no había conexión, en la próxima actualización.</summary>
+    bool _renewAtStart = true;
     Action? _pendingApply;
     IReadOnlyList<SessionInfo>? _lastSessions;
     int _sampleIndex, _noticesShown;
@@ -68,22 +70,22 @@ sealed class TrayController
             item.Click += (_, _) => action();
             menu.Add(item);
         }
-        Item("Abrir", ShowForm);
-        Item("Actualizar", () => _ = RefreshAsync());
-        Item("Nueva sesión…", () => _ = NewSessionAsync(null));
+        Item(L.T("Abrir"), ShowForm);
+        Item(L.T("Actualizar"), () => _ = RefreshAsync(renewSelected: true));
+        Item(L.T("Nueva sesión…"), () => _ = NewSessionAsync(null));
         menu.Add(new NativeMenuItemSeparator());
-        Item("Ajustes…", () => { ShowForm(); View.ShowSettings(); });
+        Item(L.T("Ajustes…"), () => { ShowForm(); View.ShowSettings(); });
         menu.Add(new NativeMenuItemSeparator());
-        Item("Salir", Quit);
+        Item(L.T("Salir"), Quit);
 
         _tray.Menu = menu;
-        _tray.ToolTipText = "Uso de Claude";
+        _tray.ToolTipText = "Claupet";
         _tray.Icon = Gfx.PercentIcon(null, _theme.Tertiary);
         _tray.Clicked += (_, _) => Toggle();
         _tray.IsVisible = true;
         TrayIcon.SetIcons(app, new TrayIcons { _tray });
 
-        View.RefreshRequested += () => _ = RefreshAsync();
+        View.RefreshRequested += () => _ = RefreshAsync(renewSelected: true);
         View.AddRequested += () => _ = AddAccountAsync();
         View.RemoveRequested += a => _ = RemoveAccountAsync(a);
         View.RenameRequested += a => _ = RenameAccountAsync(a);
@@ -145,7 +147,8 @@ sealed class TrayController
         });
     }
 
-    async Task RefreshAsync()
+    /// <summary>renewSelected: «Actualizar» renueva la sesión vencida de la cuenta que se está viendo.</summary>
+    async Task RefreshAsync(bool renewSelected = false)
     {
         if (_busy) return;
         _busy = true;
@@ -156,6 +159,9 @@ sealed class TrayController
             if (SettingsStore.DetectNew(_settings)) SettingsStore.Save(_settings);
             var accounts = _settings.Accounts.ToList();
             var results = await Task.WhenAll(accounts.Select(a => UsageClient.FetchAsync(a)));
+            var offline = await SessionRenewal.RenewExpiredAsync(accounts, results, a => _renewAtStart
+                || (renewSelected && _settings.Selected is { } selected && Account.SamePath(a.ConfigDir, selected)));
+            if (!offline) _renewAtStart = false;
             var profiles = await Task.Run(() => accounts.Select(UsageClient.ReadProfile).ToList());
             var local = await Task.Run(() => LocalUsage.ScanToday(accounts.Select(a => a.ConfigDir)));
             var updated = DateTime.Now;
@@ -168,7 +174,7 @@ sealed class TrayController
                     var dir = accounts[i].ConfigDir;
                     var fresh = results[i];
                     if (fresh.Error is not null && _snapshots.TryGetValue(dir, out var old) && old.Limits.Count > 0)
-                        fresh = old.WithError(fresh.Error);
+                        fresh = old.WithError(fresh.Error, fresh.SessionExpired);
                     _snapshots[dir] = fresh;
                     _profiles[dir] = profiles[i];
                 }
@@ -230,7 +236,7 @@ sealed class TrayController
         View.SetSettingsState(new UsageView.SettingsState(
                 s.Notifications, s.Sound, pack, Theme.PaletteLabel(s.Palette),
                 Mascots.Label(Mascots.ChoiceOf(s)), s.DesktopMascot, s.DesktopMascot ? s.Speak : null, s.DesktopMascot ? behavior : null,
-                StartupRegistration.IsEnabled, s.Accounts.Count),
+                StartupRegistration.IsEnabled, s.Accounts.Count, L.Label),
             _settings.SoundPack, _settings.Palette, Mascots.ChoiceOf(_settings));
     }
 
@@ -239,6 +245,7 @@ sealed class TrayController
         if (action.StartsWith("pack:", StringComparison.Ordinal)) SetSoundPack(action[5..]);
         else if (action.StartsWith("palette:", StringComparison.Ordinal)) SetPalette(action[8..]);
         else if (action.StartsWith("mascot:", StringComparison.Ordinal)) SetMascot(action[7..]);
+        else if (action.StartsWith("language:", StringComparison.Ordinal)) { SetLanguage(action[9..]); return; }
         else
         {
             switch (action)
@@ -297,7 +304,7 @@ sealed class TrayController
         }
         catch (Exception ex)
         {
-            await Dialogs.Info($"No se pudo abrir la sesión: {ex.Message}", _theme);
+            await Dialogs.Info(L.T("No se pudo abrir la sesión: {0}", ex.Message), _theme);
         }
         finally
         {
@@ -465,7 +472,7 @@ sealed class TrayController
             if (_popup.Clipboard is { } clipboard)
             {
                 await clipboard.SetTextAsync(report);
-                await Dialogs.Info("Diagnóstico copiado al portapapeles.", _theme);
+                await Dialogs.Info(L.T("Diagnóstico copiado al portapapeles."), _theme);
                 return;
             }
         }
@@ -498,10 +505,10 @@ sealed class TrayController
         {
             _snapshots.TryGetValue(a.ConfigDir, out var s);
             if (s?.Session is null) return $"{a.Label}  —";
-            var weekly = s.Weekly is null ? "" : $" · {s.Weekly.Percent:0} % semana";
-            return $"{a.Label}  {s.Session.Percent:0} % sesión{weekly}";
+            var weekly = s.Weekly is null ? "" : L.T(" · {0:0} % semana", s.Weekly.Percent);
+            return L.T("{0}  {1:0} % sesión{2}", a.Label, s.Session.Percent, weekly);
         });
-        _tray.ToolTipText = string.Join("\n", lines.Prepend("Uso de Claude"));
+        _tray.ToolTipText = string.Join("\n", lines.Prepend("Claupet"));
     }
 
     void Toggle()
@@ -527,7 +534,7 @@ sealed class TrayController
             var start = await _popup.StorageProvider.TryGetFolderFromPathAsync(Account.Home);
             var folders = await _popup.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             {
-                Title = "Carpeta de configuración de Claude Code de la cuenta (la de CLAUDE_CONFIG_DIR)",
+                Title = L.T("Carpeta de configuración de Claude Code de la cuenta (la de CLAUDE_CONFIG_DIR)"),
                 AllowMultiple = false,
                 SuggestedStartLocation = start,
             });
@@ -538,7 +545,7 @@ sealed class TrayController
             else
             {
                 if (!Credentials.Exists(dir)
-                    && !await Dialogs.Confirm("Esa carpeta todavía no tiene credenciales de Claude Code. ¿La agrego de todas formas?", _theme))
+                    && !await Dialogs.Confirm(L.T("Esa carpeta todavía no tiene credenciales de Claude Code. ¿La agrego de todas formas?"), _theme))
                     return;
                 _settings.Ignored.RemoveAll(i => Account.SamePath(i, dir));
                 _settings.Accounts.Add(new Account { Label = Account.LabelFor(dir), ConfigDir = dir });
@@ -556,7 +563,7 @@ sealed class TrayController
         _popup.HoldOpen = true;
         try
         {
-            if (!await Dialogs.Confirm($"¿Quitar «{account.Label}» de la lista? No se borra nada de la carpeta.", _theme)) return;
+            if (!await Dialogs.Confirm(L.T("¿Quitar «{0}» de la lista? No se borra nada de la carpeta.", account.Label), _theme)) return;
         }
         finally { _popup.HoldOpen = false; }
         _settings.Accounts.Remove(account);
@@ -573,7 +580,7 @@ sealed class TrayController
     {
         _popup.HoldOpen = true;
         string? name;
-        try { name = await Dialogs.Ask("Renombrar cuenta", "Nombre de la cuenta:", account.Label, _theme); }
+        try { name = await Dialogs.Ask(L.T("Renombrar cuenta"), L.T("Nombre de la cuenta:"), account.Label, _theme); }
         finally { _popup.HoldOpen = false; }
         if (name is null) return;
         account.Label = name;
@@ -618,21 +625,21 @@ sealed class TrayController
         try
         {
             StartupRegistration.Set(setup.StartWithSystem);
-            lines.Add(setup.StartWithSystem ? "Iniciará con el sistema." : "No iniciará con el sistema.");
+            lines.Add(setup.StartWithSystem ? L.T("Iniciará con el sistema.") : L.T("No iniciará con el sistema."));
         }
-        catch (Exception ex) { lines.Add($"Iniciar con el sistema: no se pudo cambiar ({ex.Message})."); }
+        catch (Exception ex) { lines.Add(L.T("Iniciar con el sistema: no se pudo cambiar ({0}).", ex.Message)); }
         PushSettings();
         if (setup.NotificationsOn != _settings.Notifications) ToggleNotifications();
-        lines.Add(_settings.Notifications ? "Notificaciones encendidas." : "Notificaciones apagadas.");
-        if (lines.Any(l => l.Contains("hook")))
-            lines.Add("Los avisos de permisos funcionan en las sesiones de Claude Code que se abran desde ahora.");
+        lines.Add(_settings.Notifications ? L.T("Notificaciones encendidas.") : L.T("Notificaciones apagadas."));
+        if (setup.HooksChanged > 0)
+            lines.Add(L.T("Los avisos de permisos funcionan en las sesiones de Claude Code que se abran desde ahora."));
         await Dialogs.Info(string.Join(Environment.NewLine, lines), _theme);
     }
 
     async Task RemoveSetupAsync()
     {
-        if (!await Dialogs.Confirm("Se quitará el hook de avisos de permisos de cada settings.json (con respaldo) y el inicio con el sistema. "
-                + "La app sigue funcionando hasta que la cierre. ¿Continuar?", _theme))
+        if (!await Dialogs.Confirm(L.T("Se quitará el hook de avisos de permisos de cada settings.json (con respaldo) y el inicio con el sistema. "
+                + "La app sigue funcionando hasta que la cierre. ¿Continuar?"), _theme))
             return;
         var lines = new List<string>();
         foreach (var dir in SetupDirs())
@@ -640,13 +647,29 @@ sealed class TrayController
             var state = HookInstaller.Status(dir, ExePath);
             if (state is not (HookInstaller.State.Installed or HookInstaller.State.Outdated)) continue;
             var name = dir.Replace(Account.Home, "~");
-            try { HookInstaller.Uninstall(dir); lines.Add($"{name}: hook quitado."); }
-            catch (Exception ex) { lines.Add($"{name}: no se pudo quitar ({ex.Message})."); }
+            try { HookInstaller.Uninstall(dir); lines.Add(L.T("{0}: hook quitado.", name)); }
+            catch (Exception ex) { lines.Add(L.T("{0}: no se pudo quitar ({1}).", name, ex.Message)); }
         }
-        try { StartupRegistration.Set(false); lines.Add("Ya no inicia con el sistema."); }
-        catch (Exception ex) { lines.Add($"Iniciar con el sistema: no se pudo quitar ({ex.Message})."); }
+        try { StartupRegistration.Set(false); lines.Add(L.T("Ya no inicia con el sistema.")); }
+        catch (Exception ex) { lines.Add(L.T("Iniciar con el sistema: no se pudo quitar ({0}).", ex.Message)); }
         PushSettings();
         await Dialogs.Info(string.Join(Environment.NewLine, lines), _theme);
+    }
+
+    /// <summary>El idioma se fija al abrir la app: se guarda y la app se reinicia.</summary>
+    void SetLanguage(string language)
+    {
+        if (language == L.Language) return;
+        _settings.Language = language;
+        SettingsStore.Save(_settings);
+        // Abre otra instancia, que espera a que esta termine de cerrarse (--reiniciar), y se cierra.
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ExePath) { ArgumentList = { "--reiniciar" }, UseShellExecute = false })?.Dispose(); }
+        catch (Exception ex)
+        {
+            ErrorLog.Write(ex);
+            return;
+        }
+        Dispatcher.UIThread.Post(Quit);
     }
 
     void Quit()

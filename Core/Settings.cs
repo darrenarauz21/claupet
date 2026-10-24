@@ -35,6 +35,8 @@ sealed class Account
 
 sealed class AppSettings
 {
+    /// <summary>El idioma de la app (L.Choices); null: el del sistema.</summary>
+    public string? Language { get; set; }
     public List<Account> Accounts { get; set; } = new();
     /// <summary>Carpetas quitadas a mano: la detección automática no las vuelve a agregar.</summary>
     public List<string> Ignored { get; set; } = new();

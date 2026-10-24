@@ -54,7 +54,7 @@ static class StartupRegistration
     static string DesktopEntry() =>
         "[Desktop Entry]\n"
         + "Type=Application\n"
-        + "Name=Uso de Claude\n"
+        + "Name=Claupet\n"
         + $"Exec=\"{Exe}\"\n"
         + "Icon=uso-de-claude\n"
         + "X-GNOME-Autostart-enabled=true\n";

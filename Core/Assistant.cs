@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -16,10 +17,10 @@ static class AssistantModels
         [("haiku", "Haiku"), ("sonnet", "Sonnet"), ("opus", "Opus"), ("fable", "Fable")];
 
     /// <summary>Para la isla: primero «el de sus sesiones» (Id vacío).</summary>
-    public static readonly (string Id, string Label)[] IslandChoices = [("", "El de sus sesiones"), .. Choices];
+    public static readonly (string Id, string Label)[] IslandChoices = [("", L.T("El de sus sesiones")), .. Choices];
 
     public static string Label(string? id) =>
-        string.IsNullOrEmpty(id) ? "El de sus sesiones" : Choices.FirstOrDefault(c => c.Id == id).Label ?? id;
+        string.IsNullOrEmpty(id) ? L.T("El de sus sesiones") : Choices.FirstOrDefault(c => c.Id == id).Label ?? id;
 
 }
 
@@ -29,7 +30,7 @@ static class ClaupetVoices
     public const string Female = "F4", Male = "M1", Windows = "windows";
 
     public static readonly (string Id, string Label)[] Choices =
-        [(Female, "Femenina"), (Male, "Masculina"), (Windows, "La de Windows")];
+        [(Female, L.T("Femenina")), (Male, L.T("Masculina")), (Windows, L.T("La de Windows"))];
 
     public static string Label(string id) => Choices.FirstOrDefault(c => c.Id == id).Label ?? Choices[0].Label;
 
@@ -44,7 +45,7 @@ static class ClaupetVoices
 static class MicKeys
 {
     public static readonly (string Id, string Label)[] Choices =
-        [("RControlKey", "Ctrl derecho"), ("RMenu", "Alt derecho"), ("RShiftKey", "Mayús derecha")];
+        [("RControlKey", L.T("Ctrl derecho")), ("RMenu", L.T("Alt derecho")), ("RShiftKey", L.T("Mayús derecha"))];
 
     /// <summary>Es una de las de mantener (si no, una grabada).</summary>
     public static bool IsHold(string id) => Choices.Any(c => c.Id == id);
@@ -70,9 +71,9 @@ static class KeyNames
 
     public static string Label(string combo)
     {
-        if (combo == Copilot) return "Tecla Copilot";
+        if (combo == Copilot) return L.T("Tecla Copilot");
         return string.Join("+", combo.Split('+').Select(part =>
-            Spanish.TryGetValue(part, out var name) ? name
+            Spanish.TryGetValue(part, out var name) ? L.T(name)
             : part.Length == 2 && part[0] == 'D' && char.IsDigit(part[1]) ? part[1..]
             : part.StartsWith("NumPad") ? "Num " + part[6..]
             : part));
@@ -207,6 +208,9 @@ static class Assistant
 
     static readonly string[] Marks = [TaskMark, ActionMark];
 
+    /// <summary>Cuánto se espera sin que Claude Code diga nada antes de cerrarlo (buscar en internet tarda, pero no tanto).</summary>
+    static readonly TimeSpan Silence = TimeSpan.FromSeconds(90);
+
     /// <summary>Lo escrito hasta ahora puede ser el comienzo de una marca (o ya la trae completa).</summary>
     static bool MayBeMark(string start) => Marks.Any(m => start.Length <= m.Length
         ? m.StartsWith(start, StringComparison.OrdinalIgnoreCase)
@@ -221,24 +225,12 @@ static class Assistant
     {
         string? claude = FindClaude();
         if (claude is null)
-            return new AssistantResult("", null, null, null, "No encontré Claude Code. ¿Está instalado y en el PATH?");
+            return new AssistantResult("", null, null, null, L.T("No encontré Claude Code. ¿Está instalado y en el PATH?"));
 
         Directory.CreateDirectory(WorkDir);
         var systemFile = Path.Combine(WorkDir, request.Voice == AssistantVoice.Mascot ? "mascota.txt" : "isla.txt");
         await File.WriteAllTextAsync(systemFile, SystemPrompt(request), cancel);
 
-        var start = new ProcessStartInfo
-        {
-            WorkingDirectory = WorkDir,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-            StandardInputEncoding = new UTF8Encoding(false),
-        };
         var args = new List<string> { "-p", "--safe-mode", "--no-session-persistence", "--verbose",
             "--output-format", "stream-json", "--include-partial-messages", "--system-prompt-file", systemFile };
         if (request.File is { } file)
@@ -251,34 +243,19 @@ static class Assistant
             "--permission-mode", "dontAsk", "--permission-prompts", "none"]);
         if (!string.IsNullOrEmpty(request.Model)) args.AddRange(["--model", request.Model]);
 
-        if (claude.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
-        {
-            // Instalado con npm: claude.cmd va por cmd.exe. Los argumentos son solo opciones y rutas, sin texto de la persona.
-            start.FileName = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
-            start.ArgumentList.Add("/d");
-            start.ArgumentList.Add("/s");
-            start.ArgumentList.Add("/c");
-            start.ArgumentList.Add(claude);
-        }
-        else start.FileName = claude;
-        foreach (var arg in args) start.ArgumentList.Add(arg);
-
-        // La cuenta: la carpeta por defecto no lleva CLAUDE_CONFIG_DIR. Y nada heredado de una sesión de
-        // Claude Code (si la app se abrió desde una), para que no se crea anidada.
-        if (request.ConfigDir is null || Account.SamePath(request.ConfigDir, Account.DefaultDir)) start.Environment.Remove("CLAUDE_CONFIG_DIR");
-        else start.Environment["CLAUDE_CONFIG_DIR"] = request.ConfigDir;
-        foreach (var name in new[] { "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT", "ANTHROPIC_API_KEY" })
-            start.Environment.Remove(name);
-
-        using var process = new Process { StartInfo = start };
+        using var process = new Process { StartInfo = ClaudeStart(claude, request.ConfigDir, args) };
         try { process.Start(); }
-        catch (Exception ex) { return new AssistantResult("", null, null, null, $"No se pudo abrir Claude Code: {ex.Message}"); }
+        catch (Exception ex) { return new AssistantResult("", null, null, null, L.T("No se pudo abrir Claude Code: {0}", ex.Message)); }
         onStage?.Invoke(AssistantStage.Opening);
 
-        using var kill = cancel.Register(() =>
-        {
-            try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch (Exception) { }
-        });
+        using var kill = cancel.Register(() => Kill(process));
+        // Sin internet Claude Code reintenta un buen rato sin decir nada: si no hay conexión (y no llegó
+        // nada aún) se cierra enseguida, y también si pasa Silence sin que llegue nada. Responde la app (Offline).
+        var heard = false;
+        var online = Connectivity.IsOnlineAsync();
+        _ = online.ContinueWith(t => { if (!t.Result && !heard) Kill(process); }, TaskScheduler.Default);
+        using var silence = new CancellationTokenSource(Silence);
+        using var killOnSilence = silence.Token.Register(() => Kill(process));
 
         await process.StandardInput.WriteAsync(UserMessage(request));
         process.StandardInput.Close();
@@ -327,6 +304,7 @@ static class Assistant
 
         while (await process.StandardOutput.ReadLineAsync(cancel) is { } line)
         {
+            silence.CancelAfter(Silence);
             if (line.Length == 0 || line[0] != '{') continue;
             try
             {
@@ -338,6 +316,7 @@ static class Assistant
                         model = Json.Str(r, "model") ?? model;
                         break;
                     case "stream_event" when r.TryGetProperty("event", out var e):
+                        heard = true; // ya respondió el servicio: hay conexión
                         switch (Json.Str(e, "type"))
                         {
                             case "message_start" when e.TryGetProperty("message", out var m):
@@ -360,7 +339,7 @@ static class Assistant
                     case "result":
                         final = Json.Str(r, "result");
                         if (r.TryGetProperty("is_error", out var isError) && isError.ValueKind == JsonValueKind.True)
-                            error = final ?? "Claude Code no pudo responder.";
+                            error = final ?? L.T("Claude Code no pudo responder.");
                         if (r.TryGetProperty("modelUsage", out var usage) && usage.ValueKind == JsonValueKind.Object)
                             model = usage.EnumerateObject().Select(p => p.Name).FirstOrDefault(n => !n.Contains("haiku")) ?? model;
                         break;
@@ -373,10 +352,12 @@ static class Assistant
         if (cancel.IsCancellationRequested) return new AssistantResult(text.ToString(), null, model, null, "Cancelado.");
 
         var answer = (final ?? text.ToString()).Replace("**", "").Trim();
+        if ((answer.Length == 0 || error is not null) && !await online) return Offline(request);
         if (answer.Length == 0 && error is null)
         {
             var problem = (await stderr).Trim();
-            error = problem.Length > 0 ? problem.Split('\n')[0].Trim() : "Claude Code no respondió.";
+            error = silence.IsCancellationRequested ? L.T("Claude Code no respondió a tiempo.")
+                : problem.Length > 0 ? problem.Split('\n')[0].Trim() : L.T("Claude Code no respondió.");
         }
         if (error is not null) return new AssistantResult("", null, model, null, Friendly(error));
 
@@ -431,53 +412,146 @@ static class Assistant
     static string Friendly(string error)
     {
         if (error.Contains("rate limit", StringComparison.OrdinalIgnoreCase) || error.Contains("usage limit", StringComparison.OrdinalIgnoreCase))
-            return "Se alcanzó el límite de uso de esa cuenta.";
+            return L.T("Se alcanzó el límite de uso de esa cuenta.");
         if (error.Contains("login", StringComparison.OrdinalIgnoreCase) || error.Contains("authenticat", StringComparison.OrdinalIgnoreCase))
-            return "Esa cuenta pide iniciar sesión en Claude Code.";
+            return L.T("Esa cuenta pide iniciar sesión en Claude Code.");
         return error.Length > 160 ? error[..160] + "…" : error;
+    }
+
+    /// <summary>La respuesta sin conexión: lo simple se contesta aquí y lo demás se avisa. Un archivo no se puede leer sin Claude.</summary>
+    static AssistantResult Offline(AssistantRequest request)
+    {
+        if (request.File is not null)
+            return new AssistantResult("", null, null, null, L.T("Sin internet no puedo leerlo. Revisa tu conexión."));
+        var text = LocalAnswer(request.Prompt)
+            ?? L.T("No puedo responder a esa pregunta: en este momento no tengo acceso a internet. Revisa tu conexión.");
+        return new AssistantResult(text, null, null, null, null, Spoken: text);
+    }
+
+    /// <summary>Lo que se responde sin Claude: la hora, la fecha y el saludo, en español o en inglés. null si es otra cosa.</summary>
+    static string? LocalAnswer(string prompt)
+    {
+        var text = Simple(prompt);
+        bool Says(params string[] phrases) => phrases.Any(p => text.Contains($" {p} ", StringComparison.Ordinal));
+        var now = DateTime.Now; // en la cultura del idioma elegido (L.Use)
+        if (Says("que hora", "la hora", "hora es", "what time", "the time"))
+            return L.IsSpanish
+                ? $"{(now.Hour % 12 == 1 ? "Es la" : "Son las")} {now:h:mm tt} (^_^)" // «p. m.» ya cierra con punto
+                : $"It's {now:h:mm tt}. (^_^)";
+        if (Says("que dia", "que fecha", "la fecha", "dia es hoy", "a cuanto estamos", "what day", "what date", "the date", "today s date"))
+            return L.T("Hoy es {0:dddd d 'de' MMMM 'de' yyyy}. (^_^)", now);
+        if (Says("hola", "holi", "buenas", "buenos dias", "hey", "que tal", "como estas", "como te va",
+                "hello", "hi", "good morning", "good afternoon", "good evening", "how are you", "what s up"))
+            return L.T("¡Hola! (^_^) Estoy bien, aunque ahora mismo no tengo internet: sí puedo decirte la hora o la fecha.");
+        return null;
+    }
+
+    /// <summary>En minúsculas, sin tildes ni signos y con un espacio en cada borde, para buscar frases enteras.</summary>
+    static string Simple(string text)
+    {
+        var plain = new StringBuilder(" ");
+        foreach (var c in text.ToLowerInvariant().Normalize(NormalizationForm.FormD))
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark) continue;
+            var letter = char.IsLetterOrDigit(c);
+            if (letter || plain[^1] != ' ') plain.Append(letter ? c : ' ');
+        }
+        if (plain[^1] != ' ') plain.Append(' ');
+        return plain.ToString();
+    }
+
+    /// <summary>
+    /// Cómo se corre claude para la app (el asistente y SessionRenewal): en WorkDir, con la cuenta, sin nada
+    /// heredado de una sesión de Claude Code y con el proxy de Windows.
+    /// </summary>
+    public static ProcessStartInfo ClaudeStart(string claude, string? configDir, IEnumerable<string> args)
+    {
+        Directory.CreateDirectory(WorkDir);
+        var start = new ProcessStartInfo
+        {
+            WorkingDirectory = WorkDir,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+            StandardInputEncoding = new UTF8Encoding(false),
+        };
+        if (claude.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
+        {
+            // Instalado con npm: claude.cmd va por cmd.exe. Los argumentos son solo opciones y rutas, sin texto de la persona.
+            start.FileName = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
+            start.ArgumentList.Add("/d");
+            start.ArgumentList.Add("/s");
+            start.ArgumentList.Add("/c");
+            start.ArgumentList.Add(claude);
+        }
+        else start.FileName = claude;
+        foreach (var arg in args) start.ArgumentList.Add(arg);
+
+        // La cuenta: la carpeta por defecto no lleva CLAUDE_CONFIG_DIR. Y nada heredado de una sesión de
+        // Claude Code (si la app se abrió desde una), para que no se crea anidada.
+        if (configDir is null || Account.SamePath(configDir, Account.DefaultDir)) start.Environment.Remove("CLAUDE_CONFIG_DIR");
+        else start.Environment["CLAUDE_CONFIG_DIR"] = configDir;
+        foreach (var name in new[] { "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT", "ANTHROPIC_API_KEY" })
+            start.Environment.Remove(name);
+        // Claude Code no lee el proxy de Windows: sin esto, en una red con proxy la consulta no sale.
+        if (SystemProxy.ForClaude() is { } proxy) start.Environment["HTTPS_PROXY"] = proxy;
+        return start;
+    }
+
+    /// <summary>Cierra el proceso, y lo que abrió, si sigue corriendo.</summary>
+    public static void Kill(Process process)
+    {
+        try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch (Exception) { }
     }
 
     static string SystemPrompt(AssistantRequest r)
     {
+        // En el idioma de la app (L.T). Las marcas y los nombres de las acciones y sus valores son del
+        // protocolo con SystemActions: van igual en todos los idiomas.
         var who = r.Chibi
-            ? "una chica chibi de pelo naranja con un hoodie de cangrejo"
-            : "la mascota clásica de Claude, una criaturita naranja de pixeles";
+            ? L.T("una chica chibi de pelo naranja con un hoodie de cangrejo")
+            : L.T("la mascota clásica de Claude, una criaturita naranja de pixeles");
         var prompt = new StringBuilder();
-        prompt.AppendLine($"Eres Claupet, la mascota de escritorio de Claude: {who}. Hablas en español, de tú, con calidez y alguna carita de texto como (^_^).");
+        prompt.AppendLine(L.T("Eres Claupet, la mascota de escritorio de Claude: {0}. Hablas en español, de tú, con calidez y alguna carita de texto como (^_^).", who));
         if (r.File is not null)
         {
-            prompt.AppendLine("Te soltaron un archivo (o una carpeta) para que lo mires. Si puedes leerlo con tus herramientas (texto, código, PDF, imágenes), léelo y responde así:");
-            prompt.AppendLine("primera línea: lo esencial en una frase, de 140 caracteres como máximo;");
-            prompt.AppendLine("después, en un párrafo aparte, un resumen claro de 2 a 4 frases.");
-            prompt.AppendLine("Sin títulos ni markdown.");
-            prompt.AppendLine($"Si con tus herramientas no se puede abrir (Excel, Word, PowerPoint, comprimidos u otros binarios), no lo intentes ni digas que no puedes: encárgaselo a Claude Code. Empieza la respuesta con una línea exacta «{TaskMark} Abre «<la ruta completa del archivo>» y <lo que haga falta: resumirlo, decir qué contiene…>» y, en la línea siguiente, una frase corta para la persona.");
+            prompt.AppendLine(L.T("Te soltaron un archivo (o una carpeta) para que lo mires. Si puedes leerlo con tus herramientas (texto, código, PDF, imágenes), léelo y responde así:"));
+            prompt.AppendLine(L.T("primera línea: lo esencial en una frase, de 140 caracteres como máximo;"));
+            prompt.AppendLine(L.T("después, en un párrafo aparte, un resumen claro de 2 a 4 frases."));
+            prompt.AppendLine(L.T("Sin títulos ni markdown."));
+            prompt.AppendLine(L.T("Si con tus herramientas no se puede abrir (Excel, Word, PowerPoint, comprimidos u otros binarios), no lo intentes ni digas que no puedes: encárgaselo a Claude Code. Empieza la respuesta con una línea exacta «{0} Abre «<la ruta completa del archivo>» y <lo que haga falta: resumirlo, decir qué contiene…>» y, en la línea siguiente, una frase corta para la persona.", TaskMark));
         }
         else if (r.Voice == AssistantVoice.Mascot)
-            prompt.AppendLine("Respondes en una o dos frases cortas: como máximo 220 caracteres, sin listas, sin markdown, sin títulos.");
+            prompt.AppendLine(L.T("Respondes en una o dos frases cortas: como máximo 220 caracteres, sin listas, sin markdown, sin títulos."));
         else
-            prompt.AppendLine("Respondes claro y breve: hasta 4 frases, o una lista corta con guiones si ayuda. En texto plano: sin títulos, negritas ni markdown.");
-        prompt.AppendLine("Si no sabes algo, dilo; no inventes.");
+            prompt.AppendLine(L.T("Respondes claro y breve: hasta 4 frases, o una lista corta con guiones si ayuda. En texto plano: sin títulos, negritas ni markdown."));
+        prompt.AppendLine(L.T("Si no sabes algo, dilo; no inventes."));
         if (r.Expressive)
-            prompt.AppendLine($"Tu respuesta se lee en voz alta con tu voz: si viene al caso, pon una de estas etiquetas donde se oiga, como mucho una por respuesta: {string.Join(", ", Expressions.Tags.Select(t => $"<{t}>"))} (risa, suspiro, respiración). No uses otras.");
+            prompt.AppendLine(L.T("Tu respuesta se lee en voz alta con tu voz: si viene al caso, pon una de estas etiquetas donde se oiga, como mucho una por respuesta: {0} (risa, suspiro, respiración). No uses otras.",
+                string.Join(", ", Expressions.Tags.Select(t => $"<{t}>"))));
         if (r.File is null)
         {
             prompt.AppendLine();
-            prompt.AppendLine("Internet: puedes buscar con WebSearch y leer páginas con WebFetch. No anuncies que vas a buscar: busca y responde, sin enlaces ni lista de fuentes. Para el clima, usa WebFetch con https://wttr.in/<ciudad>?format=j1&lang=es (sin ciudad, https://wttr.in/?format=j1&lang=es, que usa la ubicación del equipo).");
+            prompt.AppendLine(L.T("Internet: puedes buscar con WebSearch y leer páginas con WebFetch. No anuncies que vas a buscar: busca y responde, sin enlaces ni lista de fuentes. Para el clima, usa WebFetch con https://wttr.in/<ciudad>?format=j1&lang=es (sin ciudad, https://wttr.in/?format=j1&lang=es, que usa la ubicación del equipo)."));
             prompt.AppendLine();
-            prompt.AppendLine($"Acciones en este equipo: si te piden una de esta lista, empieza la respuesta con una línea exacta «{ActionMark} {{\"accion\":\"…\",\"valor\":\"…\"}}» (el JSON en una sola línea) y, en la línea siguiente, una frase corta diciendo lo que hiciste. Una acción por respuesta.");
-            prompt.AppendLine("- fondo: el fondo de pantalla. valor: la ruta de una imagen del equipo o la URL https directa de una imagen .jpg o .png.");
-            prompt.AppendLine("- tema: «claro» u «oscuro» (el modo de Windows).");
-            prompt.AppendLine("- color: el color de esta app: Claude, Océano, Bosque, Lavanda, Rosa o Grafito.");
-            prompt.AppendLine("- volumen: un número de 0 a 100, «subir», «bajar», «silenciar» o «activar».");
-            prompt.AppendLine("- musica: «reproducir», «pausar», «siguiente» o «anterior» (lo que suene en Windows).");
-            prompt.AppendLine("- abrir: una URL (https, spotify: o ms-settings:) o el nombre de una app del menú Inicio. Para poner una canción o un artista, busca el video con WebSearch y abre su URL de YouTube; si piden Spotify, abre spotify:search:<lo que pidan>.");
+            prompt.AppendLine(L.T("Acciones en este equipo: si te piden una de esta lista, empieza la respuesta con una línea exacta «{0} {{\"accion\":\"…\",\"valor\":\"…\"}}» (el JSON en una sola línea) y, en la línea siguiente, una frase corta diciendo lo que hiciste. Una acción por respuesta.", ActionMark));
+            prompt.AppendLine(L.T("- fondo: el fondo de pantalla. valor: la ruta de una imagen del equipo o la URL https directa de una imagen .jpg o .png."));
+            prompt.AppendLine(L.T("- tema: «claro» u «oscuro» (el modo de Windows)."));
+            prompt.AppendLine(L.T("- color: el color de esta app: {0}.", string.Join(", ", Theme.Palettes.Select(p => p.Label))));
+            prompt.AppendLine(L.T("- volumen: un número de 0 a 100, «subir», «bajar», «silenciar» o «activar»."));
+            prompt.AppendLine(L.T("- musica: «reproducir», «pausar», «siguiente» o «anterior» (lo que suene en Windows)."));
+            prompt.AppendLine(L.T("- abrir: una URL (https, spotify: o ms-settings:) o el nombre de una app del menú Inicio. Para poner una canción o un artista, busca el video con WebSearch y abre su URL de YouTube; si piden Spotify, abre spotify:search:<lo que pidan>."));
             prompt.AppendLine();
-            prompt.AppendLine($"Lo demás, encárgaselo a Claude Code: si te piden algo que no puedes hacer con tus herramientas ni con esas acciones (abrir o editar archivos, otros ajustes de Windows, instalar algo, programar, revisar un proyecto…), no lo intentes ni digas que no puedes. Empieza la respuesta con una línea exacta «{TaskMark} <la instrucción completa y clara para Claude Code, en español>» y, en la línea siguiente, una frase corta para la persona. La sesión se abrirá en la carpeta que elija la persona: no inventes rutas, pero si la persona nombró un archivo o una carpeta, ponlo tal cual. Si solo preguntan algo, responde normal.");
+            prompt.AppendLine(L.T("Lo demás, encárgaselo a Claude Code: si te piden algo que no puedes hacer con tus herramientas ni con esas acciones (abrir o editar archivos, otros ajustes de Windows, instalar algo, programar, revisar un proyecto…), no lo intentes ni digas que no puedes. Empieza la respuesta con una línea exacta «{0} <la instrucción completa y clara para Claude Code, en español>» y, en la línea siguiente, una frase corta para la persona. La sesión se abrirá en la carpeta que elija la persona: no inventes rutas, pero si la persona nombró un archivo o una carpeta, ponlo tal cual. Si solo preguntan algo, responde normal.", TaskMark));
         }
         if (r.Context.Length > 0)
         {
             prompt.AppendLine();
-            prompt.AppendLine("Lo que sabes del momento (úsalo solo si viene al caso; no lo recites):");
+            prompt.AppendLine(L.T("Lo que sabes del momento (úsalo solo si viene al caso; no lo recites):"));
             prompt.AppendLine(r.Context);
         }
         return prompt.ToString();
@@ -486,12 +560,13 @@ static class Assistant
     static string UserMessage(AssistantRequest r)
     {
         if (r.File is { } file)
-            return $"Mira este {(Directory.Exists(file) ? "carpeta" : "archivo")}: {file}" + (r.Prompt.Length > 0 ? $"\n\n{r.Prompt}" : "");
+            return (Directory.Exists(file) ? L.T("Mira esta carpeta: {0}", file) : L.T("Mira este archivo: {0}", file))
+                + (r.Prompt.Length > 0 ? $"\n\n{r.Prompt}" : "");
         if (r.History.Count == 0) return r.Prompt;
-        var text = new StringBuilder("La conversación hasta ahora:\n");
+        var text = new StringBuilder(L.T("La conversación hasta ahora:") + "\n");
         foreach (var turn in r.History.TakeLast(8))
-            text.Append(turn.FromPerson ? "Persona: " : "Tú: ").AppendLine(turn.Text.ReplaceLineEndings(" "));
-        text.AppendLine().Append("Persona: ").Append(r.Prompt);
+            text.Append(turn.FromPerson ? L.T("Persona:") + " " : L.T("Tú:") + " ").AppendLine(turn.Text.ReplaceLineEndings(" "));
+        text.AppendLine().Append(L.T("Persona:")).Append(' ').Append(r.Prompt);
         return text.ToString();
     }
 

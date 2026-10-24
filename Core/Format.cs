@@ -7,22 +7,22 @@ static class Format
         if (resetsAt is null) return "";
         var local = resetsAt.Value.LocalDateTime;
         var span = local - DateTime.Now;
-        if (span <= TimeSpan.Zero) return "Reinicia ahora";
+        if (span <= TimeSpan.Zero) return L.T("Reinicia ahora");
         if (span.TotalHours < 24)
-            return "Reinicia en " + (span.TotalHours >= 1
+            return L.T("Reinicia en {0}", span.TotalHours >= 1
                 ? $"{(int)span.TotalHours} h {span.Minutes} min"
                 : $"{Math.Max(1, span.Minutes)} min");
-        return $"Reinicia el {local:dddd}, {local:t}";
+        return L.T("Reinicia el {0:dddd}, {0:t}", local);
     }
 
     public static string Ago(DateTimeOffset? at)
     {
         if (at is null) return "";
         var span = DateTimeOffset.Now - at.Value;
-        if (span.TotalMinutes < 1) return "ahora";
-        if (span.TotalMinutes < 60) return $"hace {(int)span.TotalMinutes} min";
-        if (span.TotalHours < 24) return $"hace {(int)span.TotalHours} h";
-        return $"hace {(int)span.TotalDays} d";
+        if (span.TotalMinutes < 1) return L.T("ahora");
+        if (span.TotalMinutes < 60) return L.T("hace {0} min", (int)span.TotalMinutes);
+        if (span.TotalHours < 24) return L.T("hace {0} h", (int)span.TotalHours);
+        return L.T("hace {0} d", (int)span.TotalDays);
     }
 
     public static string Duration(TimeSpan span)
@@ -62,15 +62,15 @@ static class Format
     {
         if (s.Model is null) return "";
         var parts = new List<string> { Model(s.Model) };
-        if (s.Effort is { } effort) parts.Add("esfuerzo " + effort);
-        if (s.Advisor is { } advisor) parts.Add("asesor " + Model(advisor));
+        if (s.Effort is { } effort) parts.Add(L.T("esfuerzo {0}", effort));
+        if (s.Advisor is { } advisor) parts.Add(L.T("asesor {0}", Model(advisor)));
         return string.Join(" · ", parts);
     }
 
     public static string Local(LocalTotals? t) => t switch
     {
         null => "",
-        { Responses: 0 } => "Hoy: sin actividad",
-        _ => $"Hoy: {t.Responses} respuestas · {Tokens(t.Output)} tokens",
+        { Responses: 0 } => L.T("Hoy: sin actividad"),
+        _ => L.T("Hoy: {0} respuestas · {1} tokens", t.Responses, Tokens(t.Output)),
     };
 }

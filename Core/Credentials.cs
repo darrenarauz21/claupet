@@ -31,9 +31,9 @@ static class Credentials
 
     /// <summary>Dónde están, para el diagnóstico: «archivo», «Llavero» o «no».</summary>
     public static string Describe(string configDir) =>
-        File.Exists(FilePath(configDir)) ? "archivo"
-        : OperatingSystem.IsMacOS() && Keychain(configDir) is not null ? "Llavero"
-        : "no";
+        File.Exists(FilePath(configDir)) ? L.T("archivo")
+        : OperatingSystem.IsMacOS() && Keychain(configDir) is not null ? L.T("Llavero")
+        : L.T("no");
 
     static string? Keychain(string configDir)
     {

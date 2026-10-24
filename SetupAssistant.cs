@@ -19,7 +19,7 @@ sealed class SetupForm : Form
 
     public SetupForm(AppSettings settings, string exePath, Theme theme, IEnumerable<string> configDirs)
     {
-        Text = "Configurar Uso de Claude";
+        Text = L.T("Configurar Claupet");
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
@@ -51,31 +51,31 @@ sealed class SetupForm : Form
             Margin = new Padding(0, LogicalToDeviceUnits(4), 0, 0),
         };
 
-        layout.Controls.Add(Heading("Configuración", Fonts.Make("Georgia", 14f, "Cambria"), theme.Text));
-        layout.Controls.Add(Heading("Elija qué configurar. Nada cambia sin su confirmación.", small, theme.Secondary));
+        layout.Controls.Add(Heading(L.T("Configuración"), Fonts.Make("Georgia", 14f, "Cambria"), theme.Text));
+        layout.Controls.Add(Heading(L.T("Elija qué configurar. Nada cambia sin su confirmación."), small, theme.Secondary));
 
-        layout.Controls.Add(Heading("Avisos de permisos", Font, theme.Text, top: 14));
-        layout.Controls.Add(Heading("Agrega un hook al settings.json de Claude Code; antes se guarda un respaldo.", small, theme.Tertiary));
+        layout.Controls.Add(Heading(L.T("Avisos de permisos"), Font, theme.Text, top: 14));
+        layout.Controls.Add(Heading(L.T("Agrega un hook al settings.json de Claude Code; antes se guarda un respaldo."), small, theme.Tertiary));
         foreach (var dir in configDirs)
         {
             var state = HookInstaller.Status(dir, exePath);
             var name = dir.Replace(Account.Home, "~");
             var box = state switch
             {
-                HookInstaller.State.Installed => Option($"{name} — ya está configurado", true, enabled: false),
-                HookInstaller.State.Outdated => Option($"{name} — apunta a otra ruta: actualizarlo", true),
-                HookInstaller.State.Unreadable => Option($"{name} — su settings.json tiene errores; no se toca", false, enabled: false),
-                _ => Option($"{name} — agregar", true),
+                HookInstaller.State.Installed => Option(L.T("{0} — ya está configurado", name), true, enabled: false),
+                HookInstaller.State.Outdated => Option(L.T("{0} — apunta a otra ruta: actualizarlo", name), true),
+                HookInstaller.State.Unreadable => Option(L.T("{0} — su settings.json tiene errores; no se toca", name), false, enabled: false),
+                _ => Option(L.T("{0} — agregar", name), true),
             };
             _rows.Add(new HookRow(dir, state, box));
             layout.Controls.Add(box);
         }
         if (_rows.Count == 0)
-            layout.Controls.Add(Heading("No se encontró ninguna carpeta de Claude Code.", small, theme.Tertiary));
+            layout.Controls.Add(Heading(L.T("No se encontró ninguna carpeta de Claude Code."), small, theme.Tertiary));
 
-        layout.Controls.Add(Heading("Programa", Font, theme.Text, top: 14));
-        _startup = Option("Iniciar con Windows", StartupRegistration.IsEnabled || !settings.SetupDone);
-        _notifications = Option("Mostrar notificaciones", settings.Notifications);
+        layout.Controls.Add(Heading(L.T("Programa"), Font, theme.Text, top: 14));
+        _startup = Option(L.T("Iniciar con Windows"), StartupRegistration.IsEnabled || !settings.SetupDone);
+        _notifications = Option(L.T("Mostrar notificaciones"), settings.Notifications);
         layout.Controls.Add(_startup);
         layout.Controls.Add(_notifications);
 
@@ -91,8 +91,8 @@ sealed class SetupForm : Form
             Padding = new Padding(LogicalToDeviceUnits(10), LogicalToDeviceUnits(3), LogicalToDeviceUnits(10), LogicalToDeviceUnits(3)),
             FlatAppearance = { BorderColor = primary ? theme.Accent : theme.Border },
         };
-        var apply = MakeButton("Aplicar", DialogResult.OK, primary: true);
-        var later = MakeButton("Ahora no", DialogResult.Cancel, primary: false);
+        var apply = MakeButton(L.T("Aplicar"), DialogResult.OK, primary: true);
+        var later = MakeButton(L.T("Ahora no"), DialogResult.Cancel, primary: false);
         buttons.Controls.AddRange(new Control[] { apply, later });
         layout.Controls.Add(buttons);
         Controls.Add(layout);
@@ -116,12 +116,12 @@ sealed class SetupForm : Form
             try
             {
                 var backup = HookInstaller.Install(row.Dir, exePath);
-                var verb = row.State == HookInstaller.State.Outdated ? "hook actualizado" : "hook agregado";
-                lines.Add(backup is null ? $"{name}: {verb}." : $"{name}: {verb} (respaldo: {Path.GetFileName(backup)}).");
+                var verb = row.State == HookInstaller.State.Outdated ? L.T("hook actualizado") : L.T("hook agregado");
+                lines.Add(backup is null ? $"{name}: {verb}." : L.T("{0}: {1} (respaldo: {2}).", name, verb, Path.GetFileName(backup)));
             }
             catch (Exception ex)
             {
-                lines.Add($"{name}: no se pudo cambiar ({ex.Message}).");
+                lines.Add(L.T("{0}: no se pudo cambiar ({1}).", name, ex.Message));
             }
         }
         return lines;

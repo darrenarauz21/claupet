@@ -15,7 +15,7 @@ sealed class Sounds : IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "sonidos");
     public static string CustomFolder => Path.Combine(Folder, "propios");
 
-    public static readonly (string Id, string Label)[] Packs = [("clasico", "Clásico"), ("risitas", "Risitas"), ("chibi", "Chibi")];
+    public static readonly (string Id, string Label)[] Packs = [("clasico", L.T("Clásico")), ("risitas", L.T("Risitas")), ("chibi", L.T("Chibi"))];
     static readonly string[] Names = ["terminado", "pregunta", "permiso", "fallo", "uso", "aviso"];
 
     enum Voice { Happy, Question, Knock, Sad, Neutral, Short }
@@ -66,14 +66,14 @@ sealed class Sounds : IDisposable
                 if (outdated) File.WriteAllText(versionFile, PackVersions[pack]);
             }
             var readme = Path.Combine(Folder, "LEEME.txt");
-            const string text =
-                "Sonidos de los avisos de Uso de Claude.\r\n\r\n"
+            var text = L.T(
+                "Sonidos de los avisos de Claupet.\r\n\r\n"
                 + "terminado: terminó o límite reiniciado\r\npregunta: le está preguntando\r\n"
                 + "permiso: necesita su permiso\r\nfallo: falló, se cerró o sesión vencida\r\n"
                 + "uso: uso al 80 o 95 %\r\naviso: reintentando\r\n\r\n"
                 + "clasico, risitas y chibi: los estilos de la app; se elige en Ajustes (Estilo de sonido).\r\n"
                 + "propios: ponga aquí un archivo con el mismo nombre (.wav o .mp3) y sonará ese en lugar del estilo.\r\n"
-                + "Si borra un sonido de un estilo, la app lo vuelve a crear.\r\n";
+                + "Si borra un sonido de un estilo, la app lo vuelve a crear.\r\n");
             if (!File.Exists(readme) || File.ReadAllText(readme) != text) File.WriteAllText(readme, text, Encoding.UTF8);
         }
         catch (Exception) { }

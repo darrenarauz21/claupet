@@ -222,7 +222,7 @@ static class ModelDownload
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var part = path + ".parte";
-        using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        using var http = SystemProxy.Client(Timeout.InfiniteTimeSpan);
         var failures = 0;
         progress.Report(Length(part));
         while (Length(part) < size)
@@ -232,7 +232,7 @@ static class ModelDownload
             catch (Exception ex) when (!cancel.IsCancellationRequested && ex is HttpRequestException or IOException or OperationCanceledException)
             {
                 failures = Length(part) > before ? 1 : failures + 1;
-                if (failures >= 8) throw new IOException("Se cortó la conexión varias veces seguidas.", ex);
+                if (failures >= 8) throw new IOException(L.T("Se cortó la conexión varias veces seguidas."), ex);
                 await Task.Delay(TimeSpan.FromSeconds(Math.Min(30, 3 * failures)), cancel);
             }
         }
@@ -240,7 +240,7 @@ static class ModelDownload
         if (Length(part) != size || !await Task.Run(() => Matches(part, sha256, cancel), cancel))
         {
             File.Delete(part);
-            throw new IOException("Lo descargado no es el modelo esperado; se borró.");
+            throw new IOException(L.T("Lo descargado no es el modelo esperado; se borró."));
         }
         File.Move(part, path, overwrite: true);
     }
@@ -292,7 +292,7 @@ static class ModelDownload
 }
 
 /// <summary>
-/// Pasa la voz grabada a texto con Whisper, en español, en el equipo. De a una: el modelo cargado ocupa
+/// Pasa la voz grabada a texto con Whisper, en el idioma de la app, en el equipo. De a una: el modelo cargado ocupa
 /// unos 850 MB de memoria, y VoiceInput lo suelta cuando no se usa.
 /// </summary>
 sealed class Transcriber : IDisposable
@@ -300,9 +300,10 @@ sealed class Transcriber : IDisposable
     /// <summary>Por debajo de este nivel (RMS de 16 bits, en trozos de 100 ms) no hay voz.</summary>
     const double Quiet = 350;
     /// <summary>Con silencio o ruido, Whisper «oye» frases de los subtítulos con que se entrenó.</summary>
-    static readonly string[] Phantoms = ["amara.org", "subtítulos realizados", "subtitulado por", "suscríbete", "gracias por ver"];
+    static readonly string[] Phantoms = ["amara.org", "subtítulos realizados", "subtitulado por", "suscríbete", "gracias por ver",
+        "thanks for watching", "thank you for watching", "subtitles by", "please subscribe"];
     /// <summary>El tono y las palabras que se esperan: ayuda a escribir bien «Claude» y los signos de pregunta.</summary>
-    const string Prompt = "Hola, Claude. ¿Cómo van mis sesiones de Claude Code?";
+    static string Prompt => L.T("Hola, Claude. ¿Cómo van mis sesiones de Claude Code?");
 
     readonly string _model;
     readonly SemaphoreSlim _one = new(1, 1);
@@ -365,7 +366,7 @@ sealed class Transcriber : IDisposable
                 // await using: si se cancela a mitad (un trozo parcial, al soltar la tecla), Dispose fallaría
                 // mientras Whisper todavía procesa; DisposeAsync espera a que termine.
                 await using var processor = Factory().CreateBuilder()
-                    .WithLanguage("es")
+                    .WithLanguage(L.Language)
                     .WithPrompt(Prompt)
                     .WithThreads(Threads)
                     .WithNoSpeechThreshold(0.6f)
@@ -684,7 +685,7 @@ sealed class VoiceInput : IDisposable
 
     /// <summary>Cómo se termina, para mostrarlo mientras escucha.</summary>
     public string Hint(string keyLabel) =>
-        _byButton ? "Envía al callar o con el micrófono" : _key.HandsFree ? $"Envía al callar o con {keyLabel}" : $"Suelte {keyLabel}";
+        _byButton ? L.T("Envía al callar o con el micrófono") : _key.HandsFree ? L.T("Envía al callar o con {0}", keyLabel) : L.T("Suelte {0}", keyLabel);
 
     /// <summary>El botón del micrófono: empieza a escuchar (sin mantener la tecla) o termina y envía.</summary>
     public void Toggle()
@@ -707,7 +708,7 @@ sealed class VoiceInput : IDisposable
         if (!_mic.Start())
         {
             _key.Reset();
-            Failed?.Invoke("No encuentro el micrófono, o Windows no deja usarlo (Configuración › Privacidad › Micrófono).");
+            Failed?.Invoke(L.T("No encuentro el micrófono, o Windows no deja usarlo (Configuración › Privacidad › Micrófono)."));
             return;
         }
         _take++;
@@ -766,7 +767,7 @@ sealed class VoiceInput : IDisposable
         catch (Exception ex)
         {
             ErrorLog.Write(ex);
-            if (take == _take) Failed?.Invoke("No pude pasar la voz a texto.");
+            if (take == _take) Failed?.Invoke(L.T("No pude pasar la voz a texto."));
         }
         _idle.Start();
     }
@@ -813,7 +814,7 @@ sealed class VoiceInput : IDisposable
 /// Lee las respuestas en voz alta (opcional). Con la voz de Claupet (Supertonic, femenina o masculina)
 /// si su modelo ya está en el equipo: frase por frase, sonando la primera mientras se arma la
 /// siguiente, y con las risas o suspiros que haya puesto Claude. Si no, o si se eligió, con una voz de
-/// Windows en español. El modelo cargado ocupa unos 550 MB de memoria: se suelta a los 3 minutos sin hablar.
+/// Windows en el idioma de la app. El modelo cargado ocupa unos 550 MB de memoria: se suelta a los 3 minutos sin hablar.
 /// </summary>
 sealed class ReadAloud : IDisposable
 {
@@ -830,21 +831,38 @@ sealed class ReadAloud : IDisposable
 
     public ReadAloud() => _idle = new System.Threading.Timer(_ => Unload());
 
-    public void Say(string text, string voice)
+    /// <summary>
+    /// Lo dice. started corre una sola vez, justo antes de que empiece a sonar (para mostrar el texto a la
+    /// vez que la voz); si no hay nada que decir o la voz falla, corre igual. Puede correr en otro hilo.
+    /// </summary>
+    public void Say(string text, string voice, Action? started = null)
     {
         Stop();
+        var once = 0;
+        void Started()
+        {
+            if (Interlocked.Exchange(ref once, 1) == 0) started?.Invoke();
+        }
         // Sin las caritas de texto, que se leerían letra por letra.
         var clean = Regex.Replace(text, @"\([^\p{L}\d\s]{1,8}\)|[\\/]\(.{1,6}\)[\\/]|[♪♫]", " ").Trim();
-        if (clean.Length == 0) return;
+        if (clean.Length == 0)
+        {
+            Started();
+            return;
+        }
         if (ClaupetVoices.IsClaupet(voice) && ClaupetVoiceModel.Ready)
         {
             var cancel = _speaking = new CancellationTokenSource();
-            _ = Task.Run(() => SpeakClaupet(clean, voice, cancel.Token));
+            _ = Task.Run(() => SpeakClaupet(clean, voice, Started, cancel.Token));
         }
-        else SayWithWindows(Expressions.Strip(clean));
+        else
+        {
+            Started();
+            SayWithWindows(Expressions.Strip(clean));
+        }
     }
 
-    void SpeakClaupet(string text, string voice, CancellationToken cancel)
+    void SpeakClaupet(string text, string voice, Action started, CancellationToken cancel)
     {
         try
         {
@@ -866,7 +884,11 @@ sealed class ReadAloud : IDisposable
                         rate = engine.SampleRate;
                     }
                     if (cancel.IsCancellationRequested) return;
-                    if (output is null) _output = output = new WaveOut(rate);
+                    if (output is null)
+                    {
+                        _output = output = new WaveOut(rate);
+                        started(); // la primera frase ya está lista: el texto sale con ella
+                    }
                     else output.Play(new float[(int)(Pause * rate)]);
                     output.Play(samples);
                 }
@@ -883,6 +905,7 @@ sealed class ReadAloud : IDisposable
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { ErrorLog.Write(ex); }
+        finally { started(); } // si se canceló o falló antes de sonar, el texto igual se muestra
     }
 
     void SayWithWindows(string text)
@@ -893,8 +916,8 @@ sealed class ReadAloud : IDisposable
             {
                 _windows = new System.Speech.Synthesis.SpeechSynthesizer();
                 _windows.SetOutputToDefaultAudioDevice();
-                var spanish = _windows.GetInstalledVoices().FirstOrDefault(v => v.Enabled && v.VoiceInfo.Culture.TwoLetterISOLanguageName == "es");
-                if (spanish is not null) _windows.SelectVoice(spanish.VoiceInfo.Name);
+                var same = _windows.GetInstalledVoices().FirstOrDefault(v => v.Enabled && v.VoiceInfo.Culture.TwoLetterISOLanguageName == L.Language);
+                if (same is not null) _windows.SelectVoice(same.VoiceInfo.Name);
             }
             _windows.SpeakAsync(text);
         }

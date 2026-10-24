@@ -43,11 +43,11 @@ sealed record Theme
     public static readonly (string Id, string Label, Color Light, Color Dark)[] Palettes =
     [
         ("claude", "Claude", Hex(0xD97757), Hex(0xD97757)),
-        ("oceano", "Océano", Hex(0x2F7FC1), Hex(0x5BA3E0)),
-        ("bosque", "Bosque", Hex(0x3F8A57), Hex(0x6DB283)),
-        ("lavanda", "Lavanda", Hex(0x7E62C4), Hex(0xA48BE0)),
-        ("rosa", "Rosa", Hex(0xC4507F), Hex(0xE07CA4)),
-        ("grafito", "Grafito", Hex(0x6E6C66), Hex(0xA8A69E)),
+        ("oceano", L.T("Océano"), Hex(0x2F7FC1), Hex(0x5BA3E0)),
+        ("bosque", L.T("Bosque"), Hex(0x3F8A57), Hex(0x6DB283)),
+        ("lavanda", L.T("Lavanda"), Hex(0x7E62C4), Hex(0xA48BE0)),
+        ("rosa", L.T("Rosa"), Hex(0xC4507F), Hex(0xE07CA4)),
+        ("grafito", L.T("Grafito"), Hex(0x6E6C66), Hex(0xA8A69E)),
     ];
 
     /// <summary>La paleta elegida (Id de Palettes); si no existe, la de Claude.</summary>

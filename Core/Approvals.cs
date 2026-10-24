@@ -68,7 +68,7 @@ static class Approvals
         using var doc = JsonDocument.Parse(line);
         var r = doc.RootElement;
         if (Json.Str(r, "hook_event_name") is { } name && name != "PermissionRequest") return null;
-        var tool = Json.Str(r, "tool_name") ?? "herramienta";
+        var tool = Json.Str(r, "tool_name") ?? L.T("herramienta");
         var input = r.TryGetProperty("tool_input", out var i) && i.ValueKind == JsonValueKind.Object ? i : default;
         var inputJson = input.ValueKind == JsonValueKind.Object ? input.GetRawText() : "{}";
         return new ApprovalRequest(Json.Str(r, "session_id") ?? "", Json.Str(r, "cwd") ?? "", tool, TargetOf(tool, input), inputJson,
@@ -108,7 +108,7 @@ static class Approvals
 
     public static string Allow() => Decision(new JsonObject { ["behavior"] = "allow" });
 
-    public static string Deny() => Decision(new JsonObject { ["behavior"] = "deny", ["message"] = "Denegado desde Uso de Claude." });
+    public static string Deny() => Decision(new JsonObject { ["behavior"] = "deny", ["message"] = L.T("Denegado desde Claupet.") });
 
     /// <summary>Las respuestas a las preguntas: por pregunta, una etiqueta o (si se pueden elegir varias) la lista.</summary>
     public static string Answer(ApprovalRequest request, IReadOnlyDictionary<string, IReadOnlyList<string>> picks)

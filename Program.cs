@@ -5,6 +5,8 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        L.Use(SettingsStore.Load().Language);
+
         // --dump: una consulta, texto a la salida estándar y salir (para comprobar sin abrir la bandeja).
         if (args.Contains("--dump"))
             return Dump.Run();
@@ -16,6 +18,21 @@ static class Program
                 palette => Console.WriteLine($"color de la app: {palette}")).GetAwaiter().GetResult();
             Console.WriteLine(problem ?? "listo");
             return problem is null ? 0 : 1;
+        }
+
+        // --preguntar <texto>: se lo pregunta a la mascota como desde la nubecita (con su cuenta y su modelo) y escribe la respuesta.
+        if (Array.IndexOf(args, "--preguntar") is var q and >= 0 && q + 1 < args.Length)
+        {
+            var settings = SettingsStore.Load();
+            var result = Assistant.AskAsync(new AssistantRequest
+            {
+                Prompt = args[q + 1],
+                Voice = AssistantVoice.Mascot,
+                Model = settings.MascotModel,
+                ConfigDir = settings.AssistantAccount ?? settings.Selected,
+            }).GetAwaiter().GetResult();
+            Console.WriteLine(result.Error ?? result.Text);
+            return result.Failed ? 1 : 0;
         }
 
         // --descargar-voz: baja la voz de Claupet como desde Ajustes, con el avance a la salida estándar.
@@ -80,6 +97,8 @@ static class Program
         // --preview: abre la ventana aunque ya haya otra instancia (para probar cambios).
         var preview = args.Contains("--preview");
         using var mutex = new Mutex(true, @"Local\ClaudeUsageTray", out var created);
+        // --reiniciar: la abrió la anterior al cambiar el idioma; espera a que termine de cerrarse.
+        if (!created && args.Contains("--reiniciar")) created = WaitFor(mutex);
         if (!created && !preview)
             return 0;
 
@@ -95,5 +114,12 @@ static class Program
             // --hablar archivo.wav: la voz entera con ese audio en vez del micrófono (con «Micrófono» encendido).
             demoVoice: Array.IndexOf(args, "--hablar") is var v and >= 0 && v + 1 < args.Length ? args[v + 1] : null));
         return 0;
+    }
+
+    /// <summary>Espera el mutex de la instancia que se cierra; si se cerró sin soltarlo, igual queda tomado.</summary>
+    static bool WaitFor(Mutex mutex)
+    {
+        try { return mutex.WaitOne(TimeSpan.FromSeconds(15)); }
+        catch (AbandonedMutexException) { return true; }
     }
 }

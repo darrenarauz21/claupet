@@ -14,16 +14,18 @@ sealed class UsageSnapshot
     public List<BreakdownRow> Breakdown { get; init; } = new();
     public bool ExtraUsageEnabled { get; init; }
     public string? Error { get; init; }
+    /// <summary>El token venció o el servicio lo rechazó: se puede renovar (SessionRenewal).</summary>
+    public bool SessionExpired { get; init; }
     public DateTimeOffset? FetchedAt { get; init; }
 
     public LimitRow? Session => Limits.FirstOrDefault(l => l.Kind == "session");
     public LimitRow? Weekly => Limits.FirstOrDefault(l => l.Kind == "weekly_all");
 
     /// <summary>Conserva los últimos datos buenos y marca el error de la consulta nueva.</summary>
-    public UsageSnapshot WithError(string error) => new()
+    public UsageSnapshot WithError(string error, bool sessionExpired = false) => new()
     {
         Limits = Limits, Breakdown = Breakdown, ExtraUsageEnabled = ExtraUsageEnabled,
-        FetchedAt = FetchedAt, Error = error,
+        FetchedAt = FetchedAt, Error = error, SessionExpired = sessionExpired,
     };
 }
 
@@ -34,9 +36,9 @@ sealed class UsageSnapshot
 static class UsageClient
 {
     const string Url = "https://api.anthropic.com/api/oauth/usage";
-    const string Expired = "Sesión vencida. Abra Claude Code con esta cuenta.";
+    static string Expired => L.T("Sesión vencida: actualice para renovarla.");
 
-    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
+    static readonly HttpClient Http = SystemProxy.Client(TimeSpan.FromSeconds(20));
 
     public static async Task<UsageSnapshot> FetchAsync(Account account, CancellationToken ct = default)
     {
@@ -50,13 +52,14 @@ static class UsageClient
             token = oauth.GetProperty("accessToken").GetString() ?? "";
             expiresAt = oauth.TryGetProperty("expiresAt", out var e) && e.ValueKind == JsonValueKind.Number ? e.GetInt64() : 0;
         }
-        catch (FileNotFoundException) { return Fail("Sin credenciales para esta carpeta."); }
-        catch (Exception) { return Fail("No se pudieron leer las credenciales."); }
+        catch (FileNotFoundException) { return Fail(L.T("Sin credenciales para esta carpeta.")); }
+        catch (Exception) { return Fail(L.T("No se pudieron leer las credenciales.")); }
 
-        if (token.Length == 0) return Fail(Expired);
-        // Claude Code renueva el token mientras se usa; esta app no lo renueva para no pisar su sesión.
+        if (token.Length == 0) return ExpiredSession();
+        // Claude Code renueva el token mientras se usa; esta app no lo toca para no pisar su sesión: si
+        // venció, se lo pide a Claude Code (SessionRenewal).
         if (expiresAt > 0 && DateTimeOffset.FromUnixTimeMilliseconds(expiresAt) < DateTimeOffset.UtcNow)
-            return Fail(Expired);
+            return ExpiredSession();
 
         using var request = new HttpRequestMessage(HttpMethod.Get, Url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -66,17 +69,19 @@ static class UsageClient
         try
         {
             using var response = await Http.SendAsync(request, ct);
-            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) return Fail(Expired);
-            if (response.StatusCode == HttpStatusCode.TooManyRequests) return Fail("Demasiadas consultas; se reintentará.");
-            if (!response.IsSuccessStatusCode) return Fail($"Error {(int)response.StatusCode} del servicio.");
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) return ExpiredSession();
+            if (response.StatusCode == HttpStatusCode.TooManyRequests) return Fail(L.T("Demasiadas consultas; se reintentará."));
+            if (!response.IsSuccessStatusCode) return Fail(L.T("Error {0} del servicio.", (int)response.StatusCode));
             return Parse(await response.Content.ReadAsStringAsync(ct));
         }
-        catch (TaskCanceledException) { return Fail("Sin respuesta del servicio."); }
-        catch (HttpRequestException) { return Fail("Sin conexión."); }
-        catch (JsonException) { return Fail("Respuesta con formato desconocido."); }
+        catch (TaskCanceledException) { return Fail(L.T("Sin respuesta del servicio.")); }
+        catch (HttpRequestException) { return Fail(L.T("Sin conexión.")); }
+        catch (JsonException) { return Fail(L.T("Respuesta con formato desconocido.")); }
     }
 
     static UsageSnapshot Fail(string message) => new() { Error = message };
+
+    static UsageSnapshot ExpiredSession() => new() { Error = Expired, SessionExpired = true };
 
     internal static UsageSnapshot Parse(string json)
     {
@@ -98,10 +103,10 @@ static class UsageClient
         {
             foreach (var (key, kind, label) in new[]
             {
-                ("five_hour", "session", "Sesión"),
-                ("seven_day", "weekly_all", "Semana"),
-                ("seven_day_opus", "weekly_scoped", "Semana · Opus"),
-                ("seven_day_sonnet", "weekly_scoped", "Semana · Sonnet"),
+                ("five_hour", "session", L.T("Sesión")),
+                ("seven_day", "weekly_all", L.T("Semana")),
+                ("seven_day_opus", "weekly_scoped", L.T("Semana · {0}", "Opus")),
+                ("seven_day_sonnet", "weekly_scoped", L.T("Semana · {0}", "Sonnet")),
             })
             {
                 if (root.TryGetProperty(key, out var w) && w.ValueKind == JsonValueKind.Object)
@@ -135,9 +140,9 @@ static class UsageClient
 
         return kind switch
         {
-            "session" => "Sesión",
-            "weekly_all" => "Semana",
-            "weekly_scoped" => "Semana · " + (model ?? "modelo"),
+            "session" => L.T("Sesión"),
+            "weekly_all" => L.T("Semana"),
+            "weekly_scoped" => L.T("Semana · {0}", model ?? L.T("modelo")),
             _ => kind.Replace('_', ' '),
         };
     }

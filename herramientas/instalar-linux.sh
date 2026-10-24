@@ -1,5 +1,5 @@
 #!/bin/sh
-# Instala Uso de Claude para este usuario (sin sudo): la app en ~/.local/share/uso-de-claude,
+# Instala Claupet para este usuario (sin sudo): la app en ~/.local/share/uso-de-claude,
 # el ícono y la entrada del menú de aplicaciones. Para actualizar, se vuelve a ejecutar.
 set -e
 cd "$(dirname "$0")"
@@ -17,15 +17,15 @@ cp uso-de-claude.png "$ICONS/uso-de-claude.png"
 cat > "$APPS/uso-de-claude.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Uso de Claude
-Comment=Uso de Claude, sesiones de Claude Code y avisos
+Name=Claupet
+Comment=Claupet: uso de Claude, sesiones de Claude Code y avisos
 Exec="$DEST/UsoDeClaude"
 Icon=uso-de-claude
 Terminal=false
 Categories=Utility;
 EOF
 
-echo "Uso de Claude quedó instalado en $DEST"
+echo "Claupet quedó instalado en $DEST"
 
 # Bibliotecas que la ventana necesita (vienen en los escritorios habituales).
 MISSING=""

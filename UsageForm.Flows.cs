@@ -76,14 +76,14 @@ sealed partial class UsageForm
         var lanes = _sessions.Where(s => s.State != SessionState.Idle).ToList();
         if (lanes.Count == 0)
         {
-            if (draw) Write(g, "No hay sesiones activas.", _body, _t.Tertiary, new Rectangle(Pad, y, Inner, _body.Height));
+            if (draw) Write(g, L.T("No hay sesiones activas."), _body, _t.Tertiary, new Rectangle(Pad, y, Inner, _body.Height));
             y += _body.Height + S(10);
         }
         foreach (var session in lanes)
             y = ComposeLane(g, draw, session, y) + S(8);
 
         var flags = TextFormatFlags.NoPadding | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
-        const string hint = "Clic en una sesión: su mapa completo. Sale de los archivos de Claude Code; no gasta tokens.";
+        var hint = L.T("Clic en una sesión: su mapa completo. Sale de los archivos de Claude Code; no gasta tokens.");
         var height = TextRenderer.MeasureText(g, hint, _small, new Size(Inner, 0), flags).Height;
         if (draw) TextRenderer.DrawText(g, hint, _small, new Rectangle(Pad, y + S(2), Inner, height), _t.Tertiary, flags);
         return y + height + S(14);
@@ -141,14 +141,14 @@ sealed partial class UsageForm
         switch (s.State)
         {
             case SessionState.Waiting:
-                parts.Add(s.AwaitingAnswer ? "esperando su respuesta" : "necesita su atención");
+                parts.Add(s.AwaitingAnswer ? L.T("esperando su respuesta") : L.T("necesita su atención"));
                 return (string.Join(" · ", parts), _t.Warn);
             case SessionState.Failed:
-                parts.Add("falló: " + (s.ErrorText ?? "error de la API"));
+                parts.Add(L.T("falló: {0}", s.ErrorText ?? L.T("error de la API")));
                 return (string.Join(" · ", parts), _t.Danger);
             case SessionState.Done:
-                parts.Add("terminó " + Format.Ago(s.TurnEndedAt ?? s.StatusAt));
-                parts.Add(s.Steps == 1 ? "1 paso" : $"{s.Steps} pasos");
+                parts.Add(L.T("terminó {0}", Format.Ago(s.TurnEndedAt ?? s.StatusAt)));
+                parts.Add(s.Steps == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Steps));
                 if (s.LastTurn is { } d) parts.Add(Format.Duration(d));
                 return (string.Join(" · ", parts), _t.Tertiary);
             default:
@@ -223,8 +223,8 @@ sealed partial class UsageForm
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
         }
 
-        Node("", "Pedido", null, _t.Background, _t.Secondary, null, outline: true);
-        if (hidden > 0) Node("+" + hidden, "antes", null, _t.Background, _t.Secondary, null, outline: true);
+        Node("", L.T("Pedido"), null, _t.Background, _t.Secondary, null, outline: true);
+        if (hidden > 0) Node("+" + hidden, L.T("antes"), null, _t.Background, _t.Secondary, null, outline: true);
         foreach (var group in shown)
         {
             var isLast = group == shown[^1];
@@ -244,7 +244,7 @@ sealed partial class UsageForm
             var cx = centers[index++];
             if (draw) DrawThinking(g, new PointF(cx, cy), circle);
             if (draw)
-                Write(g, "Pensando…", Tiny, _t.Text, new Rectangle(cx - column / 2, y + circle + S(4), column, tinyHeight),
+                Write(g, L.T("Pensando…"), Tiny, _t.Text, new Rectangle(cx - column / 2, y + circle + S(4), column, tinyHeight),
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
         }
         y += circle + S(4) + 2 * tinyHeight;
@@ -253,9 +253,9 @@ sealed partial class UsageForm
         if (s.Flow.LastOrDefault(f => f.Kind == ToolKind.Agent) is { } agent)
         {
             y += S(6);
-            var text = $"↳ {agent.AgentType ?? "subagente"} · " + (agent.Done
-                ? agent.AgentSteps is { } n ? $"volvió · {n} pasos" : "volvió"
-                : "trabajando…");
+            var text = $"↳ {agent.AgentType ?? L.T("subagente")} · " + (agent.Done
+                ? agent.AgentSteps is { } n ? L.T("volvió · {0} pasos", n) : L.T("volvió")
+                : L.T("trabajando…"));
             if (draw) Write(g, text, Tiny, agent.Done ? _t.Tertiary : _t.Accent, new Rectangle(x0 + S(4), y, width, tinyHeight), TextFormatFlags.EndEllipsis);
             y += tinyHeight;
         }
@@ -329,11 +329,11 @@ sealed partial class UsageForm
 
             var (status, color) = s.State switch
             {
-                SessionState.Working => (thinking || active is null ? "Pensando" : active.Verb, _t.Accent),
-                SessionState.Waiting => ("Le espera a usted", _t.Warn),
-                SessionState.Failed => ("Falló", _t.Danger),
-                SessionState.Done => ("Terminó", _t.Success),
-                _ => ("Inactiva", _t.Tertiary),
+                SessionState.Working => (thinking || active is null ? L.T("Pensando") : active.Verb, _t.Accent),
+                SessionState.Waiting => (L.T("Le espera a usted"), _t.Warn),
+                SessionState.Failed => (L.T("Falló"), _t.Danger),
+                SessionState.Done => (L.T("Terminó"), _t.Success),
+                _ => (L.T("Inactiva"), _t.Tertiary),
             };
             if (working)
             {
@@ -346,7 +346,7 @@ sealed partial class UsageForm
             Draw.Fill(g, _t.Raised, session, S(10));
             Draw.Outline(g, working ? color : _t.Border, session, S(10));
             var inner = Rectangle.Inflate(session, -S(9), -S(6));
-            Write(g, "Sesión", _small, _t.Text, new Rectangle(inner.X, inner.Y, inner.Width, smallHeight));
+            Write(g, L.T("Sesión"), _small, _t.Text, new Rectangle(inner.X, inner.Y, inner.Width, smallHeight));
             var statusBox = new Rectangle(inner.X, inner.Y + smallHeight + S(1), inner.Width, Tiny.Height);
             Write(g, status, Tiny, color, statusBox, TextFormatFlags.EndEllipsis);
             if (thinking)
@@ -354,7 +354,7 @@ sealed partial class UsageForm
                 var textWidth = TextRenderer.MeasureText(g, status, Tiny, Size.Empty, Line).Width;
                 DrawDots(g, new PointF(statusBox.X + textWidth + 9 * _scale, statusBox.Y + statusBox.Height * 0.62f), color, Environment.TickCount64);
             }
-            var steps = s.Flow.Count == 1 ? "1 paso" : $"{s.Flow.Count} pasos";
+            var steps = s.Flow.Count == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Flow.Count);
             Write(g, steps, Tiny, _t.Tertiary, new Rectangle(inner.X, inner.Y + smallHeight + Tiny.Height + S(2), inner.Width, Tiny.Height));
 
             for (var i = 0; i < Flows.MapKinds.Length; i++)
@@ -383,20 +383,20 @@ sealed partial class UsageForm
                 using (var pen = new Pen(Blend(_t.Border, _t.Secondary, 0.35)) { DashPattern = [3f, 2f] })
                 using (var path = Draw.Rounded(agentBox, S(10))) g.DrawPath(pen, path);
                 var a = Rectangle.Inflate(agentBox, -S(9), -S(5));
-                Write(g, "Subagente " + (agent.AgentType ?? ""), _small, _t.Secondary, new Rectangle(a.X, a.Y, a.Width, smallHeight), TextFormatFlags.EndEllipsis);
-                var state = agent.Done ? agent.AgentSteps is { } n ? $"volvió · {n} pasos" : "volvió" : "trabajando…";
+                Write(g, L.T("Subagente {0}", agent.AgentType ?? ""), _small, _t.Secondary, new Rectangle(a.X, a.Y, a.Width, smallHeight), TextFormatFlags.EndEllipsis);
+                var state = agent.Done ? agent.AgentSteps is { } n ? L.T("volvió · {0} pasos", n) : L.T("volvió") : L.T("trabajando…");
                 Write(g, state, Tiny, agent.Done ? _t.Tertiary : _t.Accent, new Rectangle(a.X, a.Y + smallHeight + S(2), a.Width, Tiny.Height));
             }
         }
         y = top + mapHeight;
 
         // Los últimos pasos, con su hora; el más nuevo entra desde la izquierda.
-        if (draw) Write(g, "ÚLTIMOS PASOS DEL TURNO", _small, _t.Tertiary, new Rectangle(Pad, y, Inner, smallHeight));
+        if (draw) Write(g, L.T("ÚLTIMOS PASOS DEL TURNO"), _small, _t.Tertiary, new Rectangle(Pad, y, Inner, smallHeight));
         y += smallHeight + S(6);
         var last = s.Flow.TakeLast(5).ToList();
         if (last.Count == 0)
         {
-            if (draw) Write(g, "Aún no hay pasos en este turno.", _small, _t.Tertiary, new Rectangle(Pad, y, Inner, smallHeight));
+            if (draw) Write(g, L.T("Aún no hay pasos en este turno."), _small, _t.Tertiary, new Rectangle(Pad, y, Inner, smallHeight));
             y += smallHeight + S(4);
         }
         foreach (var f in last)
@@ -409,7 +409,7 @@ sealed partial class UsageForm
                 var time = f.At is { } at ? $"{at.LocalDateTime:HH:mm:ss}" : "";
                 Write(g, time, _small, Blend(_t.Background, isActive ? _t.Accent : _t.Tertiary, p), new Rectangle(Pad, y, S(62), smallHeight));
                 var text = f.Detail is null ? f.Verb : $"{f.Verb} · {f.Detail}";
-                if (isActive) text += thinking ? "  · listo" : "  · en curso";
+                if (isActive) text += "  · " + (thinking ? L.T("listo") : L.T("en curso"));
                 Write(g, text, _small, Blend(_t.Background, isActive ? _t.Text : _t.Secondary, p),
                     new Rectangle(Pad + S(66) - shift, y, Inner - S(66), smallHeight), TextFormatFlags.EndEllipsis);
             }
