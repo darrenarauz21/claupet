@@ -56,9 +56,9 @@ sealed class MascotWindow : Form
         Cursor = Cursors.Hand;
         AllowDrop = true;
 
-        _menu.Items.Add("Abrir Uso de Claude", null, (_, _) => OpenRequested?.Invoke());
+        _menu.Items.Add(L.T("Abrir Claupet"), null, (_, _) => OpenRequested?.Invoke());
         // Después del clic: ocultar cierra esta ventana, y con ella el menú que está avisando.
-        _menu.Items.Add("Ocultar del escritorio", null, (_, _) => BeginInvoke(() => HideRequested?.Invoke()));
+        _menu.Items.Add(L.T("Ocultar del escritorio"), null, (_, _) => BeginInvoke(() => HideRequested?.Invoke()));
         Menus.Apply(_menu, Theme.Current);
 
         _timer.Tick += (_, _) => Tick();

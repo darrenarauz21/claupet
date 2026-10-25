@@ -52,6 +52,8 @@ sealed partial class UsageForm
         public string Approvals { get; init; } = "";
         public bool StartWithWindows { get; init; }
         public int Accounts { get; init; }
+        /// <summary>El idioma elegido, en su idioma («Español», «English»).</summary>
+        public string Language { get; init; } = "";
     }
 
     /// <summary>Las pestañas de Ajustes, en orden.</summary>
@@ -74,11 +76,11 @@ sealed partial class UsageForm
 
     static string ViewLabel(View view) => view switch
     {
-        View.Usage => "Uso",
-        View.Sessions => "Sesiones",
-        View.Activity => "Actividad",
-        View.Flows => "Flujos",
-        _ => "Ajustes",
+        View.Usage => L.T("Uso"),
+        View.Sessions => L.T("Sesiones"),
+        View.Activity => L.T("Actividad"),
+        View.Flows => L.T("Flujos"),
+        _ => L.T("Ajustes"),
     };
 
     /// <summary>Tres vistas distintas y elegibles; si no, las de siempre.</summary>
@@ -195,8 +197,8 @@ sealed partial class UsageForm
         var smallHeight = _small.Height;
         var hintFlags = TextFormatFlags.NoPadding | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
         var hint = _replacing is { } incoming
-            ? $"Pulse el pin de la fija que cambia por {ViewLabel(incoming)}."
-            : "Siempre hay 3 pestañas fijas. Para fijar otra, pulse su pin y luego el de la que cambia.";
+            ? L.T("Pulse el pin de la fija que cambia por {0}.", ViewLabel(incoming))
+            : L.T("Siempre hay 3 pestañas fijas. Para fijar otra, pulse su pin y luego el de la que cambia.");
         var hintHeight = TextRenderer.MeasureText(g, hint, _small, new Size(width - S(24), 0), hintFlags).Height;
         var height = S(8) + smallHeight + S(8) + Selectable.Length * rowHeight + S(9) + hintHeight + S(12);
         var panel = new Rectangle(x, top, width, height);
@@ -206,7 +208,7 @@ sealed partial class UsageForm
         {
             Draw.Fill(g, _t.Raised, panel, S(10));
             Draw.Outline(g, _t.Border, panel, S(10));
-            Write(g, "Clic: abrir · Pin: fijar como pestaña", _small, _t.Tertiary, new Rectangle(x + S(12), top + S(8), width - S(24), smallHeight));
+            Write(g, L.T("Clic: abrir · Pin: fijar como pestaña"), _small, _t.Tertiary, new Rectangle(x + S(12), top + S(8), width - S(24), smallHeight));
         }
 
         var y = top + S(8) + smallHeight + S(8);
@@ -228,7 +230,7 @@ sealed partial class UsageForm
                 var textWidth = TextRenderer.MeasureText(g, text, _body, Size.Empty, Line).Width;
                 Write(g, text, _body, _t.Text, new Rectangle(row.X + S(10), row.Y, textWidth, rowHeight), TextFormatFlags.VerticalCenter);
                 if (_view == view)
-                    Write(g, "abierta", _small, _t.Tertiary, new Rectangle(row.X + S(10) + textWidth + S(8), row.Y, S(80), rowHeight), TextFormatFlags.VerticalCenter);
+                    Write(g, L.T("abierta"), _small, _t.Tertiary, new Rectangle(row.X + S(10) + textWidth + S(8), row.Y, S(80), rowHeight), TextFormatFlags.VerticalCenter);
                 if (_hoverKey == pinKey) Draw.Fill(g, _t.Hover, pin, S(8));
                 var color = pinned ? (_replacing is null ? _t.Accent : _t.Warn) : _replacing == view ? _t.Warn : _t.Tertiary;
                 DrawPin(g, new RectangleF(pin.X + S(7), pin.Y + S(7), S(16), S(16)), color, filled: pinned);
@@ -274,12 +276,12 @@ sealed partial class UsageForm
 
     int ComposeSettingsHeader(Graphics g, bool draw, int y)
     {
-        var height = TextRenderer.MeasureText(g, "Ajustes", _title, Size.Empty, Line).Height;
+        var height = TextRenderer.MeasureText(g, L.T("Ajustes"), _title, Size.Empty, Line).Height;
         var close = new Rectangle(ClientSize.Width - Pad - S(24), y + (height - S(30)) / 2, S(30), S(30));
         AddHit("settings-close", close, HitKind.CloseSettings);
         if (draw)
         {
-            Write(g, "Ajustes", _title, _t.Text, new Rectangle(Pad, y, Inner - S(40), height));
+            Write(g, L.T("Ajustes"), _title, _t.Text, new Rectangle(Pad, y, Inner - S(40), height));
             if (_hoverKey == "settings-close") Draw.Fill(g, _t.Hover, close, S(8));
             Write(g, GlyphClose, _glyphSmall, _t.Secondary, close, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
@@ -290,11 +292,11 @@ sealed partial class UsageForm
 
     static string TabLabel(SettingsTab tab) => tab switch
     {
-        SettingsTab.Avisos => "Avisos",
-        SettingsTab.Apariencia => "Apariencia",
-        SettingsTab.Asistente => "Asistente",
-        SettingsTab.Isla => "Isla",
-        _ => "Sistema",
+        SettingsTab.Avisos => L.T("Avisos"),
+        SettingsTab.Apariencia => L.T("Apariencia"),
+        SettingsTab.Asistente => L.T("Asistente"),
+        SettingsTab.Isla => L.T("Isla"),
+        _ => L.T("Sistema"),
     };
 
     Font? _smallStrong;
@@ -360,77 +362,78 @@ sealed partial class UsageForm
         switch (tab)
         {
             case SettingsTab.Avisos:
-                y = SwitchRow(g, draw, "Notificaciones", "notify", s.Notifications, y);
-                y = SwitchRow(g, draw, "Sonido", "sound", s.Sound, y);
-                y = ChoiceRow(g, draw, "Estilo de sonido", "pack", s.SoundPack, y);
-                y = LinksRow(g, draw, y, ("Ver un aviso de ejemplo", "sample"), ("Abrir carpeta de sonidos", "sounds"));
+                y = SwitchRow(g, draw, L.T("Notificaciones"), "notify", s.Notifications, y);
+                y = SwitchRow(g, draw, L.T("Sonido"), "sound", s.Sound, y);
+                y = ChoiceRow(g, draw, L.T("Estilo de sonido"), "pack", s.SoundPack, y);
+                y = LinksRow(g, draw, y, (L.T("Ver un aviso de ejemplo"), "sample"), (L.T("Abrir carpeta de sonidos"), "sounds"));
                 break;
             case SettingsTab.Apariencia:
-                y = ChoiceRow(g, draw, "Color", "palette", s.Palette, y, swatch: _t.Accent);
-                y = ChoiceRow(g, draw, "Mascota", "mascot", s.Mascot, y);
-                y = ChoiceRow(g, draw, "Tamaño de la mascota", "size", s.MascotSize, y);
-                y = SwitchRow(g, draw, "Mascota en el escritorio", "desk", s.DesktopMascot, y);
+                y = ChoiceRow(g, draw, L.T("Color"), "palette", s.Palette, y, swatch: _t.Accent);
+                y = ChoiceRow(g, draw, L.T("Mascota"), "mascot", s.Mascot, y);
+                y = ChoiceRow(g, draw, L.T("Tamaño de la mascota"), "size", s.MascotSize, y);
+                y = SwitchRow(g, draw, L.T("Mascota en el escritorio"), "desk", s.DesktopMascot, y);
                 if (s.DesktopMascot)
                 {
-                    y = SwitchRow(g, draw, "Gestos del flujo (lo que hace la sesión)", "flowgest", s.FlowGestures, y);
-                    y = SwitchRow(g, draw, "Bailar con música", "music", s.DanceToMusic, y);
-                    y = SwitchRow(g, draw, "Gesto de los avisos", "noticegest", s.NoticeGestures, y);
-                    y = SwitchRow(g, draw, "Saludar al aparecer", "greet", s.GreetOnAppear, y);
-                    y = SwitchRow(g, draw, "Enojarse con muchos clics", "angry", s.AngryOnClicks, y);
-                    y = SwitchRow(g, draw, "Dormir sin sesiones", "sleep", s.SleepWithoutSessions, y);
-                    y = SwitchRow(g, draw, "Hablar (los avisos en una nubecita)", "speak", s.Speak, y);
+                    y = SwitchRow(g, draw, L.T("Gestos del flujo (lo que hace la sesión)"), "flowgest", s.FlowGestures, y);
+                    y = SwitchRow(g, draw, L.T("Bailar con música"), "music", s.DanceToMusic, y);
+                    y = SwitchRow(g, draw, L.T("Gesto de los avisos"), "noticegest", s.NoticeGestures, y);
+                    y = SwitchRow(g, draw, L.T("Saludar al aparecer"), "greet", s.GreetOnAppear, y);
+                    y = SwitchRow(g, draw, L.T("Enojarse con muchos clics"), "angry", s.AngryOnClicks, y);
+                    y = SwitchRow(g, draw, L.T("Dormir sin sesiones"), "sleep", s.SleepWithoutSessions, y);
+                    y = SwitchRow(g, draw, L.T("Hablar (los avisos en una nubecita)"), "speak", s.Speak, y);
                 }
                 break;
             case SettingsTab.Asistente:
-                y = SettingsCaption(g, draw, "Chat", y);
-                y = SwitchRow(g, draw, "Chat con la mascota", "chat", s.Chat, y);
+                y = SettingsCaption(g, draw, L.T("Chat"), y);
+                y = SwitchRow(g, draw, L.T("Chat con la mascota"), "chat", s.Chat, y);
                 if (s.Chat)
                 {
-                    y = ChoiceRow(g, draw, "Modelo de la mascota", "mmodel", s.MascotModel, y);
-                    y = ChoiceRow(g, draw, "Cuenta que responde", "account", s.AssistantAccount, y);
-                    y = ChoiceRow(g, draw, "Carpeta de las tareas", "folder", s.TaskFolder, y);
-                    y = SwitchRow(g, draw, "Analizar los archivos que le suelte", "drops", s.AnalyzeDrops, y);
+                    y = ChoiceRow(g, draw, L.T("Modelo de la mascota"), "mmodel", s.MascotModel, y);
+                    y = ChoiceRow(g, draw, L.T("Cuenta que responde"), "account", s.AssistantAccount, y);
+                    y = ChoiceRow(g, draw, L.T("Carpeta de las tareas"), "folder", s.TaskFolder, y);
+                    y = SwitchRow(g, draw, L.T("Analizar los archivos que le suelte"), "drops", s.AnalyzeDrops, y);
                 }
-                y = SettingsCaption(g, draw, "Voz", y + S(8));
-                y = SwitchRow(g, draw, "Micrófono", "mic", s.Mic, y);
+                y = SettingsCaption(g, draw, L.T("Voz"), y + S(8));
+                y = SwitchRow(g, draw, L.T("Micrófono"), "mic", s.Mic, y);
                 if (s.Mic)
                 {
-                    y = ChoiceRow(g, draw, "Tecla para hablar", "mickey", s.MicKey, y);
+                    y = ChoiceRow(g, draw, L.T("Tecla para hablar"), "mickey", s.MicKey, y);
                     y = LinkRow(g, draw, s.VoiceStatus, s.VoiceAction, "voice", _t.Accent, y);
                 }
                 // Aparte del micrófono: puede escribirle y que le responda hablando.
-                y = SwitchRow(g, draw, "Leer las respuestas en voz alta", "readaloud", s.ReadAloud, y);
+                y = SwitchRow(g, draw, L.T("Leer las respuestas en voz alta"), "readaloud", s.ReadAloud, y);
                 if (s.ReadAloud)
                 {
-                    y = ChoiceRow(g, draw, "Voz", "readvoice", s.ReadAloudVoice, y);
+                    y = ChoiceRow(g, draw, L.T("Voz"), "readvoice", s.ReadAloudVoice, y);
                     if (s.SpeechStatus.Length > 0) y = LinkRow(g, draw, s.SpeechStatus, s.SpeechAction, "speech", _t.Accent, y);
                 }
                 if (s.Chat || s.Island)
                 {
-                    y = SettingsCaption(g, draw, "Teclas", y + S(8));
-                    y = ChoiceRow(g, draw, "Atajo del chat", "chatkey", s.ChatKey, y);
-                    y = SwitchRow(g, draw, s.Mic ? "Tecla Copilot: chat y voz" : "Tecla Copilot: abre el chat", "copilot", s.CopilotKey, y);
-                    y = LinkRow(g, draw, "Atajos de teclado", "Ver…", "shortcuts", _t.Accent, y);
+                    y = SettingsCaption(g, draw, L.T("Teclas"), y + S(8));
+                    y = ChoiceRow(g, draw, L.T("Atajo del chat"), "chatkey", s.ChatKey, y);
+                    y = SwitchRow(g, draw, s.Mic ? L.T("Tecla Copilot: chat y voz") : L.T("Tecla Copilot: abre el chat"), "copilot", s.CopilotKey, y);
+                    y = LinkRow(g, draw, L.T("Atajos de teclado"), L.T("Ver…"), "shortcuts", _t.Accent, y);
                 }
                 break;
             case SettingsTab.Isla:
-                y = SwitchRow(g, draw, "Isla en el borde de arriba", "island", s.Island, y);
+                y = SwitchRow(g, draw, L.T("Isla en el borde de arriba"), "island", s.Island, y);
                 if (s.Island)
                 {
-                    y = ChoiceRow(g, draw, "Modelo de la isla", "imodel", s.IslandModel, y);
-                    y = SwitchRow(g, draw, "Abrir al pasar el cursor", "hover", s.IslandHover, y);
-                    y = SwitchRow(g, draw, "A la vista mientras algo trabaja", "busy", s.IslandWhileBusy, y);
-                    y = LinkRow(g, draw, "Permisos y preguntas en la isla", s.Approvals, "approvals", _t.Accent, y);
-                    y = SwitchRow(g, draw, "Resumen de la semana, los lunes", "recap", s.WeeklyRecap, y);
-                    y = LinkRow(g, draw, "El de esta semana", "Ver ahora", "recapnow", _t.Accent, y);
+                    y = ChoiceRow(g, draw, L.T("Modelo de la isla"), "imodel", s.IslandModel, y);
+                    y = SwitchRow(g, draw, L.T("Abrir al pasar el cursor"), "hover", s.IslandHover, y);
+                    y = SwitchRow(g, draw, L.T("A la vista mientras algo trabaja"), "busy", s.IslandWhileBusy, y);
+                    y = LinkRow(g, draw, L.T("Permisos y preguntas en la isla"), s.Approvals, "approvals", _t.Accent, y);
+                    y = SwitchRow(g, draw, L.T("Resumen de la semana, los lunes"), "recap", s.WeeklyRecap, y);
+                    y = LinkRow(g, draw, L.T("El de esta semana"), L.T("Ver ahora"), "recapnow", _t.Accent, y);
                 }
                 break;
             default:
-                y = LinkRow(g, draw, s.Accounts == 1 ? "1 cuenta" : $"{s.Accounts} cuentas", "Agregar cuenta…", "add", _t.Accent, y);
-                y = SwitchRow(g, draw, "Iniciar con Windows", "startup", s.StartWithWindows, y);
-                y = LinkRow(g, draw, "Avisos de permisos (hook)", "Configurar…", "setup", _t.Accent, y);
-                y = LinkRow(g, draw, "Si algo no funciona", "Copiar diagnóstico", "diag", _t.Accent, y);
-                y = LinkRow(g, draw, "Quitar hook e inicio con Windows", "Quitar…", "unsetup", _t.Danger, y);
+                y = ChoiceRow(g, draw, L.T("Idioma"), "language", s.Language, y);
+                y = LinkRow(g, draw, s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add", _t.Accent, y);
+                y = SwitchRow(g, draw, L.T("Iniciar con Windows"), "startup", s.StartWithWindows, y);
+                y = LinkRow(g, draw, L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup", _t.Accent, y);
+                y = LinkRow(g, draw, L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag", _t.Accent, y);
+                y = LinkRow(g, draw, L.T("Quitar hook e inicio con Windows"), L.T("Quitar…"), "unsetup", _t.Danger, y);
                 break;
         }
         return y;

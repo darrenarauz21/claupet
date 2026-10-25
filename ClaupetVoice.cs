@@ -69,7 +69,7 @@ sealed class WaveOut : IDisposable
     {
         var format = new WaveFormat { Tag = 1, Channels = 1, SamplesPerSec = rate, AvgBytesPerSec = rate * 2, BlockAlign = 2, BitsPerSample = 16 };
         if (waveOutOpen(out _device, -1, ref format, _done.SafeWaitHandle.DangerousGetHandle(), IntPtr.Zero, 0x50000) != 0) // CALLBACK_EVENT
-            throw new IOException("No hay salida de audio.");
+            throw new IOException(L.T("No hay salida de audio."));
     }
 
     /// <summary>Encola un trozo (muestras de -1 a 1); suena cuando termine el anterior.</summary>

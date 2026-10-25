@@ -409,7 +409,7 @@ sealed class SessionMonitor
             {
                 ErrorAt = Json.Date(r, "timestamp");
                 var text = content.EnumerateArray().Select(i => Json.Str(i, "text")).FirstOrDefault(s => s is not null);
-                ErrorText = (text ?? Json.Str(r, "error") ?? "Error de la API").ReplaceLineEndings(" ");
+                ErrorText = (text ?? Json.Str(r, "error") ?? L.T("Error de la API")).ReplaceLineEndings(" ");
                 if (ErrorText.Length > 160) ErrorText = ErrorText[..160] + "…";
                 PendingTool = null;
                 return;
@@ -428,7 +428,7 @@ sealed class SessionMonitor
             foreach (var item in content.EnumerateArray())
             {
                 if (Json.Str(item, "type") != "tool_use") continue;
-                var name = Json.Str(item, "name") ?? "herramienta";
+                var name = Json.Str(item, "name") ?? L.T("herramienta");
                 item.TryGetProperty("input", out var input);
                 Steps++;
                 PendingTool = name;
@@ -574,18 +574,18 @@ sealed class SessionMonitor
 
     static string Verb(string tool) => tool switch
         {
-            "Bash" or "PowerShell" => "Ejecutando",
-            "Read" => "Leyendo",
-            "Edit" or "NotebookEdit" => "Editando",
-            "Write" => "Escribiendo",
-            "Grep" or "Glob" => "Buscando",
-            "WebSearch" => "Buscando en la web",
-            "WebFetch" => "Consultando",
-            "Agent" or "Task" => "Delegando",
-            "Skill" => "Usando la skill",
-            "AskUserQuestion" => "Esperando su respuesta",
-            "TodoWrite" => "Actualizando tareas",
-            _ when tool.StartsWith("mcp__", StringComparison.Ordinal) => "Usando " + tool.Split("__").Last().Replace('_', ' '),
+            "Bash" or "PowerShell" => L.T("Ejecutando"),
+            "Read" => L.T("Leyendo"),
+            "Edit" or "NotebookEdit" => L.T("Editando"),
+            "Write" => L.T("Escribiendo"),
+            "Grep" or "Glob" => L.T("Buscando"),
+            "WebSearch" => L.T("Buscando en la web"),
+            "WebFetch" => L.T("Consultando"),
+            "Agent" or "Task" => L.T("Delegando"),
+            "Skill" => L.T("Usando la skill"),
+            "AskUserQuestion" => L.T("Esperando su respuesta"),
+            "TodoWrite" => L.T("Actualizando tareas"),
+            _ when tool.StartsWith("mcp__", StringComparison.Ordinal) => L.T("Usando {0}", tool.Split("__").Last().Replace('_', ' ')),
             _ => tool,
         };
 }

@@ -96,7 +96,7 @@ static class HookInstaller
         var path = SettingsPath(configDir);
         var exists = File.Exists(path);
         var root = (exists ? Parse(File.ReadAllText(path)) : new JsonObject()) as JsonObject
-            ?? throw new InvalidDataException("settings.json no contiene un objeto JSON.");
+            ?? throw new InvalidDataException(L.T("settings.json no contiene un objeto JSON."));
 
         change(root);
         var output = root.ToJsonString(WriteOptions);

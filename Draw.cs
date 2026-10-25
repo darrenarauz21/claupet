@@ -147,8 +147,8 @@ static class Prompt
         var layout = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false };
         var box = new TextBox { Text = value, Width = form.LogicalToDeviceUnits(280) };
         var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Width = box.Width };
-        var ok = new Button { Text = "Aceptar", DialogResult = DialogResult.OK, AutoSize = true };
-        var cancel = new Button { Text = "Cancelar", DialogResult = DialogResult.Cancel, AutoSize = true };
+        var ok = new Button { Text = L.T("Aceptar"), DialogResult = DialogResult.OK, AutoSize = true };
+        var cancel = new Button { Text = L.T("Cancelar"), DialogResult = DialogResult.Cancel, AutoSize = true };
         buttons.Controls.AddRange(new Control[] { cancel, ok });
         layout.Controls.AddRange(new Control[] { new Label { Text = label, AutoSize = true }, box, buttons });
         form.Controls.Add(layout);

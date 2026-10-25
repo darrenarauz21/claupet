@@ -238,7 +238,7 @@ sealed partial class UsageView : Control
         foreach (var account in _accounts)
         {
             _snapshots.TryGetValue(account.ConfigDir, out var snap);
-            var percent = snap?.Session is { } s ? $"{s.Percent:0} %" : "";
+            var percent = snap?.Session is { } s ? L.T("{0:0} %", s.Percent) : "";
             var labelWidth = Gfx.Measure(account.Label, Gfx.Body).Width;
             var percentWidth = percent.Length == 0 ? 0 : 6 + Gfx.Measure(percent, Gfx.Small).Width;
             var pillWidth = 12 + labelWidth + percentWidth + 12;
@@ -278,7 +278,7 @@ sealed partial class UsageView : Control
         var small = Gfx.Small.LineHeight;
         if (selected is null)
         {
-            Gfx.Write(dc, "Agregue una cuenta con +", Gfx.Body, _t.Secondary, new Rect(Pad, y, Inner, body));
+            Gfx.Write(dc, L.T("Agregue una cuenta con +"), Gfx.Body, _t.Secondary, new Rect(Pad, y, Inner, body));
             return y + body + 20;
         }
 
@@ -293,7 +293,7 @@ sealed partial class UsageView : Control
 
         if (snapshot is null)
         {
-            Gfx.Write(dc, "Consultando…", Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, body));
+            Gfx.Write(dc, L.T("Consultando…"), Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, body));
             return y + body + 20;
         }
 
@@ -307,7 +307,7 @@ sealed partial class UsageView : Control
         foreach (var limit in snapshot.Limits)
         {
             Gfx.Write(dc, limit.Label, Gfx.Body, _t.Text, new Rect(Pad, y, Inner - 60, body));
-            Gfx.Write(dc, $"{limit.Percent:0} %", Gfx.BodyStrong, _t.Text, new Rect(ViewWidth - Pad - 60, y, 60, body), TextAlignment.Right);
+            Gfx.Write(dc, L.T("{0:0} %", limit.Percent), Gfx.BodyStrong, _t.Text, new Rect(ViewWidth - Pad - 60, y, 60, body), TextAlignment.Right);
             y += body + 8;
 
             if (dc is not null)
@@ -334,7 +334,7 @@ sealed partial class UsageView : Control
 
         if (_sessions.Count == 0)
         {
-            Gfx.Write(dc, "No hay sesiones abiertas.", Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, Gfx.Body.LineHeight));
+            Gfx.Write(dc, L.T("No hay sesiones abiertas."), Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, Gfx.Body.LineHeight));
             return y + Gfx.Body.LineHeight + 24;
         }
 
@@ -351,7 +351,7 @@ sealed partial class UsageView : Control
             if (dc is not null)
             {
                 if (_hoverKey == "idle") Gfx.Fill(dc, _t.Hover, toggle, 8);
-                Gfx.Write(dc, $"Inactivas ({idle.Count})", Gfx.Small, _t.Tertiary, new Rect(Pad, y, Inner, height), center: true);
+                Gfx.Write(dc, L.T("Inactivas ({0})", idle.Count), Gfx.Small, _t.Tertiary, new Rect(Pad, y, Inner, height), center: true);
                 Gfx.Icon(dc, _showIdle ? Glyph.ChevronUp : Glyph.ChevronDown, _t.Tertiary, new Rect(Pad + Inner - 16, y, 16, height), 13);
             }
             y += height + 8;
@@ -426,31 +426,31 @@ sealed partial class UsageView : Control
 
     (string Text, SD.Color Color) StatusLine(SessionInfo s) => s.State switch
     {
-        SessionState.Working => (s.Action ?? "Pensando…", _t.Secondary),
-        SessionState.Waiting => (s.AwaitingAnswer ? "Esperando su respuesta" : "Necesita su atención", _t.Warn),
-        SessionState.Failed => ("Falló · " + (s.ErrorText ?? "error de la API"), _t.Danger),
-        SessionState.Done => ("Terminó " + Format.Ago(s.TurnEndedAt ?? s.StatusAt)
+        SessionState.Working => (s.Action ?? L.T("Pensando…"), _t.Secondary),
+        SessionState.Waiting => (s.AwaitingAnswer ? L.T("Esperando su respuesta") : L.T("Necesita su atención"), _t.Warn),
+        SessionState.Failed => (L.T("Falló · {0}", s.ErrorText ?? L.T("error de la API")), _t.Danger),
+        SessionState.Done => (L.T("Terminó {0}", Format.Ago(s.TurnEndedAt ?? s.StatusAt))
             + (s.LastTurn is { } d ? $" · {Format.Duration(d)}" : ""), _t.Success),
-        _ => ("Inactiva · " + Format.Ago(s.TurnEndedAt ?? s.StatusAt), _t.Tertiary),
+        _ => (L.T("Inactiva · {0}", Format.Ago(s.TurnEndedAt ?? s.StatusAt)), _t.Tertiary),
     };
 
     static string ProgressLine(SessionInfo s)
     {
         var parts = new List<string>();
-        if (s.TodoTotal > 0) parts.Add($"{s.TodoDone} de {s.TodoTotal} tareas");
-        parts.Add(s.Steps == 1 ? "1 paso" : $"{s.Steps} pasos");
+        if (s.TodoTotal > 0) parts.Add(L.T("{0} de {1} tareas", s.TodoDone, s.TodoTotal));
+        parts.Add(s.Steps == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Steps));
         if (s.TurnStartedAt is { } start) parts.Add(Format.Duration(DateTimeOffset.Now - start));
         return string.Join(" · ", parts);
     }
 
     static IEnumerable<(string Label, string Value, int Lines)> Details(SessionInfo s)
     {
-        if (!string.IsNullOrWhiteSpace(s.LastPrompt)) yield return ("Pedido", s.LastPrompt.ReplaceLineEndings(" "), 3);
-        if (s.Cwd.Length > 0) yield return ("Carpeta", s.Cwd.Replace(Account.Home, "~"), 1);
-        if (Format.ModelLine(s) is { Length: > 0 } model) yield return ("Modelo", model, 1);
-        var turns = s.Turns == 1 ? "1 interacción" : $"{s.Turns} interacciones";
-        var started = s.StartedAt is { } at ? $" · desde {at.LocalDateTime:t}" : "";
-        yield return ("Actividad", turns + started, 1);
+        if (!string.IsNullOrWhiteSpace(s.LastPrompt)) yield return (L.T("Pedido"), s.LastPrompt.ReplaceLineEndings(" "), 3);
+        if (s.Cwd.Length > 0) yield return (L.T("Carpeta"), s.Cwd.Replace(Account.Home, "~"), 1);
+        if (Format.ModelLine(s) is { Length: > 0 } model) yield return (L.T("Modelo"), model, 1);
+        var turns = s.Turns == 1 ? L.T("1 interacción") : L.T("{0} interacciones", s.Turns);
+        var started = s.StartedAt is { } at ? L.T(" · desde {0:t}", at.LocalDateTime) : "";
+        yield return (L.T("Actividad"), turns + started, 1);
     }
 
     // ── Animaciones ─────────────────────────────────────────────────────────────────────────
@@ -516,7 +516,7 @@ sealed partial class UsageView : Control
         var small = Gfx.Small.LineHeight;
         if (_activity is null)
         {
-            Gfx.Write(dc, "Calculando…", Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, Gfx.Body.LineHeight));
+            Gfx.Write(dc, L.T("Calculando…"), Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, Gfx.Body.LineHeight));
             return y + Gfx.Body.LineHeight + 24;
         }
 
@@ -548,7 +548,7 @@ sealed partial class UsageView : Control
         var (q1, q2, q3) = (Quartile(0.25), Quartile(0.5), Quartile(0.75));
         int Level(long v) => v <= 0 ? 0 : v <= q1 ? 1 : v <= q2 ? 2 : v <= q3 ? 3 : 4;
 
-        string[] dayLabels = ["lun", "", "mié", "", "vie", "", ""];
+        string[] dayLabels = [L.T("lun"), "", L.T("mié"), "", L.T("vie"), "", ""];
         for (var r = 0; r < 7; r++)
             if (dayLabels[r].Length > 0)
                 Gfx.Write(dc, dayLabels[r], Gfx.Small, _t.Tertiary, new Rect(Pad, y + r * (cell + gap), labelWidth, cell), center: true);
@@ -570,8 +570,8 @@ sealed partial class UsageView : Control
         y += 7 * cell + 6 * gap + 12;
 
         const double legendBox = 9;
-        var less = Gfx.Measure("Menos", Gfx.Small).Width;
-        var more = Gfx.Measure("Más", Gfx.Small).Width;
+        var less = Gfx.Measure(L.T("Menos"), Gfx.Small).Width;
+        var more = Gfx.Measure(L.T("Más"), Gfx.Small).Width;
         var legendWidth = less + 5 + 5 * (legendBox + 3) + 2 + more;
         if (dc is not null)
         {
@@ -579,35 +579,35 @@ sealed partial class UsageView : Control
             if (hovered is { } d)
             {
                 var record = _activity.Get(d);
-                detail = $"{d:ddd d MMM}".Replace(".", "") + (record is null || record.Tokens == 0
-                    ? " · sin actividad"
-                    : $" · {Format.Tokens(record.Tokens)} tokens · {record.Responses} respuestas");
+                detail = L.T("{0:ddd d MMM}", d).Replace(".", "") + (record is null || record.Tokens == 0
+                    ? L.T(" · sin actividad")
+                    : L.T(" · {0} tokens · {1} respuestas", Format.Tokens(record.Tokens), record.Responses));
             }
-            else detail = _activity.FirstDay is { } first && first > start ? $"Desde el {first:d 'de' MMMM}" : "Últimos 6 meses";
+            else detail = _activity.FirstDay is { } first && first > start ? L.T("Desde el {0:d 'de' MMMM}", first) : L.T("Últimos 6 meses");
             Gfx.Write(dc, detail, Gfx.Small, hovered is null ? _t.Tertiary : _t.Secondary, new Rect(Pad, y, Inner - legendWidth - 10, small));
 
             var x = Pad + Inner - legendWidth;
-            Gfx.Write(dc, "Menos", Gfx.Small, _t.Tertiary, new Rect(x, y, less + 2, small));
+            Gfx.Write(dc, L.T("Menos"), Gfx.Small, _t.Tertiary, new Rect(x, y, less + 2, small));
             x += less + 5;
             for (var level = 0; level <= 4; level++)
             {
                 Gfx.Fill(dc, HeatColor(level), new Rect(x, y + (small - legendBox) / 2, legendBox, legendBox), 2);
                 x += legendBox + 3;
             }
-            Gfx.Write(dc, "Más", Gfx.Small, _t.Tertiary, new Rect(x + 2, y, more + 2, small));
+            Gfx.Write(dc, L.T("Más"), Gfx.Small, _t.Tertiary, new Rect(x + 2, y, more + 2, small));
         }
         y += small + 22;
 
         var stats = ActivityStats.Compute(_activity, start, today);
-        static string Days(int n) => n == 1 ? "1 día" : $"{n} días";
+        static string Days(int n) => n == 1 ? L.T("1 día") : L.T("{0} días", n);
         var items = new (string Value, string Label)[]
         {
-            (Format.Tokens(stats.Tokens), "tokens"),
-            (stats.ActiveDays.ToString(), "días activos"),
-            (Days(stats.CurrentStreak), "racha actual"),
-            (Days(stats.LongestStreak), "racha más larga"),
-            (stats.BusiestDay is { } busiest ? $"{busiest:d MMM}".Replace(".", "") : "—", "día más activo"),
-            (stats.FavoriteModel ?? "—", "modelo favorito"),
+            (Format.Tokens(stats.Tokens), L.T("tokens")),
+            (stats.ActiveDays.ToString(), L.T("días activos")),
+            (Days(stats.CurrentStreak), L.T("racha actual")),
+            (Days(stats.LongestStreak), L.T("racha más larga")),
+            (stats.BusiestDay is { } busiest ? L.T("{0:d MMM}", busiest).Replace(".", "") : "—", L.T("día más activo")),
+            (stats.FavoriteModel ?? "—", L.T("modelo favorito")),
         };
         var columnWidth = Inner / 2;
         var rowHeight = Gfx.BodyStrong.LineHeight + 2 + small + 14;
@@ -645,7 +645,7 @@ sealed partial class UsageView : Control
             var rows = RefreshSprite.Rows(_refreshStyle);
             var unit = Math.Max(1, Math.Round(20.0 / rows));
             var right = gear.X - 8;
-            var when = _refresh is not null ? "" : _busy ? "Actualizando…" : _updated is { } u ? $"{u:t}" : "";
+            var when = _refresh is not null ? "" : _busy ? L.T("Actualizando…") : _updated is { } u ? $"{u:t}" : "";
             var whenWidth = _refresh is not null ? RefreshSprite.Columns(_refreshStyle) * unit : Gfx.Measure(when, Gfx.Small).Width;
             Gfx.Write(dc, Format.Local(_local), Gfx.Small, _t.Tertiary, new Rect(Pad, y, right - Pad - whenWidth - 12, small));
             if (_refresh is { } frame)
@@ -702,13 +702,13 @@ sealed partial class UsageView : Control
         if (e.InitialPressMouseButton == MouseButton.Right)
         {
             if (hit.Account is { } account)
-                ShowMenu(("Renombrar", () => RenameRequested?.Invoke(account)),
-                    ("Abrir carpeta", () => Gfx.OpenFolder(account.ConfigDir)),
-                    ("Quitar", () => RemoveRequested?.Invoke(account)));
+                ShowMenu((L.T("Renombrar"), () => RenameRequested?.Invoke(account)),
+                    (L.T("Abrir carpeta"), () => Gfx.OpenFolder(account.ConfigDir)),
+                    (L.T("Quitar"), () => RemoveRequested?.Invoke(account)));
             else if (hit.Session is { } session)
-                ShowMenu(("Nueva sesión en esta carpeta…", () => NewSessionRequested?.Invoke(session)),
-                    ("Abrir carpeta del proyecto", () => Gfx.OpenFolder(session.Cwd)),
-                    ("Copiar ID de la sesión", () => _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(session.SessionId)));
+                ShowMenu((L.T("Nueva sesión en esta carpeta…"), () => NewSessionRequested?.Invoke(session)),
+                    (L.T("Abrir carpeta del proyecto"), () => Gfx.OpenFolder(session.Cwd)),
+                    (L.T("Copiar ID de la sesión"), () => _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(session.SessionId)));
             return;
         }
         if (e.InitialPressMouseButton != MouseButton.Left) return;
@@ -728,7 +728,7 @@ sealed partial class UsageView : Control
                 else ShowSettings();
                 break;
             case HitKind.CloseSettings: OpenView(_beforeSettings); break;
-            case HitKind.Setting when hit.Key is "set:pack" or "set:palette" or "set:mascot": ShowChoiceMenu(hit.Key[4..]); break;
+            case HitKind.Setting when hit.Key is "set:pack" or "set:palette" or "set:mascot" or "set:language": ShowChoiceMenu(hit.Key[4..]); break;
             case HitKind.Setting: SettingRequested?.Invoke(hit.Key[4..]); break;
             case HitKind.FlowSession when hit.Session is { } flow: _flowSession = flow.SessionId; Relayout(); break;
             case HitKind.FlowBack: _flowSession = null; Relayout(); break;

@@ -1,4 +1,4 @@
-Uso de Claude para Linux
+Claupet para Linux
 
 1. Abra una terminal en esta carpeta.
 2. Ejecute:  sh instalar.sh

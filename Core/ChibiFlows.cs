@@ -45,10 +45,11 @@ static partial class ChibiSprite
         ];
         public static readonly string[] LensGlint = ["..", ".W", "W."];
 
+        // La libreta vista desde enfrente de ella: la hoja mira a quien escribe, así que se ve dada vuelta
+        // (el espiral abajo) y los renglones se llenan desde abajo, de derecha a izquierda.
         public static readonly string[] Notebook =
         [
             "KKKKKKKKKKKK",
-            "KeWeWeWeWeWK",
             "KWWWWWWWWWWK",
             "KWLLLLLLLLWK",
             "KWWWWWWWWWWK",
@@ -56,6 +57,7 @@ static partial class ChibiSprite
             "KWWWWWWWWWWK",
             "KWLLLLLLLLWK",
             "KWWWWWWWWWWK",
+            "KWeWeWeWeWeK",
             "KKKKKKKKKKKK",
         ];
         // Lápiz en diagonal, escribiendo: la goma arriba a la izquierda y la punta abajo a la derecha, en
@@ -72,17 +74,17 @@ static partial class ChibiSprite
             "......KK..",
         ];
 
-        // La laptop vista por detrás: la tapa con una calcomanía de terminal (>_) y el borde de la base.
+        // La laptop vista por detrás: la tapa con el cangrejito de Claude de logo y el borde de la base.
         public static readonly string[] Lid =
         [
             "KKKKKKKKKKKKKKKK",
             "KEEEEEEEEEEEEEEK",
             "KEEEEEEEEEEEEEEK",
-            "KEEEEKKKKKKEEEEK",
-            "KEEEEKvVVVKEEEEK",
-            "KEEEEKVvVVKEEEEK",
-            "KEEEEKvVvvKEEEEK",
-            "KEEEEKKKKKKEEEEK",
+            "KEEEZZZZZZZEEEEK",
+            "KEEEZKZZZKZEEEEK",
+            "KEEZZZZZZZZZEEEK",
+            "KEEEZEZEZEZEEEEK",
+            "KEEEEEEEEEEEEEEK",
             "KeeeeeeeeeeeeeeK",
             "KKKKKKKKKKKKKKKK",
         ];
@@ -199,6 +201,7 @@ static partial class ChibiSprite
         Palette['e'] = Hex(0x7E8C86); // metal, sombra
         Palette['V'] = Hex(0x1E2A26); // pantalla
         Palette['v'] = Hex(0x3DD6A3); // texto de la terminal
+        Palette['Z'] = Hex(0xD97757); // el cangrejito de Claude (logo de la laptop)
         Palette['J'] = Hex(0x3FAE5A); // tierra del globo
         Palette['p'] = Hex(0x6B45C9); // audífonos, sombra
         Palette['D'] = Hex(0xB9773A); // madera del mazo
@@ -272,7 +275,8 @@ static partial class ChibiSprite
         ];
 
         // Editar: la libreta en la mano de la derecha y el lápiz en la otra, con la punta sobre la hoja;
-        // la mano sigue lo que va escribiendo, renglón por renglón.
+        // la mano sigue lo que va escribiendo, renglón por renglón. La hoja se ve dada vuelta (Art.Notebook):
+        // el primer renglón es el de abajo y se escribe hacia la izquierda.
         const int bookX = 13, bookY = 32;
         var edit = new List<Frame>();
         var scribble = "NN.NNN.N";
@@ -287,22 +291,22 @@ static partial class ChibiSprite
                 var sheet = Grid(Art.Notebook);
                 for (var l = 0; l <= line; l++)
                     for (var c = 0; c < (l < line ? scribble.Length : k); c++)
-                        if (scribble[c] == 'N') sheet[3 + l * 2][2 + c] = 'N';
+                        if (scribble[c] == 'N') sheet[6 - l * 2][9 - c] = 'N';
                 edit.Add(F(new Pose
                 {
                     Eyes = k % 4 == 0 ? Eyes.DownRight : Eyes.Down, Mouth = Mouth.Small, Crab = (1, 2), Left = Arm.Write, Right = Arm.Front,
-                    Props = Writing([.. sheet.Select(r => new string(r))], bookX + 1 + k, bookY + 3 + line * 2),
+                    Props = Writing([.. sheet.Select(r => new string(r))], bookX + 10 - k, bookY + 6 - line * 2),
                 }, 160));
             }
         var done = Grid(Art.Notebook);
         for (var l = 0; l < 3; l++)
             for (var c = 0; c < scribble.Length; c++)
-                if (scribble[c] == 'N') done[3 + l * 2][2 + c] = 'N';
+                if (scribble[c] == 'N') done[6 - l * 2][9 - c] = 'N';
         edit.Add(F(new Pose { Eyes = Eyes.Happy, Mouth = Mouth.Open, Crab = (1, 0), Left = Arm.Write, Right = Arm.Front,
-            Props = Writing([.. done.Select(r => new string(r))], bookX + 1 + scribble.Length, bookY + 7) }, 320));
+            Props = Writing([.. done.Select(r => new string(r))], bookX + 10 - scribble.Length, bookY + 2) }, 320));
         moves[ChibiMove.Edit] = [.. edit];
 
-        // Ejecutar: detrás de la laptop (se ve la tapa, con su calcomanía >_), teclea a ráfagas con la
+        // Ejecutar: detrás de la laptop (se ve la tapa, con el cangrejito de Claude), teclea a ráfagas con la
         // pantalla reflejada en los ojos, y entre ráfaga y ráfaga se queda mirando lo que salió.
         var lid = new (string[], int, int)[] { (Art.Lid, 8, 30), (Art.LidBase, 7, 40) };
         var typing = new Pose { Eyes = Eyes.Glow, Mouth = Mouth.Small, Crab = (1, 2), Left = Arm.Type, Right = Arm.Front, Props = lid };

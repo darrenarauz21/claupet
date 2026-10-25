@@ -15,7 +15,7 @@ sealed partial class UsageView
     /// null si la mascota no está en el escritorio.
     /// </summary>
     public sealed record SettingsState(bool Notifications, bool Sound, string SoundPack, string Palette,
-        string Mascot, bool DesktopMascot, bool? Speak, MascotBehavior? Behavior, bool StartWithSystem, int Accounts);
+        string Mascot, bool DesktopMascot, bool? Speak, MascotBehavior? Behavior, bool StartWithSystem, int Accounts, string Language);
 
     /// <summary>Un interruptor por comportamiento de la mascota del escritorio.</summary>
     public sealed record MascotBehavior(bool FlowGestures, bool DanceToMusic, bool NoticeGestures, bool GreetOnAppear,
@@ -27,16 +27,16 @@ sealed partial class UsageView
     View? _replacing;
     View _beforeSettings = View.Usage;
     Rect _selectorBounds;
-    SettingsState _settingsState = new(true, true, "", "", "", false, null, null, false, 0);
+    SettingsState _settingsState = new(true, true, "", "", "", false, null, null, false, 0, "");
     string _soundPackId = "", _paletteId = "", _mascotId = "";
 
     static string ViewLabel(View view) => view switch
     {
-        View.Usage => "Uso",
-        View.Sessions => "Sesiones",
-        View.Activity => "Actividad",
-        View.Flows => "Flujos",
-        _ => "Ajustes",
+        View.Usage => L.T("Uso"),
+        View.Sessions => L.T("Sesiones"),
+        View.Activity => L.T("Actividad"),
+        View.Flows => L.T("Flujos"),
+        _ => L.T("Ajustes"),
     };
 
     /// <summary>Tres vistas distintas y elegibles; si no, las de siempre.</summary>
@@ -128,8 +128,8 @@ sealed partial class UsageView
         var top = _selectorBounds.Bottom + 6;
         var small = Gfx.Small.LineHeight;
         var hint = _replacing is { } incoming
-            ? $"Pulse el pin de la fija que cambia por {ViewLabel(incoming)}."
-            : "Siempre hay 3 pestañas fijas. Para fijar otra, pulse su pin y luego el de la que cambia.";
+            ? L.T("Pulse el pin de la fija que cambia por {0}.", ViewLabel(incoming))
+            : L.T("Siempre hay 3 pestañas fijas. Para fijar otra, pulse su pin y luego el de la que cambia.");
         var hintHeight = Gfx.MeasureWrapped(hint, Gfx.Small, width - 24, 4);
         var height = 8 + small + 8 + Selectable.Length * rowHeight + 9 + hintHeight + 12;
         var panel = new Rect(x, top, width, height);
@@ -139,7 +139,7 @@ sealed partial class UsageView
         {
             Gfx.Fill(dc, _t.Raised, panel, 10);
             Gfx.Outline(dc, _t.Border, panel, 10);
-            Gfx.Write(dc, "Clic: abrir · Pin: fijar como pestaña", Gfx.Small, _t.Tertiary, new Rect(x + 12, top + 8, width - 24, small));
+            Gfx.Write(dc, L.T("Clic: abrir · Pin: fijar como pestaña"), Gfx.Small, _t.Tertiary, new Rect(x + 12, top + 8, width - 24, small));
         }
 
         var y = top + 8 + small + 8;
@@ -161,7 +161,7 @@ sealed partial class UsageView
                 var textWidth = Gfx.Measure(text, Gfx.Body).Width;
                 Gfx.Write(dc, text, Gfx.Body, _t.Text, new Rect(row.X + 10, row.Y, textWidth + 2, rowHeight), center: true);
                 if (_view == view)
-                    Gfx.Write(dc, "abierta", Gfx.Small, _t.Tertiary, new Rect(row.X + 10 + textWidth + 8, row.Y, 80, rowHeight), center: true);
+                    Gfx.Write(dc, L.T("abierta"), Gfx.Small, _t.Tertiary, new Rect(row.X + 10 + textWidth + 8, row.Y, 80, rowHeight), center: true);
                 if (_hoverKey == pinKey) Gfx.Fill(dc, _t.Hover, pin, 8);
                 var color = pinned ? (_replacing is null ? _t.Accent : _t.Warn) : _replacing == view ? _t.Warn : _t.Tertiary;
                 Gfx.Pin(dc, color, new Rect(pin.X + 7, pin.Y + 7, 16, 16), filled: pinned);
@@ -187,7 +187,7 @@ sealed partial class UsageView
         AddHit("settings-close", close, HitKind.CloseSettings);
         if (dc is not null)
         {
-            Gfx.Write(dc, "Ajustes", Gfx.Title, _t.Text, new Rect(Pad, y, Inner - 40, height));
+            Gfx.Write(dc, L.T("Ajustes"), Gfx.Title, _t.Text, new Rect(Pad, y, Inner - 40, height));
             if (_hoverKey == "settings-close") Gfx.Fill(dc, _t.Hover, close, 8);
             Gfx.Icon(dc, Glyph.Close, _t.Secondary, close, 13);
         }
@@ -197,36 +197,37 @@ sealed partial class UsageView
     double ComposeSettings(DrawingContext? dc, double y)
     {
         var s = _settingsState;
-        y = SettingsCaption(dc, "Avisos", y);
-        y = SwitchRow(dc, "Notificaciones", "notify", s.Notifications, y);
-        y = SwitchRow(dc, "Sonido", "sound", s.Sound, y);
-        y = ChoiceRow(dc, "Estilo de sonido", "pack", s.SoundPack, y);
-        y = LinksRow(dc, y, ("Ver un aviso de ejemplo", "sample"), ("Abrir carpeta de sonidos", "sounds"));
+        y = SettingsCaption(dc, L.T("Avisos"), y);
+        y = SwitchRow(dc, L.T("Notificaciones"), "notify", s.Notifications, y);
+        y = SwitchRow(dc, L.T("Sonido"), "sound", s.Sound, y);
+        y = ChoiceRow(dc, L.T("Estilo de sonido"), "pack", s.SoundPack, y);
+        y = LinksRow(dc, y, (L.T("Ver un aviso de ejemplo"), "sample"), (L.T("Abrir carpeta de sonidos"), "sounds"));
 
-        y = SettingsCaption(dc, "Apariencia", y + 10);
-        y = ChoiceRow(dc, "Color", "palette", s.Palette, y, swatch: _t.Accent);
-        y = ChoiceRow(dc, "Mascota", "mascot", s.Mascot, y);
-        y = SwitchRow(dc, "Mascota en el escritorio", "desk", s.DesktopMascot, y);
+        y = SettingsCaption(dc, L.T("Apariencia"), y + 10);
+        y = ChoiceRow(dc, L.T("Color"), "palette", s.Palette, y, swatch: _t.Accent);
+        y = ChoiceRow(dc, L.T("Mascota"), "mascot", s.Mascot, y);
+        y = SwitchRow(dc, L.T("Mascota en el escritorio"), "desk", s.DesktopMascot, y);
         if (s.Behavior is { } b)
         {
-            y = SwitchRow(dc, "Gestos del flujo (lo que hace la sesión)", "flowgest", b.FlowGestures, y);
+            y = SwitchRow(dc, L.T("Gestos del flujo (lo que hace la sesión)"), "flowgest", b.FlowGestures, y);
             // La música sale del control multimedia de Windows; en Linux y macOS todavía no se detecta.
-            if (OperatingSystem.IsWindows()) y = SwitchRow(dc, "Bailar con música", "music", b.DanceToMusic, y);
-            y = SwitchRow(dc, "Gesto de los avisos", "noticegest", b.NoticeGestures, y);
-            y = SwitchRow(dc, "Saludar al aparecer", "greet", b.GreetOnAppear, y);
-            y = SwitchRow(dc, "Enojarse con muchos clics", "angry", b.AngryOnClicks, y);
-            y = SwitchRow(dc, "Dormir sin sesiones", "sleep", b.SleepWithoutSessions, y);
+            if (OperatingSystem.IsWindows()) y = SwitchRow(dc, L.T("Bailar con música"), "music", b.DanceToMusic, y);
+            y = SwitchRow(dc, L.T("Gesto de los avisos"), "noticegest", b.NoticeGestures, y);
+            y = SwitchRow(dc, L.T("Saludar al aparecer"), "greet", b.GreetOnAppear, y);
+            y = SwitchRow(dc, L.T("Enojarse con muchos clics"), "angry", b.AngryOnClicks, y);
+            y = SwitchRow(dc, L.T("Dormir sin sesiones"), "sleep", b.SleepWithoutSessions, y);
         }
-        if (s.Speak is { } speak) y = SwitchRow(dc, "Hablar (los avisos en una nubecita)", "speak", speak, y);
+        if (s.Speak is { } speak) y = SwitchRow(dc, L.T("Hablar (los avisos en una nubecita)"), "speak", speak, y);
 
-        y = SettingsCaption(dc, "Cuentas", y + 10);
-        y = LinkRow(dc, s.Accounts == 1 ? "1 cuenta" : $"{s.Accounts} cuentas", "Agregar cuenta…", "add", _t.Accent, y);
+        y = SettingsCaption(dc, L.T("Cuentas"), y + 10);
+        y = LinkRow(dc, s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add", _t.Accent, y);
 
-        y = SettingsCaption(dc, "Programa", y + 10);
-        y = SwitchRow(dc, "Iniciar con el sistema", "startup", s.StartWithSystem, y);
-        y = LinkRow(dc, "Avisos de permisos (hook)", "Configurar…", "setup", _t.Accent, y);
-        y = LinkRow(dc, "Si algo no funciona", "Copiar diagnóstico", "diag", _t.Accent, y);
-        y = LinkRow(dc, "Quitar hook e inicio con el sistema", "Quitar…", "unsetup", _t.Danger, y);
+        y = SettingsCaption(dc, L.T("Programa"), y + 10);
+        y = ChoiceRow(dc, L.T("Idioma"), "language", s.Language, y);
+        y = SwitchRow(dc, L.T("Iniciar con el sistema"), "startup", s.StartWithSystem, y);
+        y = LinkRow(dc, L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup", _t.Accent, y);
+        y = LinkRow(dc, L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag", _t.Accent, y);
+        y = LinkRow(dc, L.T("Quitar hook e inicio con el sistema"), L.T("Quitar…"), "unsetup", _t.Danger, y);
         return y + 14;
     }
 
@@ -315,9 +316,10 @@ sealed partial class UsageView
         {
             "palette" => ClaudeUsageTray.Theme.Palettes.Select(p => (p.Id, p.Label)),
             "mascot" => Mascots.Choices,
+            "language" => L.Choices,
             _ => Sounds.Packs,
         };
-        var selected = key switch { "palette" => _paletteId, "mascot" => _mascotId, _ => _soundPackId };
+        var selected = key switch { "palette" => _paletteId, "mascot" => _mascotId, "language" => L.Language, _ => _soundPackId };
         var menu = new ContextMenu();
         foreach (var (id, label) in choices)
         {

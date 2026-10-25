@@ -87,14 +87,14 @@ sealed partial class UsageForm : Form
         DoubleBuffered = true;
         ClientSize = new Size(S(360), S(300));
 
-        _accountMenu.Items.Add("Renombrar", null, (_, _) => { if (_menuAccount is { } a) RenameRequested?.Invoke(a); });
-        _accountMenu.Items.Add("Abrir carpeta", null, (_, _) => { if (_menuAccount is { } a) OpenFolder(a.ConfigDir); });
+        _accountMenu.Items.Add(L.T("Renombrar"), null, (_, _) => { if (_menuAccount is { } a) RenameRequested?.Invoke(a); });
+        _accountMenu.Items.Add(L.T("Abrir carpeta"), null, (_, _) => { if (_menuAccount is { } a) OpenFolder(a.ConfigDir); });
         _accountMenu.Items.Add(new ToolStripSeparator());
-        _accountMenu.Items.Add("Quitar", null, (_, _) => { if (_menuAccount is { } a) RemoveRequested?.Invoke(a); });
+        _accountMenu.Items.Add(L.T("Quitar"), null, (_, _) => { if (_menuAccount is { } a) RemoveRequested?.Invoke(a); });
 
-        _sessionMenu.Items.Add("Nueva sesión en esta carpeta…", null, (_, _) => { if (_menuSession is { } s) NewSessionRequested?.Invoke(s); });
-        _sessionMenu.Items.Add("Abrir carpeta del proyecto", null, (_, _) => { if (_menuSession is { } s) OpenFolder(s.Cwd); });
-        _sessionMenu.Items.Add("Copiar ID de la sesión", null, (_, _) => { if (_menuSession is { } s) Clipboard.SetText(s.SessionId); });
+        _sessionMenu.Items.Add(L.T("Nueva sesión en esta carpeta…"), null, (_, _) => { if (_menuSession is { } s) NewSessionRequested?.Invoke(s); });
+        _sessionMenu.Items.Add(L.T("Abrir carpeta del proyecto"), null, (_, _) => { if (_menuSession is { } s) OpenFolder(s.Cwd); });
+        _sessionMenu.Items.Add(L.T("Copiar ID de la sesión"), null, (_, _) => { if (_menuSession is { } s) Clipboard.SetText(s.SessionId); });
         Menus.Apply(_accountMenu, _t);
         Menus.Apply(_sessionMenu, _t);
 
@@ -315,7 +315,7 @@ sealed partial class UsageForm : Form
 
     int ComposeHeader(Graphics g, bool draw, int y)
     {
-        var height = TextRenderer.MeasureText(g, "Sesiones", _title, Size.Empty, Line).Height;
+        var height = TextRenderer.MeasureText(g, L.T("Sesiones"), _title, Size.Empty, Line).Height;
         var x = Pad;
         foreach (var view in _pinned)
         {
@@ -385,7 +385,7 @@ sealed partial class UsageForm : Form
         foreach (var account in _accounts)
         {
             _snapshots.TryGetValue(account.ConfigDir, out var snap);
-            var percent = snap?.Session is { } s ? $"{s.Percent:0} %" : "";
+            var percent = snap?.Session is { } s ? L.T("{0:0} %", s.Percent) : "";
             var labelWidth = TextRenderer.MeasureText(g, account.Label, _body, Size.Empty, Line).Width;
             var percentWidth = percent.Length == 0 ? 0 : S(6) + TextRenderer.MeasureText(g, percent, _small, Size.Empty, Line).Width;
             var pillWidth = S(12) + labelWidth + percentWidth + S(12);
@@ -428,7 +428,7 @@ sealed partial class UsageForm : Form
         var smallHeight = _small.Height;
         if (selected is null)
         {
-            if (draw) Write(g, "Agregue una cuenta con +", _body, _t.Secondary, new Rectangle(Pad, y, Inner, bodyHeight));
+            if (draw) Write(g, L.T("Agregue una cuenta con +"), _body, _t.Secondary, new Rectangle(Pad, y, Inner, bodyHeight));
             return y + bodyHeight + S(20);
         }
 
@@ -448,7 +448,7 @@ sealed partial class UsageForm : Form
 
         if (snapshot is null)
         {
-            if (draw) Write(g, "Consultando…", _body, _t.Tertiary, new Rectangle(Pad, y, Inner, bodyHeight));
+            if (draw) Write(g, L.T("Consultando…"), _body, _t.Tertiary, new Rectangle(Pad, y, Inner, bodyHeight));
             return y + bodyHeight + S(20);
         }
 
@@ -465,7 +465,7 @@ sealed partial class UsageForm : Form
             if (draw)
             {
                 Write(g, limit.Label, _body, _t.Text, new Rectangle(Pad, y, Inner - S(60), bodyHeight));
-                Write(g, $"{limit.Percent:0} %", _bodyStrong, _t.Text, new Rectangle(width - Pad - S(60), y, S(60), bodyHeight), TextFormatFlags.Right);
+                Write(g, L.T("{0:0} %", limit.Percent), _bodyStrong, _t.Text, new Rectangle(width - Pad - S(60), y, S(60), bodyHeight), TextFormatFlags.Right);
             }
             y += bodyHeight + S(8);
 
@@ -494,7 +494,7 @@ sealed partial class UsageForm : Form
 
         if (_sessions.Count == 0)
         {
-            if (draw) Write(g, "No hay sesiones abiertas.", _body, _t.Tertiary, new Rectangle(Pad, y, Inner, _body.Height));
+            if (draw) Write(g, L.T("No hay sesiones abiertas."), _body, _t.Tertiary, new Rectangle(Pad, y, Inner, _body.Height));
             return y + _body.Height + S(24);
         }
 
@@ -513,7 +513,7 @@ sealed partial class UsageForm : Form
             if (draw)
             {
                 if (_hoverKey == "idle") Draw.Fill(g, _t.Hover, toggle, S(8));
-                Write(g, $"Inactivas ({idle.Count})", _small, _t.Tertiary, new Rectangle(Pad, y, Inner, height), TextFormatFlags.VerticalCenter);
+                Write(g, L.T("Inactivas ({0})", idle.Count), _small, _t.Tertiary, new Rectangle(Pad, y, Inner, height), TextFormatFlags.VerticalCenter);
                 Write(g, _showIdle ? GlyphChevronUp : GlyphChevronDown, _glyphSmall, _t.Tertiary,
                     new Rectangle(Pad + Inner - S(16), y, S(16), height), TextFormatFlags.VerticalCenter | TextFormatFlags.Right);
             }
@@ -600,19 +600,19 @@ sealed partial class UsageForm : Form
 
     (string Text, Color Color) StatusLine(SessionInfo s) => s.State switch
     {
-        SessionState.Working => (s.Action ?? "Pensando…", _t.Secondary),
-        SessionState.Waiting => (s.AwaitingAnswer ? "Esperando su respuesta" : "Necesita su atención", _t.Warn),
-        SessionState.Failed => ("Falló · " + (s.ErrorText ?? "error de la API"), _t.Danger),
-        SessionState.Done => ("Terminó " + Format.Ago(s.TurnEndedAt ?? s.StatusAt)
+        SessionState.Working => (s.Action ?? L.T("Pensando…"), _t.Secondary),
+        SessionState.Waiting => (s.AwaitingAnswer ? L.T("Esperando su respuesta") : L.T("Necesita su atención"), _t.Warn),
+        SessionState.Failed => (L.T("Falló · {0}", s.ErrorText ?? L.T("error de la API")), _t.Danger),
+        SessionState.Done => (L.T("Terminó {0}", Format.Ago(s.TurnEndedAt ?? s.StatusAt))
             + (s.LastTurn is { } d ? $" · {Format.Duration(d)}" : ""), _t.Success),
-        _ => ("Inactiva · " + Format.Ago(s.TurnEndedAt ?? s.StatusAt), _t.Tertiary),
+        _ => (L.T("Inactiva · {0}", Format.Ago(s.TurnEndedAt ?? s.StatusAt)), _t.Tertiary),
     };
 
     static string ProgressLine(SessionInfo s)
     {
         var parts = new List<string>();
-        if (s.TodoTotal > 0) parts.Add($"{s.TodoDone} de {s.TodoTotal} tareas");
-        parts.Add(s.Steps == 1 ? "1 paso" : $"{s.Steps} pasos");
+        if (s.TodoTotal > 0) parts.Add(L.T("{0} de {1} tareas", s.TodoDone, s.TodoTotal));
+        parts.Add(s.Steps == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Steps));
         if (s.TurnStartedAt is { } start) parts.Add(Format.Duration(DateTimeOffset.Now - start));
         return string.Join(" · ", parts);
     }
@@ -620,14 +620,14 @@ sealed partial class UsageForm : Form
     static IEnumerable<(string Label, string Value, int Lines)> Details(SessionInfo s)
     {
         if (!string.IsNullOrWhiteSpace(s.LastPrompt))
-            yield return ("Pedido", s.LastPrompt.ReplaceLineEndings(" "), 3);
+            yield return (L.T("Pedido"), s.LastPrompt.ReplaceLineEndings(" "), 3);
         if (s.Cwd.Length > 0)
-            yield return ("Carpeta", s.Cwd.Replace(Account.Home, "~"), 1);
+            yield return (L.T("Carpeta"), s.Cwd.Replace(Account.Home, "~"), 1);
         if (Format.ModelLine(s) is { Length: > 0 } model)
-            yield return ("Modelo", model, 1);
-        var turns = s.Turns == 1 ? "1 interacción" : $"{s.Turns} interacciones";
-        var started = s.StartedAt is { } at ? $" · desde {at.LocalDateTime:t}" : "";
-        yield return ("Actividad", turns + started, 1);
+            yield return (L.T("Modelo"), model, 1);
+        var turns = s.Turns == 1 ? L.T("1 interacción") : L.T("{0} interacciones", s.Turns);
+        var started = s.StartedAt is { } at ? " · " + L.T("desde {0:t}", at.LocalDateTime) : "";
+        yield return (L.T("Actividad"), turns + started, 1);
     }
 
     // ── Animaciones ─────────────────────────────────────────────────────────────────────────
@@ -710,7 +710,7 @@ sealed partial class UsageForm : Form
         var smallHeight = _small.Height;
         if (_activity is null)
         {
-            if (draw) Write(g, "Calculando…", _body, _t.Tertiary, new Rectangle(Pad, y, Inner, _body.Height));
+            if (draw) Write(g, L.T("Calculando…"), _body, _t.Tertiary, new Rectangle(Pad, y, Inner, _body.Height));
             return y + _body.Height + S(24);
         }
 
@@ -745,7 +745,7 @@ sealed partial class UsageForm : Form
         var (q1, q2, q3) = (Quartile(0.25), Quartile(0.5), Quartile(0.75));
         int Level(long v) => v <= 0 ? 0 : v <= q1 ? 1 : v <= q2 ? 2 : v <= q3 ? 3 : 4;
 
-        string[] dayLabels = ["lun", "", "mié", "", "vie", "", ""];
+        string[] dayLabels = [L.T("lun"), "", L.T("mié"), "", L.T("vie"), "", ""];
         for (var r = 0; r < 7; r++)
             if (draw && dayLabels[r].Length > 0)
                 Write(g, dayLabels[r], _small, _t.Tertiary, new Rectangle(Pad, y + r * (cell + gap), labelWidth, cell), TextFormatFlags.VerticalCenter);
@@ -770,8 +770,8 @@ sealed partial class UsageForm : Form
 
         // Detalle del día bajo el mouse y leyenda.
         var legendBox = S(9);
-        var less = TextRenderer.MeasureText(g, "Menos", _small, Size.Empty, Line).Width;
-        var more = TextRenderer.MeasureText(g, "Más", _small, Size.Empty, Line).Width;
+        var less = TextRenderer.MeasureText(g, L.T("Menos"), _small, Size.Empty, Line).Width;
+        var more = TextRenderer.MeasureText(g, L.T("Más"), _small, Size.Empty, Line).Width;
         var legendWidth = less + S(5) + 5 * (legendBox + S(3)) + S(2) + more;
         if (draw)
         {
@@ -779,40 +779,40 @@ sealed partial class UsageForm : Form
             if (hovered is { } d)
             {
                 var record = _activity.Get(d);
-                detail = $"{d:ddd d MMM}".Replace(".", "") + (record is null || record.Tokens == 0
-                    ? " · sin actividad"
-                    : $" · {Format.Tokens(record.Tokens)} tokens · {record.Responses} respuestas");
+                detail = $"{d:ddd d MMM}".Replace(".", "") + " · " + (record is null || record.Tokens == 0
+                    ? L.T("sin actividad")
+                    : L.T("{0} tokens · {1} respuestas", Format.Tokens(record.Tokens), record.Responses));
             }
             else
             {
-                detail = _activity.FirstDay is { } first && first > start ? $"Desde el {first:d 'de' MMMM}" : "Últimos 6 meses";
+                detail = _activity.FirstDay is { } first && first > start ? L.T("Desde el {0:d 'de' MMMM}", first) : L.T("Últimos 6 meses");
             }
             Write(g, detail, _small, hovered is null ? _t.Tertiary : _t.Secondary,
                 new Rectangle(Pad, y, Inner - legendWidth - S(10), smallHeight), TextFormatFlags.EndEllipsis);
 
             var x = Pad + Inner - legendWidth;
-            Write(g, "Menos", _small, _t.Tertiary, new Rectangle(x, y, less, smallHeight));
+            Write(g, L.T("Menos"), _small, _t.Tertiary, new Rectangle(x, y, less, smallHeight));
             x += less + S(5);
             for (var level = 0; level <= 4; level++)
             {
                 Draw.Fill(g, HeatColor(level), new Rectangle(x, y + (smallHeight - legendBox) / 2, legendBox, legendBox), S(2));
                 x += legendBox + S(3);
             }
-            Write(g, "Más", _small, _t.Tertiary, new Rectangle(x + S(2), y, more, smallHeight));
+            Write(g, L.T("Más"), _small, _t.Tertiary, new Rectangle(x + S(2), y, more, smallHeight));
         }
         y += smallHeight + S(22);
 
         // Cifras del período, en dos columnas.
         var stats = ActivityStats.Compute(_activity, start, today);
-        static string Days(int n) => n == 1 ? "1 día" : $"{n} días";
+        static string Days(int n) => n == 1 ? L.T("1 día") : L.T("{0} días", n);
         var items = new (string Value, string Label)[]
         {
-            (Format.Tokens(stats.Tokens), "tokens"),
-            (stats.ActiveDays.ToString(), "días activos"),
-            (Days(stats.CurrentStreak), "racha actual"),
-            (Days(stats.LongestStreak), "racha más larga"),
-            (stats.BusiestDay is { } busiest ? $"{busiest:d MMM}".Replace(".", "") : "—", "día más activo"),
-            (stats.FavoriteModel ?? "—", "modelo favorito"),
+            (Format.Tokens(stats.Tokens), L.T("tokens")),
+            (stats.ActiveDays.ToString(), L.T("días activos")),
+            (Days(stats.CurrentStreak), L.T("racha actual")),
+            (Days(stats.LongestStreak), L.T("racha más larga")),
+            (stats.BusiestDay is { } busiest ? $"{busiest:d MMM}".Replace(".", "") : "—", L.T("día más activo")),
+            (stats.FavoriteModel ?? "—", L.T("modelo favorito")),
         };
         var columnWidth = Inner / 2;
         var rowHeight = _bodyStrong.Height + S(2) + smallHeight + S(14);
@@ -861,7 +861,7 @@ sealed partial class UsageForm : Form
             // Alto de 1,25 líneas sea cual sea la cuadrícula del estilo (la de la cabeza del chibi es más fina).
             var rows = RefreshSprite.Rows(_refreshStyle);
             var unit = Math.Max(1, (int)Math.Round(smallHeight * 1.25f / rows));
-            var when = _refresh is not null ? "" : _busy ? "Actualizando…" : _updated is { } u ? $"{u:t}" : "";
+            var when = _refresh is not null ? "" : _busy ? L.T("Actualizando…") : _updated is { } u ? $"{u:t}" : "";
             var whenWidth = _refresh is not null ? RefreshSprite.Columns(_refreshStyle) * unit : TextRenderer.MeasureText(g, when, _small, Size.Empty, Line).Width;
             Write(g, Format.Local(_local), _small, _t.Tertiary, new Rectangle(Pad, y, right - Pad - whenWidth - S(12), smallHeight), TextFormatFlags.EndEllipsis);
             if (_refresh is { } frame)

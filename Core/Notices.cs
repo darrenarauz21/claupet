@@ -49,27 +49,27 @@ sealed class NoticeDetector
             var where = $"{s.Account.Label} · {Path.GetFileName(s.Cwd.TrimEnd('\\', '/'))}";
 
             if (s.ErrorAt is not null && s.ErrorAt != before.ErrorAt)
-                notices.Add(new Notice(NoticeKind.Failed, "Falló", title, s.ErrorText ?? "Error de la API", s.SessionId));
+                notices.Add(new Notice(NoticeKind.Failed, L.T("Falló"), title, s.ErrorText ?? L.T("Error de la API"), s.SessionId));
             else if (s.TurnEndedAt is not null && s.TurnEndedAt != before.TurnEndedAt)
             {
                 var detail = new List<string>();
                 if (s.LastTurn is { } d) detail.Add(Format.Duration(d));
-                if (s.Steps > 0) detail.Add(s.Steps == 1 ? "1 paso" : $"{s.Steps} pasos");
+                if (s.Steps > 0) detail.Add(s.Steps == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Steps));
                 detail.Add(s.Account.Label);
-                notices.Add(new Notice(NoticeKind.Done, "Terminó", title, string.Join(" · ", detail), s.SessionId));
+                notices.Add(new Notice(NoticeKind.Done, L.T("Terminó"), title, string.Join(" · ", detail), s.SessionId));
             }
 
             if (s.AwaitingAnswer && !before.AwaitingAnswer)
-                notices.Add(new Notice(NoticeKind.Question, "Le está preguntando", title, where, s.SessionId));
+                notices.Add(new Notice(NoticeKind.Question, L.T("Le está preguntando"), title, where, s.SessionId));
 
             // Un reintento aislado es normal; se avisa una vez cuando ya van tres.
             if (s.RetryAt != before.RetryAt && s.RetryAttempt >= 3 && (before.RetryAttempt < 3 || before.RetryAt is null))
-                notices.Add(new Notice(NoticeKind.Retrying, "Reintentando", title,
-                    $"Intento {s.RetryAttempt} de {Math.Max(s.RetryAttempt, s.MaxRetries)} · {s.Account.Label}", s.SessionId));
+                notices.Add(new Notice(NoticeKind.Retrying, L.T("Reintentando"), title,
+                    L.T("Intento {0} de {1} · {2}", s.RetryAttempt, Math.Max(s.RetryAttempt, s.MaxRetries), s.Account.Label), s.SessionId));
         }
 
         foreach (var gone in previous.Values.Where(p => p.State == SessionState.Working && !_sessions.ContainsKey(p.SessionId)))
-            notices.Add(new Notice(NoticeKind.Closed, "Se cerró mientras trabajaba", gone.DisplayTitle,
+            notices.Add(new Notice(NoticeKind.Closed, L.T("Se cerró mientras trabajaba"), gone.DisplayTitle,
                 $"{gone.Account.Label} · {Path.GetFileName(gone.Cwd.TrimEnd('\\', '/'))}", gone.SessionId));
 
         return notices;
@@ -82,28 +82,28 @@ sealed class NoticeDetector
         {
             if (!snapshots.TryGetValue(account.ConfigDir, out var snap)) continue;
 
-            var expired = snap.Error?.StartsWith("Sesión vencida", StringComparison.Ordinal) == true;
+            var expired = snap.SessionExpired;
             if (expired && _expired.Add(account.ConfigDir) && _usageReady)
-                notices.Add(new Notice(NoticeKind.Expired, "Sesión vencida", account.Label,
-                    "Abra Claude Code con esta cuenta", AccountDir: account.ConfigDir));
+                notices.Add(new Notice(NoticeKind.Expired, L.T("Sesión vencida"), account.Label,
+                    L.T("Abra Claude Code con esta cuenta"), AccountDir: account.ConfigDir));
             if (!expired) _expired.Remove(account.ConfigDir);
             if (snap.Error is not null) continue;
 
             foreach (var limit in snap.Limits.Where(l => l.Kind is "session" or "weekly_all"))
             {
                 var key = account.ConfigDir + "|" + limit.Kind;
-                var window = limit.Kind == "session" ? "Sesión de 5 h" : "Semana";
+                var window = limit.Kind == "session" ? L.T("Sesión de 5 h") : L.T("Semana");
                 var subtitle = $"{window} · {account.Label}";
                 if (_usageReady && _percents.TryGetValue(key, out var before))
                 {
                     if (before >= 95 && limit.Percent < before - 20)
-                        notices.Add(new Notice(NoticeKind.UsageReset, "Límite reiniciado", subtitle,
-                            "Ya puede volver a usarlo", AccountDir: account.ConfigDir));
+                        notices.Add(new Notice(NoticeKind.UsageReset, L.T("Límite reiniciado"), subtitle,
+                            L.T("Ya puede volver a usarlo"), AccountDir: account.ConfigDir));
                     else if (limit.Percent >= 95 && before < 95)
-                        notices.Add(new Notice(NoticeKind.UsageCritical, $"Uso al {limit.Percent:0} %", subtitle,
+                        notices.Add(new Notice(NoticeKind.UsageCritical, L.T("Uso al {0:0} %", limit.Percent), subtitle,
                             Format.Reset(limit.ResetsAt), AccountDir: account.ConfigDir));
                     else if (limit.Percent >= 80 && before < 80)
-                        notices.Add(new Notice(NoticeKind.UsageHigh, $"Uso al {limit.Percent:0} %", subtitle,
+                        notices.Add(new Notice(NoticeKind.UsageHigh, L.T("Uso al {0:0} %", limit.Percent), subtitle,
                             Format.Reset(limit.ResetsAt), AccountDir: account.ConfigDir));
                 }
                 _percents[key] = limit.Percent;
@@ -146,7 +146,7 @@ sealed class NoticeDetector
                 var title = id is not null && _sessions?.TryGetValue(id, out var s) == true
                     ? s.DisplayTitle
                     : Path.GetFileName((Json.Str(r, "cwd") ?? "Claude Code").TrimEnd('\\', '/'));
-                notices.Add(new Notice(NoticeKind.Permission, "Necesita su permiso", title, message, id));
+                notices.Add(new Notice(NoticeKind.Permission, L.T("Necesita su permiso"), title, message, id));
             }
         }
         catch (Exception) { }
@@ -182,15 +182,15 @@ sealed class NoticeDetector
     /// <summary>Un aviso de cada tipo, para verlos sin esperar a que pasen.</summary>
     public static IEnumerable<Notice> Samples() =>
     [
-        new(NoticeKind.Done, "Terminó", "Monitor de uso de Claude", "2 min 25 s · 14 pasos · personal"),
-        new(NoticeKind.Question, "Le está preguntando", "Agregar pruebas al inicio de sesión", "principal · mi-proyecto"),
-        new(NoticeKind.Permission, "Necesita su permiso", "Ordenar las ramas del repositorio", "Claude needs your permission to use Bash"),
-        new(NoticeKind.Failed, "Falló", "Resumen del informe mensual", "API Error: Can't reach the API server — check your internet or DNS"),
-        new(NoticeKind.Retrying, "Reintentando", "Resumen del informe mensual", "Intento 3 de 10 · principal"),
-        new(NoticeKind.Closed, "Se cerró mientras trabajaba", "Corregir el cálculo de totales", "principal · mi-proyecto"),
-        new(NoticeKind.UsageHigh, "Uso al 82 %", "Sesión de 5 h · personal", "Reinicia en 1 h 20 min"),
-        new(NoticeKind.UsageCritical, "Uso al 96 %", "Semana · principal", "Reinicia el jueves, 6:00 a. m."),
-        new(NoticeKind.UsageReset, "Límite reiniciado", "Sesión de 5 h · personal", "Ya puede volver a usarlo"),
-        new(NoticeKind.Expired, "Sesión vencida", "personal", "Abra Claude Code con esta cuenta"),
+        new(NoticeKind.Done, L.T("Terminó"), L.T("Monitor de uso de Claude"), L.T("2 min 25 s · 14 pasos · personal")),
+        new(NoticeKind.Question, L.T("Le está preguntando"), L.T("Agregar pruebas al inicio de sesión"), L.T("principal · mi-proyecto")),
+        new(NoticeKind.Permission, L.T("Necesita su permiso"), L.T("Ordenar las ramas del repositorio"), "Claude needs your permission to use Bash"),
+        new(NoticeKind.Failed, L.T("Falló"), L.T("Resumen del informe mensual"), "API Error: Can't reach the API server — check your internet or DNS"),
+        new(NoticeKind.Retrying, L.T("Reintentando"), L.T("Resumen del informe mensual"), L.T("Intento 3 de 10 · principal")),
+        new(NoticeKind.Closed, L.T("Se cerró mientras trabajaba"), L.T("Corregir el cálculo de totales"), L.T("principal · mi-proyecto")),
+        new(NoticeKind.UsageHigh, L.T("Uso al 82 %"), L.T("Sesión de 5 h · personal"), L.T("Reinicia en 1 h 20 min")),
+        new(NoticeKind.UsageCritical, L.T("Uso al 96 %"), L.T("Semana · principal"), L.T("Reinicia el jueves, 6:00 a. m.")),
+        new(NoticeKind.UsageReset, L.T("Límite reiniciado"), L.T("Sesión de 5 h · personal"), L.T("Ya puede volver a usarlo")),
+        new(NoticeKind.Expired, L.T("Sesión vencida"), L.T("personal"), L.T("Abra Claude Code con esta cuenta")),
     ];
 }

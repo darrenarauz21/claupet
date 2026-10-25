@@ -1,4 +1,4 @@
-"""Genera los paquetes de Uso de Claude para Windows, Linux y macOS en paquetes/.
+"""Genera los paquetes de Claupet para Windows, Linux y macOS en paquetes/.
 
 Los nombres no llevan versión, para que los enlaces del README a la última Release
 (releases/latest/download/<archivo>) sigan sirviendo en cada versión nueva:
@@ -130,7 +130,7 @@ def mac(rid):
     shutil.rmtree(staging, ignore_errors=True)
     # En macOS no es un solo archivo: así codesign firma cada biblioteca dentro del .app.
     publish(AVALONIA, rid, staging, single_file=False)
-    app = "Uso de Claude.app"
+    app = "Claupet.app"
     name = f"UsoDeClaude-macos-{rid.split('-')[1]}"
     plist = text("Info.plist").replace("{VERSION}", VERSION)
     path = os.path.join(OUT, name + ".zip")

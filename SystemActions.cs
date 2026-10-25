@@ -25,10 +25,10 @@ static class SystemActions
                 "volumen" => Volume(action.Value),
                 "musica" or "música" => await MediaAsync(action.Value),
                 "abrir" => Open(action.Value),
-                _ => "Eso todavía no lo sé hacer.",
+                _ => L.T("Eso todavía no lo sé hacer."),
             };
         }
-        catch (Exception ex) { return $"No pude: {ex.Message}"; }
+        catch (Exception ex) { return L.T("No pude: {0}", ex.Message); }
     }
 
     static bool Same(string a, string b) =>
@@ -43,7 +43,7 @@ static class SystemActions
     const int KeepWallpapers = 5;
     const long MaxImage = 25 * 1024 * 1024;
     static readonly string[] ImageTypes = [".jpg", ".jpeg", ".png", ".bmp"];
-    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    static readonly HttpClient Http = SystemProxy.Client(TimeSpan.FromSeconds(30));
 
     /// <summary>Una imagen del equipo o una URL https de una imagen (se baja a WallpaperDir).</summary>
     static async Task<string?> WallpaperAsync(string value)
@@ -51,19 +51,19 @@ static class SystemActions
         string file;
         if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
         {
-            if (uri.Scheme != Uri.UriSchemeHttps) return "Solo bajo imágenes de enlaces https.";
+            if (uri.Scheme != Uri.UriSchemeHttps) return L.T("Solo bajo imágenes de enlaces https.");
             var downloaded = await DownloadImageAsync(uri);
-            if (downloaded is null) return "Ese enlace no es una imagen que pueda poner de fondo.";
+            if (downloaded is null) return L.T("Ese enlace no es una imagen que pueda poner de fondo.");
             file = downloaded;
         }
         else
         {
             file = Path.GetFullPath(Environment.ExpandEnvironmentVariables(value.Trim('"', ' ')));
-            if (!File.Exists(file)) return "No encontré esa imagen.";
-            if (!ImageTypes.Contains(Path.GetExtension(file).ToLowerInvariant())) return "Eso no es una imagen (.jpg, .png o .bmp).";
+            if (!File.Exists(file)) return L.T("No encontré esa imagen.");
+            if (!ImageTypes.Contains(Path.GetExtension(file).ToLowerInvariant())) return L.T("Eso no es una imagen (.jpg, .png o .bmp).");
         }
         const int SetDeskWallpaper = 0x0014, UpdateIniFile = 0x01, SendChange = 0x02;
-        return SystemParametersInfo(SetDeskWallpaper, 0, file, UpdateIniFile | SendChange) ? null : "Windows no aceptó esa imagen.";
+        return SystemParametersInfo(SetDeskWallpaper, 0, file, UpdateIniFile | SendChange) ? null : L.T("Windows no aceptó esa imagen.");
     }
 
     /// <summary>La baja si es JPEG, PNG o BMP de hasta MaxImage y se puede abrir como imagen; si no, null.</summary>
@@ -117,9 +117,10 @@ static class SystemActions
     static string? Mode(string value)
     {
         int light;
-        if (Same(value, "claro")) light = 1;
-        else if (Same(value, "oscuro")) light = 0;
-        else return "Solo sé poner el modo claro o el oscuro.";
+        // Los valores del protocolo van en español; en inglés, Claude a veces los traduce.
+        if (Same(value, "claro") || Same(value, "light")) light = 1;
+        else if (Same(value, "oscuro") || Same(value, "dark")) light = 0;
+        else return L.T("Solo sé poner el modo claro o el oscuro.");
         using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
         {
             key.SetValue("AppsUseLightTheme", light, RegistryValueKind.DWord);
@@ -135,7 +136,7 @@ static class SystemActions
     {
         var palette = Theme.Palettes.FirstOrDefault(p => Same(p.Label, value) || Same(p.Id, value));
         if (palette.Id is null)
-            return $"Ese color no lo tengo: hay {string.Join(", ", Theme.Palettes.Select(p => p.Label))}.";
+            return L.T("Ese color no lo tengo: hay {0}.", string.Join(", ", Theme.Palettes.Select(p => p.Label)));
         setPalette(palette.Id);
         return null;
     }
@@ -152,11 +153,11 @@ static class SystemActions
             endpoint.GetMasterVolumeLevelScalar(out var level);
             float? target = null;
             if (int.TryParse(value.TrimEnd('%', ' '), out var percent)) target = Math.Clamp(percent, 0, 100) / 100f;
-            else if (Same(value, "subir")) target = Math.Min(1f, level + 0.1f);
-            else if (Same(value, "bajar")) target = Math.Max(0f, level - 0.1f);
-            else if (Same(value, "silenciar")) endpoint.SetMute(true, ref context);
-            else if (Same(value, "activar")) endpoint.SetMute(false, ref context);
-            else return "No entendí cuánto volumen.";
+            else if (Same(value, "subir") || Same(value, "up")) target = Math.Min(1f, level + 0.1f);
+            else if (Same(value, "bajar") || Same(value, "down")) target = Math.Max(0f, level - 0.1f);
+            else if (Same(value, "silenciar") || Same(value, "mute")) endpoint.SetMute(true, ref context);
+            else if (Same(value, "activar") || Same(value, "unmute")) endpoint.SetMute(false, ref context);
+            else return L.T("No entendí cuánto volumen.");
             if (target is { } t)
             {
                 endpoint.SetMasterVolumeLevelScalar(t, ref context);
@@ -188,16 +189,16 @@ static class SystemActions
     static async Task<string?> MediaAsync(string value)
     {
         const byte Next = 0xB0, Previous = 0xB1, PlayPause = 0xB3;
-        if (Same(value, "siguiente")) Tap(Next);
-        else if (Same(value, "anterior")) Tap(Previous);
-        else if (Same(value, "reproducir") || Same(value, "pausar"))
+        if (Same(value, "siguiente") || Same(value, "next")) Tap(Next);
+        else if (Same(value, "anterior") || Same(value, "previous")) Tap(Previous);
+        else if (Same(value, "reproducir") || Same(value, "pausar") || Same(value, "play") || Same(value, "pause"))
         {
             // La tecla solo alterna: se mira antes si algo suena, para no reanudar al pedir una pausa.
-            var play = Same(value, "reproducir");
+            var play = Same(value, "reproducir") || Same(value, "play");
             var playing = await Task.Run(Music.PlayingNow);
             if (playing != play) Tap(PlayPause);
         }
-        else return "No entendí qué hacer con la música.";
+        else return L.T("No entendí qué hacer con la música.");
         return null;
     }
 
@@ -216,14 +217,14 @@ static class SystemActions
     static string? Open(string value)
     {
         value = value.Trim().Trim('"');
-        if (value.Length == 0) return "No me dijeron qué abrir.";
+        if (value.Length == 0) return L.T("No me dijeron qué abrir.");
         if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && !uri.IsFile)
         {
-            if (!Schemes.Contains(uri.Scheme)) return "Ese tipo de enlace no lo abro.";
+            if (!Schemes.Contains(uri.Scheme)) return L.T("Ese tipo de enlace no lo abro.");
             Start(value);
             return null;
         }
-        if (FindShortcut(value) is not { } shortcut) return $"No encontré «{value}» en el menú Inicio.";
+        if (FindShortcut(value) is not { } shortcut) return L.T("No encontré «{0}» en el menú Inicio.", value);
         Start(shortcut);
         return null;
     }

@@ -1,4 +1,4 @@
-Uso de Claude para macOS
+Claupet para macOS
 
 1. Abra la app Terminal.
 2. Escriba  sh  y un espacio, arrastre el archivo preparar-mac.sh a la ventana y pulse Enter.

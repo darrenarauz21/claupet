@@ -28,7 +28,7 @@ sealed class PopupWindow : Window
 
     public PopupWindow()
     {
-        Title = "Uso de Claude";
+        Title = "Claupet";
         SystemDecorations = SystemDecorations.None;
         CanResize = false;
         ShowInTaskbar = false;
@@ -101,7 +101,7 @@ sealed class ToastWindow : Window
     public ToastWindow(Notice notice, Theme theme)
     {
         Notice = notice;
-        Title = "Uso de Claude";
+        Title = "Claupet";
         SystemDecorations = SystemDecorations.None;
         CanResize = false;
         ShowInTaskbar = false;
@@ -310,19 +310,19 @@ sealed class ToastStack
 /// <summary>Diálogos sencillos (aviso, confirmar, pedir un texto) con el tema de la app.</summary>
 static class Dialogs
 {
-    public static Task Info(string text, Theme theme) => Show(text, theme, ["Aceptar"]);
+    public static Task Info(string text, Theme theme) => Show(text, theme, [L.T("Aceptar")]);
 
-    public static async Task<bool> Confirm(string text, Theme theme) => await Show(text, theme, ["Sí", "No"]) == 0;
+    public static async Task<bool> Confirm(string text, Theme theme) => await Show(text, theme, [L.T("Sí"), L.T("No")]) == 0;
 
     public static async Task<string?> Ask(string title, string label, string value, Theme theme)
     {
         var box = new TextBox { Text = value, Width = 280 };
-        var result = await Show(label, theme, ["Aceptar", "Cancelar"], box, title);
+        var result = await Show(label, theme, [L.T("Aceptar"), L.T("Cancelar")], box, title);
         var text = box.Text?.Trim();
         return result == 0 && !string.IsNullOrEmpty(text) ? text : null;
     }
 
-    static Task<int> Show(string text, Theme theme, string[] buttons, Control? extra = null, string title = "Uso de Claude")
+    static Task<int> Show(string text, Theme theme, string[] buttons, Control? extra = null, string title = "Claupet")
     {
         var done = new TaskCompletionSource<int>();
         var window = new Window
@@ -365,10 +365,12 @@ sealed class SetupWindow : Window
     public bool StartWithSystem => _startup.IsChecked == true;
     public bool NotificationsOn => _notifications.IsChecked == true;
     public Task<bool> Result => _done.Task;
+    /// <summary>Cuántos hooks agregó o actualizó ApplyHooks.</summary>
+    public int HooksChanged { get; private set; }
 
     public SetupWindow(AppSettings settings, string exePath, Theme theme, IEnumerable<string> configDirs)
     {
-        Title = "Configurar Uso de Claude";
+        Title = L.T("Configurar Claupet");
         SizeToContent = SizeToContent.WidthAndHeight;
         CanResize = false;
         Topmost = true;
@@ -386,35 +388,35 @@ sealed class SetupWindow : Window
             Content = text, IsChecked = isChecked, IsEnabled = enabled, Foreground = Gfx.B(enabled ? theme.Text : theme.Tertiary),
         };
 
-        panel.Children.Add(Label("Configuración", 22, Gfx.B(theme.Text), family: Gfx.Title.Typeface.FontFamily));
-        panel.Children.Add(Label("Elija qué configurar. Nada cambia sin su confirmación.", 12.5, Gfx.B(theme.Secondary)));
-        panel.Children.Add(Label("Avisos de permisos", 14, Gfx.B(theme.Text), 14, FontWeight.SemiBold));
-        panel.Children.Add(Label("Agrega un hook al settings.json de Claude Code; antes se guarda un respaldo.", 12, Gfx.B(theme.Tertiary)));
+        panel.Children.Add(Label(L.T("Configuración"), 22, Gfx.B(theme.Text), family: Gfx.Title.Typeface.FontFamily));
+        panel.Children.Add(Label(L.T("Elija qué configurar. Nada cambia sin su confirmación."), 12.5, Gfx.B(theme.Secondary)));
+        panel.Children.Add(Label(L.T("Avisos de permisos"), 14, Gfx.B(theme.Text), 14, FontWeight.SemiBold));
+        panel.Children.Add(Label(L.T("Agrega un hook al settings.json de Claude Code; antes se guarda un respaldo."), 12, Gfx.B(theme.Tertiary)));
         foreach (var dir in configDirs)
         {
             var state = HookInstaller.Status(dir, exePath);
             var name = dir.Replace(Account.Home, "~");
             var box = state switch
             {
-                HookInstaller.State.Installed => Option($"{name} — ya está configurado", true, enabled: false),
-                HookInstaller.State.Outdated => Option($"{name} — apunta a otra ruta: actualizarlo", true),
-                HookInstaller.State.Unreadable => Option($"{name} — su settings.json tiene errores; no se toca", false, enabled: false),
-                _ => Option($"{name} — agregar", true),
+                HookInstaller.State.Installed => Option(L.T("{0} — ya está configurado", name), true, enabled: false),
+                HookInstaller.State.Outdated => Option(L.T("{0} — apunta a otra ruta: actualizarlo", name), true),
+                HookInstaller.State.Unreadable => Option(L.T("{0} — su settings.json tiene errores; no se toca", name), false, enabled: false),
+                _ => Option(L.T("{0} — agregar", name), true),
             };
             _rows.Add(new HookRow(dir, state, box));
             panel.Children.Add(box);
         }
-        if (_rows.Count == 0) panel.Children.Add(Label("No se encontró ninguna carpeta de Claude Code.", 12, Gfx.B(theme.Tertiary)));
+        if (_rows.Count == 0) panel.Children.Add(Label(L.T("No se encontró ninguna carpeta de Claude Code."), 12, Gfx.B(theme.Tertiary)));
 
-        panel.Children.Add(Label("Programa", 14, Gfx.B(theme.Text), 14, FontWeight.SemiBold));
-        _startup = Option("Iniciar con el sistema", StartupRegistration.IsEnabled || !settings.SetupDone);
-        _notifications = Option("Mostrar notificaciones", settings.Notifications);
+        panel.Children.Add(Label(L.T("Programa"), 14, Gfx.B(theme.Text), 14, FontWeight.SemiBold));
+        _startup = Option(L.T("Iniciar con el sistema"), StartupRegistration.IsEnabled || !settings.SetupDone);
+        _notifications = Option(L.T("Mostrar notificaciones"), settings.Notifications);
         panel.Children.Add(_startup);
         panel.Children.Add(_notifications);
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
-        var apply = new Button { Content = "Aplicar", Background = Gfx.B(theme.Accent), Foreground = Brushes.White, IsDefault = true, MinWidth = 90 };
-        var later = new Button { Content = "Ahora no", IsCancel = true, MinWidth = 90 };
+        var apply = new Button { Content = L.T("Aplicar"), Background = Gfx.B(theme.Accent), Foreground = Brushes.White, IsDefault = true, MinWidth = 90 };
+        var later = new Button { Content = L.T("Ahora no"), IsCancel = true, MinWidth = 90 };
         apply.Click += (_, _) => { _done.TrySetResult(true); Close(); };
         later.Click += (_, _) => { _done.TrySetResult(false); Close(); };
         row.Children.Add(later);
@@ -433,10 +435,11 @@ sealed class SetupWindow : Window
             try
             {
                 var backup = HookInstaller.Install(row.Dir, exePath);
-                var verb = row.State == HookInstaller.State.Outdated ? "hook actualizado" : "hook agregado";
-                lines.Add(backup is null ? $"{name}: {verb}." : $"{name}: {verb} (respaldo: {Path.GetFileName(backup)}).");
+                HooksChanged++;
+                var verb = row.State == HookInstaller.State.Outdated ? L.T("hook actualizado") : L.T("hook agregado");
+                lines.Add(backup is null ? $"{name}: {verb}." : L.T("{0}: {1} (respaldo: {2}).", name, verb, Path.GetFileName(backup)));
             }
-            catch (Exception ex) { lines.Add($"{name}: no se pudo cambiar ({ex.Message})."); }
+            catch (Exception ex) { lines.Add(L.T("{0}: no se pudo cambiar ({1}).", name, ex.Message)); }
         }
         return lines;
     }

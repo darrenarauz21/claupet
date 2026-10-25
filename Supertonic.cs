@@ -65,7 +65,7 @@ sealed class Supertonic : IDisposable
         return new Voice(Read("style_ttl"), Read("style_dp"));
     }
 
-    /// <summary>Una frase (o un trozo de hasta 300 caracteres) en español, como muestras de -1 a 1.</summary>
+    /// <summary>Una frase (o un trozo de hasta 300 caracteres) en el idioma de la app, como muestras de -1 a 1.</summary>
     public float[] Speak(string text, Voice voice)
     {
         var processed = Preprocess(text);
@@ -134,7 +134,7 @@ sealed class Supertonic : IDisposable
         while (text.Contains("''")) text = text.Replace("''", "'");
         text = Regex.Replace(text, @"\s+", " ").Trim();
         if (!Regex.IsMatch(text, @"[.!?;:,'""“”‘’)\]}…。」』】〉》›»]$")) text += ".";
-        return "<es>" + text + "</es>";
+        return $"<{L.Language}>{text}</{L.Language}>";
     }
 
     static readonly (string From, string To)[] Replacements =

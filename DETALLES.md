@@ -1,4 +1,4 @@
-# Uso de Claude: detalles técnicos
+# Claupet: detalles técnicos
 
 Lo que el [README](README.md) no cuenta: de dónde sale cada dato, dónde se guarda cada cosa, cómo
 se compila y cuáles son los límites conocidos.
@@ -15,6 +15,18 @@ app.ico                  ícono de la mascota
 ```
 
 Las dos apps compilan los mismos archivos de `Core/`; solo la interfaz es propia de cada una.
+
+## Idiomas
+
+Español e inglés (`Core/Language.cs`). El texto en español del código es la clave: `L.T("Actualizar")`
+da su traducción del idioma elegido (`Core/Idiomas/en.json`, dentro del ejecutable) o el mismo texto si
+es español o falta; con valores, `L.T("Reinicia en {0}", x)`, como `string.Format`. El idioma sale de
+`Language` en `settings.json` o, sin elegir, del sistema (español si está en español; si no, inglés), y
+se fija al abrir la app: al cambiarlo en **Ajustes › Sistema**, la app se reinicia (`--reiniciar`). El
+idioma también decide la cultura (fechas y horas), lo que se le pide a Claude, el micrófono (Whisper),
+la voz de Claupet (Supertonic, `<es>`/`<en>`) y la voz de Windows. Los nombres de las acciones de la
+mascota (`[ACCION]`) son del protocolo y van siempre en español. Para otro idioma: un
+`Core/Idiomas/<código>.json` con las mismas claves y una entrada en `L.Choices`.
 
 ## Dónde se guarda cada cosa
 
@@ -43,6 +55,19 @@ barra y cuándo reinicia. Al pie, los tokens de hoy en este equipo. Al actualiza
 hora del pie. La de siempre es la mascota clásica: abre los ojos, mira a los lados mientras llega la respuesta y hace `> <`
 antes de mostrar el estado nuevo. Con la mascota chibi, lo mismo lo hace su cabeza, que termina con
 `> <` y boca de gatito (`:3`).
+
+**Sesión vencida.** La app no toca las credenciales de Claude Code (para no pisarlas): cuando el token
+de una cuenta venció, corre una consulta mínima de Claude Code con esa cuenta (`claude -p` con Haiku,
+`--safe-mode`, sin herramientas ni sesión guardada) y es Claude Code quien lo renueva; después vuelve
+a consultar (`SessionRenewal`). Se hace al abrir la app, con todas las cuentas vencidas (si no hay
+conexión, en la actualización siguiente), y con **Actualizar** sobre la cuenta que se está viendo.
+`claude auth status` no sirve para esto: no renueva el token.
+
+**Proxy.** Las consultas salen por el proxy de cada momento (`SystemProxy`): `HTTPS_PROXY` si está y,
+si no, en Windows el proxy manual de Opciones de Internet, leído en cada conexión (el de .NET se fija
+al arrancar y no ve un proxy que se activa después). Claude Code no lee el proxy de Windows: la app
+se lo pasa como `HTTPS_PROXY` al chat, a la renovación y a las sesiones que abre. La configuración
+automática (PAC) no se lee.
 
 ## Apariencia
 
@@ -212,6 +237,11 @@ entrada estándar y el prompt de sistema en un archivo. El chat solo puede busca
 (`WebSearch` y `WebFetch`; el clima sale de `wttr.in`); el análisis de un archivo solo puede leer su
 carpeta (`Read`, `Glob`, `Grep`). La mascota usa `MascotModel` (Haiku, de entrada) y se le pide
 responder en 220 caracteres como mucho; la isla, `IslandModel` (vacío: el modelo de sus sesiones).
+**Sin internet.** Mientras arranca `claude`, la app comprueba la conexión (`Connectivity`, una
+petición corta a la API por el proxy del momento). Si no hay, lo cierra enseguida y responde ella:
+el saludo, la hora y la fecha se contestan en el equipo, y a lo demás se le dice que no hay
+conexión. Si Claude Code pasa 90 segundos sin decir nada, también se cierra.
+
 La primera línea de la respuesta puede traer una marca, que no se muestra:
 
 | Marca | Qué pasa |
@@ -403,6 +433,8 @@ Solo en Windows, para probar el asistente:
   cuánto. Sirve para comprobar que el paquete de un solo archivo encuentra las DLL de Whisper.
 - `--accion <acción> <valor>`: hace esa acción de la mascota sin pasar por Claude (por ejemplo,
   `--accion volumen 30`) y escribe «listo» o lo que falló.
+- `--preguntar <texto>`: se lo pregunta a la mascota (con su cuenta y su modelo) y escribe la
+  respuesta. Con `HTTPS_PROXY` apuntando a un puerto cerrado sirve para probar las respuestas sin internet.
 - `--descargar-voz`: baja la voz de Claupet como desde **Ajustes**, con el avance.
 - `--decir <F4|M1> <texto>`: lo dice con esa voz, frase por frase, y escribe cuánto tardó cada una.
 

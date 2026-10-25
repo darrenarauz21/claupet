@@ -38,7 +38,7 @@ sealed class MascotWindow : Window
         _director = director;
         Chibi = chibi;
         _saved = saved;
-        Title = "Uso de Claude";
+        Title = "Claupet";
         SystemDecorations = SystemDecorations.None;
         CanResize = false;
         ShowInTaskbar = false;
@@ -53,9 +53,9 @@ sealed class MascotWindow : Window
         Content = _view;
 
         var menu = new ContextMenu();
-        var open = new MenuItem { Header = "Abrir Uso de Claude" };
+        var open = new MenuItem { Header = L.T("Abrir Claupet") };
         open.Click += (_, _) => OpenRequested?.Invoke();
-        var hide = new MenuItem { Header = "Ocultar del escritorio" };
+        var hide = new MenuItem { Header = L.T("Ocultar del escritorio") };
         // Después del clic: ocultar cierra esta ventana, y con ella el menú que está avisando.
         hide.Click += (_, _) => Dispatcher.UIThread.Post(() => HideRequested?.Invoke());
         menu.Items.Add(open);

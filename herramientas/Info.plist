@@ -2,8 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Uso de Claude</string>
-  <key>CFBundleDisplayName</key><string>Uso de Claude</string>
+  <key>CFBundleName</key><string>Claupet</string>
+  <key>CFBundleDisplayName</key><string>Claupet</string>
   <key>CFBundleIdentifier</key><string>local.usodeclaude</string>
   <key>CFBundleExecutable</key><string>UsoDeClaude</string>
   <key>CFBundleIconFile</key><string>app</string>

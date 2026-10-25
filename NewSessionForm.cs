@@ -3,8 +3,8 @@ namespace ClaudeUsageTray;
 /// <summary>Elige cuenta, carpeta, modelo, esfuerzo y asesor de una sesión nueva de Claude Code.</summary>
 sealed class NewSessionForm : Form
 {
-    const string Default = "Predeterminado de la cuenta";
-    const string NoAdvisor = "Ninguno";
+    static string Default => L.T("Predeterminado de la cuenta");
+    static string NoAdvisor => L.T("Ninguno");
 
     readonly ComboBox _account, _folder, _model, _effort, _advisor;
     readonly IReadOnlyList<Account> _accounts;
@@ -14,7 +14,7 @@ sealed class NewSessionForm : Form
     public NewSessionForm(IReadOnlyList<Account> accounts, LaunchOptions initial, IEnumerable<string> recentFolders, Theme theme)
     {
         _accounts = accounts;
-        Text = "Nueva sesión de Claude Code";
+        Text = L.T("Nueva sesión de Claude Code");
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
@@ -64,26 +64,26 @@ sealed class NewSessionForm : Form
             grid.Controls.Add(control);
         }
 
-        layout.Controls.Add(Heading("Nueva sesión", Fonts.Make("Georgia", 14f, "Cambria"), theme.Text));
-        layout.Controls.Add(Heading("Se abre en una terminal. Lo que elija vale solo para esa sesión.", small, theme.Secondary));
+        layout.Controls.Add(Heading(L.T("Nueva sesión"), Fonts.Make("Georgia", 14f, "Cambria"), theme.Text));
+        layout.Controls.Add(Heading(L.T("Se abre en una terminal. Lo que elija vale solo para esa sesión."), small, theme.Secondary));
 
         var accountIndex = Math.Max(0, accounts.ToList().FindIndex(a => initial.ConfigDir is not null && Account.SamePath(a.ConfigDir, initial.ConfigDir)));
         _account = Combo(false, accounts.Select(a => $"{a.Label} ({a.ConfigDir.Replace(Account.Home, "~")})"), null);
         if (accounts.Count > 0) _account.SelectedIndex = accountIndex;
-        Row("Cuenta", _account);
+        Row(L.T("Cuenta"), _account);
 
         var folders = recentFolders.Where(f => f.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToList();
         _folder = Combo(true, folders, initial.Folder ?? folders.FirstOrDefault() ?? Account.Home, fieldWidth - LogicalToDeviceUnits(90));
         var browse = new Button
         {
-            Text = "Examinar…", AutoSize = true, FlatStyle = FlatStyle.Flat, BackColor = theme.Raised, ForeColor = theme.Text,
+            Text = L.T("Examinar…"), AutoSize = true, FlatStyle = FlatStyle.Flat, BackColor = theme.Raised, ForeColor = theme.Text,
             FlatAppearance = { BorderColor = theme.Border },
         };
         browse.Click += (_, _) =>
         {
             using var dialog = new FolderBrowserDialog
             {
-                Description = "Carpeta del proyecto", UseDescriptionForTitle = true,
+                Description = L.T("Carpeta del proyecto"), UseDescriptionForTitle = true,
                 InitialDirectory = Directory.Exists(_folder.Text) ? _folder.Text : Account.Home,
             };
             if (dialog.ShowDialog(this) == DialogResult.OK) _folder.Text = dialog.SelectedPath;
@@ -91,17 +91,17 @@ sealed class NewSessionForm : Form
         var folderRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
         _folder.Margin = new Padding(0, 0, LogicalToDeviceUnits(6), 0);
         folderRow.Controls.AddRange(new Control[] { _folder, browse });
-        Row("Carpeta", folderRow);
+        Row(L.T("Carpeta"), folderRow);
 
         _model = Combo(true, Launcher.Models.Prepend(Default), initial.Model ?? Default);
-        Row("Modelo", _model);
+        Row(L.T("Modelo"), _model);
         _effort = Combo(false, Launcher.Efforts.Prepend(Default), initial.Effort);
-        Row("Esfuerzo", _effort);
+        Row(L.T("Esfuerzo"), _effort);
         var advisor = initial.Advisor == Launcher.NoAdvisor ? NoAdvisor : initial.Advisor;
         _advisor = Combo(false, Launcher.Advisors.Prepend(NoAdvisor).Prepend(Default), advisor);
-        Row("Asesor", _advisor);
+        Row(L.T("Asesor"), _advisor);
         layout.Controls.Add(grid);
-        layout.Controls.Add(Heading("El modelo también acepta un ID completo, como claude-opus-5-5. El asesor predeterminado es el que fijó /advisor en esa cuenta.",
+        layout.Controls.Add(Heading(L.T("El modelo también acepta un ID completo, como claude-opus-5-5. El asesor predeterminado es el que fijó /advisor en esa cuenta."),
             small, theme.Tertiary, top: 8));
 
         var buttons = new FlowLayoutPanel
@@ -116,8 +116,8 @@ sealed class NewSessionForm : Form
             Padding = new Padding(LogicalToDeviceUnits(10), LogicalToDeviceUnits(3), LogicalToDeviceUnits(10), LogicalToDeviceUnits(3)),
             FlatAppearance = { BorderColor = primary ? theme.Accent : theme.Border },
         };
-        var open = MakeButton("Abrir", DialogResult.OK, primary: true);
-        var cancel = MakeButton("Cancelar", DialogResult.Cancel, primary: false);
+        var open = MakeButton(L.T("Abrir"), DialogResult.OK, primary: true);
+        var cancel = MakeButton(L.T("Cancelar"), DialogResult.Cancel, primary: false);
         buttons.Controls.AddRange(new Control[] { open, cancel });
         layout.Controls.Add(buttons);
         Controls.Add(layout);
@@ -129,7 +129,7 @@ sealed class NewSessionForm : Form
             if (DialogResult != DialogResult.OK) return;
             if (Read() is { } error)
             {
-                MessageBox.Show(this, error, "Nueva sesión", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, error, L.T("Nueva sesión"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 e.Cancel = true;
             }
         };
@@ -144,13 +144,14 @@ sealed class NewSessionForm : Form
     /// <summary>Lee el formulario en Result. Devuelve el problema, o null si todo está bien.</summary>
     string? Read()
     {
-        if (_account.SelectedIndex < 0 || _account.SelectedIndex >= _accounts.Count) return "Elija una cuenta.";
+        if (_account.SelectedIndex < 0 || _account.SelectedIndex >= _accounts.Count) return L.T("Elija una cuenta.");
         var folder = _folder.Text.Trim();
-        if (!Directory.Exists(folder)) return "Esa carpeta no existe.";
+        if (!Directory.Exists(folder)) return L.T("Esa carpeta no existe.");
         var model = _model.Text.Trim();
         model = model.Length == 0 || model == Default ? null : model;
-        if (!Launcher.IsValid(model)) return "El modelo solo puede llevar letras, números, puntos, guiones y corchetes.";
+        if (!Launcher.IsValid(model)) return L.T("El modelo solo puede llevar letras, números, puntos, guiones y corchetes.");
 
+        // Por la posición, no por el texto: el primero es el predeterminado y, en el asesor, el segundo es «Ninguno».
         var effort = (string)_effort.SelectedItem!;
         var advisor = (string)_advisor.SelectedItem!;
         Result = new LaunchOptions
@@ -158,8 +159,8 @@ sealed class NewSessionForm : Form
             ConfigDir = _accounts[_account.SelectedIndex].ConfigDir,
             Folder = folder,
             Model = model,
-            Effort = effort == Default ? null : effort,
-            Advisor = advisor == Default ? null : advisor == NoAdvisor ? Launcher.NoAdvisor : advisor,
+            Effort = _effort.SelectedIndex == 0 ? null : effort,
+            Advisor = _advisor.SelectedIndex switch { 0 => null, 1 => Launcher.NoAdvisor, _ => advisor },
         };
         return null;
     }

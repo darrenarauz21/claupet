@@ -66,13 +66,13 @@ sealed partial class UsageView
         var lanes = _sessions.Where(s => s.State != SessionState.Idle).ToList();
         if (lanes.Count == 0)
         {
-            Gfx.Write(dc, "No hay sesiones activas.", Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, Gfx.Body.LineHeight));
+            Gfx.Write(dc, L.T("No hay sesiones activas."), Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, Gfx.Body.LineHeight));
             y += Gfx.Body.LineHeight + 10;
         }
         foreach (var session in lanes)
             y = ComposeLane(dc, session, y) + 8;
 
-        const string hint = "Clic en una sesión: su mapa completo. Sale de los archivos de Claude Code; no gasta tokens.";
+        var hint = L.T("Clic en una sesión: su mapa completo. Sale de los archivos de Claude Code; no gasta tokens.");
         var height = Gfx.MeasureWrapped(hint, Gfx.Small, Inner, 3);
         Gfx.Write(dc, hint, Gfx.Small, _t.Tertiary, new Rect(Pad, y + 2, Inner, height), maxLines: 3);
         return y + height + 14;
@@ -129,14 +129,14 @@ sealed partial class UsageView
         switch (s.State)
         {
             case SessionState.Waiting:
-                parts.Add(s.AwaitingAnswer ? "esperando su respuesta" : "necesita su atención");
+                parts.Add(s.AwaitingAnswer ? L.T("esperando su respuesta") : L.T("necesita su atención"));
                 return (string.Join(" · ", parts), _t.Warn);
             case SessionState.Failed:
-                parts.Add("falló: " + (s.ErrorText ?? "error de la API"));
+                parts.Add(L.T("falló: {0}", s.ErrorText ?? L.T("error de la API")));
                 return (string.Join(" · ", parts), _t.Danger);
             case SessionState.Done:
-                parts.Add("terminó " + Format.Ago(s.TurnEndedAt ?? s.StatusAt));
-                parts.Add(s.Steps == 1 ? "1 paso" : $"{s.Steps} pasos");
+                parts.Add(L.T("terminó {0}", Format.Ago(s.TurnEndedAt ?? s.StatusAt)));
+                parts.Add(s.Steps == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Steps));
                 if (s.LastTurn is { } d) parts.Add(Format.Duration(d));
                 return (string.Join(" · ", parts), _t.Tertiary);
             default:
@@ -198,8 +198,8 @@ sealed partial class UsageView
                 Gfx.Write(dc, detail, Gfx.Tiny, Gfx.Blend(_t.Background, _t.Tertiary, grow), new Rect(labelBox.X, labelBox.Bottom, column, tiny), TextAlignment.Center);
         }
 
-        Node(Glyph.Message, null, "Pedido", null, _t.Background, _t.Secondary, null, outline: true);
-        if (hidden > 0) Node(null, "+" + hidden, "antes", null, _t.Background, _t.Secondary, null, outline: true);
+        Node(Glyph.Message, null, L.T("Pedido"), null, _t.Background, _t.Secondary, null, outline: true);
+        if (hidden > 0) Node(null, "+" + hidden, L.T("antes"), null, _t.Background, _t.Secondary, null, outline: true);
         foreach (var group in shown)
         {
             var isLast = group == shown[^1];
@@ -220,7 +220,7 @@ sealed partial class UsageView
             if (dc is not null)
             {
                 DrawThinking(dc, new Point(cx, cy), circle);
-                Gfx.Write(dc, "Pensando…", Gfx.Tiny, _t.Text, new Rect(cx - column / 2, y + circle + 4, column, tiny), TextAlignment.Center);
+                Gfx.Write(dc, L.T("Pensando…"), Gfx.Tiny, _t.Text, new Rect(cx - column / 2, y + circle + 4, column, tiny), TextAlignment.Center);
             }
         }
         y += circle + 4 + 2 * tiny;
@@ -228,9 +228,9 @@ sealed partial class UsageView
         if (s.Flow.LastOrDefault(f => f.Kind == ToolKind.Agent) is { } agent)
         {
             y += 6;
-            var text = $"↳ {agent.AgentType ?? "subagente"} · " + (agent.Done
-                ? agent.AgentSteps is { } n ? $"volvió · {n} pasos" : "volvió"
-                : "trabajando…");
+            var text = $"↳ {agent.AgentType ?? L.T("subagente")} · " + (agent.Done
+                ? agent.AgentSteps is { } n ? L.T("volvió · {0} pasos", n) : L.T("volvió")
+                : L.T("trabajando…"));
             Gfx.Write(dc, text, Gfx.Tiny, agent.Done ? _t.Tertiary : _t.Accent, new Rect(x0 + 4, y, width, tiny));
             y += tiny;
         }
@@ -303,11 +303,11 @@ sealed partial class UsageView
 
             var (status, color) = s.State switch
             {
-                SessionState.Working => (thinking || active is null ? "Pensando" : active.Verb, _t.Accent),
-                SessionState.Waiting => ("Le espera a usted", _t.Warn),
-                SessionState.Failed => ("Falló", _t.Danger),
-                SessionState.Done => ("Terminó", _t.Success),
-                _ => ("Inactiva", _t.Tertiary),
+                SessionState.Working => (thinking || active is null ? L.T("Pensando") : active.Verb, _t.Accent),
+                SessionState.Waiting => (L.T("Le espera a usted"), _t.Warn),
+                SessionState.Failed => (L.T("Falló"), _t.Danger),
+                SessionState.Done => (L.T("Terminó"), _t.Success),
+                _ => (L.T("Inactiva"), _t.Tertiary),
             };
             if (working)
             {
@@ -320,11 +320,11 @@ sealed partial class UsageView
             Gfx.Fill(dc, _t.Raised, session, 10);
             Gfx.Outline(dc, working ? color : _t.Border, session, 10);
             var inner = session.Deflate(new Thickness(9, 6));
-            Gfx.Write(dc, "Sesión", Gfx.Small, _t.Text, new Rect(inner.X, inner.Y, inner.Width, small));
+            Gfx.Write(dc, L.T("Sesión"), Gfx.Small, _t.Text, new Rect(inner.X, inner.Y, inner.Width, small));
             Gfx.Write(dc, status, Gfx.Tiny, color, new Rect(inner.X, inner.Y + small + 1, inner.Width, tiny));
             if (thinking)
                 DrawDots(dc, new Point(inner.X + Gfx.Measure(status, Gfx.Tiny).Width + 9, inner.Y + small + 1 + tiny * 0.62), color, Environment.TickCount64);
-            Gfx.Write(dc, s.Flow.Count == 1 ? "1 paso" : $"{s.Flow.Count} pasos", Gfx.Tiny, _t.Tertiary, new Rect(inner.X, inner.Y + small + tiny + 2, inner.Width, tiny));
+            Gfx.Write(dc, s.Flow.Count == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Flow.Count), Gfx.Tiny, _t.Tertiary, new Rect(inner.X, inner.Y + small + tiny + 2, inner.Width, tiny));
 
             for (var i = 0; i < Flows.MapKinds.Length; i++)
             {
@@ -350,19 +350,19 @@ sealed partial class UsageView
                 Gfx.Fill(dc, _t.Background, agentBox, 10);
                 dc.DrawRectangle(null, new Pen(Gfx.B(Gfx.Blend(_t.Border, _t.Secondary, 0.35)), 1, new DashStyle([3, 2], 0)), agentBox.Deflate(0.5), 10, 10);
                 var a = agentBox.Deflate(new Thickness(9, 5));
-                Gfx.Write(dc, "Subagente " + (agent.AgentType ?? ""), Gfx.Small, _t.Secondary, new Rect(a.X, a.Y, a.Width, small));
-                var state = agent.Done ? agent.AgentSteps is { } n ? $"volvió · {n} pasos" : "volvió" : "trabajando…";
+                Gfx.Write(dc, L.T("Subagente {0}", agent.AgentType ?? ""), Gfx.Small, _t.Secondary, new Rect(a.X, a.Y, a.Width, small));
+                var state = agent.Done ? agent.AgentSteps is { } n ? L.T("volvió · {0} pasos", n) : L.T("volvió") : L.T("trabajando…");
                 Gfx.Write(dc, state, Gfx.Tiny, agent.Done ? _t.Tertiary : _t.Accent, new Rect(a.X, a.Y + small + 2, a.Width, tiny));
             }
         }
         y = top + mapHeight;
 
-        Gfx.Write(dc, "ÚLTIMOS PASOS DEL TURNO", Gfx.Small, _t.Tertiary, new Rect(Pad, y, Inner, small));
+        Gfx.Write(dc, L.T("ÚLTIMOS PASOS DEL TURNO"), Gfx.Small, _t.Tertiary, new Rect(Pad, y, Inner, small));
         y += small + 6;
         var last = s.Flow.TakeLast(5).ToList();
         if (last.Count == 0)
         {
-            Gfx.Write(dc, "Aún no hay pasos en este turno.", Gfx.Small, _t.Tertiary, new Rect(Pad, y, Inner, small));
+            Gfx.Write(dc, L.T("Aún no hay pasos en este turno."), Gfx.Small, _t.Tertiary, new Rect(Pad, y, Inner, small));
             y += small + 4;
         }
         foreach (var f in last)
@@ -374,7 +374,7 @@ sealed partial class UsageView
                 var time = f.At is { } at ? $"{at.LocalDateTime:HH:mm:ss}" : "";
                 Gfx.Write(dc, time, Gfx.Small, Gfx.Blend(_t.Background, isActive ? _t.Accent : _t.Tertiary, p), new Rect(Pad, y, 62, small));
                 var text = f.Detail is null ? f.Verb : $"{f.Verb} · {f.Detail}";
-                if (isActive) text += thinking ? "  · listo" : "  · en curso";
+                if (isActive) text += thinking ? L.T("  · listo") : L.T("  · en curso");
                 Gfx.Write(dc, text, Gfx.Small, Gfx.Blend(_t.Background, isActive ? _t.Text : _t.Secondary, p),
                     new Rect(Pad + 66 - 14 * (1 - p), y, Inner - 66, small));
             }

@@ -324,7 +324,7 @@ sealed class KeyRecorder : Form
         _lone = 0;
         var key = (Keys)vk;
         if (_talk && MicKeys.IsHold(key.ToString())) Finish(key.ToString(), null);
-        else Finish(key.ToString(), _talk ? "Sola, vale Ctrl, Alt o Mayús del lado derecho." : "Combínela con otra tecla.");
+        else Finish(key.ToString(), _talk ? L.T("Sola, vale Ctrl, Alt o Mayús del lado derecho.") : L.T("Combínela con otra tecla."));
     }
 
     /// <summary>La tecla con los modificadores pulsados ahora.</summary>
@@ -348,13 +348,13 @@ sealed class KeyRecorder : Form
     /// <summary>Por qué no sirve esa combinación (null: sirve).</summary>
     string? Problem(KeyCombo c)
     {
-        if (c == KeyCombo.Copilot && !_talk) return "La tecla Copilot tiene su propio interruptor en Ajustes.";
+        if (c == KeyCombo.Copilot && !_talk) return L.T("La tecla Copilot tiene su propio interruptor en Ajustes.");
         if (!_talk && c is { Ctrl: true, Alt: true, Shift: false, Win: false, Key: Keys.A or Keys.T or Keys.N or Keys.S })
-            return "Ese atajo ya lo usa la isla.";
+            return L.T("Ese atajo ya lo usa la isla.");
         if (c.Ctrl || c.Alt || c.Win) return null;
         var alone = c.Key is >= Keys.F13 and <= Keys.F24 or Keys.Pause or Keys.Scroll
             or >= Keys.BrowserSearch and <= Keys.BrowserHome or >= Keys.LaunchMail and <= Keys.LaunchApplication2;
-        return alone ? null : "Esa tecla tiene otro uso: combínela con Ctrl, Alt o Win.";
+        return alone ? null : L.T("Esa tecla tiene otro uso: combínela con Ctrl, Alt o Win.");
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -367,9 +367,9 @@ sealed class KeyRecorder : Form
         TextRenderer.DrawText(g, _title, _font, new Rectangle(pad, pad, width, (int)(22 * k)), _theme.Text, TextFormatFlags.Left);
         var box = new RectangleF(pad, pad + 28 * k, width, 36 * k);
         Draw.Fill(g, _theme.Raised, box, 8 * k);
-        TextRenderer.DrawText(g, _shown.Length > 0 ? _shown : "Pulse la tecla o la combinación…", _font, Rectangle.Round(box),
+        TextRenderer.DrawText(g, _shown.Length > 0 ? _shown : L.T("Pulse la tecla o la combinación…"), _font, Rectangle.Round(box),
             _shown.Length > 0 ? _theme.Text : _theme.Tertiary, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-        var note = _note.Length > 0 ? _note : "Esc cancela";
+        var note = _note.Length > 0 ? _note : L.T("Esc cancela");
         TextRenderer.DrawText(g, note, _small, new Rectangle(pad, (int)(box.Bottom + 10 * k), width, (int)(20 * k)),
             _note.Length > 0 ? _theme.Danger : _theme.Secondary, TextFormatFlags.Left);
     }

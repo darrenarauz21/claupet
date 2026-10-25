@@ -76,7 +76,7 @@ sealed class ChatBubble : Form
         : _question is null ? S(56)
         : Math.Clamp(TextRenderer.MeasureText(Quote(_question), _small, Size.Empty, OneLine).Width + S(4), S(56), S(224));
 
-    static string Quote(string question) => $"«{question.ReplaceLineEndings(" ")}»";
+    static string Quote(string question) => L.T("«{0}»", question.ReplaceLineEndings(" "));
 
     string? _question;
     long _questionAt;
@@ -109,7 +109,7 @@ sealed class ChatBubble : Form
             WordWrap = true,
             ScrollBars = ScrollBars.None,
             AcceptsReturn = false,
-            Cue = "Pregúntame algo o pídeme una tarea…",
+            Cue = L.T("Pregúntame algo o pídeme una tarea…"),
             CueColor = Muted,
         };
         _box.KeyDown += OnBoxKeyDown;
@@ -236,7 +236,7 @@ sealed class ChatBubble : Form
         _taskPrompt = taskPrompt;
         _taskFolder = taskFolder;
         if (taskPrompt is not null)
-            text = $"Eso es una tarea. ¿Abro Claude Code en «{taskFolder}» con esto?";
+            text = L.T("Eso es una tarea. ¿Abro Claude Code en «{0}» con esto?", taskFolder);
         if (!text.StartsWith(_target[..Math.Min(_visible, _target.Length)], StringComparison.Ordinal)) _visible = 0;
         _target = text;
         _doneAt = Environment.TickCount64;
@@ -315,7 +315,7 @@ sealed class ChatBubble : Form
                 var shown = _target.Length == 0 ? " " : _target;
                 height = TextRenderer.MeasureText(shown, _font, new Size(width, 0), Wrap).Height;
                 if (_taskPrompt is not null)
-                    height += S(4) + TextRenderer.MeasureText($"«{_taskPrompt}»", _small, new Size(width, S(44)), Wrap | TextFormatFlags.EndEllipsis).Height
+                    height += S(4) + TextRenderer.MeasureText(L.T("«{0}»", _taskPrompt), _small, new Size(width, S(44)), Wrap | TextFormatFlags.EndEllipsis).Height
                         + S(10) + S(26);
                 else if (_island) height += S(6) + _small.Height;
                 break;
@@ -356,7 +356,7 @@ sealed class ChatBubble : Form
     {
         get
         {
-            if (_heard.Length == 0) return "Te escucho…";
+            if (_heard.Length == 0) return L.T("Te escucho…");
             var text = _heard;
             var max = LineHeight * 3;
             while (text.Length > 0 && TextRenderer.MeasureText("…" + text, _font, new Size(HeardWidth, 0), Wrap).Height > max)
@@ -394,7 +394,7 @@ sealed class ChatBubble : Form
                 var ay = row + _chipBounds.Height / 2 - S(1);
                 using (var brush = new SolidBrush(Ink))
                     g.FillPolygon(brush, new PointF[] { new(ax, ay), new(ax + S(6), ay), new(ax + S(3), ay + S(3)) });
-                const string hint = "Enter para enviar";
+                var hint = L.T("Enter para enviar");
                 var hintWidth = TextRenderer.MeasureText(hint, _small, Size.Empty, OneLine).Width;
                 TextRenderer.DrawText(g, hint, _small, new Rectangle(x + width - hintWidth, row, hintWidth, _chipBounds.Height), Muted,
                     OneLine | TextFormatFlags.VerticalCenter);
@@ -435,17 +435,17 @@ sealed class ChatBubble : Form
                 var below = y + full;
                 if (_taskPrompt is not null && _visible >= _target.Length)
                 {
-                    var quote = $"«{_taskPrompt}»";
+                    var quote = L.T("«{0}»", _taskPrompt);
                     var qh = TextRenderer.MeasureText(quote, _small, new Size(width, S(44)), Wrap | TextFormatFlags.EndEllipsis).Height;
                     TextRenderer.DrawText(g, quote, _small, new Rectangle(x, below + S(4), width, qh), Color.FromArgb(0x5E, 0x5D, 0x59), Color.White,
                         Wrap | TextFormatFlags.EndEllipsis);
                     var by = below + S(4) + qh + S(10);
-                    _openBounds = PixelButton(g, "Abrir sesión", x, by, primary: true, pressed: _pressed == "open");
-                    _otherBounds = PixelButton(g, "Otra carpeta…", _openBounds.Right + S(10), by, primary: false, pressed: _pressed == "other");
+                    _openBounds = PixelButton(g, L.T("Abrir sesión"), x, by, primary: true, pressed: _pressed == "open");
+                    _otherBounds = PixelButton(g, L.T("Otra carpeta…"), _openBounds.Right + S(10), by, primary: false, pressed: _pressed == "other");
                 }
                 else if (_island && _visible >= _target.Length)
                 {
-                    const string link = "Ver en la isla";
+                    var link = L.T("Ver en la isla");
                     var lw = TextRenderer.MeasureText(link, _small, Size.Empty, OneLine).Width;
                     _linkBounds = new Rectangle(x, below + S(6), lw, _small.Height);
                     TextRenderer.DrawText(g, link, _small, _linkBounds, Accent, Color.White, OneLine);
@@ -491,7 +491,7 @@ sealed class ChatBubble : Form
         var height = TextRenderer.MeasureText(shown, _font, new Size(HeardWidth, 0), Wrap).Height;
         TextRenderer.DrawText(g, shown, _font, new Rectangle(textX, y, HeardWidth, height), _heard.Length == 0 ? Muted : Ink, Color.White, Wrap);
 
-        var hint = _converting ? "Pasando a texto…" : $"{_hint} · Esc cancela";
+        var hint = _converting ? L.T("Pasando a texto…") : L.T("{0} · Esc cancela", _hint);
         TextRenderer.DrawText(g, hint, _small, new Rectangle(x, y + height + S(6), ContentWidth, _small.Height),
             _converting ? Muted : Mic, Color.White, OneLine | TextFormatFlags.EndEllipsis);
     }

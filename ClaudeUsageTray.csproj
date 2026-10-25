@@ -13,8 +13,8 @@
     <RootNamespace>ClaudeUsageTray</RootNamespace>
     <Version>2.1.0</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <AssemblyTitle>Uso de Claude</AssemblyTitle>
-    <Product>Uso de Claude</Product>
+    <AssemblyTitle>Claupet</AssemblyTitle>
+    <Product>Claupet</Product>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +22,11 @@
     <Compile Remove="ClaudeUsage.Avalonia/**" />
     <None Remove="ClaudeUsage.Avalonia/**" />
     <EmbeddedResource Remove="ClaudeUsage.Avalonia/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Las traducciones (L.T), dentro del ejecutable. -->
+    <EmbeddedResource Include="Core/Idiomas/*.json" LogicalName="idiomas/%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

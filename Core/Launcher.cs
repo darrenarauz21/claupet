@@ -38,7 +38,7 @@ static class Launcher
     static void Validate(LaunchOptions o)
     {
         foreach (var value in new[] { o.Model, o.Effort, o.Advisor })
-            if (!IsValid(value)) throw new ArgumentException($"Valor no válido: {value}");
+            if (!IsValid(value)) throw new ArgumentException(L.T("Valor no válido: {0}", value));
     }
 
     static bool IsDefaultDir(LaunchOptions o) => o.ConfigDir is null || Account.SamePath(o.ConfigDir, Account.DefaultDir);
@@ -55,6 +55,8 @@ static class Launcher
         else
             script.AppendLine($"$env:CLAUDE_CONFIG_DIR = {Quote(o.ConfigDir!)}");
         if (o.Advisor == NoAdvisor) script.AppendLine("$env:CLAUDE_CODE_DISABLE_ADVISOR_TOOL = '1'");
+        // Claude Code no lee el proxy de Windows, y Windows Terminal no hereda el entorno de la app: va en el script.
+        if (SystemProxy.ForClaude() is { } proxy) script.AppendLine($"$env:HTTPS_PROXY = {Quote(proxy)}");
 
         var command = new StringBuilder("claude");
         if (o.Model is { } model) command.Append(" --model ").Append(Quote(model));
@@ -125,7 +127,7 @@ static class Launcher
             using var _ = Process.Start(start);
             return;
         }
-        throw new InvalidOperationException("No se encontró una terminal (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, tilix o xterm).");
+        throw new InvalidOperationException(L.T("No se encontró una terminal (gnome-terminal, konsole, xfce4-terminal, kitty, alacritty, wezterm, tilix o xterm)."));
     }
 
     static string? FindInPath(string program) =>

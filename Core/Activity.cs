@@ -49,12 +49,12 @@ sealed record WeekRecap(DateOnly Monday, long Tokens, int Sessions, int Prompts,
     /// <summary>El lunes de la semana de ese día.</summary>
     public static DateOnly MondayOf(DateOnly day) => day.AddDays(-(((int)day.DayOfWeek + 6) % 7));
 
-    public string Range => $"{Monday:d 'de' MMMM} al {Monday.AddDays(6):d 'de' MMMM}";
+    public string Range => L.T("{0:d 'de' MMMM} al {1:d 'de' MMMM}", Monday, Monday.AddDays(6));
 
     /// <summary>En texto, para copiarlo.</summary>
     public string Text =>
-        $"Mi semana con Claude ({Range}): {Format.Tokens(Tokens)} tokens, {Sessions} sesiones, {Prompts} pedidos y {ToolCalls} pasos en {ActiveDays} días."
-        + (BusiestDay is { } busiest ? $" Día más activo: {busiest:dddd}." : "") + (FavoriteModel is { } model ? $" Modelo favorito: {model}." : "");
+        L.T("Mi semana con Claude ({0}): {1} tokens, {2} sesiones, {3} pedidos y {4} pasos en {5} días.", Range, Format.Tokens(Tokens), Sessions, Prompts, ToolCalls, ActiveDays)
+        + (BusiestDay is { } busiest ? " " + L.T("Día más activo: {0:dddd}.", busiest) : "") + (FavoriteModel is { } model ? " " + L.T("Modelo favorito: {0}.", model) : "");
 }
 
 sealed record ActivityStats(long Tokens, int ActiveDays, int CurrentStreak, int LongestStreak, DateOnly? BusiestDay, string? FavoriteModel)

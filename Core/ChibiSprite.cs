@@ -12,7 +12,7 @@ static class Mascots
     public const string Classic = "clasica", Chibi = "chibi";
 
     public static readonly (string Id, string Label)[] Choices =
-        [(Classic, "Clásica"), (Chibi, "Chibi"), .. RefreshSprite.Styles.Where(s => s.Id != RefreshSprite.Mascot)];
+        [(Classic, L.T("Clásica")), (Chibi, L.T("Chibi")), .. RefreshSprite.Styles.Where(s => s.Id != RefreshSprite.Mascot)];
 
     /// <summary>La mascota de los avisos (Classic o Chibi), como Theme.SelectedPalette: la leen al dibujarse.</summary>
     public static string Selected { get; set; } = Classic;
@@ -41,19 +41,31 @@ static class MascotSizes
 {
     public const string Small = "pequeno", Medium = "mediano", Normal = "normal", Large = "grande";
 
-    public static readonly (string Id, string Label)[] Choices = [(Small, "Pequeño"), (Medium, "Mediano"), (Normal, "Normal"), (Large, "Grande")];
+    public static readonly (string Id, string Label)[] Choices = [(Small, L.T("Pequeño")), (Medium, L.T("Mediano")), (Normal, L.T("Normal")), (Large, L.T("Grande"))];
 
-    public static string Label(string id) => Choices.FirstOrDefault(c => c.Id == id).Label ?? "Normal";
+    public static string Label(string id) => Choices.FirstOrDefault(c => c.Id == id).Label ?? L.T("Normal");
 
-    /// <summary>Pixeles por casilla a 100 % (96 ppp).</summary>
-    public static int Unit(string size, bool chibi)
+    /// <summary>
+    /// Pixeles por casilla con la escala de la pantalla (dpi / 96), enteros para que los pixeles se vean
+    /// nítidos. Normal: 3 a 100 % (4 la clásica) y grande, uno más a 100 %; mediano, tres cuartos de normal, y
+    /// pequeño, la mitad. Si dos quedarían iguales, el más chico baja uno. Con el chibi: 1, 2, 3 y 4 a 100 %;
+    /// 2, 3, 4 y 5 a 125 %.
+    /// </summary>
+    public static int Unit(string size, bool chibi, float scale)
     {
-        var i = Array.FindIndex(Choices, c => c.Id == size);
-        return (i < 0 ? 2 : i) + (chibi ? 1 : 2);
+        int Scaled(int units) => Math.Max(1, (int)Math.Round(units * scale));
+        int Part(int of, double share) => (int)Math.Round(of * share, MidpointRounding.AwayFromZero);
+        var normal = Scaled(chibi ? 3 : 4);
+        var medium = Math.Clamp(Part(normal, 0.75), 1, Math.Max(1, normal - 1));
+        var small = Math.Clamp(Part(normal, 0.5), 1, Math.Max(1, medium - 1));
+        return size switch
+        {
+            Small => small,
+            Medium => medium,
+            Large => Math.Max(normal + 1, Scaled(chibi ? 4 : 5)),
+            _ => normal,
+        };
     }
-
-    /// <summary>Pixeles por casilla con la escala de la pantalla (dpi / 96).</summary>
-    public static int Unit(string size, bool chibi, float scale) => Math.Max(1, (int)Math.Round(Unit(size, chibi) * scale));
 }
 
 /// <summary>
@@ -1187,20 +1199,20 @@ static class MascotLines
     public static string For(Notice notice, bool chibi)
     {
         var s = Short(notice.Subtitle);
-        var oi = chibi ? "¡Oi! " : "";
+        var oi = chibi ? L.T("¡Oi! ") : "";
         var title = notice.Title.Length > 0 ? char.ToLower(notice.Title[0]) + notice.Title[1..] : "";
         return notice.Kind switch
         {
-            NoticeKind.Done => $"¡Listo! «{s}» ya terminó \\(^o^)/",
-            NoticeKind.Question => $"{oi}Psst… «{s}» quiere preguntarte algo (o_o)?",
-            NoticeKind.Permission => $"{oi}¡Toc, toc! «{s}» necesita tu permiso para seguir.",
-            NoticeKind.Failed => $"¡Uwaaa! «{s}» se tropezó… (T_T)",
-            NoticeKind.Retrying => $"«{s}» lo intenta otra vez. ¡Tú puedes! (>_<)",
-            NoticeKind.Closed => $"Ay… «{s}» se cerró a medio camino. (-_-) zzz",
-            NoticeKind.UsageHigh => $"{oi}Ojo: {title} ({s}). ¡Con calma! (°o°;)",
-            NoticeKind.UsageCritical => $"¡Casi sin energía! {notice.Title} ({s}). (×_×)",
-            NoticeKind.UsageReset => $"¡Chachachá! Se renovó: {s}. ¡A darle! ♪",
-            NoticeKind.Expired => $"Hmm… la cuenta «{s}» pide que abras Claude Code otra vez. (._.)",
+            NoticeKind.Done => L.T("¡Listo! «{0}» ya terminó \\(^o^)/", s),
+            NoticeKind.Question => L.T("{0}Psst… «{1}» quiere preguntarte algo (o_o)?", oi, s),
+            NoticeKind.Permission => L.T("{0}¡Toc, toc! «{1}» necesita tu permiso para seguir.", oi, s),
+            NoticeKind.Failed => L.T("¡Uwaaa! «{0}» se tropezó… (T_T)", s),
+            NoticeKind.Retrying => L.T("«{0}» lo intenta otra vez. ¡Tú puedes! (>_<)", s),
+            NoticeKind.Closed => L.T("Ay… «{0}» se cerró a medio camino. (-_-) zzz", s),
+            NoticeKind.UsageHigh => L.T("{0}Ojo: {1} ({2}). ¡Con calma! (°o°;)", oi, title, s),
+            NoticeKind.UsageCritical => L.T("¡Casi sin energía! {0} ({1}). (×_×)", notice.Title, s),
+            NoticeKind.UsageReset => L.T("¡Chachachá! Se renovó: {0}. ¡A darle! ♪", s),
+            NoticeKind.Expired => L.T("Hmm… la cuenta «{0}» pide que abras Claude Code otra vez. (._.)", s),
             _ => notice.Title,
         };
     }

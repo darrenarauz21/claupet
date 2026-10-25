@@ -13,6 +13,7 @@ static class Program
     static int Main(string[] args)
     {
         Args = args;
+        L.Use(SettingsStore.Load().Language);
         // Mismos modos de línea de comandos que la app de Windows.
         if (args.Contains("--dump")) return Dump.Run();
         if (args.Contains("--hook")) return args.Contains("--permiso") ? Approvals.RunHook() : NoticeDetector.RunHook();
@@ -26,8 +27,8 @@ static class Program
 
         if (OperatingSystem.IsLinux() && MissingLinuxLibraries() is { Length: > 0 } missing)
         {
-            Console.Error.WriteLine($"Uso de Claude no puede abrir su ventana: faltan bibliotecas del sistema ({missing}).");
-            Console.Error.WriteLine("Instálelas y vuelva a abrir la app:");
+            Console.Error.WriteLine(L.T("Claupet no puede abrir su ventana: faltan bibliotecas del sistema ({0}).", missing));
+            Console.Error.WriteLine(L.T("Instálelas y vuelva a abrir la app:"));
             Console.Error.WriteLine("  Ubuntu, Debian, Mint:  sudo apt install libice6 libsm6 libfontconfig1");
             Console.Error.WriteLine("  Fedora:                sudo dnf install libICE libSM fontconfig");
             Console.Error.WriteLine("  Arch:                  sudo pacman -S libice libsm fontconfig");
@@ -37,9 +38,18 @@ static class Program
         // --preview: abre la ventana aunque ya haya otra instancia (para probar cambios).
         var preview = args.Contains("--preview");
         using var mutex = new Mutex(true, @"Local\UsoDeClaude", out var created);
+        // --reiniciar: la abrió la anterior al cambiar el idioma; espera a que termine de cerrarse.
+        if (!created && args.Contains("--reiniciar")) created = WaitFor(mutex);
         if (!created && !preview) return 0;
 
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args, ShutdownMode.OnExplicitShutdown);
+    }
+
+    /// <summary>Espera el mutex de la instancia que se cierra; si se cerró sin soltarlo, igual queda tomado.</summary>
+    static bool WaitFor(Mutex mutex)
+    {
+        try { return mutex.WaitOne(TimeSpan.FromSeconds(15)); }
+        catch (AbandonedMutexException) { return true; }
     }
 
     /// <summary>
@@ -73,7 +83,7 @@ sealed class App : Application
     {
         Styles.Add(new FluentTheme());
         RequestedThemeVariant = ThemeVariant.Default; // sigue el tema del sistema
-        Name = "Uso de Claude";
+        Name = "Claupet";
     }
 
     public override void OnFrameworkInitializationCompleted()

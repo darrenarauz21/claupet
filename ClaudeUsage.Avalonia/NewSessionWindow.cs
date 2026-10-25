@@ -11,8 +11,8 @@ namespace ClaudeUsageTray;
 /// <summary>Elige cuenta, carpeta, modelo, esfuerzo y asesor de una sesión nueva de Claude Code.</summary>
 sealed class NewSessionWindow : Window
 {
-    const string Default = "Predeterminado de la cuenta";
-    const string NoAdvisor = "Ninguno";
+    static string Default => L.T("Predeterminado de la cuenta");
+    static string NoAdvisor => L.T("Ninguno");
 
     readonly IReadOnlyList<Account> _accounts;
     readonly ComboBox _account, _effort, _advisor;
@@ -26,7 +26,7 @@ sealed class NewSessionWindow : Window
     public NewSessionWindow(IReadOnlyList<Account> accounts, LaunchOptions initial, IEnumerable<string> recentFolders, Theme theme)
     {
         _accounts = accounts;
-        Title = "Nueva sesión de Claude Code";
+        Title = L.T("Nueva sesión de Claude Code");
         SizeToContent = SizeToContent.WidthAndHeight;
         CanResize = false;
         Topmost = true;
@@ -36,11 +36,11 @@ sealed class NewSessionWindow : Window
         var panel = new StackPanel { Margin = new Thickness(24), Spacing = 6, Width = 440 };
         panel.Children.Add(new TextBlock
         {
-            Text = "Nueva sesión", FontSize = 22, FontFamily = Gfx.Title.Typeface.FontFamily, Foreground = Gfx.B(theme.Text),
+            Text = L.T("Nueva sesión"), FontSize = 22, FontFamily = Gfx.Title.Typeface.FontFamily, Foreground = Gfx.B(theme.Text),
         });
         panel.Children.Add(new TextBlock
         {
-            Text = "Se abre en una terminal. Lo que elija vale solo para esa sesión.", FontSize = 12.5,
+            Text = L.T("Se abre en una terminal. Lo que elija vale solo para esa sesión."), FontSize = 12.5,
             Foreground = Gfx.B(theme.Secondary), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10),
         });
 
@@ -63,7 +63,7 @@ sealed class NewSessionWindow : Window
             HorizontalAlignment = HorizontalAlignment.Stretch,
             SelectedIndex = Math.Max(0, accounts.ToList().FindIndex(a => initial.ConfigDir is not null && Account.SamePath(a.ConfigDir, initial.ConfigDir))),
         };
-        Row("Cuenta", _account);
+        Row(L.T("Cuenta"), _account);
 
         var folders = recentFolders.Where(f => f.Length > 0).Distinct().Take(10).ToList();
         _folder = new AutoCompleteBox
@@ -71,13 +71,13 @@ sealed class NewSessionWindow : Window
             ItemsSource = folders, Text = initial.Folder ?? folders.FirstOrDefault() ?? Account.Home,
             FilterMode = AutoCompleteFilterMode.Contains, MinimumPrefixLength = 0, HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        var browse = new Button { Content = "Examinar…" };
+        var browse = new Button { Content = L.T("Examinar…") };
         browse.Click += async (_, _) =>
         {
             var start = await StorageProvider.TryGetFolderFromPathAsync(Directory.Exists(_folder.Text) ? _folder.Text! : Account.Home);
             var picked = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             {
-                Title = "Carpeta del proyecto", AllowMultiple = false, SuggestedStartLocation = start,
+                Title = L.T("Carpeta del proyecto"), AllowMultiple = false, SuggestedStartLocation = start,
             });
             if (picked.Count > 0 && picked[0].TryGetLocalPath() is { } path) _folder.Text = path;
         };
@@ -85,36 +85,41 @@ sealed class NewSessionWindow : Window
         Grid.SetColumn(browse, 1);
         folderRow.Children.Add(_folder);
         folderRow.Children.Add(browse);
-        Row("Carpeta", folderRow);
+        Row(L.T("Carpeta"), folderRow);
 
         _model = new AutoCompleteBox
         {
             ItemsSource = SessionLauncher.Models, Text = initial.Model ?? "", Watermark = Default,
             FilterMode = AutoCompleteFilterMode.StartsWith, MinimumPrefixLength = 0, HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        Row("Modelo", _model);
+        Row(L.T("Modelo"), _model);
 
+        // Las listas empiezan con «Predeterminado» (y, la del asesor, con «Ninguno»): se eligen por posición, no por el texto.
         var efforts = SessionLauncher.Efforts.Prepend(Default).ToList();
-        _effort = new ComboBox { ItemsSource = efforts, SelectedIndex = Math.Max(0, efforts.IndexOf(initial.Effort ?? Default)), HorizontalAlignment = HorizontalAlignment.Stretch };
-        Row("Esfuerzo", _effort);
+        _effort = new ComboBox { ItemsSource = efforts, SelectedIndex = Array.IndexOf(SessionLauncher.Efforts, initial.Effort) + 1, HorizontalAlignment = HorizontalAlignment.Stretch };
+        Row(L.T("Esfuerzo"), _effort);
 
         var advisors = SessionLauncher.Advisors.Prepend(NoAdvisor).Prepend(Default).ToList();
-        var advisor = initial.Advisor == SessionLauncher.NoAdvisor ? NoAdvisor : initial.Advisor ?? Default;
-        _advisor = new ComboBox { ItemsSource = advisors, SelectedIndex = Math.Max(0, advisors.IndexOf(advisor)), HorizontalAlignment = HorizontalAlignment.Stretch };
-        Row("Asesor", _advisor);
+        var advisor = Array.IndexOf(SessionLauncher.Advisors, initial.Advisor);
+        _advisor = new ComboBox
+        {
+            ItemsSource = advisors, SelectedIndex = initial.Advisor == SessionLauncher.NoAdvisor ? 1 : advisor >= 0 ? advisor + 2 : 0,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        Row(L.T("Asesor"), _advisor);
         panel.Children.Add(grid);
 
         panel.Children.Add(new TextBlock
         {
-            Text = "El modelo también acepta un ID completo, como claude-opus-5-5. El asesor predeterminado es el que fijó /advisor en esa cuenta.",
+            Text = L.T("El modelo también acepta un ID completo, como claude-opus-5-5. El asesor predeterminado es el que fijó /advisor en esa cuenta."),
             FontSize = 12, Foreground = Gfx.B(theme.Tertiary), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0),
         });
         _error = new TextBlock { FontSize = 12.5, Foreground = Gfx.B(theme.Danger), TextWrapping = TextWrapping.Wrap, IsVisible = false };
         panel.Children.Add(_error);
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
-        var open = new Button { Content = "Abrir", Background = Gfx.B(theme.Accent), Foreground = Brushes.White, IsDefault = true, MinWidth = 90 };
-        var cancel = new Button { Content = "Cancelar", IsCancel = true, MinWidth = 90 };
+        var open = new Button { Content = L.T("Abrir"), Background = Gfx.B(theme.Accent), Foreground = Brushes.White, IsDefault = true, MinWidth = 90 };
+        var cancel = new Button { Content = L.T("Cancelar"), IsCancel = true, MinWidth = 90 };
         open.Click += (_, _) =>
         {
             if (Read() is { } options) { _done.TrySetResult(options); Close(); }
@@ -137,22 +142,20 @@ sealed class NewSessionWindow : Window
             return null;
         }
 
-        if (_account.SelectedIndex < 0 || _account.SelectedIndex >= _accounts.Count) return Fail("Elija una cuenta.");
+        if (_account.SelectedIndex < 0 || _account.SelectedIndex >= _accounts.Count) return Fail(L.T("Elija una cuenta."));
         var folder = _folder.Text?.Trim() ?? "";
-        if (!Directory.Exists(folder)) return Fail("Esa carpeta no existe.");
+        if (!Directory.Exists(folder)) return Fail(L.T("Esa carpeta no existe."));
         var model = _model.Text?.Trim() ?? "";
         var modelValue = model.Length == 0 || model == Default ? null : model;
-        if (!SessionLauncher.IsValid(modelValue)) return Fail("El modelo solo puede llevar letras, números, puntos, guiones y corchetes.");
+        if (!SessionLauncher.IsValid(modelValue)) return Fail(L.T("El modelo solo puede llevar letras, números, puntos, guiones y corchetes."));
 
-        var effort = (string)_effort.SelectedItem!;
-        var advisor = (string)_advisor.SelectedItem!;
         return new LaunchOptions
         {
             ConfigDir = _accounts[_account.SelectedIndex].ConfigDir,
             Folder = folder,
             Model = modelValue,
-            Effort = effort == Default ? null : effort,
-            Advisor = advisor == Default ? null : advisor == NoAdvisor ? SessionLauncher.NoAdvisor : advisor,
+            Effort = _effort.SelectedIndex > 0 ? (string)_effort.SelectedItem! : null,
+            Advisor = _advisor.SelectedIndex switch { 1 => SessionLauncher.NoAdvisor, > 1 => (string)_advisor.SelectedItem!, _ => null },
         };
     }
 }
