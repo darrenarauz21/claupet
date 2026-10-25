@@ -5,34 +5,66 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
-        L.Use(SettingsStore.Load().Language);
+        // --idioma <es|en>: ese idioma solo en esta ejecución (para probar las traducciones sin tocar los ajustes).
+        L.Use(Array.IndexOf(args, "--idioma") is var li and >= 0 && li + 1 < args.Length ? args[li + 1] : SettingsStore.Load().Language);
 
         // --dump: una consulta, texto a la salida estándar y salir (para comprobar sin abrir la bandeja).
         if (args.Contains("--dump"))
             return Dump.Run();
 
-        // --accion <acción> <valor>: hace esa acción de la mascota, sin pasar por Claude, y dice cómo le fue.
+        // --accion <acción> <valor> [pregunta]: hace esa acción de la mascota, sin pasar por Claude ni pedir
+        // permiso, y dice cómo le fue: lo que falló, lo que diría o los datos que le devolvería a Claude. Con
+        // una pregunta, una captura (o una imagen copiada) se la pasa a Claude para que la mire.
         if (Array.IndexOf(args, "--accion") is var a and >= 0 && a + 2 < args.Length)
         {
-            var problem = SystemActions.RunAsync(new AssistantAction(args[a + 1], args[a + 2]),
+            var question = a + 3 < args.Length && !args[a + 3].StartsWith("--") ? args[a + 3] : null;
+            var outcome = SystemActions.RunAsync(new AssistantAction(args[a + 1], args[a + 2], question),
                 palette => Console.WriteLine($"color de la app: {palette}")).GetAwaiter().GetResult();
-            Console.WriteLine(problem ?? "listo");
-            return problem is null ? 0 : 1;
+            if (outcome.Problem is { } problem) { Console.WriteLine(problem); return 1; }
+            if (outcome.Say is { } say) Console.WriteLine(say);
+            if (outcome.Data is { } data) Console.WriteLine(data);
+            if (outcome.Look is { } look)
+            {
+                Console.WriteLine($"para mirar: {look}");
+                var settings = SettingsStore.Load();
+                var seen = Assistant.AskAsync(new AssistantRequest
+                {
+                    Prompt = outcome.Question ?? "", Voice = AssistantVoice.Island, Model = settings.IslandModel,
+                    ConfigDir = settings.AssistantAccount ?? settings.Selected, File = look,
+                }).GetAwaiter().GetResult();
+                Console.WriteLine(seen.Error ?? seen.Text);
+                return seen.Failed ? 1 : 0;
+            }
+            if (outcome.Say is null && outcome.Data is null) Console.WriteLine("listo");
+            return 0;
         }
 
-        // --preguntar <texto>: se lo pregunta a la mascota como desde la nubecita (con su cuenta y su modelo) y escribe la respuesta.
+        // --preguntar <texto>: se lo pregunta a la mascota como desde la nubecita (con su cuenta y su modelo) y escribe la
+        // respuesta y, si la hay, la acción o la tarea que pediría. Con --hacer, además hace la acción (sin pedir
+        // permiso) y, si trajo datos, le vuelve a preguntar con ellos, como el chat.
         if (Array.IndexOf(args, "--preguntar") is var q and >= 0 && q + 1 < args.Length)
         {
             var settings = SettingsStore.Load();
-            var result = Assistant.AskAsync(new AssistantRequest
+            var request = new AssistantRequest
             {
                 Prompt = args[q + 1],
                 Voice = AssistantVoice.Mascot,
                 Model = settings.MascotModel,
                 ConfigDir = settings.AssistantAccount ?? settings.Selected,
-            }).GetAwaiter().GetResult();
+            };
+            var result = Assistant.AskAsync(request).GetAwaiter().GetResult();
+            if (result.Action is { } action)
+                Console.WriteLine($"[ACCION] {action.Kind} {action.Value}" + (action.Question is { } asked ? $" (pregunta: {asked})" : ""));
+            if (result.Task is { } task) Console.WriteLine($"[TAREA] {task.Prompt}");
             Console.WriteLine(result.Error ?? result.Text);
-            return result.Failed ? 1 : 0;
+            if (result.Action is not { } done || !args.Contains("--hacer")) return result.Failed ? 1 : 0;
+            var outcome = SystemActions.RunAsync(done, palette => Console.WriteLine($"color de la app: {palette}")).GetAwaiter().GetResult();
+            Console.WriteLine($"[HECHO] {outcome.Problem ?? outcome.Say ?? (outcome.Look is { } look ? $"para mirar: {look}" : "listo")}");
+            if (outcome.Data is not { } data) return outcome.Problem is null ? 0 : 1;
+            Console.WriteLine($"[DATOS] {data.ReplaceLineEndings(" | ")}");
+            var follow = Assistant.AskAsync(request with { Data = data }).GetAwaiter().GetResult();
+            Console.WriteLine(follow.Error ?? follow.Text);
+            return follow.Failed ? 1 : 0;
         }
 
         // --descargar-voz: baja la voz de Claupet como desde Ajustes, con el avance a la salida estándar.
@@ -112,7 +144,9 @@ static class Program
             autoSetup: !preview || args.Contains("--setup"), preview: preview,
             demoDrop: Array.IndexOf(args, "--soltar") is var i and >= 0 && i + 1 < args.Length ? args[i + 1] : null,
             // --hablar archivo.wav: la voz entera con ese audio en vez del micrófono (con «Micrófono» encendido).
-            demoVoice: Array.IndexOf(args, "--hablar") is var v and >= 0 && v + 1 < args.Length ? args[v + 1] : null));
+            demoVoice: Array.IndexOf(args, "--hablar") is var v and >= 0 && v + 1 < args.Length ? args[v + 1] : null,
+            // --recordatorio <id>: la abrió la tarea programada de ese recordatorio (ReminderTasks).
+            reminderTask: Array.IndexOf(args, "--recordatorio") is var r and >= 0 && r + 1 < args.Length ? args[r + 1] : null));
         return 0;
     }
 

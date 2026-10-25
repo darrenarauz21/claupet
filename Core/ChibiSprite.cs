@@ -555,6 +555,7 @@ static partial class ChibiSprite
         NoticeKind.UsageReset => ChibiMove.Maracas, // límite renovado: chachachá
         NoticeKind.Failed or NoticeKind.UsageCritical => ChibiMove.Dizzy,
         NoticeKind.Closed => ChibiMove.Sleep,
+        NoticeKind.Reminder => ChibiMove.Wave, // un recordatorio: llama con la mano
         _ => ChibiMove.Think, // pregunta, permiso, reintento, uso alto y sesión vencida: algo que mirar
     };
 
@@ -1036,7 +1037,9 @@ static partial class ChibiSprite
 /// cosas (editar, ejecutar, agentes), después lo que consulta (leer, buscar, web, otras herramientas) y
 /// al final pensar; dentro del mismo nivel, la sesión con el último paso. Cada gesto del flujo dura al
 /// menos una vuelta, para que se vean también los pasos de milisegundos, y cuando termina la otra
-/// herramienta festeja la casita. Sin el interruptor, baila mientras trabaja. Sin trabajo: baila si
+/// herramienta festeja la casita. Si piensa más de PonderBeforeBuilding sin un paso nuevo (la sesión
+/// escribe un archivo largo o piensa mucho), se pone a construir la casita hasta que llegue el siguiente.
+/// Sin el interruptor, baila mientras trabaja. Sin trabajo: baila si
 /// suena música, se queda quieta si hay sesiones y duerme si no hay ninguna. Un gesto (saludar,
 /// festejar, marearse) pasa por delante un rato. Cada movimiento nuevo empieza desde su primer cuadro.
 /// </summary>
@@ -1095,6 +1098,9 @@ sealed class ChibiDirector
     /// <summary>Lo mínimo que se queda un gesto del flujo: una vuelta; la casita, que es larga, unos 3 s.</summary>
     static long MinHold(ChibiMove move) => Math.Min(ChibiSprite.Length(move), 3200);
 
+    /// <summary>Lo que piensa sin un paso nuevo antes de ponerse a construir (los pasos seguidos llegan en unos segundos).</summary>
+    const long PonderBeforeBuilding = 8000;
+
     /// <summary>Lo que toca por las sesiones en este momento.</summary>
     ChibiMove FromSessions(long now, bool music)
     {
@@ -1113,7 +1119,10 @@ sealed class ChibiDirector
             _shown.Add(step);
             if (wish == ChibiMove.Tool) _building = step;
         }
-        return now < _builtUntil ? ChibiMove.Built : _state;
+        if (now < _builtUntil) return ChibiMove.Built;
+        // Pensar un rato está bien; si sigue sin otro paso, construye mientras tanto. Sigue siendo «pensar» por
+        // dentro: el paso siguiente entra enseguida y la casita no se festeja (no la terminó una herramienta).
+        return _state == ChibiMove.Ponder && now - _stateSince >= PonderBeforeBuilding ? ChibiMove.Tool : _state;
     }
 
     bool Finished(string? step) => step is not null && _sessions.SelectMany(s => s.Flow).FirstOrDefault(f => f.Id == step) is { Done: true };
@@ -1213,6 +1222,7 @@ static class MascotLines
             NoticeKind.UsageCritical => L.T("¡Casi sin energía! {0} ({1}). (×_×)", notice.Title, s),
             NoticeKind.UsageReset => L.T("¡Chachachá! Se renovó: {0}. ¡A darle! ♪", s),
             NoticeKind.Expired => L.T("Hmm… la cuenta «{0}» pide que abras Claude Code otra vez. (._.)", s),
+            NoticeKind.Reminder => L.T("{0}¡Te recuerdo! {1} (^_^)/", oi, notice.Subtitle),
             _ => notice.Title,
         };
     }

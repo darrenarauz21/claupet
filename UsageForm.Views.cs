@@ -31,6 +31,8 @@ sealed partial class UsageForm
         public string AssistantAccount { get; init; } = "";
         public string TaskFolder { get; init; } = "";
         public bool AnalyzeDrops { get; init; }
+        /// <summary>Cuántas capacidades tienen «Permitir siempre» («3 de 10 permitidas»).</summary>
+        public string Permissions { get; init; } = "";
         public bool Mic { get; init; }
         public string MicKey { get; init; } = "";
         public string ChatKey { get; init; } = "";
@@ -393,6 +395,8 @@ sealed partial class UsageForm
                     y = ChoiceRow(g, draw, L.T("Carpeta de las tareas"), "folder", s.TaskFolder, y);
                     y = SwitchRow(g, draw, L.T("Analizar los archivos que le suelte"), "drops", s.AnalyzeDrops, y);
                 }
+                // Lo que hace en el equipo (captura, calendario, ventanas…) se pide desde el chat o la isla.
+                if (s.Chat || s.Island) y = ChoiceRow(g, draw, L.T("Permisos"), "grants", s.Permissions, y);
                 y = SettingsCaption(g, draw, L.T("Voz"), y + S(8));
                 y = SwitchRow(g, draw, L.T("Micrófono"), "mic", s.Mic, y);
                 if (s.Mic)

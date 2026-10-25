@@ -3,13 +3,13 @@ using System.Text.Json;
 
 namespace ClaudeUsageTray;
 
-enum NoticeKind { Done, Question, Permission, Failed, Retrying, Closed, UsageHigh, UsageCritical, UsageReset, Expired }
+enum NoticeKind { Done, Question, Permission, Failed, Retrying, Closed, UsageHigh, UsageCritical, UsageReset, Expired, Reminder }
 
 sealed record Notice(NoticeKind Kind, string Title, string Subtitle, string Detail, string? SessionId = null, string? AccountDir = null)
 {
     /// <summary>Lo que necesita su atención se queda hasta que lo cierre; lo demás se va a los 6 s.</summary>
     public bool Sticky => Kind is NoticeKind.Question or NoticeKind.Permission or NoticeKind.Failed
-        or NoticeKind.Closed or NoticeKind.Expired;
+        or NoticeKind.Closed or NoticeKind.Expired or NoticeKind.Reminder;
 }
 
 /// <summary>

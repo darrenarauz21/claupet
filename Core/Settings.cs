@@ -87,6 +87,8 @@ sealed class AppSettings
     public string? TaskFolder { get; set; }
     /// <summary>Un archivo soltado sobre la mascota o la isla se analiza.</summary>
     public bool AnalyzeDrops { get; set; } = true;
+    /// <summary>Las capacidades con «Permitir siempre» (Capabilities): las demás se preguntan al usarlas.</summary>
+    public List<string> Permissions { get; set; } = new();
     /// <summary>Hablarle con el micrófono (mantener MicKey).</summary>
     public bool Mic { get; set; }
     /// <summary>La tecla para hablar: una que se mantiene (nombre de System.Windows.Forms.Keys) o una combinación grabada (MicKeys).</summary>

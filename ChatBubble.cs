@@ -4,7 +4,8 @@ namespace ClaudeUsageTray;
 /// La nubecita del chat con la mascota, de pixeles como la de «Hablar» (BubbleSprite). Tiene cuatro
 /// momentos: el campo para escribir (con el chip del modelo), el micrófono mientras se le habla, los
 /// tres puntos mientras Claude piensa y la respuesta, que aparece de a poco. Si la respuesta es una
-/// tarea, ofrece abrir la sesión. Va arriba de la mascota (o abajo, si no cabe) y la sigue si la
+/// tarea, ofrece abrir la sesión; si Claupet tiene que preguntar algo (el permiso de una capacidad), lo
+/// pregunta con botones (Choose). Va arriba de la mascota (o abajo, si no cabe) y la sigue si la
 /// arrastran. Esc la cierra.
 /// </summary>
 sealed class ChatBubble : Form
@@ -59,6 +60,11 @@ sealed class ChatBubble : Form
     Rectangle _mascot;
     Rectangle _chipBounds, _linkBounds, _openBounds, _otherBounds;
     string? _pressed;
+    // Una pregunta de Claupet: sus botones (Id y texto), cuál es el principal y quién espera la respuesta.
+    IReadOnlyList<(string Id, string Label)>? _choices;
+    string _choicePrimary = "";
+    TaskCompletionSource<string?>? _choiceTask;
+    readonly List<(Rectangle Bounds, string Id)> _choiceBounds = new();
 
     /// <summary>Mientras hay un menú abierto (el del modelo), perder el foco no la cierra.</summary>
     public bool HoldOpen { get; set; }
@@ -140,6 +146,7 @@ sealed class ChatBubble : Form
     /// <summary>El campo para escribir, junto a la mascota. Se queda con el foco para escribir enseguida.</summary>
     public void AskInput(Rectangle mascot, string model)
     {
+        DropChoice(null);
         _mode = Mode.Input;
         _model = model;
         _target = "";
@@ -164,6 +171,7 @@ sealed class ChatBubble : Form
     /// <summary>Los tres puntos mientras llega la respuesta, bajo la pregunta que se le hizo (en gris).</summary>
     public void Think(Rectangle mascot, string? question = null)
     {
+        DropChoice(null);
         _question = question;
         _questionAt = Environment.TickCount64;
         _mode = Mode.Thinking;
@@ -179,6 +187,7 @@ sealed class ChatBubble : Form
     /// <summary>El micrófono abierto: el nivel de la voz, lo que va entendiendo y cómo se termina (hint).</summary>
     public void Listen(Rectangle mascot, string hint)
     {
+        DropChoice(null);
         _mode = Mode.Listening;
         _box.Visible = false;
         _heard = "";
@@ -228,6 +237,36 @@ sealed class ChatBubble : Form
     /// </summary>
     public void Finish(string text, bool island, string? taskPrompt = null, string? taskFolder = null, bool error = false)
     {
+        DropChoice(null);
+        ShowAnswer(text, island, taskPrompt, taskFolder, error);
+    }
+
+    /// <summary>
+    /// Una pregunta de Claupet (¿dejo que capture la pantalla?) con sus botones; primary es el Id del
+    /// principal. Devuelve el Id elegido, o null si la cerraron o llegó otra cosa.
+    /// </summary>
+    public Task<string?> Choose(Rectangle mascot, string text, IReadOnlyList<(string Id, string Label)> options, string primary)
+    {
+        DropChoice(null);
+        _mascot = mascot;
+        _choices = options;
+        _choicePrimary = primary;
+        var task = _choiceTask = new TaskCompletionSource<string?>();
+        ShowAnswer(text, island: false, null, null, error: false);
+        return task.Task;
+    }
+
+    void DropChoice(string? id)
+    {
+        var task = _choiceTask;
+        _choiceTask = null;
+        _choices = null;
+        _choiceBounds.Clear();
+        task?.TrySetResult(id);
+    }
+
+    void ShowAnswer(string text, bool island, string? taskPrompt, string? taskFolder, bool error)
+    {
         _mode = Mode.Answer;
         _box.Visible = false;
         _streaming = false;
@@ -272,7 +311,7 @@ sealed class ChatBubble : Form
         if (_wasTalking && !talking) DoneTalking?.Invoke();
         _wasTalking = talking;
 
-        var waiting = _taskPrompt is not null;
+        var waiting = _taskPrompt is not null || _choices is not null;
         if (_mode == Mode.Answer && !_streaming && _visible >= _target.Length && !waiting && !_hover
             && now - _doneAt > AnswerLifetime)
             Close(dismissed: true);
@@ -281,6 +320,7 @@ sealed class ChatBubble : Form
     /// <summary>Se esconde (no se destruye: se vuelve a usar).</summary>
     public void Close(bool dismissed)
     {
+        DropChoice(null);
         if (!Visible) return;
         _tick.Stop();
         Hide();
@@ -317,6 +357,7 @@ sealed class ChatBubble : Form
                 if (_taskPrompt is not null)
                     height += S(4) + TextRenderer.MeasureText(L.T("«{0}»", _taskPrompt), _small, new Size(width, S(44)), Wrap | TextFormatFlags.EndEllipsis).Height
                         + S(10) + S(26);
+                else if (_choices is not null) height += S(10) + ChoiceLayout(0, 0).Max(c => c.Bounds.Bottom);
                 else if (_island) height += S(6) + _small.Height;
                 break;
         }
@@ -443,6 +484,12 @@ sealed class ChatBubble : Form
                     _openBounds = PixelButton(g, L.T("Abrir sesión"), x, by, primary: true, pressed: _pressed == "open");
                     _otherBounds = PixelButton(g, L.T("Otra carpeta…"), _openBounds.Right + S(10), by, primary: false, pressed: _pressed == "other");
                 }
+                else if (_choices is not null && _visible >= _target.Length)
+                {
+                    _choiceBounds.Clear();
+                    foreach (var (bounds, id, text) in ChoiceLayout(x, below + S(10)))
+                        _choiceBounds.Add((PixelButton(g, text, bounds.X, bounds.Y, primary: id == _choicePrimary, pressed: _pressed == "ch:" + id), id));
+                }
                 else if (_island && _visible >= _target.Length)
                 {
                     var link = L.T("Ver en la isla");
@@ -494,6 +541,26 @@ sealed class ChatBubble : Form
         var hint = _converting ? L.T("Pasando a texto…") : L.T("{0} · Esc cancela", _hint);
         TextRenderer.DrawText(g, hint, _small, new Rectangle(x, y + height + S(6), ContentWidth, _small.Height),
             _converting ? Muted : Mic, Color.White, OneLine | TextFormatFlags.EndEllipsis);
+    }
+
+    /// <summary>Dónde va cada botón de la pregunta: en fila, y si no caben, en la de abajo.</summary>
+    List<(Rectangle Bounds, string Id, string Label)> ChoiceLayout(int x, int y)
+    {
+        var list = new List<(Rectangle, string, string)>();
+        var cx = x;
+        var height = S(22) + _unit;
+        foreach (var (id, label) in _choices ?? [])
+        {
+            var width = TextRenderer.MeasureText(label, _button, Size.Empty, OneLine).Width + S(20) + _unit * 2;
+            if (cx > x && cx + width > x + ContentWidth)
+            {
+                cx = x;
+                y += height + S(8);
+            }
+            list.Add((new Rectangle(cx, y, width, height), id, label));
+            cx += width + S(10);
+        }
+        return list;
     }
 
     /// <summary>Un botón de pixeles: contorno oscuro y una sombra de una casilla que desaparece al pulsarlo.</summary>
@@ -559,14 +626,15 @@ sealed class ChatBubble : Form
     {
         base.OnMouseMove(e);
         var hand = _chipBounds.Contains(e.Location) || _linkBounds.Contains(e.Location)
-            || _openBounds.Contains(e.Location) || _otherBounds.Contains(e.Location);
+            || _openBounds.Contains(e.Location) || _otherBounds.Contains(e.Location) || _choiceBounds.Any(c => c.Bounds.Contains(e.Location));
         Cursor = hand ? Cursors.Hand : _mode == Mode.Input ? Cursors.IBeam : Cursors.Default;
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        _pressed = _openBounds.Contains(e.Location) ? "open" : _otherBounds.Contains(e.Location) ? "other" : null;
+        _pressed = _openBounds.Contains(e.Location) ? "open" : _otherBounds.Contains(e.Location) ? "other"
+            : _choiceBounds.FirstOrDefault(c => c.Bounds.Contains(e.Location)).Id is { } choice ? "ch:" + choice : null;
         if (_pressed is not null) Invalidate();
     }
 
@@ -580,7 +648,12 @@ sealed class ChatBubble : Form
         if (_linkBounds.Contains(e.Location)) { Close(dismissed: false); IslandClicked?.Invoke(); return; }
         if (pressed == "open" && _openBounds.Contains(e.Location)) { _taskPrompt = null; TaskChosen?.Invoke(true); return; }
         if (pressed == "other" && _otherBounds.Contains(e.Location)) { TaskChosen?.Invoke(false); return; }
-        if (_mode == Mode.Answer && _taskPrompt is null && !Talking) Close(dismissed: true);
+        if (pressed?.StartsWith("ch:") == true && _choiceBounds.Any(c => "ch:" + c.Id == pressed && c.Bounds.Contains(e.Location)))
+        {
+            DropChoice(pressed[3..]);
+            return;
+        }
+        if (_mode == Mode.Answer && _taskPrompt is null && _choices is null && !Talking) Close(dismissed: true);
         else Invalidate();
     }
 
