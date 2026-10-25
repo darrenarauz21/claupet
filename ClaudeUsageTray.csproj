@@ -11,7 +11,7 @@
     <ApplicationDefaultFont>Segoe UI, 9pt</ApplicationDefaultFont>
     <AssemblyName>ClaudeUsageTray</AssemblyName>
     <RootNamespace>ClaudeUsageTray</RootNamespace>
-    <Version>2.2.0</Version>
+    <Version>2.2.1</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyTitle>Claupet</AssemblyTitle>
     <Product>Claupet</Product>
