@@ -55,7 +55,11 @@ static class SystemActions
                 _ => Fail(L.T("Eso todavía no lo sé hacer.")),
             };
         }
-        catch (Exception ex) { return Fail(L.T("No pude: {0}", ex.Message)); }
+        catch (Exception ex)
+        {
+            ErrorLog.Write(ex); // el mensaje de Windows suele ser poco («Error no especificado»): el detalle queda en errores.log
+            return Fail(L.T("No pude: {0}", ex.Message));
+        }
     }
 
     /// <summary>
@@ -542,10 +546,20 @@ static class SystemActions
         dynamic wmi = locator.ConnectServer(".", @"root\wmi");
         dynamic levels = wmi.ExecQuery("SELECT CurrentBrightness FROM WmiMonitorBrightness WHERE Active=TRUE");
         if ((int)levels.Count == 0) return L.T("Esta pantalla no deja cambiar el brillo desde Windows: un monitor externo se ajusta con sus botones.");
-        int current = Convert.ToInt32(levels.ItemIndex(0).CurrentBrightness);
+        // Solo con los miembros fijos de SWbemObject (Properties_, Methods_, ExecMethod_). Los de la clase de WMI
+        // (CurrentBrightness, WmiSetBrightness) tienen un DISPID propio de cada objeto, y dynamic guarda el del
+        // primero que vio: desde el segundo pedido en la misma app fallaban con «Error no especificado».
+        int current = Convert.ToInt32(levels.ItemIndex(0).Properties_.Item("CurrentBrightness").Value);
         var target = percent ?? Math.Clamp(current + (up ? 10 : -10), 0, 100);
         dynamic methods = wmi.ExecQuery("SELECT * FROM WmiMonitorBrightnessMethods WHERE Active=TRUE");
-        for (var i = 0; i < (int)methods.Count; i++) methods.ItemIndex(i).WmiSetBrightness(1, (byte)target);
+        for (var i = 0; i < (int)methods.Count; i++)
+        {
+            dynamic monitor = methods.ItemIndex(i);
+            dynamic input = monitor.Methods_.Item("WmiSetBrightness").InParameters.SpawnInstance_();
+            input.Properties_.Item("Timeout").Value = 1;
+            input.Properties_.Item("Brightness").Value = (byte)target;
+            monitor.ExecMethod_("WmiSetBrightness", input);
+        }
         return null;
     }
 
