@@ -266,7 +266,7 @@ hacer otra cosa; lo demás se encarga a Claude Code:
 | `musica` | `reproducir`, `pausar`, `siguiente` o `anterior` | teclas multimedia; antes de reproducir o pausar mira si algo suena (`Music.PlayingNow`) |
 | `abrir` | URL `https`, `http`, `spotify:` o `ms-settings:`, o el nombre de una app del menú Inicio | se abre con el programa de Windows; las apps, por su acceso directo |
 | `captura` | `pantalla` o `recorte`; con `"pregunta"`, Claude la mira | ver **Captura** abajo |
-| `agendar` | `{"titulo","inicio","fin","lugar","nota"}` (`inicio` sin hora: todo el día) | un `.ics` que se abre con el calendario de Windows de la persona (aquí, el nuevo Outlook), que lo muestra para guardarlo; avisa 15 min antes |
+| `agendar` | `{"titulo","inicio","fin","lugar","nota"}` (`inicio` sin hora: todo el día) | un `.ics` que se abre con la app de calendario de Windows de la persona, que lo muestra para guardarlo; avisa 15 min antes |
 | `nota` | `{"titulo","texto"}` o el texto solo | un Markdown en `Documentos\Claupet\Notas` (con OneDrive, se sincroniza) |
 | `notas` | `leer`, `abrir` o palabras para buscar | las últimas 8 (o las que tengan todas esas palabras) vuelven a Claude para que responda |
 | `recordar` | `{"texto","cuando"}` | ver **Recordatorios** abajo |
