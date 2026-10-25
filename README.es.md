@@ -39,6 +39,9 @@ le necesita y en qué anda cada una, sin abrir una terminal.
   pantalla, por escrito o de viva voz, y escuche la respuesta con la voz propia de Claupet. Suéltele
   un archivo y se lo resume. También cambia el fondo, el tema, el volumen o la música, y le encarga
   a Claude Code lo que sea más grande.
+- 🧰 **Una mano con Windows** *(Windows)*. Captura o recorta la pantalla (y la mira, si usted quiere),
+  agenda en su calendario, guarda notas, le recuerda cosas aunque la app esté cerrada y se encarga de
+  ventanas, brillo, portapapeles, carpetas y del equipo. Cada cosa pide permiso la primera vez.
 - 📶 **Hecha para redes reales.** Sigue el proxy de Windows, renueva sola las sesiones vencidas y,
   sin internet, igual saluda y le dice la hora.
 - 🎨 **A su gusto.** Paletas de color, mascotas, animaciones y estilos de sonido.

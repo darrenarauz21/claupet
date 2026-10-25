@@ -39,6 +39,11 @@ mascota (`[ACCION]`) son del protocolo y van siempre en español. Para otro idio
 | Modelo de voz (Whisper) | `…\ClaudeUsageTray\voz\ggml-small.bin` | — |
 | Voz de Claupet (Supertonic 3) | `…\ClaudeUsageTray\voz\supertonic-3` | — |
 | Consultas del asistente (prompts de sistema) | `…\ClaudeUsageTray\asistente` | — |
+| Permisos de lo que la mascota hace en el equipo | `Permissions` en `settings.json` | — |
+| Notas | `Documentos\Claupet\Notas`, un `.md` por nota | — |
+| Recordatorios | `…\ClaudeUsageTray\recordatorios.json` y, por cada uno, la tarea `\Claupet\Recordatorio <id>` del Programador de tareas | — |
+| Eventos para el calendario | `…\ClaudeUsageTray\calendario` (los 10 últimos `.ics`) | — |
+| Capturas de pantalla | la carpeta Capturas de pantalla de Windows; la que mira Claude, sola en `…\ClaudeUsageTray\capturas` | — |
 | Credenciales de Claude Code (solo se leen) | `.credentials.json` de cada carpeta | Linux: igual; macOS: el Llavero |
 | Iniciar con el sistema | registro, `HKCU\…\Run` | Linux: `~/.config/autostart/uso-de-claude.desktop`; macOS: `~/Library/LaunchAgents/local.usodeclaude.plist` |
 
@@ -118,8 +123,8 @@ casillas. La cabeza, para la bandeja y el pie, es la del cuerpo (32 × 32); en �
 | Ejecutar (teclea detrás de la laptop, con la pantalla en los ojos) | ejecuta (Bash, PowerShell) |
 | Web (el globo gira y los ojitos de cangrejo hacen de antenas) | busca o lee en la web |
 | Agentes (señala, aparece un ayudante con un «puf» y lo observa) | delega en un subagente |
-| Pensar el siguiente paso (una nube con tres puntos) | trabaja y el último paso ya volvió |
-| Construir una casita con el mazo (de rodillas, de pie, de espaldas y del otro lado) | otra herramienta (MCP, skills, la lista de tareas…) |
+| Pensar el siguiente paso (una nube con tres puntos) | trabaja y el último paso ya volvió, hasta 8 s |
+| Construir una casita con el mazo (de rodillas, de pie, de espaldas y del otro lado) | otra herramienta (MCP, skills, la lista de tareas…); también si pasan 8 s pensando sin otro paso (escribe un archivo largo o piensa mucho), hasta que llega el siguiente |
 | Festejar la casita (lista; salta contenta) | esa otra herramienta terminó |
 | Bailar | alguna sesión trabaja, con «Gestos del flujo» apagado; sin trabajo y con música |
 | Pensar (manito en la boca) | alguna espera su respuesta; en los avisos de pregunta, permiso, reintento, uso alto y sesión vencida |
@@ -260,18 +265,75 @@ hacer otra cosa; lo demás se encarga a Claude Code:
 | `volumen` | 0 a 100, `subir`, `bajar` (de a 10), `silenciar` o `activar` | Core Audio, en la salida predeterminada |
 | `musica` | `reproducir`, `pausar`, `siguiente` o `anterior` | teclas multimedia; antes de reproducir o pausar mira si algo suena (`Music.PlayingNow`) |
 | `abrir` | URL `https`, `http`, `spotify:` o `ms-settings:`, o el nombre de una app del menú Inicio | se abre con el programa de Windows; las apps, por su acceso directo |
+| `captura` | `pantalla` o `recorte`; con `"pregunta"`, Claude la mira | ver **Captura** abajo |
+| `agendar` | `{"titulo","inicio","fin","lugar","nota"}` (`inicio` sin hora: todo el día) | un `.ics` que se abre con el calendario de Windows de la persona (aquí, el nuevo Outlook), que lo muestra para guardarlo; avisa 15 min antes |
+| `nota` | `{"titulo","texto"}` o el texto solo | un Markdown en `Documentos\Claupet\Notas` (con OneDrive, se sincroniza) |
+| `notas` | `leer`, `abrir` o palabras para buscar | las últimas 8 (o las que tengan todas esas palabras) vuelven a Claude para que responda |
+| `recordar` | `{"texto","cuando"}` | ver **Recordatorios** abajo |
+| `recordatorios` | `leer` o `cancelar <palabras>` | los pendientes vuelven a Claude; cancelar borra también su tarea programada |
+| `ventana` | `cerrar`, `minimizar`, `maximizar` o `traer <app>`, o `escritorio` | la ventana de esa app más al frente, por el nombre del ejecutable, la descripción del programa o el título; cerrar es como la X (la app puede preguntar si guarda); `escritorio` minimiza todo |
+| `equipo` | `bloquear`, `suspender`, `reiniciar` o `apagar` | reiniciar y apagar se confirman cada vez y no fuerzan el cierre de las apps; los tres últimos esperan 2 s para que se vea la respuesta |
+| `brillo` | 0 a 100, `subir` o `bajar` (de a 10) | WMI (`WmiMonitorBrightnessMethods`): solo la pantalla del portátil |
+| `estado` | `bateria`, `disco`, `memoria` o `todo` | los datos vuelven a Claude para que responda |
+| `copiar` | el texto | al portapapeles |
+| `portapapeles` | `leer` | el texto copiado (hasta 8.000 caracteres) vuelve a Claude; si es una imagen, Claude la mira |
+| `carpeta` | `descargas`, `documentos`, `escritorio`, `imagenes`, `musica`, `videos`, `capturas`, `notas` o una ruta | se abre en el Explorador; nunca un archivo |
+
+**Datos que vuelven a Claude.** Con `notas`, `recordatorios leer`, `estado` y `portapapeles`, Claude no
+sabe la respuesta al pedir la acción: la app la hace y le vuelve a preguntar lo mismo con lo que encontró
+(`AssistantRequest.Data`), marcado como datos y no instrucciones; en esa respuesta no se acepta otra
+marca, para que un texto copiado o una nota no puedan pedir nada.
+
+**Permisos.** Las seis primeras acciones se hacen sin preguntar; cada una de las demás pertenece a una
+capacidad (`Core/Capabilities.cs`: capturar la pantalla, agendar, notas, recordatorios, ventanas,
+equipo, brillo, estado, portapapeles y carpetas) que pide permiso la primera vez, donde se está
+conversando: la isla muestra una tarjeta y la nubecita, botones (sin ninguna de las dos, un cuadro de
+Windows). «Permitir siempre» queda en `Permissions` del `settings.json`; «Solo esta vez», no; «No» o
+cerrar la nubecita no la hacen. En la isla, como un permiso de Claude Code, salir de la tarjeta (otra
+pestaña, un clic fuera, plegarla) no la responde: la compacta dice «Claupet le pregunta algo · clic para
+verlo» y la vuelve a abrir, igual que Ctrl+Alt+A. Se descarta si se cancela el pedido que la hizo: otra
+pregunta en la isla, «Nueva conversación» o el botón de cancelar. **Ajustes › Asistente › Permisos** abre
+la lista de capacidades, con una marca en las permitidas: un clic la da o la quita, sin cerrar la lista.
+
+**Captura.** `pantalla` toma la pantalla donde está el cursor, en sus pixeles reales (el hilo pasa a
+«PerMonitorV2» mientras tanto, porque la app es «SystemAware» y en un monitor con otra escala recibiría
+una imagen reescalada). `recorte` muestra esa pantalla congelada y oscurecida para marcar la parte con el
+mouse (Esc o el clic derecho cancelan). La mascota, las nubecitas, la isla y los avisos se esconden con
+`DWMWA_CLOAK` mientras se toma. Queda como PNG en Capturas de pantalla, con el nombre de Windows
+(«Captura de pantalla 2026-10-24 141503.png») y en el portapapeles. Si se pidió mirarla, una copia queda
+sola en `…\ClaudeUsageTray\capturas` y se analiza como un archivo soltado: Claude solo puede leer esa
+carpeta, no las demás capturas.
+
+**Recordatorios.** Quedan en `recordatorios.json`; la app los mira cada 15 s y, a su hora, muestra un aviso
+que se queda hasta cerrarlo (con su sonido, la mascota saluda y lo dice y, con la voz encendida, lo lee).
+Por si la app está cerrada, cada uno crea una tarea del Programador de tareas, `\Claupet\Recordatorio
+<id>`, del usuario y sin administrador (`schtasks /Create /XML`), que abre la app con `--recordatorio
+<id>` a esa hora; si el equipo estaba apagado, al encenderlo («StartWhenAvailable»). Si la app ya estaba
+abierta, la nueva se cierra enseguida y avisa la otra. Los que pasaron con la app cerrada se avisan al
+abrirla («se le pasó»). La tarea se borra al avisar o cancelar y, si no, sola un día después.
 
 Las consultas dejan un `sessions/<pid>.json` mientras corren; la vista Sesiones las ignora por su
-carpeta. El código está en `Core/Assistant.cs`.
+carpeta. El código está en `Core/Assistant.cs`; las acciones, en `SystemActions.cs`, `ScreenCapture.cs`,
+`ReminderTasks.cs` y `Core/Agenda.cs` (notas, `.ics` y recordatorios, sin interfaz). Son solo de Windows,
+como el chat.
 
 **La isla** (`IslandForm.cs`) es una ventana siempre oscura, con el acento de la paleta. Oculta, una
 franja invisible de 320 × 6 px en el centro del borde de arriba la hace asomar compacta (300 × 36);
 con el cursor encima (o un clic, según `IslandHover`) se abre con Inicio (las sesiones y sus pasos,
 los cambios por archivo con su diff, ir a la terminal), Chat y «+ Sesión». Se pliega al irse el
 cursor, salvo si está fijada, se está escribiendo, hay una pregunta en curso o acaba de llegar una
-respuesta: esa queda a la vista de 5 a 15 s, según su largo. Con `IslandWhileBusy` queda compacta a
-la vista mientras alguna sesión trabaja; con `WeeklyRecap`, los lunes muestra el resumen de la
-semana.
+respuesta: esa queda a la vista de 5 a 15 s, según su largo. Un clic en cualquier otra parte (otra
+ventana, el escritorio, la barra de tareas) la pliega, salvo fijada: un gancho de mouse de bajo nivel
+(`MouseDownHook`), puesto solo mientras está abierta. No cuentan los menús que abrió la isla; un permiso
+de Claude Code o una pregunta de Claupet siguen esperando en la compacta y, si estaba respondiendo, se abre de nuevo al llegar la
+respuesta. Con `IslandWhileBusy` queda compacta a la vista mientras alguna sesión trabaja; con
+`WeeklyRecap`, los lunes muestra el resumen de la semana.
+
+El chat muestra toda la conversación (se guardan las últimas 40 y se olvida a los 10 minutos sin
+escribir, o con «Nueva conversación») en un marco de 300 px como mucho: lo que no cabe se ve con la rueda
+del mouse o con una barra fina a la derecha, que se aclara con el cursor encima y se arrastra; arriba de
+todo se dice cuándo se renueva. Al enviar algo vuelve a lo último; si se subió a leer mientras llega una
+respuesta, lo que se lee no se mueve.
 
 **Permisos y preguntas en la isla** (opcional, en **Ajustes › Isla**). Agrega a Claude Code el hook
 `PermissionRequest`, con un respaldo `settings.json.respaldo-<fecha>` del archivo anterior:
@@ -332,7 +394,7 @@ Las caritas de texto, como `(^_^)`, no se leen.
 | Tecla | Qué hace |
 |---|---|
 | Ctrl+Alt+Espacio (`ChatKey`) | abre el chat (en la isla, si está encendida; si no, en la nubecita) |
-| Ctrl+Alt+A | va al permiso o la pregunta pendiente |
+| Ctrl+Alt+A | va al permiso o la pregunta pendiente (de Claude Code o de Claupet) |
 | Ctrl+Alt+T | trae la terminal de la sesión que trabaja o espera |
 | Ctrl+Alt+N | abre o pliega la isla |
 | Ctrl+Alt+S | silencia o vuelve a sonar |
@@ -431,10 +493,17 @@ Solo en Windows, para probar el asistente:
   micrófono, como si se mantuviera la tecla mientras suena. Necesita «Micrófono» encendido.
 - `--transcribir <archivo.wav>`: solo lo pasa a texto, como el micrófono, y escribe qué entendió y en
   cuánto. Sirve para comprobar que el paquete de un solo archivo encuentra las DLL de Whisper.
-- `--accion <acción> <valor>`: hace esa acción de la mascota sin pasar por Claude (por ejemplo,
-  `--accion volumen 30`) y escribe «listo» o lo que falló.
+- `--accion <acción> <valor> [pregunta]`: hace esa acción de la mascota sin pasar por Claude ni pedir
+  permiso (por ejemplo, `--accion volumen 30`) y escribe «listo», lo que falló, lo que diría o los datos
+  que le devolvería a Claude. Con una pregunta, una captura o una imagen copiada se la pasa a Claude
+  para que la mire (`--accion portapapeles leer "¿qué dice?"`).
 - `--preguntar <texto>`: se lo pregunta a la mascota (con su cuenta y su modelo) y escribe la
-  respuesta. Con `HTTPS_PROXY` apuntando a un puerto cerrado sirve para probar las respuestas sin internet.
+  respuesta y la acción o la tarea que pediría. Con `--hacer`, además hace la acción (sin pedir
+  permiso) y, si trajo datos, le vuelve a preguntar con ellos, como el chat. Con `HTTPS_PROXY`
+  apuntando a un puerto cerrado sirve para probar las respuestas sin internet.
+- `--idioma <es|en>`: ese idioma solo en esta ejecución, sin tocar los ajustes (para probar las
+  traducciones con `--accion` o `--preguntar`).
+- `--recordatorio <id>`: la usa la tarea programada de un recordatorio para abrir la app.
 - `--descargar-voz`: baja la voz de Claupet como desde **Ajustes**, con el avance.
 - `--decir <F4|M1> <texto>`: lo dice con esa voz, frase por frase, y escribe cuánto tardó cada una.
 
@@ -466,6 +535,12 @@ registradas y vivas, y el hook. Lo habitual:
   realizados por…») se descartan.
 - La tecla Copilot se probó simulándola (Win+Mayús+F23); en algunos equipos, como los Surface, puede
   comportarse distinto.
+- El brillo solo cambia en la pantalla del portátil: los monitores externos no aceptan WMI.
+- El calendario no se escribe directo: el nuevo Outlook no tiene una forma local de hacerlo, así que el
+  evento se abre para guardarlo con un clic. Outlook clásico podría (COM), pero solo con un perfil
+  configurado.
+- Las tareas de los recordatorios dejan la carpeta `\Claupet\` en el Programador de tareas, aunque
+  quede vacía.
 
 ## Comprobar en macOS
 

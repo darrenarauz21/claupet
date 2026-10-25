@@ -6,6 +6,10 @@ sealed class TrayApp : ApplicationContext
     readonly UsageForm _form = new();
     readonly System.Windows.Forms.Timer _timer = new();
     readonly System.Windows.Forms.Timer _sessionTimer = new() { Interval = 1500 };
+    /// <summary>Mira los recordatorios cada 15 s (ReminderStore).</summary>
+    readonly System.Windows.Forms.Timer _reminderTimer = new() { Interval = 15000 };
+    /// <summary>El recordatorio cuya tarea programada abrió la app (--recordatorio): esa tarea se borra sola.</summary>
+    readonly string? _launchedReminder;
     readonly SessionMonitor _monitor = new();
     readonly ActivityTracker _activity = new();
     readonly RefreshAnimator _refresh = new();
@@ -64,9 +68,10 @@ sealed class TrayApp : ApplicationContext
     IReadOnlyList<SessionInfo>? _lastSessions;
     int _sampleIndex, _noticesShown;
 
-    public TrayApp(bool showOnStart, bool sessionsView = false, bool activityView = false, bool settingsView = false, bool demo = false, bool autoSetup = true, bool preview = false, string? demoDrop = null, string? demoVoice = null)
+    public TrayApp(bool showOnStart, bool sessionsView = false, bool activityView = false, bool settingsView = false, bool demo = false, bool autoSetup = true, bool preview = false, string? demoDrop = null, string? demoVoice = null, string? reminderTask = null)
     {
         _form.StayOpen = preview;
+        _launchedReminder = reminderTask;
         _settings = SettingsStore.Load();
         _director.Settings = _settings;
         if (SettingsStore.DetectNew(_settings)) SettingsStore.Save(_settings);
@@ -162,6 +167,8 @@ sealed class TrayApp : ApplicationContext
         _timer.Interval = Math.Max(1, _settings.RefreshMinutes) * 60_000;
         _timer.Tick += async (_, _) => await RefreshAsync();
         _timer.Start();
+        _reminderTimer.Tick += (_, _) => CheckReminders();
+        _reminderTimer.Start();
 
         // La primera consulta, ya con el bucle de mensajes corriendo.
         var first = new System.Windows.Forms.Timer { Interval = 100 };
@@ -178,6 +185,7 @@ sealed class TrayApp : ApplicationContext
             UpdateHotkeys();
             UpdateVoice();
             UpdateKeyHook();
+            CheckReminders(); // los que pasaron con la app cerrada
             if (demoDrop is not null) _ = DemoDropAsync(demoDrop);
             if (demoVoice is not null && _voice is { } voice) _ = Task.Delay(1500).ContinueWith(_ => voice.DemoAsync(demoVoice),
                 TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
@@ -314,6 +322,7 @@ sealed class TrayApp : ApplicationContext
             AssistantAccount = AssistantAccountLabel(),
             TaskFolder = TaskFolderLabel(),
             AnalyzeDrops = s.AnalyzeDrops,
+            Permissions = L.T("{0} de {1} permitidas", Capabilities.All.Count(c => Capabilities.Allowed(s, c.Id)), Capabilities.All.Length),
             Mic = s.Mic,
             MicKey = MicKeys.Label(s.MicKey),
             ChatKey = KeyNames.Label(s.ChatKey),
@@ -532,6 +541,7 @@ sealed class TrayApp : ApplicationContext
             case "account": ShowOptions(AssistantAccountChoices(), _settings.AssistantAccount ?? "", a => Change(s => s.AssistantAccount = a.Length == 0 ? null : a)); break;
             case "folder": ShowOptions(TaskFolderChoices(), _settings.TaskFolder ?? "", PickTaskFolder); break;
             case "drops": Toggle(s => s.AnalyzeDrops = !s.AnalyzeDrops); break;
+            case "grants": ShowPermissions(); break;
             case "mic":
                 Toggle(s => s.Mic = !s.Mic);
                 if (_settings.Mic) _ = DownloadVoiceModelAsync(); // se descarga una vez, al encenderlo
@@ -999,7 +1009,7 @@ sealed class TrayApp : ApplicationContext
         PushIslandChat(true);
         // Con la voz encendida, la respuesta no se muestra mientras llega: sale cuando empieza a sonar.
         var speaking = _settings.ReadAloud;
-        var result = await Assistant.AskAsync(new AssistantRequest
+        var request = new AssistantRequest
         {
             Prompt = text,
             Voice = AssistantVoice.Island,
@@ -1009,12 +1019,14 @@ sealed class TrayApp : ApplicationContext
             History = history,
             Chibi = Mascots.IsChibi,
             Expressive = Expressive,
-        }, piece =>
+        };
+        void Stream(string piece)
         {
             if (cancel.IsCancellationRequested || speaking) return;
-            _islandStreaming += piece;
+            _islandStreaming = (_islandStreaming ?? "") + piece;
             PushIslandChat(true);
-        }, cancel: cancel.Token);
+        }
+        var result = await Assistant.AskAsync(request, Stream, cancel: cancel.Token);
         _islandStreaming = null;
         if (cancel.IsCancellationRequested)
         {
@@ -1034,7 +1046,15 @@ sealed class TrayApp : ApplicationContext
         }
         else
         {
-            var answer = await RunActionAsync(result);
+            // Si Claude vuelve a responder con lo que encontró la acción, la respuesta en curso empieza de nuevo.
+            var answer = await RunActionAsync(result, request, island: true, Stream, () =>
+            {
+                _islandStreaming = null;
+                PushIslandChat(true);
+                _islandStreaming = "";
+                PushIslandChat(true);
+            }, cancel.Token);
+            _islandStreaming = null;
             if (cancel.IsCancellationRequested) return;
             ReadAloudIfOn(result, answer, () =>
             {
@@ -1048,14 +1068,101 @@ sealed class TrayApp : ApplicationContext
     }
 
     /// <summary>
-    /// Si la respuesta pide una acción en el equipo, la hace: devuelve lo que dijo Claude o, si la
-    /// acción falló, lo que pasó.
+    /// Si la respuesta pide una acción en el equipo, la hace (con su permiso: MayRunAsync) y devuelve lo que
+    /// se dice: la frase de Claude, lo que falló o lo que la app sabe y Claude no. Si la acción averiguó algo
+    /// (la batería, las notas, lo copiado), Claude responde otra vez con esos datos: restart avisa que
+    /// empieza esa respuesta y onText recibe sus partes. Si trajo una imagen para mirar, la analiza.
     /// </summary>
-    async Task<string> RunActionAsync(AssistantResult result)
+    async Task<string> RunActionAsync(AssistantResult result, AssistantRequest request, bool island,
+        Action<string>? onText, Action? restart, CancellationToken cancel)
     {
         if (result.Action is not { } action) return result.Text;
-        var problem = await SystemActions.RunAsync(action, SetPalette);
-        return problem is null ? (result.Text.Length > 0 ? result.Text : L.T("¡Listo! (^_^)")) : $"{problem} (._.)";
+        if (!await MayRunAsync(action, island, cancel)) return L.T("Está bien, no lo hago. (^_^)");
+        if (cancel.IsCancellationRequested) return "";
+        var outcome = await SystemActions.RunAsync(action, SetPalette);
+        if (outcome.Problem is { } problem) return $"{problem} (._.)";
+        if (outcome.Look is { } look)
+        {
+            _ = AnalyzeAsync(look, outcome.Question ?? request.Prompt);
+            return L.T("Déjame mirarla… (o_o)");
+        }
+        if (outcome.Data is { } data)
+        {
+            restart?.Invoke();
+            var follow = await Assistant.AskAsync(request with { Data = data }, onText, cancel: cancel);
+            return follow.Failed ? $"{follow.Error} (._.)" : follow.Text;
+        }
+        return outcome.Say ?? (result.Text.Length > 0 ? result.Text : L.T("¡Listo! (^_^)"));
+    }
+
+    /// <summary>
+    /// El permiso de la capacidad (si todavía no tiene «Permitir siempre») y, para reiniciar o apagar, la
+    /// confirmación de cada vez; se pregunta donde se conversa: la isla o la nubecita (si no, un cuadro de Windows).
+    /// cancel: el pedido que la hizo; si se cancela, la pregunta se descarta.
+    /// </summary>
+    async Task<bool> MayRunAsync(AssistantAction action, bool island, CancellationToken cancel)
+    {
+        if (SystemActions.CapabilityOf(action) is { } capability && !Capabilities.Allowed(_settings, capability))
+        {
+            var choice = await AskChoiceAsync(island, L.T("¿Dejo que Claupet {0}?", Capabilities.Ask(capability)),
+                L.T("Se lo pregunto la primera vez. Puede quitarlo en Ajustes › Asistente › Permisos."),
+                [("no", L.T("No")), ("always", L.T("Permitir siempre")), ("once", L.T("Solo esta vez"))], "always", cancel);
+            if (choice == "always") Change(s => s.Permissions.Add(capability));
+            if (choice is not ("always" or "once")) return false;
+        }
+        if (SystemActions.Confirmation(action) is not { } confirm) return true;
+        return await AskChoiceAsync(island, confirm.Question, "", [("no", L.T("No")), ("yes", confirm.Yes)], "yes", cancel) == "yes";
+    }
+
+    /// <summary>
+    /// Pregunta algo de Claupet con botones; devuelve el Id elegido o null (se cerró sin elegir). En la isla
+    /// espera aunque se salga de la tarjeta, hasta que se responda o se cancele el pedido (otra pregunta,
+    /// «Nueva conversación» o el botón de cancelar).
+    /// </summary>
+    async Task<string?> AskChoiceAsync(bool island, string title, string detail, IReadOnlyList<(string Id, string Label)> options,
+        string primary, CancellationToken cancel)
+    {
+        if (island && _island is { } isle)
+        {
+            var asked = isle.Choose(title, detail, options, primary);
+            using (cancel.Register(() => isle.CancelChoice(asked))) return await asked;
+        }
+        if (_mascotWindow is { } mascot && _chatBubble is { IsDisposed: false, Visible: true } bubble)
+        {
+            _director.SetMood(ChibiMove.Think);
+            var choice = await bubble.Choose(mascot.Bounds, title, options, primary);
+            if (choice is not null && !bubble.IsDisposed) bubble.Think(mascot.Bounds); // mientras hace lo que se pidió
+            return choice;
+        }
+        var page = new TaskDialogPage { Caption = "Claupet", Heading = title, Text = detail, AllowCancel = true, Icon = TaskDialogIcon.Information };
+        foreach (var (id, label) in options) page.Buttons.Add(new TaskDialogButton(label) { Tag = id });
+        return TaskDialog.ShowDialog(page).Tag as string;
+    }
+
+    /// <summary>
+    /// Los recordatorios que llegaron (también los que pasaron con la app cerrada): un aviso que se queda
+    /// hasta cerrarlo, la mascota lo dice y, con la voz, lo lee. Su tarea de Windows ya no hace falta.
+    /// </summary>
+    void CheckReminders()
+    {
+        List<Reminder> due;
+        try { due = ReminderStore.TakeDue(DateTime.Now); }
+        catch (Exception ex) { ErrorLog.Write(ex); return; }
+        foreach (var reminder in due)
+        {
+            var late = DateTime.Now - reminder.At > TimeSpan.FromMinutes(2);
+            ShowNotice(new Notice(NoticeKind.Reminder, late ? L.T("Recordatorio (se le pasó)") : L.T("Recordatorio"), reminder.Text,
+                late ? L.T("Era para el {0:dddd d, HH:mm}.", reminder.At) : reminder.At.ToString("t")));
+            ReadAloudIfOn(L.T("Te recuerdo: {0}", reminder.Text));
+            // La que abrió esta app (--recordatorio) está corriendo: se borra sola.
+            if (reminder.Id == _launchedReminder) continue;
+            var id = reminder.Id;
+            _ = Task.Run(() =>
+            {
+                try { ReminderTasks.Delete(id); }
+                catch (Exception ex) { ErrorLog.Write(ex); }
+            });
+        }
     }
 
     /// <summary>El nombre de la carpeta donde se abriría una tarea, para la nubecita.</summary>
@@ -1096,9 +1203,10 @@ sealed class TrayApp : ApplicationContext
 
     /// <summary>
     /// Analiza un archivo (o una carpeta) con el modelo de la isla: la isla muestra los pasos reales y el
-    /// resumen mientras se escribe; la mascota cuenta lo esencial en su nubecita.
+    /// resumen mientras se escribe; la mascota cuenta lo esencial en su nubecita. question: lo que se quiere
+    /// saber de él (una captura que pidieron mirar).
     /// </summary>
-    async Task AnalyzeAsync(string file)
+    async Task AnalyzeAsync(string file, string? question = null)
     {
         _analyzing?.Cancel();
         var cancel = _analyzing = new CancellationTokenSource();
@@ -1107,7 +1215,7 @@ sealed class TrayApp : ApplicationContext
         if (!_carrying && _mascotWindow is not null) _director.SetMood(ChibiMove.Listen); // soltado en la isla: la mascota mira mientras lee
         var result = await Assistant.AskAsync(new AssistantRequest
         {
-            Prompt = "",
+            Prompt = question ?? "",
             Voice = AssistantVoice.Island,
             Model = _settings.IslandModel,
             ConfigDir = AssistantConfigDir,
@@ -1273,6 +1381,36 @@ sealed class TrayApp : ApplicationContext
         }
     }
 
+    /// <summary>
+    /// Ajustes › Asistente › Permisos: las capacidades, con una marca en las que tienen «Permitir siempre»;
+    /// un clic la da o la quita (el menú queda abierto para cambiar varias). Sin marca, se pregunta al usarla.
+    /// </summary>
+    void ShowPermissions()
+    {
+        var menu = new ContextMenuStrip();
+        foreach (var (id, label, _) in Capabilities.All)
+        {
+            var item = new ToolStripMenuItem(label) { Checked = Capabilities.Allowed(_settings, id), CheckOnClick = true };
+            item.CheckedChanged += (_, _) => Change(s =>
+            {
+                s.Permissions.Remove(id);
+                if (item.Checked) s.Permissions.Add(id);
+            });
+            menu.Items.Add(item);
+        }
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem(L.T("Sin marca: se pregunta la primera vez que lo use.")) { Enabled = false });
+        Menus.Apply(menu, _form.Theme);
+        menu.Closing += (_, e) => e.Cancel = e.CloseReason == ToolStripDropDownCloseReason.ItemClicked;
+        menu.Closed += (_, _) =>
+        {
+            _form.HoldOpen = false;
+            _form.BeginInvoke(menu.Dispose);
+        };
+        _form.HoldOpen = true;
+        menu.Show(Cursor.Position);
+    }
+
     /// <summary>Una lista armada al momento (cuentas, carpetas…), con la elegida marcada; elegir llama a pick con su Id.</summary>
     void ShowOptions(IEnumerable<(string Id, string Label)> options, string selected, Action<string> pick, Action? onClosed = null)
     {
@@ -1368,12 +1506,13 @@ sealed class TrayApp : ApplicationContext
         _chat.Add(new ChatTurn(true, text));
         // Con la voz encendida, la nubecita sigue pensando hasta que la voz empieza: el texto sale con ella.
         var speaking = _settings.ReadAloud;
-        var result = await Assistant.AskAsync(request, piece =>
+        void Stream(string piece)
         {
-            if (cancel.IsCancellationRequested || speaking) return;
+            if (cancel.IsCancellationRequested || speaking || bubble.IsDisposed) return;
             bubble.Append(piece);
             _director.SetMood(ChibiMove.Talk);
-        }, cancel: cancel.Token);
+        }
+        var result = await Assistant.AskAsync(request, Stream, cancel: cancel.Token);
         if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
 
         if (result.Failed)
@@ -1391,7 +1530,12 @@ sealed class TrayApp : ApplicationContext
             _director.SetMood(ChibiMove.Think);
             return;
         }
-        var answer = await RunActionAsync(result);
+        var answer = await RunActionAsync(result, request, island: false, Stream, () =>
+        {
+            if (bubble.IsDisposed) return;
+            bubble.Think(mascot.Bounds);
+            _director.SetMood(ChibiMove.Think);
+        }, cancel.Token);
         if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
         _chat.Add(new ChatTurn(false, answer));
         ReadAloudIfOn(result, answer, () =>
@@ -1449,8 +1593,7 @@ sealed class TrayApp : ApplicationContext
     /// </summary>
     string AssistantContext()
     {
-        var text = new System.Text.StringBuilder();
-        text.AppendLine($"Ahora: {DateTime.Now:dddd d 'de' MMMM, HH:mm}.");
+        var text = new System.Text.StringBuilder(); // la fecha y la hora van en el prompt de sistema
         foreach (var account in _settings.Accounts)
         {
             if (!_snapshots.TryGetValue(account.ConfigDir, out var snap) || snap.Limits.Count == 0) continue;
@@ -1676,6 +1819,7 @@ sealed class TrayApp : ApplicationContext
     /// <summary>Un clic en un aviso abre la ventana en esa sesión o en esa cuenta.</summary>
     void OpenNotice(Notice notice)
     {
+        if (notice.Kind == NoticeKind.Reminder) return; // el clic solo lo cierra
         if (notice.SessionId is { } id) _form.FocusSession(id);
         else if (notice.AccountDir is { } dir)
         {
@@ -1988,6 +2132,7 @@ sealed class TrayApp : ApplicationContext
     {
         _timer.Stop();
         _sessionTimer.Stop();
+        _reminderTimer.Stop();
         _toasts.CloseAll();
         _mascotWindow?.Dispose();
         _approvals?.Dispose();

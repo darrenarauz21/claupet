@@ -38,6 +38,9 @@ session needs you and what each one is up to, without opening a terminal.
 - 💬 **Talk to Claude** *(Windows)*. Ask the pet, or the island at the top of your screen, by typing
   or out loud, and hear the answer in Claupet's own voice. Drop a file on the pet and get a summary.
   It can also change your wallpaper, theme, volume or music, and hands bigger jobs to Claude Code.
+- 🧰 **A hand with Windows** *(Windows)*. It takes or crops screenshots (and looks at them, if you
+  want), adds events to your calendar, saves notes, reminds you of things even with the app closed and
+  handles windows, brightness, the clipboard, folders and the computer. Each one asks first.
 - 📶 **Built for real networks.** Follows your Windows proxy, renews expired sessions on its own
   and, offline, still says hi and tells you the time.
 - 🎨 **Make it yours.** Color palettes, pets, animations and sound packs.

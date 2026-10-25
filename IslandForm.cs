@@ -10,12 +10,12 @@ namespace ClaudeUsageTray;
 /// un clic, se abre con sus pestañas: Inicio (las sesiones con sus pasos), Chat (con el modelo de sus
 /// sesiones) y «+ Sesión». También recibe archivos (soltados encima o lanzados por la mascota) y los
 /// analiza con Claude. Es una ventana con transparencia por pixel, siempre oscura, con el acento de la
-/// paleta; no quita el foco salvo al escribir en su campo.
+/// paleta; no quita el foco salvo al escribir en su campo. Abierta, un clic fuera la pliega (salvo fijada).
 /// </summary>
 sealed class IslandForm : Form
 {
     public enum Shape { Hidden, Compact, Open }
-    public enum Page { Home, Chat, Analysis, Permission, Question, Diff, Week }
+    public enum Page { Home, Chat, Analysis, Permission, Question, Diff, Week, Choice }
 
     /// <summary>Cómo respondió la persona un pedido de permiso o una pregunta de Claude Code.</summary>
     public enum ApprovalChoice { Allow, Deny, Always, Answered }
@@ -65,6 +65,10 @@ sealed class IslandForm : Form
     long _pageAt;           // cuándo cambió el contenido (entra apareciendo)
     long _overSince, _outSince, _hotSince;
     bool _pinned, _muted, _mouth, _clickOpened;
+    /// <summary>Se plegó con un clic fuera mientras respondía: al llegar la respuesta, se abre para mostrarla.</summary>
+    bool _reopenForAnswer;
+    /// <summary>El gancho del mouse, puesto solo mientras la isla está abierta.</summary>
+    MouseDownHook? _outside;
     long _swallowAt = -10_000;
     string? _hoverKey;
 
@@ -180,13 +184,28 @@ sealed class IslandForm : Form
     public void SetChat(IReadOnlyList<ChatTurn> turns, string? streaming, bool asking)
     {
         var now = Environment.TickCount64;
+        // La conversación guarda las últimas 40: si se cayeron las primeras, los índices se corren otro tanto.
+        var shift = 0;
+        if (turns.Count > 0 && _turns.Count > 0 && !ReferenceEquals(turns[0], _turns[0]))
+            for (var i = 1; i < _turns.Count; i++)
+                if (ReferenceEquals(turns[0], _turns[i])) { shift = i; break; }
+        if (shift > 0)
+        {
+            var moved = _turnAt.Where(p => p.Key >= shift).ToList();
+            _turnAt.Clear();
+            foreach (var (index, at) in moved) _turnAt[index - shift] = at;
+            _typedIndex -= shift;
+            _turns = _turns.Skip(shift).ToList();
+        }
         if (turns.Count < _turns.Count || turns.Count == 0) // conversación nueva
         {
             _turnAt.Clear();
             _typedIndex = -1;
+            _chatScroll = _chatContent = 0;
         }
         for (var i = _turns.Count; i < turns.Count; i++)
         {
+            if (turns[i].FromPerson) _chatScroll = 0; // lo que se acaba de enviar, a la vista
             // La respuesta que se venía escribiendo pasa a la conversación sin volver a entrar: sigue escribiéndose.
             if (!turns[i].FromPerson && _streaming is not null && streaming is null)
             {
@@ -197,7 +216,8 @@ sealed class IslandForm : Form
             if (!turns[i].FromPerson) { _typedIndex = i; _typedShown = 0; } // una respuesta sin partes (un error): igual se escribe
         }
         if (streaming is not null && _streaming is null) { _typedShown = 0; _thinkingAt = now; } // empieza otra respuesta
-        if (_asking && !asking && turns.Count > 0 && !turns[^1].FromPerson)
+        var answered = _asking && !asking && turns.Count > 0 && !turns[^1].FromPerson;
+        if (answered)
         {
             // Terminó de responder: se queda a la vista lo que se tarda en leerla, aunque el cursor no esté encima.
             _answerEnd = now;
@@ -206,6 +226,11 @@ sealed class IslandForm : Form
         _turns = turns;
         _streaming = streaming;
         _asking = asking;
+        if (!asking && _reopenForAnswer)
+        {
+            _reopenForAnswer = false;
+            if (answered && _shape != Shape.Open && _choiceTask is null) ShowPage(Page.Chat);
+        }
         Redraw(relayout: _shape == Shape.Open && _page == Page.Chat);
     }
 
@@ -411,11 +436,96 @@ sealed class IslandForm : Form
     /// <summary>La sesión del pedido, si está entre las que se leen (para su título y su terminal).</summary>
     SessionInfo? ApprovalSession => _approval is { } a ? _sessions.FirstOrDefault(s => s.SessionId == a.SessionId) : null;
 
+    // ── Preguntas de Claupet (el permiso de una capacidad, una confirmación) ────────────────
+
+    TaskCompletionSource<string?>? _choiceTask;
+    string _choiceTitle = "", _choiceDetail = "", _choicePrimary = "";
+    IReadOnlyList<(string Id, string Label)> _choiceOptions = [];
+    Page _choiceReturn = Page.Chat;
+
+    /// <summary>
+    /// Pregunta algo de Claupet (¿dejo que capture la pantalla?) con una tarjeta y sus botones; primary es el
+    /// Id del botón principal. Como un permiso de Claude Code, salir de la tarjeta (otra pestaña, un clic
+    /// fuera, plegarla) no la responde: la compacta avisa y la vuelve a abrir, y también Ctrl+Alt+A.
+    /// Devuelve el Id elegido, o null si se descartó (CancelChoice: se hizo otra pregunta).
+    /// </summary>
+    public Task<string?> Choose(string title, string detail, IReadOnlyList<(string Id, string Label)> options, string primary, Screen? screen = null)
+    {
+        _choiceTask?.TrySetResult(null);
+        if (_page != Page.Choice) _choiceReturn = _page is Page.Chat or Page.Home ? _page : Page.Chat;
+        (_choiceTitle, _choiceDetail, _choiceOptions, _choicePrimary) = (title, detail, options, primary);
+        var task = _choiceTask = new TaskCompletionSource<string?>();
+        ShowPage(Page.Choice, screen ?? (_shape == Shape.Open ? null : Screen.FromPoint(Cursor.Position)));
+        return task.Task;
+    }
+
+    /// <summary>Descarta esa pregunta, si todavía espera (el pedido que la hizo ya no sigue): responde null.</summary>
+    public void CancelChoice(Task<string?> which)
+    {
+        if (_choiceTask?.Task == which) ResolveChoice(null, reopen: _shape == Shape.Open);
+    }
+
+    /// <summary>Responde la pregunta y vuelve a la página de antes (reopen: false, con la isla plegada).</summary>
+    void ResolveChoice(string? id, bool reopen = true)
+    {
+        var task = _choiceTask;
+        _choiceTask = null;
+        if (_page == Page.Choice)
+        {
+            if (reopen) ShowPage(_choiceReturn);
+            else _page = _choiceReturn;
+        }
+        task?.TrySetResult(id);
+    }
+
+    int ComposeChoice(Graphics g, Rectangle b, int y, bool draw)
+    {
+        if (_choiceTask is null) return y;
+        var x = b.X + S(12);
+        var width = b.Width - S(24);
+        var pad = S(14);
+        var head = S(48);
+        var tx = x + pad + head + S(14);
+        var tw = x + width - pad - tx;
+        var top = y + S(2);
+        var row = top + pad;
+        var titleH = MeasureWrapped(g, _choiceTitle, _bodyStrong, tw).Height;
+        var detailY = row + titleH + S(4);
+        var detailH = _choiceDetail.Length > 0 ? MeasureWrapped(g, _choiceDetail, _small, tw).Height : 0;
+        var buttonsY = Math.Max(row + head, detailY + detailH) + S(12);
+        var card = new Rectangle(x, top, width, buttonsY + S(32) + pad - top);
+        if (draw)
+        {
+            Fill(g, Card, card, S(14));
+            AlertHead(g, new Rectangle(x + pad, row, head, head));
+            Write(g, _choiceTitle, _bodyStrong, Ink, new RectangleF(tx, row, tw, titleH + S(2)), StringAlignment.Near, wrap: true);
+            if (detailH > 0) Write(g, _choiceDetail, _small, Dim, new RectangleF(tx, detailY, tw, detailH + S(2)), StringAlignment.Near, wrap: true);
+        }
+        var bx = tx;
+        foreach (var (id, label) in _choiceOptions)
+        {
+            var primary = id == _choicePrimary;
+            var key = "ch:" + id;
+            var w = Measure(g, label, primary ? _smallStrong : _small).Width + S(26);
+            var rect = new Rectangle(bx, buttonsY, (int)w, S(32));
+            Hit(rect, key, id);
+            if (draw)
+            {
+                var hover = _hoverKey == key;
+                Fill(g, primary ? (hover ? Color.White : Ink) : (hover ? Tab : Line), rect, rect.Height / 2f);
+                Write(g, label, primary ? _smallStrong : _small, primary ? Card : Ink, rect, StringAlignment.Center);
+            }
+            bx = rect.Right + S(8);
+        }
+        return card.Bottom;
+    }
+
     /// <summary>Abre la isla en una página (el chat, por ejemplo, desde «Ver en la isla»).</summary>
     public void ShowPage(Page page, Screen? screen = null)
     {
         if (screen is not null) _screen = screen;
         if (page == Page.Analysis) _analysisSeen = true;
+        if (page != Page.Chat) _input.Hide(); // y si iba a tomar el foco (FocusText), ya no: si no, la isla no se plegaría
         var changed = page != _page || _shape != Shape.Open;
         _page = page;
         _clickOpened = true;
@@ -430,6 +540,12 @@ sealed class IslandForm : Form
     {
         if (shape == Shape.Open && _shape != Shape.Open) _pageAt = Environment.TickCount64;
         _shape = shape;
+        if (shape == Shape.Open) _outside ??= new MouseDownHook(OnOutsideClick);
+        else
+        {
+            _outside?.Dispose();
+            _outside = null;
+        }
         if (!Visible && shape != Shape.Hidden) Show();
         switch (shape)
         {
@@ -509,7 +625,7 @@ sealed class IslandForm : Form
     {
         get
         {
-            if (Analyzing || _receiving || Pending || (_file is not null && !_analysisSeen)) return Shape.Compact;
+            if (Analyzing || _receiving || Pending || _choiceTask is not null || _asking || (_file is not null && !_analysisSeen)) return Shape.Compact;
             if (WhileBusy && _sessions.Any(s => s.State is SessionState.Working or SessionState.Waiting)) return Shape.Compact;
             return Shape.Hidden;
         }
@@ -575,6 +691,7 @@ sealed class IslandForm : Form
         && !(_page == Page.Chat && (Typing || Environment.TickCount64 - _answerEnd < _answerHold))
         && !_listening && !_converting
         && !(Pending && _page is Page.Permission or Page.Question) // una tarjeta no se pliega sola: se responde o se deja con ⌃
+        && !(_choiceTask is not null && _page == Page.Choice)
         && !(_page == Page.Week && Environment.TickCount64 - _pageAt < 15000); // el resumen de la semana se queda un rato
 
     void Collapse(bool force)
@@ -584,6 +701,31 @@ sealed class IslandForm : Form
         ShowShape(Resting == Shape.Hidden && !force ? Shape.Hidden : Shape.Compact);
         if (Resting == Shape.Hidden) _outSince = Environment.TickCount64; // ya compacta, se esconde después
     }
+
+    /// <summary>
+    /// Un clic en otra parte (otra ventana, el escritorio, la barra de tareas) con la isla abierta: se pliega
+    /// a lo que corresponda sin el cursor, salvo fijada. No cuentan los menús que abrió la isla (el del
+    /// modelo). Un permiso de Claude Code o una pregunta de Claupet siguen esperando en la compacta; si
+    /// estaba respondiendo, se abre de nuevo al llegar la respuesta.
+    /// </summary>
+    void OnOutsideClick(Point at)
+    {
+        if (_shape != Shape.Open || _pinned || !Visible) return;
+        if (Rectangle.Inflate(IslandScreenBounds(), S(4), S(4)).Contains(at) || OwnPopupAt(at)) return;
+        if (_page is Page.Permission or Page.Question or Page.Choice) _page = Page.Home; // la compacta la vuelve a abrir
+        _reopenForAnswer = _asking;
+        _clickOpened = false;
+        ShowShape(Resting);
+    }
+
+    static bool OwnPopupAt(Point at)
+    {
+        var window = WindowFromPoint(at);
+        return window != IntPtr.Zero && FromHandle(GetAncestor(window, 2)) is ToolStripDropDown or IslandInput; // GA_ROOT
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point point);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr window, uint flags);
 
     Rectangle IslandScreenBounds()
     {
@@ -717,7 +859,7 @@ sealed class IslandForm : Form
             Write(g, label, _smallStrong, Lighten(_accent), pill, StringAlignment.Center);
             right = (int)pill.X - S(8);
         }
-        if (_sessions.Any(s => s.State == SessionState.Waiting))
+        if (_sessions.Any(s => s.State == SessionState.Waiting) || _choiceTask is not null)
         {
             var r = S(4);
             Pulse(g, new PointF(right - r, b.Y + b.Height / 2f), r, Warn);
@@ -730,8 +872,10 @@ sealed class IslandForm : Form
     string CompactStatus()
     {
         if (_approval is { } pending) return pending.IsQuestion ? L.T("Una pregunta le espera · clic para verla") : L.T("Un permiso le espera · clic para verlo");
+        if (_choiceTask is not null) return L.T("Claupet le pregunta algo · clic para verlo");
         if (_receiving) return L.T("Recibiendo archivo…");
         if (Analyzing) return L.T("Analizando {0}…", Path.GetFileName(_file));
+        if (_asking) return L.T("Respondiendo…");
         if (_file is not null && !_analysisSeen) return _analysisError is null ? L.T("Análisis listo · clic para ver") : L.T("No pude analizarlo · clic para ver");
         var working = _sessions.Count(s => s.State == SessionState.Working);
         var waiting = _sessions.Count(s => s.State == SessionState.Waiting);
@@ -796,6 +940,7 @@ sealed class IslandForm : Form
             Page.Question => ComposeQuestion(g, b, y, draw: true),
             Page.Diff => ComposeDiff(g, b, y, draw: true),
             Page.Week => ComposeWeek(g, b, y, draw: true),
+            Page.Choice => ComposeChoice(g, b, y, draw: true),
             _ => ComposeHome(g, b, y, draw: true),
         };
     }
@@ -812,6 +957,7 @@ sealed class IslandForm : Form
             Page.Question => ComposeQuestion(g, b, y, draw),
             Page.Diff => ComposeDiff(g, b, y, draw),
             Page.Week => ComposeWeek(g, b, y, draw),
+            Page.Choice => ComposeChoice(g, b, y, draw),
             _ => ComposeHome(g, b, y, draw),
         };
         return y + S(14) - b.Y;
@@ -1023,14 +1169,70 @@ sealed class IslandForm : Form
 
     Rectangle _inputBounds;
 
+    /// <summary>Lo más alto que crece la conversación (a 96 ppp); lo demás se desplaza.</summary>
+    const int ChatViewHeight = 300;
+
+    // La conversación desplazable: cuánto se subió desde el final (0: lo último a la vista), cuánto mide,
+    // el marco a la vista, la barra y, si se arrastra, desde dónde.
+    int _chatScroll, _chatContent, _chatMaxScroll;
+    Rectangle _chatView, _chatTrack, _chatThumb;
+    (int Y, int Scroll)? _chatDrag;
+
+    /// <summary>La barra de la conversación: fina y tenue, como la isla; se aclara con el cursor encima o al arrastrarla.</summary>
+    void ChatScrollBar(Graphics g, Rectangle b, Rectangle view, int content, int maxScroll, bool draw)
+    {
+        var track = new Rectangle(b.Right - S(9), view.Y + S(2), S(4), view.Height - S(4));
+        var thumbH = Math.Max(S(28), track.Height * view.Height / content);
+        var thumbY = track.Y + (track.Height - thumbH) * (maxScroll - _chatScroll) / maxScroll;
+        _chatTrack = track;
+        _chatThumb = new Rectangle(track.X, thumbY, track.Width, thumbH);
+        Hit(Rectangle.Inflate(track, S(4), 0), "chat:track");
+        Hit(Rectangle.Inflate(_chatThumb, S(4), 0), "chat:thumb");
+        if (!draw) return;
+        var active = _chatDrag is not null || _hoverKey is "chat:thumb" or "chat:track";
+        Fill(g, Color.FromArgb(active ? 36 : 18, 255, 255, 255), track, S(2));
+        Fill(g, active ? Dim : Edge, _chatThumb, S(2));
+    }
+
+    /// <summary>Sube o baja la conversación (px desde el final), sin pasarse.</summary>
+    void ScrollChat(int scroll)
+    {
+        scroll = Math.Clamp(scroll, 0, _chatMaxScroll);
+        if (scroll == _chatScroll) return;
+        _chatScroll = scroll;
+        Redraw();
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        if (_shape == Shape.Open && _page == Page.Chat && _chatMaxScroll > 0 && _chatView.Contains(e.Location))
+            ScrollChat(_chatScroll + e.Delta * S(48) / 120);
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button != MouseButtons.Left || HitAt(e.Location) is not { } hit) return;
+        if (hit.Key == "chat:thumb") _chatDrag = (e.Y, _chatScroll);
+        else if (hit.Key == "chat:track") ScrollChat(_chatScroll + (e.Y < _chatThumb.Y ? 1 : -1) * _chatView.Height * 4 / 5); // de a una página
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (_chatDrag is null) return;
+        _chatDrag = null;
+        Redraw();
+    }
+
     int ComposeChat(Graphics g, Rectangle b, int y, bool draw)
     {
         var x = b.X + S(12);
         var width = b.Width - S(24);
         y += S(2);
 
-        var turns = _turns.TakeLast(6).ToList();
-        if (turns.Count == 0 && _streaming is null)
+        if (_turns.Count == 0 && _streaming is null)
         {
             if (draw) Write(g, L.T("Pregúntele por su uso, sus sesiones o lo que quiera. También puede soltar un archivo aquí o pedirle una tarea."),
                 _small, Faint, new RectangleF(x + S(4), y, width - S(8), S(36)), StringAlignment.Near, wrap: true);
@@ -1038,23 +1240,43 @@ sealed class IslandForm : Form
         }
         else
         {
-            // Que entren las últimas: como mucho unos 300 px de mensajes. Cada uno lleva su índice en la
-            // conversación (para su animación de entrada) y la respuesta en curso se ve hasta donde va escrita.
-            var first = _turns.Count - turns.Count;
-            var items = turns.Select((t, n) => (t.FromPerson, Text: VisibleText(first + n, t.Text), Index: first + n, Thinking: false)).ToList();
+            // Toda la conversación (ChatThread guarda las últimas 40 y la olvida a los 10 minutos sin escribir),
+            // en un marco de ChatViewHeight como mucho: lo que no cabe se ve con la rueda o la barra, y arriba de
+            // todo se dice cuándo se renueva. Cada mensaje lleva su índice en la conversación (para su animación
+            // de entrada) y la respuesta en curso se ve hasta donde va escrita.
+            var items = _turns.Select((t, n) => (t.FromPerson, Text: VisibleText(n, t.Text), Index: n, Thinking: false)).ToList();
             if (_streaming is not null)
                 items.Add((false, _streaming.Length == 0 ? "" : _streaming[..Math.Min(_typedShown, _streaming.Length)], -1, _streaming.Length == 0 || _typedShown == 0));
             var heights = items.Select(i => i.Thinking ? S(36) : BubbleHeight(g, i.Text, i.FromPerson ? width - S(140) : width - S(80))).ToList();
-            var budget = S(300);
-            var start = items.Count;
-            var used = 0;
-            while (start > 0 && used + heights[start - 1] + S(8) <= budget) used += heights[--start] + S(8);
-            start = Math.Min(start, items.Count - 1);
-            for (var i = Math.Max(0, start); i < items.Count; i++)
+            var gap = S(8);
+            var content = heights.Sum() + gap * items.Count;
+            var note = content > S(ChatViewHeight) ? L.T("La conversación se renueva a los 10 minutos sin escribir, o con «Nueva conversación».") : null;
+            var noteH = note is null ? 0 : S(26);
+            content += noteH;
+            var view = new Rectangle(x, y, width, Math.Min(content, S(ChatViewHeight)));
+            var maxScroll = content - view.Height;
+            // Si se subió a leer y llega más abajo (la respuesta que se escribe), lo que se está leyendo no se mueve.
+            if (_chatScroll > 0 && content > _chatContent) _chatScroll += content - _chatContent;
+            _chatContent = content;
+            _chatScroll = Math.Clamp(_chatScroll, 0, maxScroll);
+            (_chatView, _chatMaxScroll) = (view, maxScroll);
+            var clip = draw ? g.Save() : null;
+            if (draw) g.IntersectClip(new Rectangle(b.X, view.Y, b.Width, view.Height));
+            var cy = y - (maxScroll - _chatScroll); // donde empieza la conversación, arriba del marco si no cabe
+            if (note is not null)
+            {
+                if (draw) Write(g, note, _small, Faint, new RectangleF(x, cy, width, noteH - gap), StringAlignment.Center, ellipsis: true);
+                cy += noteH;
+            }
+            for (var i = 0; i < items.Count; i++)
             {
                 var (person, text, index, thinking) = items[i];
                 var max = person ? width - S(140) : width - S(80);
                 var bubbleH = heights[i];
+                var y0 = cy;
+                cy += bubbleH + gap;
+                if (!draw || y0 + bubbleH < view.Y || y0 > view.Bottom) continue; // fuera del marco: no se dibuja
+                y = y0;
                 // Entrada: sube unos pixeles mientras aparece (el mensaje enviado, desde el campo).
                 var arrive = index >= 0 && _turnAt.TryGetValue(index, out var at) ? (float)Ease(Math.Clamp((Environment.TickCount64 - at) / 240.0, 0, 1)) : 1f;
                 var lift = (1 - arrive) * S(person ? 14 : 8);
@@ -1111,8 +1333,10 @@ sealed class IslandForm : Form
                         }
                     }
                 }
-                y += bubbleH + S(8);
             }
+            if (clip is not null) g.Restore(clip);
+            if (maxScroll > 0) ChatScrollBar(g, b, view, content, maxScroll, draw);
+            y = view.Bottom;
         }
 
         // El modelo, la cuenta y «Nueva conversación».
@@ -1310,10 +1534,11 @@ sealed class IslandForm : Form
         _input.FocusText();
     }
 
-    /// <summary>Va al permiso o a la pregunta que espera, si hay.</summary>
+    /// <summary>Va al permiso o a la pregunta que espera (de Claude Code o de Claupet), si hay.</summary>
     public void ShowPending()
     {
         if (_approval is { } a) ShowPage(a.IsQuestion ? Page.Question : Page.Permission, Screen.FromPoint(Cursor.Position));
+        else if (_choiceTask is not null) ShowPage(Page.Choice, Screen.FromPoint(Cursor.Position));
     }
 
     /// <summary>Abre la isla (en la página de antes) o la pliega.</summary>
@@ -1686,6 +1911,13 @@ sealed class IslandForm : Form
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        if (_chatDrag is { } drag)
+        {
+            // Arrastrar la barra: bajarla es ir hacia lo último.
+            var room = Math.Max(1, _chatTrack.Height - _chatThumb.Height);
+            ScrollChat(drag.Scroll - (e.Y - drag.Y) * _chatMaxScroll / room);
+            return;
+        }
         var hit = HitAt(e.Location);
         Cursor = hit is null ? Cursors.Default : Cursors.Hand;
         if (hit?.Key == _hoverKey) return;
@@ -1701,6 +1933,7 @@ sealed class IslandForm : Form
         {
             case "compact":
                 ShowPage(_approval is { } a ? (a.IsQuestion ? Page.Question : Page.Permission)
+                    : _choiceTask is not null ? Page.Choice
                     : _file is not null && !_analysisSeen ? Page.Analysis : _page);
                 break;
             case "ap:allow": ResolveApproval(new ApprovalAnswer(ApprovalChoice.Allow)); break;
@@ -1743,6 +1976,7 @@ sealed class IslandForm : Form
             case "res:session": ResultAction?.Invoke("session"); break;
             default:
                 if (hit.Key.StartsWith("q:opt:") && hit.Tag is string label) PickOption(label);
+                else if (hit.Key.StartsWith("ch:") && hit.Tag is string choice) ResolveChoice(choice);
                 else if (hit.Key.StartsWith("diff:") && hit.Tag is ValueTuple<SessionInfo, FileEdit> shown)
                 {
                     _diff = (shown.Item1, shown.Item2);
@@ -1904,6 +2138,8 @@ sealed class IslandForm : Form
     {
         if (disposing)
         {
+            _outside?.Dispose();
+            _choiceTask?.TrySetResult(null);
             _poll.Dispose();
             _frame.Dispose();
             _input.Dispose();
@@ -2003,4 +2239,50 @@ sealed class IslandInput : Form
         _box.Clear();
         Sent?.Invoke(text);
     }
+}
+
+/// <summary>
+/// Avisa cada vez que se aprieta un botón del mouse, en cualquier ventana (gancho de bajo nivel, WH_MOUSE_LL),
+/// con la posición del cursor: así la isla abierta se pliega con un clic fuera aunque no tenga el foco. Lo
+/// pone la isla solo mientras está abierta; el aviso va por la cola de mensajes, para que el gancho vuelva
+/// enseguida y el mouse no se trabe.
+/// </summary>
+sealed class MouseDownHook : IDisposable
+{
+    readonly LowLevelKeyboard.Proc _proc;
+    readonly Action<Point> _down;
+    readonly SynchronizationContext? _ui = SynchronizationContext.Current;
+    IntPtr _hook;
+
+    public MouseDownHook(Action<Point> down)
+    {
+        _down = down;
+        _proc = Callback;
+        _hook = SetWindowsHookEx(14, _proc, GetModuleHandle(null), 0); // WH_MOUSE_LL
+    }
+
+    IntPtr Callback(int code, IntPtr wParam, IntPtr lParam)
+    {
+        // WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN
+        if (code >= 0 && (int)wParam is 0x201 or 0x204 or 0x207 or 0x20B)
+        {
+            var at = Cursor.Position;
+            if (_ui is null) _down(at);
+            else _ui.Post(_ => _down(at), null);
+        }
+        return CallNextHookEx(_hook, code, wParam, lParam);
+    }
+
+    public void Dispose()
+    {
+        if (_hook != IntPtr.Zero) UnhookWindowsHookEx(_hook);
+        _hook = IntPtr.Zero;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    static extern IntPtr SetWindowsHookEx(int id, LowLevelKeyboard.Proc proc, IntPtr module, uint thread);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern IntPtr GetModuleHandle(string? name);
 }

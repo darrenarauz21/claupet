@@ -212,7 +212,7 @@ static partial class ToastSprite
 
     static Mouth MouthFor(NoticeKind kind) => kind switch
     {
-        NoticeKind.Done or NoticeKind.UsageReset or NoticeKind.UsageHigh => Mouth.Smile,
+        NoticeKind.Done or NoticeKind.UsageReset or NoticeKind.UsageHigh or NoticeKind.Reminder => Mouth.Smile,
         NoticeKind.Failed or NoticeKind.UsageCritical or NoticeKind.Expired => Mouth.Frown,
         NoticeKind.Question => Mouth.Open,
         _ => Mouth.Neutral,
@@ -356,6 +356,14 @@ static partial class ToastSprite
             case NoticeKind.UsageCritical:
                 Flames(p, t, small: false);
                 break;
+            case NoticeKind.Reminder:
+            {
+                // Una campanita que se mece.
+                var swing = (int)(t / 250 % 2);
+                p.Map(Yellow, 19 + swing, 1, "  #  ", " ### ", " ### ", "#####");
+                p.Px(Amber, 21 + swing, 5);
+                break;
+            }
             case NoticeKind.Expired:
             {
                 // Burbuja ámbar con «!».

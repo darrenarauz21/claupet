@@ -227,6 +227,7 @@ sealed class ToastView(Notice notice, Theme theme) : Control
         {
             NoticeKind.Failed or NoticeKind.UsageCritical or NoticeKind.Closed => t.Danger,
             NoticeKind.Question or NoticeKind.Permission or NoticeKind.UsageHigh or NoticeKind.Expired or NoticeKind.Retrying => t.Warn,
+            NoticeKind.Reminder => t.Accent,
             _ => t.Success,
         };
         var y = 15.0;
