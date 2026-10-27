@@ -3,7 +3,8 @@ using System.Text.Json;
 
 namespace ClaudeUsageTray;
 
-enum NoticeKind { Done, Question, Permission, Failed, Retrying, Closed, UsageHigh, UsageCritical, UsageReset, Expired, Reminder }
+/// <summary>Extension: lo que avisa una extensión (notice/show), con su nombre en Detail.</summary>
+enum NoticeKind { Done, Question, Permission, Failed, Retrying, Closed, UsageHigh, UsageCritical, UsageReset, Expired, Reminder, Extension }
 
 sealed record Notice(NoticeKind Kind, string Title, string Subtitle, string Detail, string? SessionId = null, string? AccountDir = null)
 {

@@ -22,6 +22,9 @@ sealed class Sounds : IDisposable
 
     long _lastPlayed;
 
+    /// <summary>El archivo de un sonido de un estilo de un paquete (ExtensionManager.SoundFile); lo pone la app.</summary>
+    public static Func<string, string, string?>? PackFile { get; set; }
+
     public static string FileFor(NoticeKind kind) => kind switch
     {
         NoticeKind.Done or NoticeKind.UsageReset => "terminado",
@@ -106,7 +109,9 @@ sealed class Sounds : IDisposable
 
         EnsureDefaults();
         var name = FileFor(kind);
-        var file = Newest(CustomFolder, name) ?? Newest(PackFolder(Packs.Any(p => p.Id == pack) ? pack : "clasico"), name);
+        // Un estilo de un paquete («ext:…») trae los que quiera: el que no trae suena como el clásico.
+        var file = Newest(CustomFolder, name) ?? PackFile?.Invoke(pack, name)
+            ?? Newest(PackFolder(Packs.Any(p => p.Id == pack) ? pack : "clasico"), name);
         if (file is null) return;
 
         try

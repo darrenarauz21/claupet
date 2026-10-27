@@ -555,7 +555,7 @@ static partial class ChibiSprite
         NoticeKind.UsageReset => ChibiMove.Maracas, // límite renovado: chachachá
         NoticeKind.Failed or NoticeKind.UsageCritical => ChibiMove.Dizzy,
         NoticeKind.Closed => ChibiMove.Sleep,
-        NoticeKind.Reminder => ChibiMove.Wave, // un recordatorio: llama con la mano
+        NoticeKind.Reminder or NoticeKind.Extension => ChibiMove.Wave, // un recordatorio o una extensión: llama con la mano
         _ => ChibiMove.Think, // pregunta, permiso, reintento, uso alto y sesión vencida: algo que mirar
     };
 
@@ -1223,6 +1223,7 @@ static class MascotLines
             NoticeKind.UsageReset => L.T("¡Chachachá! Se renovó: {0}. ¡A darle! ♪", s),
             NoticeKind.Expired => L.T("Hmm… la cuenta «{0}» pide que abras Claude Code otra vez. (._.)", s),
             NoticeKind.Reminder => L.T("{0}¡Te recuerdo! {1} (^_^)/", oi, notice.Subtitle),
+            NoticeKind.Extension => notice.Subtitle.Length > 0 ? $"{notice.Title}: {notice.Subtitle}" : notice.Title,
             _ => notice.Title,
         };
     }

@@ -212,7 +212,7 @@ static partial class ToastSprite
 
     static Mouth MouthFor(NoticeKind kind) => kind switch
     {
-        NoticeKind.Done or NoticeKind.UsageReset or NoticeKind.UsageHigh or NoticeKind.Reminder => Mouth.Smile,
+        NoticeKind.Done or NoticeKind.UsageReset or NoticeKind.UsageHigh or NoticeKind.Reminder or NoticeKind.Extension => Mouth.Smile,
         NoticeKind.Failed or NoticeKind.UsageCritical or NoticeKind.Expired => Mouth.Frown,
         NoticeKind.Question => Mouth.Open,
         _ => Mouth.Neutral,

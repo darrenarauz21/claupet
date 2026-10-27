@@ -1819,7 +1819,7 @@ sealed class TrayApp : ApplicationContext
     /// <summary>Un clic en un aviso abre la ventana en esa sesión o en esa cuenta.</summary>
     void OpenNotice(Notice notice)
     {
-        if (notice.Kind == NoticeKind.Reminder) return; // el clic solo lo cierra
+        if (notice.Kind is NoticeKind.Reminder or NoticeKind.Extension) return; // el clic solo lo cierra
         if (notice.SessionId is { } id) _form.FocusSession(id);
         else if (notice.AccountDir is { } dir)
         {

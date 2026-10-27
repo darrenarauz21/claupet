@@ -14,6 +14,9 @@ static class Program
     {
         Args = args;
         L.Use(SettingsStore.Load().Language);
+
+        // Las extensiones: el anfitrión de una DLL y las herramientas para autores (ExtensionCli).
+        if (ExtensionCli.TryRun(args) is { } extensionCode) return extensionCode;
         // Mismos modos de línea de comandos que la app de Windows.
         if (args.Contains("--dump")) return Dump.Run();
         if (args.Contains("--hook")) return args.Contains("--permiso") ? Approvals.RunHook() : NoticeDetector.RunHook();

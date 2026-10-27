@@ -22,6 +22,11 @@
     <Compile Remove="ClaudeUsage.Avalonia/**" />
     <None Remove="ClaudeUsage.Avalonia/**" />
     <EmbeddedResource Remove="ClaudeUsage.Avalonia/**" />
+    <!-- Las pruebas tienen su propio proyecto (Claupet.Tests), que ve lo interno de la app. -->
+    <Compile Remove="Claupet.Tests/**" />
+    <None Remove="Claupet.Tests/**" />
+    <EmbeddedResource Remove="Claupet.Tests/**" />
+    <InternalsVisibleTo Include="Claupet.Tests" />
   </ItemGroup>
 
   <ItemGroup>

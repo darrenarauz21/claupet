@@ -119,6 +119,9 @@ sealed class AppSettings
     /// <summary>Las 3 vistas fijas como pestañas, en orden. Las demás se abren desde el selector.</summary>
     public List<string> PinnedViews { get; set; } = [.. DefaultPinned];
 
+    /// <summary>Las extensiones: encendidas, sus permisos y ajustes, y quién ocupa cada ranura exclusiva.</summary>
+    public ExtensionSettings Extensions { get; set; } = new();
+
     public static readonly string[] DefaultPinned = ["Usage", "Sessions", "Activity"];
 }
 
