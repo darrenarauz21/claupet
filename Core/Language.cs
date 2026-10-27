@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Los idiomas de la app. El texto en español del código es la clave: L.T("Actualizar") da su traducción

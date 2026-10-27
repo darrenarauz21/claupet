@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 static class Program
 {
@@ -131,11 +131,17 @@ static class Program
 
         // --preview: abre la ventana aunque ya haya otra instancia (para probar cambios).
         var preview = args.Contains("--preview");
-        using var mutex = new Mutex(true, @"Local\ClaudeUsageTray", out var created);
+        using var mutex = new Mutex(true, @"Local\Claupet", out var created);
         // --reiniciar: la abrió la anterior al cambiar el idioma; espera a que termine de cerrarse.
         if (!created && args.Contains("--reiniciar")) created = WaitFor(mutex);
         if (!created && !preview)
             return 0;
+        // Lo que quedó con el nombre de antes de Claupet (la carpeta de datos, la entrada de inicio) pasa a este .exe.
+        if (!preview)
+        {
+            DataFolder.Migrate();
+            try { StartupRegistration.Migrate(); } catch (Exception) { }
+        }
 
         ApplicationConfiguration.Initialize();
         // Un error inesperado queda anotado (y la app sigue, si puede): sirve para el diagnóstico.

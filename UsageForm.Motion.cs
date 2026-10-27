@@ -1,7 +1,7 @@
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Transiciones suaves de la ventana. Antes de cambiar de vista se guarda el cuadro de ese momento;

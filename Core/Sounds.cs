@@ -2,17 +2,16 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
-/// Sonidos de los avisos, en %APPDATA%\ClaudeUsageTray\sonidos: un estilo por carpeta («clasico»,
+/// Sonidos de los avisos, en %APPDATA%\Claupet\sonidos: un estilo por carpeta («clasico»,
 /// «risitas», «chibi»), generados por la app, y «propios», donde un archivo con el mismo nombre (.wav o .mp3)
 /// manda sobre el estilo elegido. Un sonido borrado de un estilo vuelve a generarse.
 /// </summary>
 sealed class Sounds : IDisposable
 {
-    public static readonly string Folder = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "sonidos");
+    public static string Folder => DataFolder.In("sonidos");
     public static string CustomFolder => Path.Combine(Folder, "propios");
 
     public static readonly (string Id, string Label)[] Packs = [("clasico", L.T("Clásico")), ("risitas", L.T("Risitas")), ("chibi", L.T("Chibi"))];
@@ -166,7 +165,7 @@ sealed class Sounds : IDisposable
 
     // ── MP3 con MCI (winmm), sin dependencias ───────────────────────────────────────────────
 
-    const string Alias = "ClaudeUsageTraySound";
+    const string Alias = "ClaupetSound";
 
     static void PlayMp3(string file)
     {

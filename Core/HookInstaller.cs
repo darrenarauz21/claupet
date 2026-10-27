@@ -2,7 +2,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Pone y quita los hooks de esta app en el settings.json de una carpeta de Claude Code, sin tocar el
@@ -140,8 +140,16 @@ static class HookInstaller
 
     static bool IsOurs(JsonNode? hook) =>
         CommandOf(hook) is { } command
-        && command.Contains("ClaudeUsageTray", StringComparison.OrdinalIgnoreCase)
+        && NamesApp(command)
         && command.Contains("--hook", StringComparison.Ordinal);
+
+    /// <summary>
+    /// El texto nombra el .exe de la app. También el nombre de antes de Claupet (ClaudeUsageTray): así sus
+    /// hooks salen como Outdated y el asistente los apunta al .exe nuevo.
+    /// </summary>
+    public static bool NamesApp(string text) =>
+        text.Contains("Claupet", StringComparison.OrdinalIgnoreCase)
+        || text.Contains("ClaudeUsageTray", StringComparison.OrdinalIgnoreCase);
 
     static string? CommandOf(JsonNode? hook) =>
         hook?["command"] is JsonValue value && value.TryGetValue<string>(out var command) ? command : null;

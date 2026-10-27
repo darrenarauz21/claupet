@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Resumen de un día. Solo cifras: nunca guarda texto de las conversaciones.</summary>
 sealed class DayRecord
@@ -53,7 +53,7 @@ sealed record WeekRecap(DateOnly Monday, long Tokens, int Sessions, int Prompts,
 
     /// <summary>En texto, para copiarlo.</summary>
     public string Text =>
-        L.T("Mi semana con Claude ({0}): {1} tokens, {2} sesiones, {3} pedidos y {4} pasos en {5} días.", Range, Format.Tokens(Tokens), Sessions, Prompts, ToolCalls, ActiveDays)
+        L.T("Mi semana ({0}): {1} tokens, {2} sesiones, {3} pedidos y {4} pasos en {5} días.", Range, Format.Tokens(Tokens), Sessions, Prompts, ToolCalls, ActiveDays)
         + (BusiestDay is { } busiest ? " " + L.T("Día más activo: {0:dddd}.", busiest) : "") + (FavoriteModel is { } model ? " " + L.T("Modelo favorito: {0}.", model) : "");
 }
 
@@ -95,13 +95,12 @@ sealed record ActivityStats(long Tokens, int ActiveDays, int CurrentStreak, int 
 
 /// <summary>
 /// Suma la actividad por día leyendo todos los .jsonl de Claude Code, de forma incremental, y la
-/// guarda en %APPDATA%\ClaudeUsageTray\history.json para no perder los días cuyos registros
+/// guarda en %APPDATA%\Claupet\history.json para no perder los días cuyos registros
 /// borra Claude Code (por defecto, a los 30 días).
 /// </summary>
 sealed class ActivityTracker
 {
-    static readonly string FilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "history.json");
+    static string FilePath => DataFolder.In("history.json");
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
     readonly Dictionary<string, long> _offsets = new(StringComparer.OrdinalIgnoreCase);

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Security;
 using System.Text;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Por si la app está cerrada cuando llega un recordatorio: una tarea del Programador de tareas de Windows

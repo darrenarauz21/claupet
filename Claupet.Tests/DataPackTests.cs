@@ -4,7 +4,7 @@ using System.Drawing.Imaging;
 using System.IO.Compression;
 using System.Text;
 
-namespace ClaudeUsageTray.Tests;
+namespace Claupet.Tests;
 
 /// <summary>PNG armados a mano, para probar cada filtro y la paleta con transparencia.</summary>
 static class TestPng

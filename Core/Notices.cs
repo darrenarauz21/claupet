@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Extension: lo que avisa una extensión (notice/show), con su nombre en Detail.</summary>
 enum NoticeKind { Done, Question, Permission, Failed, Retrying, Closed, UsageHigh, UsageCritical, UsageReset, Expired, Reminder, Extension }
@@ -20,8 +20,7 @@ sealed record Notice(NoticeKind Kind, string Title, string Subtitle, string Deta
 sealed class NoticeDetector
 {
     /// <summary>Archivo donde el hook de Claude Code («--hook») deja los eventos de notificación.</summary>
-    public static readonly string EventsPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "events.jsonl");
+    public static string EventsPath => DataFolder.In("events.jsonl");
 
     Dictionary<string, SessionInfo>? _sessions;
     readonly Dictionary<string, double> _percents = new(StringComparer.OrdinalIgnoreCase);
@@ -183,9 +182,9 @@ sealed class NoticeDetector
     /// <summary>Un aviso de cada tipo, para verlos sin esperar a que pasen.</summary>
     public static IEnumerable<Notice> Samples() =>
     [
-        new(NoticeKind.Done, L.T("Terminó"), L.T("Monitor de uso de Claude"), L.T("2 min 25 s · 14 pasos · personal")),
+        new(NoticeKind.Done, L.T("Terminó"), L.T("Monitor de uso"), L.T("2 min 25 s · 14 pasos · personal")),
         new(NoticeKind.Question, L.T("Le está preguntando"), L.T("Agregar pruebas al inicio de sesión"), L.T("principal · mi-proyecto")),
-        new(NoticeKind.Permission, L.T("Necesita su permiso"), L.T("Ordenar las ramas del repositorio"), "Claude needs your permission to use Bash"),
+        new(NoticeKind.Permission, L.T("Necesita su permiso"), L.T("Ordenar las ramas del repositorio"), L.T("Pide permiso para usar Bash")),
         new(NoticeKind.Failed, L.T("Falló"), L.T("Resumen del informe mensual"), "API Error: Can't reach the API server — check your internet or DNS"),
         new(NoticeKind.Retrying, L.T("Reintentando"), L.T("Resumen del informe mensual"), L.T("Intento 3 de 10 · principal")),
         new(NoticeKind.Closed, L.T("Se cerró mientras trabajaba"), L.T("Corregir el cálculo de totales"), L.T("principal · mi-proyecto")),

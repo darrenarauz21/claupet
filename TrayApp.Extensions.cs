@@ -2,7 +2,7 @@ using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Las extensiones en la app de Windows: el gestor, lo que Claupet les ofrece (IExtensionHostApi), los

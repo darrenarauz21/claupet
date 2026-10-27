@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Lo que puede ocupar una extensión. Las exclusivas (voz a texto, texto a voz y el asistente) tienen un

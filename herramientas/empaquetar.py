@@ -2,8 +2,8 @@
 
 Los nombres no llevan versión, para que los enlaces del README a la última Release
 (releases/latest/download/<archivo>) sigan sirviendo en cada versión nueva:
-UsoDeClaude-windows-x64.exe, UsoDeClaude-linux-x64.tar.gz, UsoDeClaude-macos-arm64.zip y
-UsoDeClaude-macos-x64.zip.
+Claupet-windows-x64.exe, Claupet-linux-x64.tar.gz, Claupet-macos-arm64.zip y
+Claupet-macos-x64.zip.
 
     python herramientas/empaquetar.py            los tres sistemas
     python herramientas/empaquetar.py linux mac  solo los indicados
@@ -24,8 +24,8 @@ import zlib
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "paquetes")
 WORK = os.path.join(OUT, "_trabajo")
-AVALONIA = os.path.join(ROOT, "ClaudeUsage.Avalonia", "ClaudeUsage.Avalonia.csproj")
-WINDOWS = os.path.join(ROOT, "ClaudeUsageTray.csproj")
+AVALONIA = os.path.join(ROOT, "Claupet.Avalonia", "Claupet.Avalonia.csproj")
+WINDOWS = os.path.join(ROOT, "Claupet.csproj")
 VERSION = "2.2.1"
 
 # ── Íconos: la misma mascota que app.ico, en pixeles ─────────────────────────────────────────
@@ -106,21 +106,21 @@ def windows():
     staging = os.path.join(WORK, "win-x64")
     shutil.rmtree(staging, ignore_errors=True)
     publish(WINDOWS, "win-x64", staging, single_file=True)
-    shutil.copyfile(os.path.join(staging, "ClaudeUsageTray.exe"), os.path.join(OUT, "UsoDeClaude-windows-x64.exe"))
-    print("  listo: paquetes/UsoDeClaude-windows-x64.exe")
+    shutil.copyfile(os.path.join(staging, "Claupet.exe"), os.path.join(OUT, "Claupet-windows-x64.exe"))
+    print("  listo: paquetes/Claupet-windows-x64.exe")
 
 
 def linux():
     staging = os.path.join(WORK, "linux-x64")
     shutil.rmtree(staging, ignore_errors=True)
     publish(AVALONIA, "linux-x64", staging, single_file=True)
-    name = "UsoDeClaude-linux-x64"
+    name = "Claupet-linux-x64"
     path = os.path.join(OUT, name + ".tar.gz")
     with tarfile.open(path, "w:gz") as tar:
-        with open(os.path.join(staging, "UsoDeClaude"), "rb") as h:
-            add_tar(tar, f"{name}/UsoDeClaude", h.read(), 0o755)
+        with open(os.path.join(staging, "Claupet"), "rb") as h:
+            add_tar(tar, f"{name}/Claupet", h.read(), 0o755)
         add_tar(tar, f"{name}/instalar.sh", text("instalar-linux.sh").encode(), 0o755)
-        add_tar(tar, f"{name}/uso-de-claude.png", png(256), 0o644)
+        add_tar(tar, f"{name}/claupet.png", png(256), 0o644)
         add_tar(tar, f"{name}/LEEME.txt", text("LEEME-linux.txt").encode(), 0o644)
     print(f"  listo: paquetes/{name}.tar.gz")
 
@@ -131,7 +131,7 @@ def mac(rid):
     # En macOS no es un solo archivo: así codesign firma cada biblioteca dentro del .app.
     publish(AVALONIA, rid, staging, single_file=False)
     app = "Claupet.app"
-    name = f"UsoDeClaude-macos-{rid.split('-')[1]}"
+    name = f"Claupet-macos-{rid.split('-')[1]}"
     plist = text("Info.plist").replace("{VERSION}", VERSION)
     path = os.path.join(OUT, name + ".zip")
     with zipfile.ZipFile(path, "w") as archive:
@@ -141,7 +141,7 @@ def mac(rid):
                 rel = os.path.relpath(full, staging).replace("\\", "/")
                 with open(full, "rb") as h:
                     data = h.read()
-                executable = file in ("UsoDeClaude", "createdump") or data[:4] in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")
+                executable = file in ("Claupet", "createdump") or data[:4] in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")
                 add_zip(archive, f"{name}/{app}/Contents/MacOS/{rel}", data, 0o755 if executable else 0o644)
         add_zip(archive, f"{name}/{app}/Contents/Info.plist", plist.encode(), 0o644)
         add_zip(archive, f"{name}/{app}/Contents/Resources/app.icns", icns(), 0o644)

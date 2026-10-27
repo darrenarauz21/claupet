@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Pasos seguidos de la misma familia, juntos en un nodo («Leyendo ×3»).</summary>
 sealed record FlowGroup(ToolKind Kind, string Verb, string? Detail, int Count, bool Done, FlowStep Last);

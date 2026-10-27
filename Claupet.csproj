@@ -9,8 +9,8 @@
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
     <ApplicationVisualStyles>true</ApplicationVisualStyles>
     <ApplicationDefaultFont>Segoe UI, 9pt</ApplicationDefaultFont>
-    <AssemblyName>ClaudeUsageTray</AssemblyName>
-    <RootNamespace>ClaudeUsageTray</RootNamespace>
+    <AssemblyName>Claupet</AssemblyName>
+    <RootNamespace>Claupet</RootNamespace>
     <Version>2.2.1</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyTitle>Claupet</AssemblyTitle>
@@ -19,9 +19,9 @@
 
   <ItemGroup>
     <!-- La app de Linux y macOS tiene su propio proyecto; aquí solo entra Core/. -->
-    <Compile Remove="ClaudeUsage.Avalonia/**" />
-    <None Remove="ClaudeUsage.Avalonia/**" />
-    <EmbeddedResource Remove="ClaudeUsage.Avalonia/**" />
+    <Compile Remove="Claupet.Avalonia/**" />
+    <None Remove="Claupet.Avalonia/**" />
+    <EmbeddedResource Remove="Claupet.Avalonia/**" />
     <!-- Las pruebas tienen su propio proyecto (Claupet.Tests), que ve lo interno de la app. -->
     <Compile Remove="Claupet.Tests/**" />
     <None Remove="Claupet.Tests/**" />

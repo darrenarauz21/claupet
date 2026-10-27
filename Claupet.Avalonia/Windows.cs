@@ -7,7 +7,7 @@ using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Dónde van las ventanas: en macOS arriba a la derecha (bajo la barra de menús); en los demás, abajo.</summary>
 static class Placement

@@ -1,7 +1,7 @@
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La bienvenida de Claupet, por pasos: el idioma y las novedades, el hook de permisos en cada carpeta de

@@ -1,7 +1,7 @@
 using System.Net;
 using Microsoft.Win32;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// El proxy de la red de este momento, leído en cada conexión: el de .NET se fija la primera vez que se

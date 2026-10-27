@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// El audio que escuchan las extensiones (audio/subscribe): el micrófono o lo que suena en el equipo, en

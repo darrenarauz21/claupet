@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La voz de Claupet: Supertonic 3 (Supertone, modelo con licencia OpenRAIL-M), en el equipo y con

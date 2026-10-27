@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La nubecita de la mascota del escritorio (opción «Hablar»): cuenta el aviso a su manera

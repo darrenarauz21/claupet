@@ -1,6 +1,6 @@
 using System.Drawing;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Cómo lleva la mascota un archivo hasta la isla, según dónde esté (en pixeles de pantalla):

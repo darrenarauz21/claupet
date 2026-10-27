@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Drawing;
 using System.IO.Compression;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Un PNG leído a pixeles (ARGB, fila por fila), sin depender de Windows: las mascotas de los paquetes se

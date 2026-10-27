@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Resumen para saber por qué no salen avisos en otro equipo. Sin correos, tokens ni texto de las
@@ -80,7 +80,7 @@ static class Diagnostics
             try
             {
                 var text = Json.ReadShared(settingsFile);
-                hook = text.Contains("ClaudeUsageTray", StringComparison.OrdinalIgnoreCase) && text.Contains("--hook")
+                hook = HookInstaller.NamesApp(text) && text.Contains("--hook")
                     ? L.T("con hook") : L.T("sin hook");
             }
             catch (Exception) { hook = L.T("settings.json ilegible"); }
@@ -95,8 +95,7 @@ static class Diagnostics
 /// <summary>Los errores inesperados de la app, en errores.log junto a la configuración (los últimos 200 KB).</summary>
 static class ErrorLog
 {
-    public static readonly string FilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "errores.log");
+    public static string FilePath => DataFolder.In("errores.log");
 
     public static void Write(Exception? error)
     {

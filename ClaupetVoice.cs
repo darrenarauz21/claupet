@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// El modelo de la voz de Claupet (Supertonic 3, unos 400 MB): solo los archivos que se usan, de una
@@ -24,8 +24,7 @@ static class ClaupetVoiceModel
         ("LICENSE", 15007, "0d944a9110fed9a9602d60e0423a272903e7bd21ab060490774efc77c2275e9f"),
     ];
 
-    public static readonly string Folder = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "voz", "supertonic-3");
+    public static string Folder => DataFolder.In("voz", "supertonic-3");
 
     public static long Size => Files.Sum(f => f.Size);
 

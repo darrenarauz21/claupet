@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Cómo quedó instalada una extensión (extensiones/registro/&lt;id&gt;.json): lo que se instaló y quién lo firmó.</summary>
 sealed class InstallRecord
@@ -51,7 +51,7 @@ sealed record InstallReview(StagedPackage Package, ExtensionManifest Manifest, P
 }
 
 /// <summary>
-/// Las extensiones en el disco, bajo %APPDATA%\ClaudeUsageTray\extensiones:
+/// Las extensiones en el disco, bajo %APPDATA%\Claupet\extensiones:
 /// paquetes\&lt;id&gt; (lo instalado, tal cual se firmó), datos\&lt;id&gt; (lo que la extensión guarda),
 /// registro\&lt;id&gt;.json (InstallRecord), preparacion\ (paquetes a medio abrir) y confianza.json
 /// (TrustStore). Instalar y actualizar es atómico: lo nuevo se extrae aparte y reemplaza a lo anterior de
@@ -59,8 +59,7 @@ sealed record InstallReview(StagedPackage Package, ExtensionManifest Manifest, P
 /// </summary>
 sealed class ExtensionStore
 {
-    public static readonly string DefaultRoot = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "extensiones");
+    public static string DefaultRoot => DataFolder.In("extensiones");
 
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 

@@ -1,5 +1,5 @@
 using System.Drawing;
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La opción «Mascota» de Ajustes, que junta la mascota y la animación al actualizar en una sola

@@ -1,8 +1,8 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Lo de las extensiones por línea de comandos, igual en las dos apps (como --dump, la salida se ve si se
-/// redirige: «ClaudeUsageTray.exe --extension-verify x.claupet | more»):
+/// redirige: «Claupet.exe --extension-verify x.claupet | more»):
 ///   --anfitrion-extension &lt;dll&gt; [--un-hilo]     el anfitrión de una DLL (lo arranca Claupet, no la persona)
 ///   --extension-keygen &lt;clave.pem&gt;               una clave de firma nueva (contraseña en CLAUPET_KEY_PASSWORD)
 ///   --extension-pack &lt;carpeta&gt; &lt;salida.claupet&gt; [--clave &lt;clave.pem&gt; --firmante &lt;nombre&gt;]

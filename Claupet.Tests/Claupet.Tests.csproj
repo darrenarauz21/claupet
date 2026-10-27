@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
-    <RootNamespace>ClaudeUsageTray.Tests</RootNamespace>
+    <RootNamespace>Claupet.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ClaudeUsageTray.csproj" />
+    <ProjectReference Include="..\Claupet.csproj" />
     <Using Include="Xunit" />
   </ItemGroup>
 

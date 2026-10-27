@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Lo que la ventana de extensiones le pide a la app.</summary>
 interface IExtensionsPanelHost

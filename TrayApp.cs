@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 sealed partial class TrayApp : ApplicationContext
 {

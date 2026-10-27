@@ -4,7 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json.Nodes;
 
-namespace ClaudeUsageTray.Tests;
+namespace Claupet.Tests;
 
 /// <summary>La API del anfitrión de mentira: anota lo que le piden.</summary>
 sealed class FakeHostApi : IExtensionHostApi
@@ -46,7 +46,7 @@ sealed class ManagerFixture : IAsyncDisposable
         Manager = new ExtensionManager(store, () => Settings, change => change(Settings), Secrets)
         {
             HostApi = Api,
-            NativeHostCommand = (dll, single) => (Path.Combine(AppContext.BaseDirectory, "ClaudeUsageTray.exe"),
+            NativeHostCommand = (dll, single) => (Path.Combine(AppContext.BaseDirectory, "Claupet.exe"),
                 single ? [NativeExtensionHost.Flag, dll, NativeExtensionHost.SingleFlag] : [NativeExtensionHost.Flag, dll]),
         };
     }

@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Si suena algo en el control multimedia de Windows (Spotify, YouTube en el navegador…), para que la

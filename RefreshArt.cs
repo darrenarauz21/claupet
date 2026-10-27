@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Dibuja en Windows la animación al actualizar (RefreshSprite): en el pie de la ventana y como ícono.</summary>
 static class RefreshArt

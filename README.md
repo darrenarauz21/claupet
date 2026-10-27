@@ -4,7 +4,7 @@
 
 # Claupet
 
-**Your Claude usage, your Claude Code sessions and a tiny desktop pet, right next to the clock.**
+**Your usage, your Claude Code sessions and a tiny desktop pet, right next to the clock.**
 
 **English** · [Español](README.es.md)
 
@@ -28,14 +28,14 @@ session needs you and what each one is up to, without opening a terminal.
   times. The tray icon shows your session percentage.
 - 🧭 **Live sessions.** See which Claude Code sessions are working, waiting for you or done, and
   start a new one with the account, folder and model you want.
-- 🎬 **Flows and activity.** Follow each session step by step and see six months of Claude use in
+- 🎬 **Flows and activity.** Follow each session step by step and see six months of use in
   a calendar. It all comes from local files: zero tokens.
 - 🔔 **Friendly heads-ups.** A little note, with sound, when a session finishes, asks something,
   needs permission, fails, or you're close to a limit.
-- 🦀 **A desktop pet.** The classic Claude critter or a chibi in a crab hoodie who reads, searches,
+- 🦀 **A desktop pet.** The classic critter or a chibi in a crab hoodie who reads, searches,
   types and builds along with your sessions, dances when a limit resets and gets grumpy if you poke
   her too much.
-- 💬 **Talk to Claude** *(Windows)*. Ask the pet, or the island at the top of your screen, by typing
+- 💬 **Talk to Claupet** *(Windows)*. Ask the pet, or the island at the top of your screen, by typing
   or out loud, and hear the answer in Claupet's own voice. Drop a file on the pet and get a summary.
   It can also change your wallpaper, theme, volume or music, and hands bigger jobs to Claude Code.
 - 🧰 **A hand with Windows** *(Windows)*. It takes or crops screenshots (and looks at them, if you
@@ -56,10 +56,10 @@ session needs you and what each one is up to, without opening a terminal.
 
 | System | File |
 |---|---|
-| Windows 10 and 11 | [UsoDeClaude-windows-x64.exe](https://github.com/darrenarauz21/claupet/releases/latest/download/UsoDeClaude-windows-x64.exe) |
-| macOS, Apple chip (M1, M2, M3…) | [UsoDeClaude-macos-arm64.zip](https://github.com/darrenarauz21/claupet/releases/latest/download/UsoDeClaude-macos-arm64.zip) |
-| macOS, Intel | [UsoDeClaude-macos-x64.zip](https://github.com/darrenarauz21/claupet/releases/latest/download/UsoDeClaude-macos-x64.zip) |
-| Linux (x64) | [UsoDeClaude-linux-x64.tar.gz](https://github.com/darrenarauz21/claupet/releases/latest/download/UsoDeClaude-linux-x64.tar.gz) |
+| Windows 10 and 11 | [Claupet-windows-x64.exe](https://github.com/darrenarauz21/claupet/releases/latest/download/Claupet-windows-x64.exe) |
+| macOS, Apple chip (M1, M2, M3…) | [Claupet-macos-arm64.zip](https://github.com/darrenarauz21/claupet/releases/latest/download/Claupet-macos-arm64.zip) |
+| macOS, Intel | [Claupet-macos-x64.zip](https://github.com/darrenarauz21/claupet/releases/latest/download/Claupet-macos-x64.zip) |
+| Linux (x64) | [Claupet-linux-x64.tar.gz](https://github.com/darrenarauz21/claupet/releases/latest/download/Claupet-linux-x64.tar.gz) |
 
 Every file is self-contained. You only need [Claude Code](https://claude.com/product/claude-code)
 installed and signed in. Older versions are in [Releases](https://github.com/darrenarauz21/claupet/releases).
@@ -74,7 +74,7 @@ icon by the clock, or under the **^** arrow.
 window and press Enter. Claupet moves to **Applications** and opens in the menu bar. If macOS asks
 to read "Claude Code-credentials", choose **Always Allow**.
 
-**Linux.** Run `tar -xzf UsoDeClaude-linux-x64.tar.gz`, then `sh instalar.sh` inside the folder.
+**Linux.** Run `tar -xzf Claupet-linux-x64.tar.gz`, then `sh instalar.sh` inside the folder.
 It also shows up in your applications menu. On GNOME, the tray icon needs the AppIndicator
 extension (Ubuntu ships with it).
 
@@ -99,8 +99,8 @@ in. Python 3 is only needed to build the release packages.
 ```powershell
 git clone https://github.com/darrenarauz21/claupet.git
 cd claupet
-dotnet run --project ClaudeUsageTray.csproj        # Windows (WinForms)
-dotnet run --project ClaudeUsage.Avalonia          # Linux and macOS (also runs on Windows)
+dotnet run --project Claupet.csproj                # Windows (WinForms)
+dotnet run --project Claupet.Avalonia              # Linux and macOS (also runs on Windows)
 python herramientas/empaquetar.py                  # self-contained packages in paquetes/
 ```
 
@@ -109,7 +109,7 @@ python herramientas/empaquetar.py                  # self-contained packages in 
 ```text
 Core/                     shared logic: usage, sessions, activity, notices, assistant, network
 *.cs                      Windows app (WinForms)
-ClaudeUsage.Avalonia/     Linux and macOS app (Avalonia)
+Claupet.Avalonia/         Linux and macOS app (Avalonia)
 herramientas/             packaging and install scripts
 ```
 

@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Un error de JSON-RPC: el código y el mensaje, como los manda el otro lado.</summary>
 sealed class JsonRpcException(int code, string message) : Exception(message)

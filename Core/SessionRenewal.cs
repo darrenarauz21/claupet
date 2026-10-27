@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Renueva la sesión vencida de una cuenta sin tocar sus credenciales (para no pisar las de Claude Code):

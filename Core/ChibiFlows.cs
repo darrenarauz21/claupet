@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Los gestos del flujo: lo que hace la sesión (leer, buscar, editar, ejecutar, web, agentes, pensar

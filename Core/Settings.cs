@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Una cuenta es una carpeta de configuración de Claude Code (la de CLAUDE_CONFIG_DIR).</summary>
 sealed class Account
@@ -45,8 +45,9 @@ sealed class AppSettings
     public bool Notifications { get; set; } = true;
     public bool Sound { get; set; } = true;
     public string SoundPack { get; set; } = "clasico";
-    /// <summary>Paleta del acento (Theme.Palettes).</summary>
-    public string Palette { get; set; } = "claude";
+    /// <summary>Paleta del acento (Theme.Palettes). «claude» es como se llamaba antes «terracota».</summary>
+    public string Palette { get => _palette; set => _palette = value == "claude" ? "terracota" : value; }
+    string _palette = "terracota";
     /// <summary>Animación al actualizar (RefreshSprite.Styles). Se elige junto con Mascot, en la opción «Mascota» (Mascots).</summary>
     public string Animation { get; set; } = "mascota";
     /// <summary>Mascota de los avisos y de la animación «mascota»: Mascots.Classic o Mascots.Chibi.</summary>
@@ -128,11 +129,38 @@ sealed class AppSettings
     public static readonly string[] DefaultPinned = ["Usage", "Sessions", "Activity"];
 }
 
+/// <summary>
+/// La carpeta de datos de la app: %APPDATA%\Claupet (en Linux y macOS, ~/.config/Claupet). Antes se
+/// llamaba ClaudeUsageTray: mientras no se haya movido, se sigue usando esa. Las rutas se arman en cada
+/// uso (no se guardan), para que después de Migrate todas apunten a la nueva.
+/// </summary>
+static class DataFolder
+{
+    static string AppData => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    static string Current => Path.Combine(AppData, "Claupet");
+    static string Before => Path.Combine(AppData, "ClaudeUsageTray");
+
+    public static string Root => Directory.Exists(Current) || !Directory.Exists(Before) ? Current : Before;
+
+    public static string In(params string[] parts) => Path.Combine([Root, .. parts]);
+
+    /// <summary>
+    /// Mueve la carpeta de antes, entera (ajustes, historial, sonidos, modelos), a la de Claupet. Lo hace
+    /// solo la app al abrirse, no los hooks ni las herramientas de línea de comandos. Si no se puede (la
+    /// tiene abierta la versión anterior), sigue con la de antes y lo intenta la próxima vez.
+    /// </summary>
+    public static void Migrate()
+    {
+        if (Directory.Exists(Current) || !Directory.Exists(Before)) return;
+        try { Directory.Move(Before, Current); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+}
+
 static class SettingsStore
 {
-    static readonly string Dir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray");
-    static readonly string FilePath = Path.Combine(Dir, "settings.json");
+    static string Dir => DataFolder.Root;
+    static string FilePath => Path.Combine(Dir, "settings.json");
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
     public static AppSettings Load()

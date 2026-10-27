@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 sealed record LimitRow(string Kind, string Label, double Percent, string? Severity, DateTimeOffset? ResetsAt);
 sealed record BreakdownRow(string Name, double Percent);

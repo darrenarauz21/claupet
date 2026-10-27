@@ -3,7 +3,7 @@ using System.Drawing.Text;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 static class Fonts
 {

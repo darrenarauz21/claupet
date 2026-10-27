@@ -7,8 +7,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>UsoDeClaude</AssemblyName>
-    <RootNamespace>ClaudeUsageTray</RootNamespace>
+    <AssemblyName>Claupet</AssemblyName>
+    <RootNamespace>Claupet</RootNamespace>
     <Version>2.2.1</Version>
     <AssemblyTitle>Claupet</AssemblyTitle>
     <Product>Claupet</Product>

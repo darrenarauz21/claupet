@@ -5,7 +5,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using SD = System.Drawing;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La nubecita de la mascota del escritorio (opción «Hablar»), igual que en Windows: cuenta el aviso

@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Cómo le fue a una acción. Problem: lo que falló, dicho en corto para la nubecita. Say: lo que se dice en
@@ -130,8 +130,7 @@ static class SystemActions
     // ── Fondo de pantalla ───────────────────────────────────────────────────────────────────
 
     /// <summary>Los fondos bajados de internet; quedan los últimos KeepWallpapers.</summary>
-    static readonly string WallpaperDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "fondos");
+    static string WallpaperDir => DataFolder.In("fondos");
 
     const int KeepWallpapers = 5;
     const long MaxImage = 25 * 1024 * 1024;

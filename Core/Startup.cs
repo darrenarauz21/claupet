@@ -1,21 +1,27 @@
 using System.Security;
 using Microsoft.Win32;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Iniciar con el sistema, sin permisos de administrador: en Windows una entrada en
-/// HKCU\...\Run, en Linux un .desktop en ~/.config/autostart y en macOS un LaunchAgent.
+/// HKCU\...\Run, en Linux un .desktop en ~/.config/autostart y en macOS un LaunchAgent. Las entradas
+/// con el nombre de antes de Claupet (ClaudeUsageTray, uso-de-claude) cuentan como encendidas y se
+/// quitan al cambiarlo.
 /// </summary>
 static class StartupRegistration
 {
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    const string RunValue = "ClaudeUsageTray";
-    const string MacLabel = "local.usodeclaude";
+    const string RunValue = "Claupet";
+    const string MacLabel = "local.claupet";
+    const string OldRunValue = "ClaudeUsageTray";
+    const string OldMacLabel = "local.usodeclaude";
 
     static string Home => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    static string LinuxFile => Path.Combine(Home, ".config", "autostart", "uso-de-claude.desktop");
+    static string LinuxFile => Path.Combine(Home, ".config", "autostart", "claupet.desktop");
     static string MacFile => Path.Combine(Home, "Library", "LaunchAgents", MacLabel + ".plist");
+    static string OldLinuxFile => Path.Combine(Home, ".config", "autostart", "uso-de-claude.desktop");
+    static string OldMacFile => Path.Combine(Home, "Library", "LaunchAgents", OldMacLabel + ".plist");
     static string Exe => Environment.ProcessPath ?? "";
 
     public static bool IsEnabled
@@ -25,10 +31,24 @@ static class StartupRegistration
             if (OperatingSystem.IsWindows())
             {
                 using var key = Registry.CurrentUser.OpenSubKey(RunKey);
-                return key?.GetValue(RunValue) is string;
+                return key?.GetValue(RunValue) is string || key?.GetValue(OldRunValue) is string;
             }
-            return File.Exists(OperatingSystem.IsMacOS() ? MacFile : LinuxFile);
+            return OperatingSystem.IsMacOS() ? File.Exists(MacFile) || File.Exists(OldMacFile)
+                : File.Exists(LinuxFile) || File.Exists(OldLinuxFile);
         }
+    }
+
+    /// <summary>Si quedó la entrada con el nombre de antes (apunta al .exe viejo), la cambia por la de este.</summary>
+    public static void Migrate()
+    {
+        bool old;
+        if (OperatingSystem.IsWindows())
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKey);
+            old = key?.GetValue(OldRunValue) is string;
+        }
+        else old = File.Exists(OperatingSystem.IsMacOS() ? OldMacFile : OldLinuxFile);
+        if (old) Set(true);
     }
 
     public static void Set(bool enabled)
@@ -36,11 +56,14 @@ static class StartupRegistration
         if (OperatingSystem.IsWindows())
         {
             using var key = Registry.CurrentUser.CreateSubKey(RunKey);
+            key.DeleteValue(OldRunValue, throwOnMissingValue: false);
             if (enabled) key.SetValue(RunValue, $"\"{Exe}\"");
             else key.DeleteValue(RunValue, throwOnMissingValue: false);
             return;
         }
 
+        var old = OperatingSystem.IsMacOS() ? OldMacFile : OldLinuxFile;
+        if (File.Exists(old)) File.Delete(old);
         var file = OperatingSystem.IsMacOS() ? MacFile : LinuxFile;
         if (!enabled)
         {
@@ -56,7 +79,7 @@ static class StartupRegistration
         + "Type=Application\n"
         + "Name=Claupet\n"
         + $"Exec=\"{Exe}\"\n"
-        + "Icon=uso-de-claude\n"
+        + "Icon=claupet\n"
         + "X-GNOME-Autostart-enabled=true\n";
 
     static string LaunchAgent() =>
