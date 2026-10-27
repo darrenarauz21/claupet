@@ -123,7 +123,10 @@ sealed partial class TrayApp : ApplicationContext
             SettingsStore.Save(_settings);
         };
         _form.SettingRequested += OnSetting;
-        if (Enum.TryParse<UsageForm.SettingsTab>(_settings.SettingsTab, out var tab)) _form.SetSettingsTab(tab);
+        // --pestana <nombre>: con --settings, abre esa pestaña de Ajustes (para revisarla sin cambiar la guardada).
+        var args = Environment.GetCommandLineArgs();
+        var tabName = Array.IndexOf(args, "--pestana") is var pt and >= 0 && pt + 1 < args.Length ? args[pt + 1] : _settings.SettingsTab;
+        if (Enum.TryParse<UsageForm.SettingsTab>(tabName, out var tab)) _form.SetSettingsTab(tab);
         _form.SettingsTabChanged += t =>
         {
             _settings.SettingsTab = t.ToString();
@@ -355,6 +358,23 @@ sealed partial class TrayApp : ApplicationContext
             Language = L.Label,
             Extensions = _extensions.Installed.Count == 0 ? L.T("Ninguna")
                 : L.T("{0} de {1} encendidas", _extensions.Installed.Count(e => _extensions.IsEnabled(e.Id)), _extensions.Installed.Count),
+            LocalReady = LocalModel.Ready(LocalChoice),
+            LocalIdle = L.T("{0} min", s.LocalIdleMinutes),
+            CloudModel = ExternalLabel(ExtensionSlots.Assistant) ?? (s.MascotModel == AssistantModels.Local
+                ? L.T("Claude · {0} (solo la isla)", AssistantModels.Label(s.IslandModel)) : "Claude · " + AssistantModels.Label(s.MascotModel)),
+            Topics = TopicsSummary(),
+            GeneralLocal = AnswerTopics.First(s, AnswerTopics.General) == Engine.Local,
+            Fallback = FallbackLabel(s.AnswerFallback),
+            FallbackHint = s.AnswerFallback switch
+            {
+                Engine.Cloud => L.T("Sin IA, luego el modelo local (si está descargado) y al final la nube."),
+                Engine.Local => L.T("Nunca llega a la nube, salvo internet, archivos y tareas."),
+                _ => L.T("Si el primero no entiende, Claupet pide decirlo de otra forma."),
+            },
+            ShowWho = s.ShowWhoAnswered,
+            City = CityLabel(),
+            Saved = AnswerStats.ThisWeek() is var (none, local) && none + local == 1 ? L.T("1 respuesta") : L.T("{0} respuestas", none + local),
+            SavedDetail = AnswerStats.ThisWeek() is var (n, l) && n + l > 0 ? L.T("{0} sin IA · {1} con el modelo local", n, l) : "",
         });
     }
 
@@ -630,6 +650,21 @@ sealed partial class TrayApp : ApplicationContext
                 else _ = DownloadSpeechAsync();
                 break;
             case "localmodel": PickLocalModel(); break;
+            case "localidle":
+                ShowOptions(new[] { 2, 5, 10, 30 }.Select(m => (m.ToString(), L.T("{0} min", m))), _settings.LocalIdleMinutes.ToString(), v =>
+                {
+                    Change(s => s.LocalIdleMinutes = int.Parse(v));
+                    _localServer.IdleMinutes = _settings.LocalIdleMinutes;
+                    _localServer.Stop(); // vuelve a arrancar con el nuevo tiempo en la próxima pregunta
+                });
+                break;
+            case "fallback":
+                ShowOptions(new[] { Engine.Cloud, Engine.Local, Engine.None }.Select(e => (e.ToString(), FallbackLabel(e))), _settings.AnswerFallback.ToString(),
+                    v => Change(s => s.AnswerFallback = Enum.Parse<Engine>(v)));
+                break;
+            case "who": Toggle(s => s.ShowWhoAnswered = !s.ShowWhoAnswered); break;
+            case "city": PickCity(); break;
+            case "topics": ShowTopics(); break;
             case "local": LocalModelAction(); break;
             case "island": Toggle(s => s.Island = !s.Island); break;
             case "imodel":
@@ -1110,14 +1145,14 @@ sealed partial class TrayApp : ApplicationContext
             _islandStreaming = (_islandStreaming ?? "") + piece;
             PushIslandChat(true);
         }
-        var result = await Assistant.AskAsync(request, Stream, cancel: cancel.Token);
+        var result = await Answers.AskAsync(request, _settings, Stream, cancel: cancel.Token);
         _islandStreaming = null;
         if (cancel.IsCancellationRequested)
         {
             PushIslandChat(false);
             return;
         }
-        if (result.Model is { } used && _settings.IslandModel is null)
+        if (result.By is { Engine: Engine.Cloud } && result.Model is { } used && _settings.IslandModel is null)
         {
             _defaultModel = Format.Model(used);
             PushIslandModel();
@@ -1143,7 +1178,7 @@ sealed partial class TrayApp : ApplicationContext
             ReadAloudIfOn(result, answer, () =>
             {
                 if (cancel.IsCancellationRequested) return;
-                _chat.Add(new ChatTurn(false, answer));
+                _chat.Add(new ChatTurn(false, answer, WhoAnswered(result)));
                 PushIslandChat(false);
             });
             return;
@@ -1173,7 +1208,7 @@ sealed partial class TrayApp : ApplicationContext
         if (outcome.Data is { } data)
         {
             restart?.Invoke();
-            var follow = await Assistant.AskAsync(request with { Data = data }, onText, cancel: cancel);
+            var follow = await Answers.AskAsync(request with { Data = data, Engine = result.By?.Engine }, _settings, onText, cancel: cancel);
             return follow.Failed ? $"{follow.Error} (._.)" : follow.Text;
         }
         return outcome.Say ?? (result.Text.Length > 0 ? result.Text : L.T("¡Listo! (^_^)"));
@@ -1517,6 +1552,24 @@ sealed partial class TrayApp : ApplicationContext
 
     // ── Chat con la mascota ─────────────────────────────────────────────────────────────────
 
+    /// <summary>Quién respondió, para mostrarlo bajo la respuesta (si está encendido en Ajustes › Respuestas).</summary>
+    string? WhoAnswered(AssistantResult result) => _settings.ShowWhoAnswered ? result.By?.Label : null;
+
+    /// <summary>El uso de Claude dicho sin IA: cada límite con su porcentaje y cuándo se reinicia (null si aún no se sabe).</summary>
+    string? UsageAnswer()
+    {
+        var parts = new List<string>();
+        var known = _settings.Accounts.Where(a => _snapshots.TryGetValue(a.ConfigDir, out var s) && s.Limits.Count > 0).ToList();
+        foreach (var account in known)
+        {
+            var snap = _snapshots[account.ConfigDir];
+            var limits = string.Join(", ", snap.Limits.Select(l => L.T("{0} al {1:0} %", l.Label, l.Percent)
+                + (Format.Reset(l.ResetsAt) is { Length: > 0 } r ? $" ({r.ToLowerInvariant()})" : "")));
+            parts.Add(known.Count == 1 ? limits + "." : L.T("«{0}»: {1}.", account.Label, limits));
+        }
+        return parts.Count == 0 ? null : string.Join(" ", parts) + " (^_^)";
+    }
+
     /// <summary>La cuenta que responde: la elegida en Ajustes o, si no, la de Uso.</summary>
     string? AssistantConfigDir => _settings.AssistantAccount ?? _settings.Selected;
 
@@ -1617,7 +1670,7 @@ sealed partial class TrayApp : ApplicationContext
             bubble.Append(piece);
             _director.SetMood(ChibiMove.Talk);
         }
-        var result = await Assistant.AskAsync(request, Stream, cancel: cancel.Token);
+        var result = await Answers.AskAsync(request, _settings, Stream, cancel: cancel.Token);
         if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
 
         if (result.Failed)
@@ -1642,12 +1695,12 @@ sealed partial class TrayApp : ApplicationContext
             _director.SetMood(ChibiMove.Think);
         }, cancel.Token);
         if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
-        _chat.Add(new ChatTurn(false, answer));
+        _chat.Add(new ChatTurn(false, answer, WhoAnswered(result)));
         ReadAloudIfOn(result, answer, () =>
         {
             if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
             if (speaking) _director.SetMood(ChibiMove.Talk);
-            bubble.Finish(answer, _settings.Island);
+            bubble.Finish(answer, _settings.Island, who: WhoAnswered(result));
         });
     }
 
@@ -2259,7 +2312,7 @@ sealed partial class TrayApp : ApplicationContext
             if (localMissing)
             {
                 _ = DownloadLocalModelAsync();
-                lines.Add(L.T("El modelo local se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+                lines.Add(L.T("El modelo local se descarga en segundo plano; el avance está en Ajustes › Respuestas."));
             }
         }
 

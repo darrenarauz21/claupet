@@ -39,6 +39,7 @@ mascota (`[ACCION]`) son del protocolo y van siempre en español. Para otro idio
 | Modelo de voz (Whisper) | `…\Claupet\voz\ggml-small.bin` | — |
 | Voz de Claupet (Supertonic 3) | `…\Claupet\voz\supertonic-3` | — |
 | Modelo local (llama-server y el GGUF elegido) | `…\Claupet\modelo-local` | — |
+| Respuestas sin la nube de la semana (Ajustes › Respuestas › Ahorro) | `…\Claupet\respuestas.json` | — |
 | Consultas del asistente (prompts de sistema) | `…\Claupet\asistente` | — |
 | Permisos de lo que la mascota hace en el equipo | `Permissions` en `settings.json` | — |
 | Notas | `Documentos\Claupet\Notas`, un `.md` por nota | — |
@@ -394,12 +395,55 @@ como el asistente de una extensión.
 |---|---|
 | Modelos | Qwen3.5 0.8B (533 MB), 2B (1,3 GB, el propuesto) o 4B (2,7 GB), Apache 2.0, en GGUF Q4_K_M de Unsloth fijado a un commit de Hugging Face y con su SHA-256 (`LocalModel.Choices`, `LocalModel` en `settings.json`) |
 | Programa | `llama-server` de llama.cpp b11913 para CPU x64 (24 MB, MIT), de su Release de GitHub y con su SHA-256; del zip se sacan solo el servidor, sus DLL y las de ggml para cada CPU |
-| Descarga | a pedido, en `…\Claupet\modelo-local`, retomando como la de Whisper; al terminar se borran los otros modelos. **Ajustes › Asistente › Modelo local** muestra el avance, cancela o borra |
-| Arranque | la primera pregunta lo arranca en `127.0.0.1`, en un puerto libre y con una clave nueva en cada arranque (`--api-key`): otro programa del equipo no puede usarlo. Va en un Job que lo cierra si Claupet termina; a los 10 minutos sin uso suelta la memoria (`--sleep-idle-seconds`) |
+| Descarga | a pedido, en `…\Claupet\modelo-local`, retomando como la de Whisper; al terminar se borran los otros modelos. **Ajustes › Respuestas › Motores** muestra el avance, cancela o borra |
+| Arranque | la primera pregunta lo arranca en `127.0.0.1`, en un puerto libre y con una clave nueva en cada arranque (`--api-key`): otro programa del equipo no puede usarlo. Va en un Job que lo cierra si Claupet termina; tras los minutos sin uso de «Liberar la memoria tras» (5 por defecto) suelta la memoria (`--sleep-idle-seconds`) |
 | Respuestas | por `/v1/chat/completions` con stream, como una extensión `openai-chat`; sin razonamiento (`--reasoning-budget 0`), contexto de 4.096 y una conversación a la vez |
-| Solo conversa | no recibe la lista de acciones ni puede encargar tareas a Claude Code: con ella, el 0.8B y el 2B inventaban acciones (ante un «Hola», minimizar todo) o las armaban mal. Si le piden una, dice que hace falta un modelo de Claude |
+| Solo conversa | no recibe la lista de acciones ni puede encargar tareas a Claude Code: con ella, el 0.8B y el 2B inventaban acciones (ante un «Hola», minimizar todo) o las armaban mal (`ISmallBrain`). Las acciones las elige aparte, con un JSON de esquema cerrado (ver Respuestas) |
+| Identidad | el prompt le dice que es Claupet y solo Claupet; si le preguntan qué modelo usa, dice con cuál piensa. Qwen3.5 a veces abre con `<think></think>` vacío: no se muestra (`ThinkFilter`) |
 | Velocidad | en un Ryzen 7 5700U arranca en 2 s; el 2B responde a la mascota en 3 a 5 s (el 0.8B escribe unos 35 tokens por segundo) |
 | Memoria | unos 1, 2 o 3,5 GB mientras responde, según el tamaño (estimado) |
+
+### Respuestas: quién responde cada pregunta
+
+**Ajustes › Respuestas** reparte las preguntas de la mascota y de la isla entre tres motores: **sin IA** (la
+app sola), el **modelo local** y la **nube** (Claude Code con el modelo elegido, o la extensión del
+asistente). `Answers.AskAsync` (`Core/Answers.Router.cs`) decide en cada pregunta:
+
+1. **Las reglas sin IA** (`AnswerRules`, `Core/Answers.cs`) reconocen frases cortas y claras, enteras: «¿qué
+   hora es (en Tokio)?», «¿qué día es hoy?», «¿va a llover mañana en Boquete?», «¿cuánta batería me queda?»,
+   «¿cuánto me queda de Claude?», «sube el volumen», «pon el brillo al 40», «modo oscuro», «abre Spotify»,
+   «recuérdame X en 20 minutos», «anota X», «25 × 4 + 10», «15 % de 200», «10 km a millas», «hola», «gracias».
+   Si sobra algo («sube el volumen y abre Spotify»), no adivinan: pasa al siguiente.
+2. **Si ninguna regla sirve y el modelo local está descargado**, él entiende la pregunta: responde un JSON con
+   el tipo, la acción, el lugar y el día, restringido por un esquema (`response_format` con `json_schema`, que
+   llama-server convierte en gramática). Solo puede elegir tipos y acciones de la lista; las que llevan un
+   JSON propio (notas, recordatorios, agendar) no las elige él.
+3. **Cada tipo de pregunta tiene quién responde primero** (`AnswerEngines`), y si no entiende o no está
+   disponible pasa al siguiente motor, sin IA → local → nube, hasta donde diga «Si no entiende»
+   (`AnswerFallback`: hasta la nube, hasta el modelo local o no pasar).
+
+| Tipo | Primero, por defecto | Sin IA hace |
+|---|---|---|
+| Hora y fecha | Sin IA | la hora o la fecha de este equipo; en otra ciudad, por su zona horaria (geocodificación de Open-Meteo) |
+| Clima | Sin IA | el de ahora y el de hoy, mañana o pasado mañana, de Open-Meteo |
+| Estado del equipo | Sin IA | la acción «estado» (con su permiso) y sus datos tal cual |
+| Uso de Claude | Sin IA | cada límite con su porcentaje y cuándo se reinicia |
+| Cuentas y conversiones | Nube | la cuenta o la conversión; con el modelo local, él la dice con el resultado ya hecho |
+| Acciones del equipo, Abrir apps y sitios, Notas y recordatorios | Nube | la acción de la regla (abrir solo si existe la app, la carpeta o la URL) |
+| Saludo y charla | Nube | un saludo según la hora, «de nada», «hasta luego» |
+| Preguntas generales | Nube | — (sin IA no se puede; con el modelo local se avisa que puede inventar) |
+| Internet, archivos y tareas | Siempre la nube | — |
+
+Los de «sin IA» por defecto son los acordados (hora, fecha, estado del equipo y uso de Claude) más el clima,
+que ya no gasta tokens con Open-Meteo. Con **«Local» como modelo de la mascota o la isla**, la nube no se usa:
+lo que no responde la app, lo responde el modelo local. Un archivo soltado va siempre al asistente.
+
+| Detalle | Cómo |
+|---|---|
+| Quién respondió | `AssistantResult.By`: debajo de la respuesta en la nubecita y en la isla («Sin IA · Open-Meteo», «Modelo local · Qwen3.5 2B», «Nube · Haiku 4.5»), si «Mostrar quién respondió» está encendido |
+| Mi ciudad | por la IP (ipwho.is, por defecto), la ubicación de Windows (PowerShell con `System.Device.Location`; se prueba al elegirla) o una ciudad escrita, buscada en Open-Meteo. La ubicación se guarda 6 horas y el pronóstico 15 minutos |
+| Ahorro | cuántas respuestas de esta semana (desde el lunes) no usaron la nube: sin IA y con el modelo local (`AnswerStats`) |
+| Privacidad | sin IA nada sale del equipo, salvo el clima: el nombre de la ciudad o las coordenadas van a Open-Meteo, y la IP a ipwho.is si Mi ciudad es automática |
 
 | Para hablar | Qué pasa |
 |---|---|
@@ -524,6 +568,10 @@ Solo en Windows, para probar el asistente:
 - `--recordatorio <id>`: la usa la tarea programada de un recordatorio para abrir la app.
 - `--descargar-voz`: baja la voz de Claupet como desde **Ajustes**, con el avance.
 - `--decir <F4|M1> <texto>`: lo dice con esa voz, frase por frase, y escribe cuánto tardó cada una.
+- `--responder <pregunta>`: la reparte como la mascota (Ajustes › Respuestas) y dice quién respondió, en
+  cuánto tiempo y qué (la acción no se hace). Usa el modelo local si está descargado.
+- `--settings --pestana <Avisos|Apariencia|Asistente|Isla|Respuestas|Sistema>`: abre Ajustes en esa pestaña
+  sin cambiar la guardada (con `--preview`, para revisarla junto a la que está abierta).
 - `--modelo-local <id> [pregunta]`: baja ese modelo local (`qwen3.5-0.8b`, `qwen3.5-2b` o `qwen3.5-4b`) y
   llama-server como desde **Ajustes**, con el avance; con una pregunta, se la hace como la mascota y
   escribe cuánto tardó en arrancar y en responder.

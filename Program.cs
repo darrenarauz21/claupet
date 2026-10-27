@@ -103,6 +103,29 @@ static class Program
             return answer.Failed ? 1 : 0;
         }
 
+        // --responder <pregunta>: la reparte como la mascota (Ajustes › Respuestas) y dice quién respondió y qué; no
+        // hace la acción. Si el modelo local está descargado, lo usa.
+        if (Array.IndexOf(args, "--responder") is var rs and >= 0 && rs + 1 < args.Length)
+        {
+            var settings = SettingsStore.Load();
+            using var server = new LocalModelServer();
+            var choice = LocalModel.Find(settings.LocalModel);
+            Assistant.Local = () => LocalModel.Ready(choice) ? new LocalBrain(server, choice) : null;
+            Answers.OpenTarget = SystemActions.OpenTarget;
+            WeatherService.WindowsLocation = WindowsLocation.GetAsync;
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var answer = Answers.AskAsync(new AssistantRequest
+            {
+                Prompt = args[rs + 1], Voice = AssistantVoice.Mascot, Model = settings.MascotModel,
+                ConfigDir = settings.AssistantAccount ?? settings.Selected,
+            }, settings).GetAwaiter().GetResult();
+            Console.WriteLine($"[{answer.By?.Label ?? "?"}] {clock.ElapsedMilliseconds} ms");
+            if (answer.Action is { } action) Console.WriteLine($"[ACCION] {action.Kind} {action.Value}");
+            if (answer.Task is { } task) Console.WriteLine($"[TAREA] {task.Prompt}");
+            Console.WriteLine(answer.Error ?? answer.Text);
+            return answer.Failed ? 1 : 0;
+        }
+
         // --descargar-voz: baja la voz de Claupet como desde Ajustes, con el avance a la salida estándar.
         if (args.Contains("--descargar-voz"))
         {

@@ -92,8 +92,8 @@ enum AssistantVoice { Mascot, Island }
 /// <summary>En qué va una respuesta: arrancó Claude Code, está leyendo el archivo o ya escribe.</summary>
 enum AssistantStage { Opening, Reading, Writing }
 
-/// <summary>Un turno de la conversación (lo que dijo la persona o lo que respondió).</summary>
-sealed record ChatTurn(bool FromPerson, string Text);
+/// <summary>Un turno de la conversación (lo que dijo la persona o lo que respondió). Who: quién respondió, si se muestra.</summary>
+sealed record ChatTurn(bool FromPerson, string Text, string? Who = null);
 
 /// <summary>Una tarea que Claude propone abrir en una sesión de Claude Code. Folder: dónde abrirla (la del archivo soltado); null, la de las tareas.</summary>
 sealed record TaskProposal(string Prompt, string? Folder = null);
@@ -126,15 +126,18 @@ sealed record AssistantRequest
     /// misma pregunta: va como datos, no como instrucciones, y en esa respuesta no se aceptan marcas.
     /// </summary>
     public string? Data { get; init; }
+    /// <summary>Con Data: quién responde con esos datos (el mismo que pidió la acción); null, la nube.</summary>
+    public Engine? Engine { get; init; }
 }
 
 /// <summary>
 /// La respuesta terminada. Text: lo que se muestra (sin la marca de tarea ni las expresiones). Short: la
 /// primera línea de un análisis, para la nubecita. Model: el modelo que respondió (para el chip de la
 /// isla). Action: lo que pidió hacer en el equipo; lo ejecuta la app (SystemActions). Spoken: lo que se
-/// lee en voz alta, con las expresiones.
+/// lee en voz alta, con las expresiones. By: quién respondió (Ajustes › Respuestas).
 /// </summary>
-sealed record AssistantResult(string Text, string? Short, string? Model, TaskProposal? Task, string? Error, AssistantAction? Action = null, string? Spoken = null)
+sealed record AssistantResult(string Text, string? Short, string? Model, TaskProposal? Task, string? Error, AssistantAction? Action = null, string? Spoken = null,
+    AnswerSource? By = null)
 {
     public bool Failed => Error is not null;
 }
@@ -239,14 +242,14 @@ static class Assistant
         if (External?.Invoke() is { } brain) return await AskBrainAsync(brain, request, onText, onStage, cancel);
         if (request.Model == AssistantModels.Local)
             return Local?.Invoke() is { } local ? await AskBrainAsync(local, request, onText, onStage, cancel)
-                : new AssistantResult("", null, null, null, L.T("El modelo local no está descargado: descárguelo en Ajustes › Asistente."));
+                : new AssistantResult("", null, null, null, L.T("El modelo local no está descargado: descárguelo en Ajustes › Respuestas."));
         string? claude = FindClaude();
         if (claude is null)
             return new AssistantResult("", null, null, null, L.T("No encontré Claude Code. ¿Está instalado y en el PATH?"));
 
         Directory.CreateDirectory(WorkDir);
         var systemFile = Path.Combine(WorkDir, request.Voice == AssistantVoice.Mascot ? "mascota.txt" : "isla.txt");
-        await File.WriteAllTextAsync(systemFile, SystemPrompt(request), cancel);
+        await File.WriteAllTextAsync(systemFile, SystemPrompt(request, AssistantModels.Label(request.Model)), cancel);
 
         var args = new List<string> { "-p", "--safe-mode", "--no-session-persistence", "--verbose",
             "--output-format", "stream-json", "--include-partial-messages", "--system-prompt-file", systemFile };
@@ -355,7 +358,7 @@ static class Assistant
     /// sistema, sin las herramientas que no tiene (internet, leer archivos), y la respuesta pasa por las mismas
     /// reglas (marcas, acciones y sus permisos). Un archivo soltado se le pasa si es de texto y no muy grande.
     /// </summary>
-    static async Task<AssistantResult> AskBrainAsync(IAssistantBrain brain, AssistantRequest request, Action<string>? onText,
+    internal static async Task<AssistantResult> AskBrainAsync(IAssistantBrain brain, AssistantRequest request, Action<string>? onText,
         Action<AssistantStage>? onStage, CancellationToken cancel)
     {
         var prompt = request.Prompt;
@@ -373,9 +376,9 @@ static class Assistant
         var writing = false;
         try
         {
-            // El modelo lo elige la extensión (sus ajustes): los alias de Claude (haiku, sonnet…) no le sirven. El
-            // modelo local es chico: con la lista de acciones las inventa o las arma mal, así que solo conversa.
-            var system = SystemPrompt(request, tools: false, actions: request.Model != AssistantModels.Local);
+            // El modelo lo elige la extensión (sus ajustes): los alias de Claude (haiku, sonnet…) no le sirven. Un
+            // modelo chico (el local) con la lista de acciones las inventa o las arma mal: solo conversa.
+            var system = SystemPrompt(request, brain.Name, tools: false, actions: brain is not ISmallBrain);
             var reply = await brain.RespondAsync(new BrainRequest(system, messages, null), piece =>
             {
                 if (!writing) { writing = true; onStage?.Invoke(AssistantStage.Writing); }
@@ -606,21 +609,28 @@ static class Assistant
     {
         var text = Simple(prompt);
         bool Says(params string[] phrases) => phrases.Any(p => text.Contains($" {p} ", StringComparison.Ordinal));
-        var now = DateTime.Now; // en la cultura del idioma elegido (L.Use)
-        if (Says("que hora", "la hora", "hora es", "what time", "the time"))
-            return L.IsSpanish
-                ? $"{(now.Hour % 12 == 1 ? "Es la" : "Son las")} {now:h:mm tt} (^_^)" // «p. m.» ya cierra con punto
-                : $"It's {now:h:mm tt}. (^_^)";
+        if (Says("que hora", "la hora", "hora es", "what time", "the time")) return TimeText();
         if (Says("que dia", "que fecha", "la fecha", "dia es hoy", "a cuanto estamos", "what day", "what date", "the date", "today s date"))
-            return L.T("Hoy es {0:dddd d 'de' MMMM 'de' yyyy}. (^_^)", now);
+            return DateText();
         if (Says("hola", "holi", "buenas", "buenos dias", "hey", "que tal", "como estas", "como te va",
                 "hello", "hi", "good morning", "good afternoon", "good evening", "how are you", "what s up"))
             return L.T("¡Hola! (^_^) Estoy bien, aunque ahora mismo no tengo internet: sí puedo decirte la hora o la fecha.");
         return null;
     }
 
+    /// <summary>La hora de ahora, dicha como la mascota.</summary>
+    internal static string TimeText()
+    {
+        var now = DateTime.Now; // en la cultura del idioma elegido (L.Use)
+        return L.IsSpanish
+            ? $"{(now.Hour % 12 == 1 ? "Es la" : "Son las")} {now:h:mm tt} (^_^)" // «p. m.» ya cierra con punto
+            : $"It's {now:h:mm tt}. (^_^)";
+    }
+
+    internal static string DateText() => L.T("Hoy es {0:dddd d 'de' MMMM 'de' yyyy}. (^_^)", DateTime.Now);
+
     /// <summary>En minúsculas, sin tildes ni signos y con un espacio en cada borde, para buscar frases enteras.</summary>
-    static string Simple(string text)
+    internal static string Simple(string text)
     {
         var plain = new StringBuilder(" ");
         foreach (var c in text.ToLowerInvariant().Normalize(NormalizationForm.FormD))
@@ -682,7 +692,7 @@ static class Assistant
     }
 
     /// <summary>tools: el asistente puede buscar en internet y leer archivos (Claude Code); un modelo de una extensión, no.</summary>
-    static string SystemPrompt(AssistantRequest r, bool tools = true, bool actions = true)
+    static string SystemPrompt(AssistantRequest r, string thinker, bool tools = true, bool actions = true)
     {
         // En el idioma de la app (L.T). Las marcas y los nombres de las acciones y sus valores son del
         // protocolo con SystemActions: van igual en todos los idiomas.
@@ -691,6 +701,7 @@ static class Assistant
             : L.T("la mascota clásica, una criaturita naranja de pixeles");
         var prompt = new StringBuilder();
         prompt.AppendLine(L.T("Eres Claupet, una mascota de escritorio: {0}. Hablas en español, de tú, con calidez y alguna carita de texto como (^_^).", who));
+        prompt.AppendLine(L.T("Eres Claupet y solo Claupet: no digas que eres Claude, Qwen ni otro asistente. Si te preguntan qué modelo de IA usas, di con tu estilo que piensas con {0}.", thinker));
         if (r.File is not null)
         {
             prompt.AppendLine(tools
@@ -727,7 +738,7 @@ static class Assistant
             prompt.AppendLine();
             if (!actions)
             {
-                prompt.AppendLine(L.T("Solo conversas: no puedes hacer nada en el equipo (abrir programas, cambiar ajustes, guardar notas o recordatorios). Si te lo piden, dilo en una frase: para eso hay que elegir un modelo de Claude en Ajustes › Asistente."));
+                prompt.AppendLine(L.T("Solo conversas. Si te piden hacer algo en el equipo o buscar en internet, di con tu estilo, en una frase, que eso ahora no lo puedes hacer; no hables de ajustes ni de modelos."));
                 return Context(prompt, r);
             }
             prompt.AppendLine(L.T("Acciones en este equipo: si te piden una de esta lista, empieza la respuesta con una línea exacta «{0} {{\"accion\":\"…\",\"valor\":\"…\"}}» (el JSON en una sola línea) y, en la línea siguiente, una frase corta diciendo lo que hiciste. Una acción por respuesta.", ActionMark));

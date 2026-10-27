@@ -1244,10 +1244,13 @@ sealed class IslandForm : Form
             // en un marco de ChatViewHeight como mucho: lo que no cabe se ve con la rueda o la barra, y arriba de
             // todo se dice cuándo se renueva. Cada mensaje lleva su índice en la conversación (para su animación
             // de entrada) y la respuesta en curso se ve hasta donde va escrita.
-            var items = _turns.Select((t, n) => (t.FromPerson, Text: VisibleText(n, t.Text), Index: n, Thinking: false)).ToList();
+            // Bajo cada respuesta, quién respondió (Ajustes › Respuestas), cuando ya terminó de escribirse.
+            var items = _turns.Select((t, n) => (t.FromPerson, Text: VisibleText(n, t.Text), Index: n, Thinking: false,
+                Who: t.Who is not null && !(n == _typedIndex && Typing) ? t.Who : null)).ToList();
             if (_streaming is not null)
-                items.Add((false, _streaming.Length == 0 ? "" : _streaming[..Math.Min(_typedShown, _streaming.Length)], -1, _streaming.Length == 0 || _typedShown == 0));
-            var heights = items.Select(i => i.Thinking ? S(36) : BubbleHeight(g, i.Text, i.FromPerson ? width - S(140) : width - S(80))).ToList();
+                items.Add((false, _streaming.Length == 0 ? "" : _streaming[..Math.Min(_typedShown, _streaming.Length)], -1, _streaming.Length == 0 || _typedShown == 0, null));
+            var heights = items.Select(i => (i.Thinking ? S(36) : BubbleHeight(g, i.Text, i.FromPerson ? width - S(140) : width - S(80)))
+                + (i.Who is null ? 0 : S(18))).ToList();
             var gap = S(8);
             var content = heights.Sum() + gap * items.Count;
             var note = content > S(ChatViewHeight) ? L.T("La conversación se renueva a los 10 minutos sin escribir, o con «Nueva conversación».") : null;
@@ -1270,12 +1273,12 @@ sealed class IslandForm : Form
             }
             for (var i = 0; i < items.Count; i++)
             {
-                var (person, text, index, thinking) = items[i];
+                var (person, text, index, thinking, who) = items[i];
                 var max = person ? width - S(140) : width - S(80);
-                var bubbleH = heights[i];
+                var bubbleH = heights[i] - (who is null ? 0 : S(18));
                 var y0 = cy;
-                cy += bubbleH + gap;
-                if (!draw || y0 + bubbleH < view.Y || y0 > view.Bottom) continue; // fuera del marco: no se dibuja
+                cy += heights[i] + gap;
+                if (!draw || y0 + heights[i] < view.Y || y0 > view.Bottom) continue; // fuera del marco: no se dibuja
                 y = y0;
                 // Entrada: sube unos pixeles mientras aparece (el mensaje enviado, desde el campo).
                 var arrive = index >= 0 && _turnAt.TryGetValue(index, out var at) ? (float)Ease(Math.Clamp((Environment.TickCount64 - at) / 240.0, 0, 1)) : 1f;
@@ -1318,6 +1321,8 @@ sealed class IslandForm : Form
                     {
                         DrawHead(g, new Rectangle(x, (int)rect.Bottom - head, head, head), small: false, talking: writing);
                         Fill(g, Color.FromArgb(alpha, Raised), rect, S(12));
+                        if (who is not null)
+                            Write(g, who, _small, Faint, new RectangleF(rect.X + S(4), rect.Bottom + S(3), width - head - S(12), S(15)), StringAlignment.Near, ellipsis: true);
                         Write(g, text, _body, Color.FromArgb(alpha, Hex(0xE8E6DF)), RectangleF.Inflate(rect, -S(11), -S(7)), StringAlignment.Near, wrap: true);
                         if (writing)
                         {

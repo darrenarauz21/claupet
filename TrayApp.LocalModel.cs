@@ -116,4 +116,113 @@ sealed partial class TrayApp
         });
         PushIslandModel();
     }
+
+    // ── Ajustes › Respuestas ────────────────────────────────────────────────────────────────
+
+    /// <summary>Un motor dicho para Ajustes: el modelo local avisa si falta descargarlo.</summary>
+    string EngineLabel(Engine engine) =>
+        engine == Engine.Local && !LocalModel.Ready(LocalChoice) ? L.T("{0} (sin descargar)", Engines.Label(engine)) : Engines.Label(engine);
+
+    static string FallbackLabel(Engine engine) => engine switch
+    {
+        Engine.Cloud => L.T("Hasta la nube"),
+        Engine.Local => L.T("Hasta el modelo local"),
+        _ => L.T("No pasar"),
+    };
+
+    /// <summary>«4 sin IA · 7 en la nube»: cuántos tipos de pregunta responde primero cada motor.</summary>
+    string TopicsSummary()
+    {
+        var counts = AnswerTopics.All.GroupBy(t => AnswerTopics.First(_settings, t.Id)).OrderBy(g => g.Key).Select(g => g.Key switch
+        {
+            Engine.None => L.T("{0} sin IA", g.Count()),
+            Engine.Local => L.T("{0} local", g.Count()),
+            _ => L.T("{0} en la nube", g.Count()),
+        });
+        return string.Join(" · ", counts);
+    }
+
+    /// <summary>
+    /// Quién responde primero cada tipo de pregunta: un menú con cada tipo y, al pasar por él, sus motores.
+    /// Elegir el modelo local sin tenerlo lo descarga.
+    /// </summary>
+    void ShowTopics()
+    {
+        var menu = new ContextMenuStrip();
+        foreach (var topic in AnswerTopics.All)
+        {
+            var current = AnswerTopics.First(_settings, topic.Id);
+            var item = new ToolStripMenuItem($"{L.T(topic.Label)}: {(topic.Fixed ? L.T("Siempre la nube") : EngineLabel(current))}") { Enabled = !topic.Fixed };
+            foreach (var engine in AnswerTopics.Choices(topic))
+            {
+                var picked = engine;
+                item.DropDownItems.Add(new ToolStripMenuItem(EngineLabel(engine), null, (_, _) => PickEngine(topic, picked)) { Checked = engine == current });
+            }
+            menu.Items.Add(item);
+        }
+        Menus.Apply(menu, _form.Theme);
+        menu.Closed += (_, _) =>
+        {
+            _form.HoldOpen = false;
+            _form.BeginInvoke(menu.Dispose);
+        };
+        _form.HoldOpen = true;
+        menu.Show(Cursor.Position);
+    }
+
+    void PickEngine(AnswerTopics.Topic topic, Engine engine)
+    {
+        Change(s =>
+        {
+            if (engine == topic.Default) s.AnswerEngines.Remove(topic.Id);
+            else s.AnswerEngines[topic.Id] = engine;
+        });
+        if (engine == Engine.Local) ModelPicked(AssistantModels.Local);
+        PushSettings();
+    }
+
+    string CityLabel() => _settings.WeatherPlace switch
+    {
+        WeatherService.ByCity when !string.IsNullOrWhiteSpace(_settings.WeatherCity) => _settings.WeatherCity,
+        WeatherService.ByWindows => L.T("Ubicación de Windows"),
+        _ => L.T("Automática (por la IP)"),
+    };
+
+    void PickCity() => ShowOptions(
+        [(WeatherService.ByIp, L.T("Automática (por la IP)")), (WeatherService.ByWindows, L.T("Ubicación de Windows")),
+            (WeatherService.ByCity, L.T("Escribir una ciudad…"))],
+        _settings.WeatherPlace, id => _ = SetCityAsync(id));
+
+    /// <summary>
+    /// Mi ciudad: la escrita se busca en Open-Meteo (y queda con su nombre); la de Windows se prueba antes de
+    /// elegirla, porque puede estar apagada en Configuración › Privacidad.
+    /// </summary>
+    async Task SetCityAsync(string id)
+    {
+        if (id == WeatherService.ByCity)
+        {
+            _form.HoldOpen = true;
+            string? name;
+            try { name = TextPrompt.Ask(_form.Theme, "Claupet", L.T("Su ciudad, para el clima:"), _settings.WeatherCity); }
+            finally { _form.HoldOpen = false; }
+            if (name is null) return;
+            if (await WeatherService.GeocodeAsync(name, CancellationToken.None) is not { } place)
+            {
+                MessageBox.Show(L.T("No encontré «{0}». Pruebe con otro nombre o sin abreviaturas.", name), "Claupet", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            Change(s => { s.WeatherPlace = WeatherService.ByCity; s.WeatherCity = place.Name; });
+        }
+        else if (id == WeatherService.ByWindows)
+        {
+            if (await WindowsLocation.GetAsync(CancellationToken.None) is null)
+            {
+                MessageBox.Show(L.T("Windows no dio la ubicación. Revise Configuración › Privacidad y seguridad › Ubicación, y que las apps de escritorio puedan usarla."),
+                    "Claupet", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            Change(s => s.WeatherPlace = WeatherService.ByWindows);
+        }
+        else Change(s => s.WeatherPlace = WeatherService.ByIp);
+    }
 }

@@ -62,10 +62,24 @@ sealed partial class UsageForm
         public string Language { get; init; } = "";
         /// <summary>Cuántas extensiones hay y cuántas encendidas («Ninguna», «2 de 3 encendidas»).</summary>
         public string Extensions { get; init; } = "";
+        /// <summary>Respuestas: el modelo local listo, cuándo suelta la memoria y el modelo de la nube («Claude · Haiku»).</summary>
+        public bool LocalReady { get; init; }
+        public string LocalIdle { get; init; } = "";
+        public string CloudModel { get; init; } = "";
+        /// <summary>Quién responde primero, en resumen («4 sin IA · 7 en la nube»); el detalle se elige en su menú.</summary>
+        public string Topics { get; init; } = "";
+        /// <summary>El modelo local responde preguntas generales: se avisa que puede inventar.</summary>
+        public bool GeneralLocal { get; init; }
+        public string Fallback { get; init; } = "";
+        public string FallbackHint { get; init; } = "";
+        public bool ShowWho { get; init; }
+        public string City { get; init; } = "";
+        public string Saved { get; init; } = "";
+        public string SavedDetail { get; init; } = "";
     }
 
     /// <summary>Las pestañas de Ajustes, en orden.</summary>
-    public enum SettingsTab { Avisos, Apariencia, Asistente, Isla, Sistema }
+    public enum SettingsTab { Avisos, Apariencia, Asistente, Isla, Respuestas, Sistema }
 
     /// <summary>Se cambió de pestaña en Ajustes (para recordarla).</summary>
     public event Action<SettingsTab>? SettingsTabChanged;
@@ -304,6 +318,7 @@ sealed partial class UsageForm
         SettingsTab.Apariencia => L.T("Apariencia"),
         SettingsTab.Asistente => L.T("Asistente"),
         SettingsTab.Isla => L.T("Isla"),
+        SettingsTab.Respuestas => L.T("Respuestas"),
         _ => L.T("Sistema"),
     };
 
@@ -418,9 +433,6 @@ sealed partial class UsageForm
                     if (s.SpeechStatus.Length > 0) y = LinkRow(g, draw, s.SpeechStatus, s.SpeechAction, "speech", _t.Accent, y);
                 }
                 // Responde sin internet ni tokens cuando se lo elige como modelo de la mascota o de la isla.
-                y = SettingsCaption(g, draw, L.T("Modelo local"), y + S(8));
-                y = ChoiceRow(g, draw, L.T("Modelo"), "localmodel", s.LocalModel, y);
-                y = LinkRow(g, draw, s.LocalStatus, s.LocalAction, "local", s.LocalAction == L.T("Borrar") ? _t.Danger : _t.Accent, y);
                 if (s.Chat || s.Island)
                 {
                     y = SettingsCaption(g, draw, L.T("Teclas"), y + S(8));
@@ -440,6 +452,27 @@ sealed partial class UsageForm
                     y = SwitchRow(g, draw, L.T("Resumen de la semana, los lunes"), "recap", s.WeeklyRecap, y);
                     y = LinkRow(g, draw, L.T("El de esta semana"), L.T("Ver ahora"), "recapnow", _t.Accent, y);
                 }
+                break;
+            case SettingsTab.Respuestas:
+                y = SettingsCaption(g, draw, L.T("Motores"), y);
+                y = InfoRow(g, draw, L.T("Sin IA"), L.T("Siempre activo · 0 tokens"), y);
+                y = ChoiceRow(g, draw, L.T("Modelo local"), "localmodel", s.LocalModel, y);
+                y = LinkRow(g, draw, s.LocalStatus, s.LocalAction, "local", s.LocalAction == L.T("Borrar") ? _t.Danger : _t.Accent, y);
+                if (s.LocalReady) y = ChoiceRow(g, draw, L.T("Liberar la memoria tras"), "localidle", s.LocalIdle, y);
+                y = InfoRow(g, draw, L.T("Nube"), s.CloudModel, y);
+                y = SettingsCaption(g, draw, L.T("Quién responde primero"), y + S(8));
+                y = ChoiceRow(g, draw, L.T("Por tipo de pregunta"), "topics", s.Topics, y);
+                if (s.GeneralLocal) y = NoteRow(g, draw, L.T("El modelo local puede inventar datos en las preguntas generales."), _t.Warn, y);
+                y = SettingsCaption(g, draw, L.T("Si no entiende"), y + S(8));
+                y = ChoiceRow(g, draw, L.T("Pasar al siguiente motor"), "fallback", s.Fallback, y);
+                y = NoteRow(g, draw, s.FallbackHint, _t.Tertiary, y);
+                y = SwitchRow(g, draw, L.T("Mostrar quién respondió"), "who", s.ShowWho, y);
+                y = SettingsCaption(g, draw, L.T("Clima (Open-Meteo)"), y + S(8));
+                y = ChoiceRow(g, draw, L.T("Mi ciudad"), "city", s.City, y);
+                y = SettingsCaption(g, draw, L.T("Ahorro"), y + S(8));
+                y = InfoRow(g, draw, L.T("Esta semana, sin la nube"), s.Saved, y);
+                if (s.SavedDetail.Length > 0) y = NoteRow(g, draw, s.SavedDetail, _t.Tertiary, y);
+                y = NoteRow(g, draw, L.T("Sin IA no gasta tokens ni sale del equipo, salvo el clima (Open-Meteo, y la ubicación por la IP con ipwho.is). Internet, archivos y tareas van siempre a la nube."), _t.Tertiary, y + S(4));
                 break;
             default:
                 y = ChoiceRow(g, draw, L.T("Idioma"), "language", s.Language, y);
@@ -506,6 +539,31 @@ sealed partial class UsageForm
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
         return y + height;
+    }
+
+    /// <summary>Una fila que solo informa: el nombre y su valor a la derecha, sin lista.</summary>
+    int InfoRow(Graphics g, bool draw, string label, string value, int y)
+    {
+        var height = S(32);
+        if (draw)
+        {
+            var labelWidth = TextRenderer.MeasureText(g, label, _body, Size.Empty, Line).Width;
+            Write(g, label, _body, _t.Text, new Rectangle(Pad, y, labelWidth, height), TextFormatFlags.VerticalCenter);
+            var valueWidth = Math.Max(0, Inner - labelWidth - S(14));
+            Write(g, value, _body, _t.Secondary, new Rectangle(Pad + Inner - valueWidth, y, valueWidth, height),
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.EndEllipsis);
+        }
+        return y + height;
+    }
+
+    /// <summary>Un texto chico, en varias líneas si hace falta (una aclaración bajo una fila).</summary>
+    int NoteRow(Graphics g, bool draw, string text, Color color, int y)
+    {
+        if (text.Length == 0) return y;
+        const TextFormatFlags flags = TextFormatFlags.WordBreak | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix;
+        var height = TextRenderer.MeasureText(g, text, _small, new Size(Inner, 0), flags).Height;
+        if (draw) TextRenderer.DrawText(g, text, _small, new Rectangle(Pad, y, Inner, height), color, flags);
+        return y + height + S(6);
     }
 
     int LinkRow(Graphics g, bool draw, string label, string link, string key, Color color, int y)

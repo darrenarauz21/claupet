@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace Claupet;
 
@@ -126,10 +127,13 @@ static class LocalModel
 /// <summary>
 /// llama-server corriendo en este equipo: arranca la primera vez que se le pregunta algo, solo escucha en
 /// 127.0.0.1 en un puerto libre y pide una clave que cambia en cada arranque (otro programa del equipo no
-/// puede usarlo). Va en un Job que lo cierra si Claupet termina, y a los 10 minutos sin uso suelta la memoria.
+/// puede usarlo). Va en un Job que lo cierra si Claupet termina, y tras IdleMinutes sin uso suelta la memoria.
 /// </summary>
 sealed class LocalModelServer : IDisposable
 {
+    /// <summary>Minutos sin uso tras los que suelta la memoria (Ajustes › Respuestas); vale desde el próximo arranque.</summary>
+    public int IdleMinutes { get; set; } = 5;
+
     readonly SemaphoreSlim _lock = new(1, 1);
     readonly KillOnCloseJob _job = new();
     readonly Queue<string> _log = new();
@@ -161,7 +165,7 @@ sealed class LocalModelServer : IDisposable
             foreach (var arg in new[]
             {
                 "-m", file, "--host", "127.0.0.1", "--port", port.ToString(), "--api-key", _key, "-a", AssistantModels.Local,
-                "-c", "4096", "-np", "1", "--reasoning-budget", "0", "--no-webui", "--sleep-idle-seconds", "600",
+                "-c", "4096", "-np", "1", "--reasoning-budget", "0", "--no-webui", "--sleep-idle-seconds", (IdleMinutes * 60).ToString(),
             })
                 start.ArgumentList.Add(arg);
             // La clave va por argumentos y no por el entorno: no la hereda nada más.
@@ -257,7 +261,7 @@ sealed class LocalModelServer : IDisposable
 }
 
 /// <summary>El modelo local como asistente: llama-server habla el formato de OpenAI.</summary>
-sealed class LocalBrain(LocalModelServer server, LocalModel.Choice choice) : IAssistantBrain
+sealed class LocalBrain(LocalModelServer server, LocalModel.Choice choice) : IAssistantBrain, IStructuredBrain, ISmallBrain
 {
     public string Name => choice.Name;
 
@@ -265,9 +269,71 @@ sealed class LocalBrain(LocalModelServer server, LocalModel.Choice choice) : IAs
     {
         var (root, key) = await server.EnsureAsync(choice, cancel);
         using var http = LocalModelServer.Client(TimeSpan.FromMinutes(5));
+        var thinking = new ThinkFilter(onText);
         var reply = await OpenAiChat.SendAsync(http, new Uri(root, "chat/completions"), AssistantModels.Local, request,
             message => message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key), Name,
-            response => Task.FromResult(L.T("{0} no respondió (error {1}).", Name, (int)response.StatusCode)), onText, cancel);
-        return reply with { Model = choice.Name };
+            response => Task.FromResult(L.T("{0} no respondió (error {1}).", Name, (int)response.StatusCode)), thinking.Push, cancel);
+        return reply with { Model = choice.Name, Text = ThinkFilter.Strip(reply.Text) };
+    }
+
+    /// <summary>Una respuesta que cumple el esquema (llama-server la restringe con una gramática), sin creatividad.</summary>
+    public async Task<string?> JsonAsync(string system, string prompt, string schema, CancellationToken cancel)
+    {
+        var (root, key) = await server.EnsureAsync(choice, cancel);
+        using var http = LocalModelServer.Client(TimeSpan.FromSeconds(60));
+        var body = new Dictionary<string, object>
+        {
+            ["model"] = AssistantModels.Local,
+            ["messages"] = new object[] { new { role = "system", content = system }, new { role = "user", content = prompt } },
+            ["temperature"] = 0,
+            ["max_tokens"] = 200,
+            ["response_format"] = new { type = "json_schema", json_schema = new { name = "intencion", strict = true, schema = JsonDocument.Parse(schema).RootElement } },
+        };
+        using var message = new HttpRequestMessage(HttpMethod.Post, new Uri(root, "chat/completions"))
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json"),
+        };
+        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        using var response = await http.SendAsync(message, cancel);
+        if (!response.IsSuccessStatusCode) return null;
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancel));
+        return doc.RootElement.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0
+            && choices[0].TryGetProperty("message", out var answer) ? Json.Str(answer, "content") : null;
+    }
+}
+
+/// <summary>
+/// Qwen3.5 a veces abre la respuesta con «&lt;think&gt;&lt;/think&gt;» aunque no razone: no se muestra. Mientras
+/// lo que llega puede ser ese comienzo, se guarda; lo demás pasa tal cual.
+/// </summary>
+sealed class ThinkFilter(Action<string>? onText)
+{
+    const string Open = "<think>", Close = "</think>";
+    readonly System.Text.StringBuilder _held = new();
+    bool _passing;
+
+    public void Push(string piece)
+    {
+        if (_passing) { onText?.Invoke(piece); return; }
+        _held.Append(piece);
+        var text = _held.ToString().TrimStart();
+        if (text.Length < Open.Length ? Open.StartsWith(text, StringComparison.Ordinal) : text.StartsWith(Open, StringComparison.Ordinal))
+        {
+            var end = text.IndexOf(Close, StringComparison.Ordinal);
+            if (end < 0) return;
+            text = text[(end + Close.Length)..].TrimStart();
+            if (text.Length == 0) { _held.Clear(); _held.Append(' '); return; }
+        }
+        _passing = true;
+        _held.Clear();
+        onText?.Invoke(text);
+    }
+
+    public static string Strip(string text)
+    {
+        var trimmed = text.TrimStart();
+        if (!trimmed.StartsWith(Open, StringComparison.Ordinal)) return text;
+        var end = trimmed.IndexOf(Close, StringComparison.Ordinal);
+        return end < 0 ? "" : trimmed[(end + Close.Length)..].TrimStart();
     }
 }

@@ -321,6 +321,21 @@ static class SystemActions
         return null;
     }
 
+    /// <summary>
+    /// Lo que abriría «abrir» con ese valor, sin abrirlo: la URL, la carpeta conocida o la app del menú Inicio
+    /// (un dominio como «youtube.com» pasa a https). null si no hay nada que abrir: así responde otro.
+    /// </summary>
+    public static string? OpenTarget(string value)
+    {
+        value = value.Trim().Trim('"');
+        if (value.Length == 0) return null;
+        if (KnownFolder(value) is not null) return value;
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && !uri.IsFile) return Schemes.Contains(uri.Scheme) ? value : null;
+        if (System.Text.RegularExpressions.Regex.IsMatch(value, @"^[\w-]+(\.[\w-]+)*\.[a-z]{2,}(/\S*)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            return "https://" + value;
+        return FindShortcut(value) is not null ? value : null;
+    }
+
     static void Start(string target) =>
         Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })?.Dispose();
 

@@ -87,6 +87,18 @@ sealed class AppSettings
     /// «local» como modelo. null: ninguno elegido todavía.
     /// </summary>
     public string? LocalModel { get; set; }
+    /// <summary>Minutos sin uso tras los que el modelo local suelta la memoria.</summary>
+    public int LocalIdleMinutes { get; set; } = 5;
+
+    /// <summary>Ajustes › Respuestas: quién responde primero cada tipo de pregunta (AnswerTopics); el que falta, el de siempre.</summary>
+    public Dictionary<string, Engine> AnswerEngines { get; set; } = new();
+    /// <summary>Si el primero no entiende, hasta dónde pasa: la nube, el modelo local o (None) a nadie.</summary>
+    public Engine AnswerFallback { get; set; } = Engine.Cloud;
+    /// <summary>Debajo de cada respuesta, quién respondió («Sin IA · al instante»).</summary>
+    public bool ShowWhoAnswered { get; set; } = true;
+    /// <summary>Mi ciudad, para el clima: «ip», «windows» (la ubicación de Windows) o «ciudad» (WeatherCity).</summary>
+    public string WeatherPlace { get; set; } = WeatherService.ByIp;
+    public string? WeatherCity { get; set; }
     /// <summary>Cuenta que responde el chat (su carpeta de configuración); null: la elegida en Uso.</summary>
     public string? AssistantAccount { get; set; }
     /// <summary>Carpeta donde se abren las tareas que se le piden a la mascota; null: la última de «Nueva sesión».</summary>

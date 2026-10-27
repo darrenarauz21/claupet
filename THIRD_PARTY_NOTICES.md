@@ -31,6 +31,15 @@ se activa la función.
 Open RAIL-M prohíbe ciertos usos del modelo (los de su Anexo A); quien use la voz de Claupet acepta
 esas condiciones.
 
+## Servicios en línea
+
+Sin IA, la app solo usa internet para el clima de Ajustes › Respuestas:
+
+| Servicio | Para qué | Condiciones |
+|---|---|---|
+| [Open-Meteo](https://open-meteo.com) | Pronóstico y búsqueda de ciudades | Uso no comercial sin clave; datos bajo CC BY 4.0 |
+| [ipwho.is](https://ipwho.is) | La ciudad por la IP, si «Mi ciudad» es automática | Uso no comercial sin clave |
+
 ## Marcas
 
 Claupet es un proyecto personal y no oficial, sin relación con Anthropic. «Claude» y «Claude Code»
