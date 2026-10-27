@@ -140,7 +140,7 @@ sealed class ToastForm : Form
         {
             NoticeKind.Failed or NoticeKind.UsageCritical or NoticeKind.Closed => _t.Danger,
             NoticeKind.Question or NoticeKind.Permission or NoticeKind.UsageHigh or NoticeKind.Expired or NoticeKind.Retrying => _t.Warn,
-            NoticeKind.Reminder => _t.Accent,
+            NoticeKind.Reminder or NoticeKind.Extension => _t.Accent,
             _ => _t.Success,
         };
         var y = S(16);

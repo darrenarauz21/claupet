@@ -20,6 +20,12 @@ sealed class Microphone : IDisposable
     /// <summary>El nivel de la voz en el último trozo, de 0 a 1 (en el hilo de la interfaz).</summary>
     public event Action<float>? Level;
 
+    /// <summary>Cada trozo de 100 ms, apenas llega (en el hilo del micrófono): para las extensiones que escuchan.</summary>
+    public event Action<short[]>? Chunk;
+
+    /// <summary>Guarda lo grabado (para Stop y Snapshot). Sin guardar, solo avisa los trozos: para escuchar sin fin.</summary>
+    public bool Keep { get; init; } = true;
+
     readonly List<short> _samples = new();
     readonly SynchronizationContext? _ui = SynchronizationContext.Current;
     readonly AutoResetEvent _ready = new(false);
@@ -117,7 +123,8 @@ sealed class Microphone : IDisposable
         double sum = 0;
         foreach (var s in chunk) sum += (double)s * s;
         var rms = (float)Math.Min(1, Math.Sqrt(sum / chunk.Length) / 6000);
-        lock (_samples) _samples.AddRange(chunk);
+        if (Keep) lock (_samples) _samples.AddRange(chunk);
+        Chunk?.Invoke(chunk);
         if (_ui is not null) _ui.Post(_ => Level?.Invoke(rms), null);
     }
 
@@ -643,6 +650,9 @@ sealed class VoiceInput : IDisposable
     readonly System.Windows.Forms.Timer _partialTimer = new() { Interval = 400 };
     readonly System.Windows.Forms.Timer _idle = new() { Interval = 3 * 60_000 };
     Transcriber? _transcriber;
+    // La extensión que pasa a texto esta vez (si ocupa la ranura): sin trozos mientras se habla, solo al final.
+    ISpeechToText? _external;
+    CancellationTokenSource? _externalCancel;
     CancellationTokenSource? _partialCancel;
     Task? _partial;
     int _partialSamples, _take;
@@ -681,6 +691,9 @@ sealed class VoiceInput : IDisposable
 
     public bool Listening => _mic.Recording;
 
+    /// <summary>La extensión que ocupa la ranura de voz a texto; null: Whisper. Lo pone la app.</summary>
+    public static Func<ISpeechToText?>? External { get; set; }
+
     Transcriber Transcriber => _transcriber ??= new Transcriber();
 
     /// <summary>Cómo se termina, para mostrarlo mientras escucha.</summary>
@@ -699,7 +712,8 @@ sealed class VoiceInput : IDisposable
     {
         _byButton = _buttonPending;
         _buttonPending = false;
-        if (!VoiceModel.Ready)
+        _external = External?.Invoke();
+        if (_external is null && !VoiceModel.Ready)
         {
             _key.Reset();
             NeedsModel?.Invoke();
@@ -716,8 +730,11 @@ sealed class VoiceInput : IDisposable
         _spoke = false;
         _listenAt = Environment.TickCount64;
         _idle.Stop();
-        _partialTimer.Start();
-        _ = Transcriber.WarmAsync().ContinueWith(t => ErrorLog.Write(t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+        if (_external is null)
+        {
+            _partialTimer.Start();
+            _ = Transcriber.WarmAsync().ContinueWith(t => ErrorLog.Write(t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
+        }
         Started?.Invoke();
     }
 
@@ -760,15 +777,29 @@ sealed class VoiceInput : IDisposable
         Converting?.Invoke();
         try
         {
-            if (_partial is { } partial) await partial;
-            var text = await Transcriber.TranscribeAsync(pcm);
+            string text;
+            if (_external is { } external)
+            {
+                using var cancel = _externalCancel = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+                text = (await external.TranscribeAsync(pcm, L.Language, cancel.Token)).Trim();
+            }
+            else
+            {
+                if (_partial is { } partial) await partial;
+                text = await Transcriber.TranscribeAsync(pcm);
+            }
             if (take == _take) Heard?.Invoke(text);
         }
+        catch (OperationCanceledException) when (take != _take) { }
         catch (Exception ex)
         {
             ErrorLog.Write(ex);
-            if (take == _take) Failed?.Invoke(L.T("No pude pasar la voz a texto."));
+            if (take == _take)
+                Failed?.Invoke(ex is ExtensionUnavailableException
+                    ? ex.Message
+                    : _external is { } e ? L.T("{0} no pudo pasar la voz a texto.", e.Name) : L.T("No pude pasar la voz a texto."));
         }
+        finally { _externalCancel = null; }
         _idle.Start();
     }
 
@@ -793,6 +824,7 @@ sealed class VoiceInput : IDisposable
         _partialTimer.Stop();
         _partialCancel?.Cancel();
         _take++;
+        try { _externalCancel?.Cancel(); } catch (ObjectDisposedException) { }
         if (!_mic.Recording) return;
         _mic.Stop();
         _idle.Start();
@@ -815,9 +847,17 @@ sealed class VoiceInput : IDisposable
 /// si su modelo ya está en el equipo: frase por frase, sonando la primera mientras se arma la
 /// siguiente, y con las risas o suspiros que haya puesto Claude. Si no, o si se eligió, con una voz de
 /// Windows en el idioma de la app. El modelo cargado ocupa unos 550 MB de memoria: se suelta a los 3 minutos sin hablar.
+/// Con una extensión en la ranura de texto a voz, habla ella (y si falla antes de sonar, la voz de Windows);
+/// las voces de los paquetes («ext:paquete/voz») son estilos para la voz de Claupet.
 /// </summary>
 sealed class ReadAloud : IDisposable
 {
+    /// <summary>La extensión que ocupa la ranura de texto a voz; null: la integrada. Lo pone la app.</summary>
+    public static Func<ITextToSpeech?>? External { get; set; }
+
+    /// <summary>El archivo de estilo de una voz de un paquete (ExtensionManager.VoiceFileAsync). Lo pone la app.</summary>
+    public static Func<string, CancellationToken, Task<string?>>? PackVoice { get; set; }
+
     static readonly TimeSpan KeepLoaded = TimeSpan.FromMinutes(3);
     const float Pause = 0.15f; // segundos entre frases
 
@@ -850,7 +890,25 @@ sealed class ReadAloud : IDisposable
             Started();
             return;
         }
-        if (ClaupetVoices.IsClaupet(voice) && ClaupetVoiceModel.Ready)
+        if (External?.Invoke() is { } tts)
+        {
+            var cancel = _speaking = new CancellationTokenSource();
+            _ = Task.Run(() => SpeakExternalAsync(tts, clean, Started, cancel.Token));
+        }
+        else if (voice.StartsWith(ExtensionManager.PackPrefix, StringComparison.Ordinal) && ClaupetVoiceModel.Ready && PackVoice is { } find)
+        {
+            var cancel = _speaking = new CancellationTokenSource();
+            _ = Task.Run(async () =>
+            {
+                string? file = null;
+                try { file = await find(voice, cancel.Token); }
+                catch (OperationCanceledException) { Started(); return; }
+                catch (Exception ex) { ErrorLog.Write(ex); }
+                // El paquete ya no está (o no pasó la verificación): la voz femenina de Claupet.
+                SpeakClaupet(clean, file is null ? ClaupetVoices.Female : voice, Started, cancel.Token, file);
+            });
+        }
+        else if (ClaupetVoices.IsClaupet(voice) && ClaupetVoiceModel.Ready)
         {
             var cancel = _speaking = new CancellationTokenSource();
             _ = Task.Run(() => SpeakClaupet(clean, voice, Started, cancel.Token));
@@ -862,7 +920,8 @@ sealed class ReadAloud : IDisposable
         }
     }
 
-    void SpeakClaupet(string text, string voice, Action started, CancellationToken cancel)
+    /// <summary>styleFile: el estilo de una voz de un paquete; sin él, el de la voz de Claupet (voice).</summary>
+    void SpeakClaupet(string text, string voice, Action started, CancellationToken cancel, string? styleFile = null)
     {
         try
         {
@@ -879,7 +938,7 @@ sealed class ReadAloud : IDisposable
                         if (cancel.IsCancellationRequested) return;
                         var engine = _engine ??= new Supertonic(ClaupetVoiceModel.Folder);
                         if (!_voices.TryGetValue(voice, out var style))
-                            _voices[voice] = style = Supertonic.LoadVoice(ClaupetVoiceModel.VoiceFile(voice));
+                            _voices[voice] = style = Supertonic.LoadVoice(styleFile ?? ClaupetVoiceModel.VoiceFile(voice));
                         samples = engine.Speak(chunk, style);
                         rate = engine.SampleRate;
                     }
@@ -906,6 +965,58 @@ sealed class ReadAloud : IDisposable
         }
         catch (Exception ex) when (ex is not OutOfMemoryException) { ErrorLog.Write(ex); }
         finally { started(); } // si se canceló o falló antes de sonar, el texto igual se muestra
+    }
+
+    /// <summary>
+    /// Con la extensión: el audio llega por partes y suena a medida que llega. Sin expresiones si no las
+    /// entiende. Si falla antes de sonar nada, lo dice la voz de Windows (la extensión se apaga sola si
+    /// sigue fallando, y vuelve la integrada).
+    /// </summary>
+    async Task SpeakExternalAsync(ITextToSpeech tts, string text, Action started, CancellationToken cancel)
+    {
+        WaveOut? output = null;
+        var rate = 0;
+        try
+        {
+            await tts.SpeakAsync(tts.Expressive ? text : Expressions.Strip(text), null, L.Language, (samples, r) =>
+            {
+                if (cancel.IsCancellationRequested || samples.Length == 0) return;
+                if (output is not null && r != rate)
+                {
+                    // Otra frecuencia a mitad de camino: lo de antes termina de sonar y se abre otra salida.
+                    output.Drain(cancel);
+                    Interlocked.CompareExchange(ref _output, null, output);
+                    output.Dispose();
+                    output = null;
+                }
+                if (output is null)
+                {
+                    _output = output = new WaveOut(rate = r);
+                    started();
+                }
+                output.Play(samples);
+            }, cancel);
+            output?.Drain(cancel);
+        }
+        catch (OperationCanceledException) when (cancel.IsCancellationRequested) { }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            ErrorLog.Write(ex);
+            if (output is null && !cancel.IsCancellationRequested)
+            {
+                started();
+                SayWithWindows(Expressions.Strip(text));
+            }
+        }
+        finally
+        {
+            if (output is not null)
+            {
+                Interlocked.CompareExchange(ref _output, null, output);
+                output.Dispose();
+            }
+            started();
+        }
     }
 
     void SayWithWindows(string text)

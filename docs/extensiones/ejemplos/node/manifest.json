@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "ejemplo.eco-node",
+  "name": { "es": "Eco (Node.js)", "en": "Echo (Node.js)" },
+  "description": {
+    "es": "Ejemplo: la habilidad /eco, un voz a texto y un texto a voz de mentira y un asistente que responde por partes.",
+    "en": "Sample: the /eco skill, fake speech-to-text and text-to-speech, and an assistant that streams its answer."
+  },
+  "version": "1.0.0",
+  "author": "Claupet",
+  "license": "MIT",
+  "claupet": ">=2.3.0",
+  "provides": ["skill", "speech-to-text", "text-to-speech", "assistant"],
+  "runtime": { "type": "process", "program": "node", "args": ["{package}/main.js"] },
+  "commands": [ { "name": "eco", "description": { "es": "Repite lo que le diga", "en": "Repeats what you say" } } ],
+  "events": ["notice"],
+  "permissions": ["pet", "notices"]
+}

@@ -51,6 +51,10 @@ static class MascotSizes
     /// pequeño, la mitad. Si dos quedarían iguales, el más chico baja uno. Con el chibi: 1, 2, 3 y 4 a 100 %;
     /// 2, 3, 4 y 5 a 125 %.
     /// </summary>
+    /// <summary>La mascota de un paquete mide en pantalla lo mismo que el chibi de ese tamaño, sea cual sea su alto en pixeles.</summary>
+    public static int PetUnit(string size, int height, float scale) =>
+        Math.Max(1, (int)Math.Round(Unit(size, chibi: true, scale) * (double)ChibiSprite.Rows / Math.Max(1, height)));
+
     public static int Unit(string size, bool chibi, float scale)
     {
         int Scaled(int units) => Math.Max(1, (int)Math.Round(units * scale));
@@ -555,7 +559,7 @@ static partial class ChibiSprite
         NoticeKind.UsageReset => ChibiMove.Maracas, // límite renovado: chachachá
         NoticeKind.Failed or NoticeKind.UsageCritical => ChibiMove.Dizzy,
         NoticeKind.Closed => ChibiMove.Sleep,
-        NoticeKind.Reminder => ChibiMove.Wave, // un recordatorio: llama con la mano
+        NoticeKind.Reminder or NoticeKind.Extension => ChibiMove.Wave, // un recordatorio o una extensión: llama con la mano
         _ => ChibiMove.Think, // pregunta, permiso, reintento, uso alto y sesión vencida: algo que mirar
     };
 
@@ -1223,6 +1227,7 @@ static class MascotLines
             NoticeKind.UsageReset => L.T("¡Chachachá! Se renovó: {0}. ¡A darle! ♪", s),
             NoticeKind.Expired => L.T("Hmm… la cuenta «{0}» pide que abras Claude Code otra vez. (._.)", s),
             NoticeKind.Reminder => L.T("{0}¡Te recuerdo! {1} (^_^)/", oi, notice.Subtitle),
+            NoticeKind.Extension => notice.Subtitle.Length > 0 ? $"{notice.Title}: {notice.Subtitle}" : notice.Title,
             _ => notice.Title,
         };
     }
