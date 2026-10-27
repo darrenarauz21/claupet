@@ -2177,6 +2177,7 @@ sealed partial class TrayApp : ApplicationContext
     void ShowSetup()
     {
         _form.Hide();
+        var language = L.Language; // el asistente puede cambiarlo mientras está abierto
         using var setup = new SetupForm(_settings, ExePath, _form.Theme, SetupDirs());
         var accepted = setup.ShowDialog() == DialogResult.OK;
         _settings.SetupDone = true; // «Ahora no» tampoco vuelve a preguntar, salvo que la app cambie de lugar
@@ -2196,9 +2197,21 @@ sealed partial class TrayApp : ApplicationContext
         PushSettings();
         if (setup.NotificationsOn != _settings.Notifications) ToggleNotifications();
         lines.Add(_settings.Notifications ? L.T("Notificaciones encendidas.") : L.T("Notificaciones apagadas."));
+
+        // El compañero: la mascota primero, porque el chibi sale al escritorio solo.
+        if (setup.Mascot is { } mascot && (mascot != Mascots.ChoiceOf(_settings) || _settings.CustomPet is not null)) PickMascot(mascot);
+        if (setup.DesktopMascot != _settings.DesktopMascot) ToggleDesktopMascot();
+        if (setup.Island != _settings.Island || setup.Chat != _settings.Chat)
+            Change(s => (s.Island, s.Chat) = (setup.Island, setup.Chat));
+
         if (hooked)
             lines.Add(L.T("Los avisos de permisos funcionan en las sesiones de Claude Code que se abran desde ahora."));
+        var relaunch = setup.Language != language;
+        if (relaunch) lines.Add(L.T("Claupet se reinicia para cambiar el idioma."));
         MessageBox.Show(string.Join(Environment.NewLine, lines), "Claupet", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        if (!relaunch) return;
+        Change(s => s.Language = setup.Language);
+        Restart();
     }
 
     void RemoveSetup()
