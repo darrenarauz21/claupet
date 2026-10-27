@@ -334,7 +334,6 @@ sealed partial class TrayApp : ApplicationContext
             AssistantAccount = AssistantAccountLabel(),
             TaskFolder = TaskFolderLabel(),
             AnalyzeDrops = s.AnalyzeDrops,
-            Permissions = L.T("{0} de {1} permitidas", Capabilities.All.Count(c => Capabilities.Allowed(s, c.Id)), Capabilities.All.Length),
             Mic = s.Mic,
             MicKey = MicKeys.Label(s.MicKey),
             ChatKey = KeyNames.Label(s.ChatKey),
@@ -363,7 +362,6 @@ sealed partial class TrayApp : ApplicationContext
             LocalIdle = L.T("{0} min", s.LocalIdleMinutes),
             CloudModel = ExternalLabel(ExtensionSlots.Assistant) ?? (s.MascotModel == AssistantModels.Local
                 ? L.T("Claude · {0} (solo la isla)", AssistantModels.Label(s.IslandModel)) : "Claude · " + AssistantModels.Label(s.MascotModel)),
-            Topics = TopicsSummary(),
             GeneralLocal = AnswerTopics.First(s, AnswerTopics.General) == Engine.Local,
             Fallback = FallbackLabel(s.AnswerFallback),
             FallbackHint = s.AnswerFallback switch
@@ -627,7 +625,6 @@ sealed partial class TrayApp : ApplicationContext
             case "account": ShowOptions(AssistantAccountChoices(), _settings.AssistantAccount ?? "", a => Change(s => s.AssistantAccount = a.Length == 0 ? null : a)); break;
             case "folder": ShowOptions(TaskFolderChoices(), _settings.TaskFolder ?? "", PickTaskFolder); break;
             case "drops": Toggle(s => s.AnalyzeDrops = !s.AnalyzeDrops); break;
-            case "grants": ShowPermissions(); break;
             case "mic":
                 Toggle(s => s.Mic = !s.Mic);
                 // Se descarga una vez, al encenderlo; con una extensión de voz a texto no hace falta.
@@ -687,7 +684,6 @@ sealed partial class TrayApp : ApplicationContext
                 break;
             case "who": Toggle(s => s.ShowWhoAnswered = !s.ShowWhoAnswered); break;
             case "city": PickCity(); break;
-            case "topics": ShowTopics(); break;
             case "console": OpenConsole(); break;
             case "local": LocalModelAction(); break;
             case "island": Toggle(s => s.Island = !s.Island); break;
@@ -1248,7 +1244,7 @@ sealed partial class TrayApp : ApplicationContext
         if (SystemActions.CapabilityOf(action) is { } capability && !Capabilities.Allowed(_settings, capability))
         {
             var choice = await AskChoiceAsync(island, L.T("¿Dejo que Claupet {0}?", Capabilities.Ask(capability)),
-                L.T("Se lo pregunto la primera vez. Puede quitarlo en Ajustes › Asistente › Permisos."),
+                L.T("Se lo pregunto la primera vez. Puede quitarlo en Claupet Console › Asistente › Permisos."),
                 [("no", L.T("No")), ("always", L.T("Permitir siempre")), ("once", L.T("Solo esta vez"))], "always", cancel);
             if (choice == "always") Change(s => s.Permissions.Add(capability));
             if (choice is not ("always" or "once")) return false;
@@ -1522,36 +1518,6 @@ sealed partial class TrayApp : ApplicationContext
                 catch (Exception ex) { MessageBox.Show(L.T("No se pudo abrir la sesión: {0}", ex.Message), "Claupet"); }
                 break;
         }
-    }
-
-    /// <summary>
-    /// Ajustes › Asistente › Permisos: las capacidades, con una marca en las que tienen «Permitir siempre»;
-    /// un clic la da o la quita (el menú queda abierto para cambiar varias). Sin marca, se pregunta al usarla.
-    /// </summary>
-    void ShowPermissions()
-    {
-        var menu = new ContextMenuStrip();
-        foreach (var (id, label, _) in Capabilities.All)
-        {
-            var item = new ToolStripMenuItem(label) { Checked = Capabilities.Allowed(_settings, id), CheckOnClick = true };
-            item.CheckedChanged += (_, _) => Change(s =>
-            {
-                s.Permissions.Remove(id);
-                if (item.Checked) s.Permissions.Add(id);
-            });
-            menu.Items.Add(item);
-        }
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem(L.T("Sin marca: se pregunta la primera vez que lo use.")) { Enabled = false });
-        Menus.Apply(menu, _form.Theme);
-        menu.Closing += (_, e) => e.Cancel = e.CloseReason == ToolStripDropDownCloseReason.ItemClicked;
-        menu.Closed += (_, _) =>
-        {
-            _form.HoldOpen = false;
-            _form.BeginInvoke(menu.Dispose);
-        };
-        _form.HoldOpen = true;
-        menu.Show(Cursor.Position);
     }
 
     /// <summary>Una lista armada al momento (cuentas, carpetas…), con la elegida marcada; elegir llama a pick con su Id.</summary>
@@ -2339,7 +2305,7 @@ sealed partial class TrayApp : ApplicationContext
             if (localMissing)
             {
                 _ = DownloadLocalModelAsync();
-                lines.Add(L.T("El modelo local se descarga en segundo plano; el avance está en Ajustes › Respuestas."));
+                lines.Add(L.T("El modelo local se descarga en segundo plano; el avance está en Claupet Console › Respuestas."));
             }
         }
 

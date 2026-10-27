@@ -22,8 +22,6 @@ sealed record SettingsState
     public string AssistantAccount { get; init; } = "";
     public string TaskFolder { get; init; } = "";
     public bool AnalyzeDrops { get; init; }
-    /// <summary>Cuántas capacidades tienen «Permitir siempre» («3 de 10 permitidas»).</summary>
-    public string Permissions { get; init; } = "";
     public bool Mic { get; init; }
     public string MicKey { get; init; } = "";
     public string ChatKey { get; init; } = "";
@@ -57,8 +55,6 @@ sealed record SettingsState
     public bool LocalReady { get; init; }
     public string LocalIdle { get; init; } = "";
     public string CloudModel { get; init; } = "";
-    /// <summary>Quién responde primero, en resumen («4 sin IA · 7 en la nube»); el detalle se elige en su menú.</summary>
-    public string Topics { get; init; } = "";
     /// <summary>El modelo local responde preguntas generales: se avisa que puede inventar.</summary>
     public bool GeneralLocal { get; init; }
     public string Fallback { get; init; } = "";
@@ -84,8 +80,8 @@ enum RowKind { Caption, Switch, Choice, Info, Note, Link, Links }
 /// <summary>El color de una nota o de un enlace: el de siempre, el apagado, el de cuidado, el acento o el de peligro.</summary>
 enum RowTone { Normal, Muted, Warn, Accent, Danger }
 
-/// <summary>Dónde va una fila: en las dos, solo en los ajustes rápidos de la bandeja o solo en Claupet Console.</summary>
-enum RowPlace { Both, Tray, Console }
+/// <summary>Dónde va una fila: en los ajustes rápidos de la bandeja y en Claupet Console, o solo en la Console.</summary>
+enum RowPlace { Both, Console }
 
 sealed record SettingsLink(string Text, string Key);
 
@@ -96,24 +92,34 @@ sealed record SettingsLink(string Text, string Key);
 sealed record SettingsRow(RowKind Kind, string Text, string Key = "", string Value = "", bool On = false,
     RowTone Tone = RowTone.Normal, bool Swatch = false, RowPlace Place = RowPlace.Both, IReadOnlyList<SettingsLink>? Links = null);
 
-/// <summary>Una sección de Ajustes. Tab es la pestaña de los ajustes rápidos donde van sus filas.</summary>
-sealed record SettingsPage(string Id, string Title, string Description, string Tab, IReadOnlyList<SettingsRow> Rows);
+/// <summary>
+/// Una sección de Ajustes. Tab es la pestaña de los ajustes rápidos donde van sus filas (las que no son solo de
+/// la Console); null: la sección solo está en Claupet Console.
+/// </summary>
+sealed record SettingsPage(string Id, string Title, string Description, string? Tab, IReadOnlyList<SettingsRow> Rows);
 
 /// <summary>
-/// Las secciones de Ajustes y sus filas, armadas una sola vez: con ellas se dibujan las pestañas de la bandeja
-/// y las secciones de Claupet Console. Cada fila lleva su acción; la bandeja es la única que cambia los ajustes.
+/// Las secciones de Ajustes y sus filas, armadas una sola vez: con ellas se dibujan las pestañas de los ajustes
+/// rápidos de la bandeja y las secciones de Claupet Console. Los rápidos llevan solo lo de todos los días; el
+/// resto (RowPlace.Console) está en la Console. Cada fila lleva su acción; la bandeja es la única que cambia los ajustes.
 /// </summary>
 static class SettingsPages
 {
     public static IReadOnlyList<SettingsPage> Build(SettingsState s) =>
-        [GeneralPage(s), NoticesPage(s), LooksPage(s), MascotPage(s), AssistantPage(s), AnswersPage(s), IslandPage(s), AccountsPage(s), MachinePage(s)];
+    [
+        GeneralPage(s), NoticesPage(s), LooksPage(s), MascotPage(s), AssistantPage(s), AnswersPage(s), ExtensionsPage(s),
+        IslandPage(s), AccountsPage(s), MachinePage(s),
+    ];
 
-    static SettingsRow Caption(string text, RowPlace place = RowPlace.Both) => new(RowKind.Caption, text, Place: place);
+    static SettingsRow Caption(string text) => new(RowKind.Caption, text, Place: RowPlace.Console);
     static SettingsRow Switch(string text, string key, bool on) => new(RowKind.Switch, text, key, On: on);
-    static SettingsRow Choice(string text, string key, string value, RowPlace place = RowPlace.Both) => new(RowKind.Choice, text, key, value, Place: place);
+    static SettingsRow Choice(string text, string key, string value) => new(RowKind.Choice, text, key, value);
     static SettingsRow Info(string text, string value) => new(RowKind.Info, text, Value: value);
     static SettingsRow Note(string text, RowTone tone = RowTone.Muted) => new(RowKind.Note, text, Tone: tone);
     static SettingsRow Link(string text, string link, string key, RowTone tone = RowTone.Accent) => new(RowKind.Link, text, key, link, Tone: tone);
+
+    /// <summary>Solo en Claupet Console: no es de todos los días.</summary>
+    static SettingsRow Full(SettingsRow row) => row with { Place = RowPlace.Console };
 
     static SettingsPage GeneralPage(SettingsState s) => new("general", L.T("General"), L.T("El idioma y el inicio de Claupet."), "Sistema",
     [
@@ -140,8 +146,8 @@ static class SettingsPages
     {
         List<SettingsRow> rows = [Switch(L.T("Mascota en el escritorio"), "desk", s.DesktopMascot)];
         if (s.DesktopMascot)
-            rows.AddRange(
-            [
+            rows.AddRange(new[]
+            {
                 Switch(L.T("Gestos del flujo (lo que hace la sesión)"), "flowgest", s.FlowGestures),
                 Switch(L.T("Bailar con música"), "music", s.DanceToMusic),
                 Switch(L.T("Gesto de los avisos"), "noticegest", s.NoticeGestures),
@@ -149,7 +155,7 @@ static class SettingsPages
                 Switch(L.T("Enojarse con muchos clics"), "angry", s.AngryOnClicks),
                 Switch(L.T("Dormir sin sesiones"), "sleep", s.SleepWithoutSessions),
                 Switch(L.T("Hablar (los avisos en una nubecita)"), "speak", s.Speak),
-            ]);
+            }.Select(Full));
         return new("mascota", L.T("Mascota"), L.T("Lo que hace la mascota en el escritorio."), "Apariencia", rows);
     }
 
@@ -157,44 +163,46 @@ static class SettingsPages
     {
         List<SettingsRow> rows = [Caption(L.T("Chat")), Switch(L.T("Chat con la mascota"), "chat", s.Chat)];
         if (s.Chat)
-            rows.AddRange(
-            [
-                Choice(L.T("Modelo de la mascota"), "mmodel", s.MascotModel),
+        {
+            rows.Add(Choice(L.T("Modelo de la mascota"), "mmodel", s.MascotModel));
+            rows.AddRange(new[]
+            {
                 Choice(L.T("Cuenta que responde"), "account", s.AssistantAccount),
                 Choice(L.T("Carpeta de las tareas"), "folder", s.TaskFolder),
                 Switch(L.T("Analizar los archivos que le suelte"), "drops", s.AnalyzeDrops),
-            ]);
-        // Lo que hace en el equipo (captura, calendario, ventanas…) se pide desde el chat o la isla.
+            }.Select(Full));
+        }
+        // Lo que hace en el equipo (captura, calendario, ventanas…) se pide desde el chat o la isla: un interruptor por capacidad.
         if (s.Chat || s.Island)
         {
-            // En la bandeja, un menú con las capacidades; en la Console, un interruptor por cada una.
-            rows.Add(Choice(L.T("Permisos"), "grants", s.Permissions, RowPlace.Tray));
-            rows.Add(Caption(L.T("Permisos"), RowPlace.Console));
-            rows.AddRange(s.Grants.Select(g => Switch(g.Label, "grant:" + g.Id, g.Allowed) with { Place = RowPlace.Console }));
-            rows.Add(Note(L.T("Apagado: se pregunta la primera vez que lo use.")) with { Place = RowPlace.Console });
+            rows.Add(Caption(L.T("Permisos")));
+            rows.AddRange(s.Grants.Select(g => Full(Switch(g.Label, "grant:" + g.Id, g.Allowed))));
+            rows.Add(Full(Note(L.T("Apagado: se pregunta la primera vez que lo use."))));
         }
         rows.Add(Caption(L.T("Voz")));
         rows.Add(Switch(L.T("Micrófono"), "mic", s.Mic));
         if (s.Mic)
         {
-            rows.Add(Choice(L.T("Tecla para hablar"), "mickey", s.MicKey));
-            rows.Add(Link(s.VoiceStatus, s.VoiceAction, "voice"));
+            rows.Add(Full(Choice(L.T("Tecla para hablar"), "mickey", s.MicKey)));
+            // Mientras falta el modelo de voz (o baja), también en los rápidos: al encender el micrófono se ve que descarga.
+            var voice = Link(s.VoiceStatus, s.VoiceAction, "voice");
+            rows.Add(s.VoiceAction.Length > 0 ? voice : Full(voice));
         }
         // Aparte del micrófono: puede escribirle y que le responda hablando.
         rows.Add(Switch(L.T("Leer las respuestas en voz alta"), "readaloud", s.ReadAloud));
         if (s.ReadAloud)
         {
-            rows.Add(Choice(L.T("Voz"), "readvoice", s.ReadAloudVoice));
+            rows.Add(Full(Choice(L.T("Voz"), "readvoice", s.ReadAloudVoice)));
             if (s.SpeechStatus.Length > 0) rows.Add(Link(s.SpeechStatus, s.SpeechAction, "speech"));
         }
         if (s.Chat || s.Island)
-            rows.AddRange(
-            [
+            rows.AddRange(new[]
+            {
                 Caption(L.T("Teclas")),
                 Choice(L.T("Atajo del chat"), "chatkey", s.ChatKey),
                 Switch(s.Mic ? L.T("Tecla Copilot: chat y voz") : L.T("Tecla Copilot: abre el chat"), "copilot", s.CopilotKey),
                 Link(L.T("Atajos de teclado"), L.T("Ver…"), "shortcuts"),
-            ]);
+            }.Select(Full));
         return new("asistente", L.T("Asistente"), L.T("El chat con la mascota, la voz y las teclas."), "Asistente", rows);
     }
 
@@ -210,11 +218,8 @@ static class SettingsPages
         if (s.LocalReady) rows.Add(Choice(L.T("Liberar la memoria tras"), "localidle", s.LocalIdle));
         rows.Add(Info(L.T("Nube"), s.CloudModel));
         rows.Add(Caption(L.T("Quién responde primero")));
-        // En la bandeja, un menú con los tipos; en la Console, una fila por tipo.
-        rows.Add(Choice(L.T("Por tipo de pregunta"), "topics", s.Topics, RowPlace.Tray));
         foreach (var topic in s.TopicEngines)
-            rows.Add(topic.Fixed ? Info(topic.Label, topic.Engine) with { Place = RowPlace.Console }
-                : Choice(topic.Label, "topic:" + topic.Id, topic.Engine, RowPlace.Console));
+            rows.Add(topic.Fixed ? Info(topic.Label, topic.Engine) : Choice(topic.Label, "topic:" + topic.Id, topic.Engine));
         if (s.GeneralLocal) rows.Add(Note(L.T("El modelo local puede inventar datos en las preguntas generales."), RowTone.Warn));
         rows.AddRange(
         [
@@ -229,36 +234,43 @@ static class SettingsPages
         ]);
         if (s.SavedDetail.Length > 0) rows.Add(Note(s.SavedDetail));
         rows.Add(Note(L.T("Sin IA no gasta tokens ni sale del equipo, salvo el clima (Open-Meteo, y la ubicación por la IP con ipwho.is). Internet, archivos y tareas van siempre a la nube.")));
-        return new("respuestas", L.T("Respuestas"), L.T("Quién responde cada pregunta: sin IA, el modelo local o la nube."), "Respuestas", rows);
+        return new("respuestas", L.T("Respuestas"), L.T("Quién responde cada pregunta: sin IA, el modelo local o la nube."), null, rows);
     }
+
+    static SettingsPage ExtensionsPage(SettingsState s) => new("extensiones", L.T("Extensiones"),
+        L.T("Habilidades, voces, mascotas y modelos de otros. También puede soltar un .claupet sobre la mascota."), null,
+    [
+        Choice(L.T("Instaladas"), "extensions", s.Extensions),
+        Link(L.T("Un paquete .claupet"), L.T("Instalar desde archivo…"), "extinstall"),
+    ]);
 
     static SettingsPage IslandPage(SettingsState s)
     {
         List<SettingsRow> rows = [Switch(L.T("Isla en el borde de arriba"), "island", s.Island)];
         if (s.Island)
-            rows.AddRange(
-            [
-                Choice(L.T("Modelo de la isla"), "imodel", s.IslandModel),
-                Switch(L.T("Abrir al pasar el cursor"), "hover", s.IslandHover),
+        {
+            rows.Add(Choice(L.T("Modelo de la isla"), "imodel", s.IslandModel));
+            rows.Add(Switch(L.T("Abrir al pasar el cursor"), "hover", s.IslandHover));
+            rows.AddRange(new[]
+            {
                 Switch(L.T("A la vista mientras algo trabaja"), "busy", s.IslandWhileBusy),
                 Link(L.T("Permisos y preguntas en la isla"), s.Approvals, "approvals"),
                 Switch(L.T("Resumen de la semana, los lunes"), "recap", s.WeeklyRecap),
                 Link(L.T("El de esta semana"), L.T("Ver ahora"), "recapnow"),
-            ]);
+            }.Select(Full));
+        }
         return new("isla", L.T("Isla"), L.T("La isla del borde de arriba: el chat, los permisos y el resumen de la semana."), "Isla", rows);
     }
 
-    static SettingsPage AccountsPage(SettingsState s) => new("cuentas", L.T("Cuentas"), L.T("Las cuentas de Claude Code que sigue Claupet."), "Sistema",
+    static SettingsPage AccountsPage(SettingsState s) => new("cuentas", L.T("Cuentas"), L.T("Las cuentas de Claude Code que sigue Claupet."), null,
     [
         Link(s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add"),
     ]);
 
-    static SettingsPage MachinePage(SettingsState s) => new("sistema", L.T("Sistema"), L.T("Las extensiones, el hook de permisos y el diagnóstico."), "Sistema",
+    static SettingsPage MachinePage(SettingsState s) => new("sistema", L.T("Sistema"), L.T("El hook de permisos y el diagnóstico."), "Sistema",
     [
-        Choice(L.T("Extensiones"), "extensions", s.Extensions),
-        Link(L.T("Un paquete .claupet (o suéltelo en la mascota)"), L.T("Instalar…"), "extinstall"),
-        Link(L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup"),
+        Full(Link(L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup")),
         Link(L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag"),
-        Link(L.T("Quitar hook e inicio con Windows"), L.T("Quitar…"), "unsetup", RowTone.Danger),
+        Full(Link(L.T("Quitar hook e inicio con Windows"), L.T("Quitar…"), "unsetup", RowTone.Danger)),
     ]);
 }

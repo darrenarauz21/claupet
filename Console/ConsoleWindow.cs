@@ -18,6 +18,7 @@ sealed class ConsoleWindow : Window
     readonly ConsoleClient _client = new();
     readonly Grid _root = new() { RowDefinitions = new RowDefinitions("48,*") };
     readonly Border _header = new();
+    readonly Border _rail = new();
     readonly StackPanel _sections = new() { Spacing = 2 };
     readonly SettingsView _view = new() { MaxWidth = 700, HorizontalAlignment = HorizontalAlignment.Left };
     readonly ScrollViewer _scroll = new();
@@ -56,13 +57,15 @@ sealed class ConsoleWindow : Window
         _client.Received += OnMessage;
         // El esqueleto se arma una vez; al cambiar el tema o el idioma se rehacen la barra y el contenido.
         _root.Children.Add(_header);
-        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*"), Margin = new Thickness(0, 0, 10, 10) };
+        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("60,210,*"), Margin = new Thickness(0, 0, 10, 10) };
         Grid.SetRow(body, 1);
-        var aside = new StackPanel { Margin = new Thickness(10, 6, 10, 10) };
+        body.Children.Add(_rail);
+        var aside = new StackPanel { Margin = new Thickness(4, 6, 10, 10) };
         aside.Children.Add(_heading);
         aside.Children.Add(_sections);
+        Grid.SetColumn(aside, 1);
         body.Children.Add(aside);
-        Grid.SetColumn(_main, 1);
+        Grid.SetColumn(_main, 2);
         body.Children.Add(_main);
         _root.Children.Add(body);
         Content = _root;
@@ -134,6 +137,7 @@ sealed class ConsoleWindow : Window
         if (rebuild)
         {
             _header.Child = Header();
+            _rail.Child = Rail();
             _main.Background = _ink.Surface;
             _main.BorderBrush = _ink.Hairline;
         }
@@ -193,6 +197,55 @@ sealed class ConsoleWindow : Window
             else BeginMoveDrag(e);
         };
         return bar;
+    }
+
+    // Los íconos del riel, en un cuadro de 24 (los del diseño).
+    const string ChatIcon = "M5,5 H19 A1,1 0 0 1 20,6 V15 A1,1 0 0 1 19,16 H10 L5,20 V6 A1,1 0 0 1 6,5 Z";
+    const string EditorIcon = "M14,3 H7 A1,1 0 0 0 6,4 V20 A1,1 0 0 0 7,21 H17 A1,1 0 0 0 18,20 V7 L14,3 Z M14,3 V7 H18 M9.5,12 H14.5 M9.5,16 H12.5";
+    const string SettingsIcon = "M15,12 A3,3 0 1 1 9,12 A3,3 0 1 1 15,12 Z M12,2.5 V5 M12,19 V21.5 M5.3,5.3 L7.1,7.1 M16.9,16.9 L18.7,18.7 M2.5,12 H5 "
+        + "M19,12 H21.5 M5.3,18.7 L7.1,16.9 M16.9,7.1 L18.7,5.3";
+
+    /// <summary>El riel de la izquierda: Chat, Editor y Ajustes. El chat y el editor llegan en las próximas etapas.</summary>
+    Control Rail()
+    {
+        var rail = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
+        rail.Children.Add(RailButton(ChatIcon, L.T("Chat"), current: false));
+        rail.Children.Add(RailButton(EditorIcon, L.T("Editor"), current: false));
+        rail.Children.Add(RailButton(SettingsIcon, L.T("Ajustes"), current: true));
+        return rail;
+    }
+
+    Control RailButton(string path, string name, bool current)
+    {
+        var icon = new Viewbox
+        {
+            Width = 19,
+            Height = 19,
+            Child = new Avalonia.Controls.Shapes.Path
+            {
+                Data = Geometry.Parse(path),
+                Stroke = current ? _ink.Text : _ink.Tertiary,
+                StrokeThickness = 1.7,
+                StrokeLineCap = PenLineCap.Round,
+                StrokeJoin = PenLineJoin.Round,
+                Width = 24,
+                Height = 24,
+            },
+        };
+        var button = new Border
+        {
+            Width = 42,
+            Height = 42,
+            CornerRadius = new CornerRadius(12),
+            Background = current ? _ink.Pill : Brushes.Transparent,
+            Child = icon,
+            Opacity = current ? 1 : 0.6,
+        };
+        icon.HorizontalAlignment = HorizontalAlignment.Center;
+        icon.VerticalAlignment = VerticalAlignment.Center;
+        ToolTip.SetTip(button, current ? name : L.T("{0}: próximamente", name));
+        Ui.AutomationName(button, name);
+        return button;
     }
 
     void ToggleMaximized() => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;

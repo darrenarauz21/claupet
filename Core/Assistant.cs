@@ -242,7 +242,7 @@ static class Assistant
         if (External?.Invoke() is { } brain) return await AskBrainAsync(brain, request, onText, onStage, cancel);
         if (request.Model == AssistantModels.Local)
             return Local?.Invoke() is { } local ? await AskBrainAsync(local, request, onText, onStage, cancel)
-                : new AssistantResult("", null, null, null, L.T("El modelo local no está descargado: descárguelo en Ajustes › Respuestas."));
+                : new AssistantResult("", null, null, null, L.T("El modelo local no está descargado: descárguelo en Claupet Console › Respuestas."));
         string? claude = FindClaude();
         if (claude is null)
             return new AssistantResult("", null, null, null, L.T("No encontré Claude Code. ¿Está instalado y en el PATH?"));

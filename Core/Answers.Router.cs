@@ -64,7 +64,7 @@ static class Answers
         }
         if (result is null)
             return failed ?? (localMissing
-                ? new AssistantResult("", null, null, null, L.T("El modelo local no está descargado: descárguelo en Ajustes › Respuestas."))
+                ? new AssistantResult("", null, null, null, L.T("El modelo local no está descargado: descárguelo en Claupet Console › Respuestas."))
                 : new AssistantResult(L.T("No te entendí bien. ¿Me lo dices de otra forma? (・_・?)"), null, null, null, null,
                     By: new AnswerSource(Engine.None, L.T(Instant))));
         // Lo entendió el modelo local aunque responda la app: cuenta como suyo.

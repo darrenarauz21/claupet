@@ -130,46 +130,6 @@ sealed partial class TrayApp
         _ => L.T("No pasar"),
     };
 
-    /// <summary>«4 sin IA · 7 en la nube»: cuántos tipos de pregunta responde primero cada motor.</summary>
-    string TopicsSummary()
-    {
-        var counts = AnswerTopics.All.GroupBy(t => AnswerTopics.First(_settings, t.Id)).OrderBy(g => g.Key).Select(g => g.Key switch
-        {
-            Engine.None => L.T("{0} sin IA", g.Count()),
-            Engine.Local => L.T("{0} local", g.Count()),
-            _ => L.T("{0} en la nube", g.Count()),
-        });
-        return string.Join(" · ", counts);
-    }
-
-    /// <summary>
-    /// Quién responde primero cada tipo de pregunta: un menú con cada tipo y, al pasar por él, sus motores.
-    /// Elegir el modelo local sin tenerlo lo descarga.
-    /// </summary>
-    void ShowTopics()
-    {
-        var menu = new ContextMenuStrip();
-        foreach (var topic in AnswerTopics.All)
-        {
-            var current = AnswerTopics.First(_settings, topic.Id);
-            var item = new ToolStripMenuItem($"{L.T(topic.Label)}: {(topic.Fixed ? L.T("Siempre la nube") : EngineLabel(current))}") { Enabled = !topic.Fixed };
-            foreach (var engine in AnswerTopics.Choices(topic))
-            {
-                var picked = engine;
-                item.DropDownItems.Add(new ToolStripMenuItem(EngineLabel(engine), null, (_, _) => PickEngine(topic, picked)) { Checked = engine == current });
-            }
-            menu.Items.Add(item);
-        }
-        Menus.Apply(menu, _form.Theme);
-        menu.Closed += (_, _) =>
-        {
-            _form.HoldOpen = false;
-            _form.BeginInvoke(menu.Dispose);
-        };
-        _form.HoldOpen = true;
-        menu.Show(Cursor.Position);
-    }
-
     void PickEngine(AnswerTopics.Topic topic, Engine engine)
     {
         Change(s =>

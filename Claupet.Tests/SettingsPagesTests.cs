@@ -11,13 +11,27 @@ public sealed class SettingsPagesTests
         Grants = [new("captura", "Capturar la pantalla", true), new("calendario", "Agendar en el calendario", false)],
     };
 
+    static readonly string[] QuickTabs = ["Avisos", "Apariencia", "Asistente", "Isla", "Sistema"];
+
     [Fact]
-    public void CadaPestanaDeLaBandejaTieneFilas()
+    public void LosRapidosLlevanPocasFilasPorPestana()
     {
         var pages = SettingsPages.Build(Full);
-        foreach (var tab in new[] { "Avisos", "Apariencia", "Asistente", "Isla", "Respuestas", "Sistema" })
-            Assert.Contains(pages.Where(p => p.Tab == tab).SelectMany(p => p.Rows), r => r.Place != RowPlace.Console && r.Kind != RowKind.Caption);
+        foreach (var tab in QuickTabs)
+        {
+            var quick = pages.Where(p => p.Tab == tab).SelectMany(p => p.Rows).Where(r => r.Place != RowPlace.Console).ToList();
+            Assert.InRange(quick.Count, 1, 6);
+            Assert.DoesNotContain(quick, r => r.Kind == RowKind.Caption);
+        }
+        Assert.All(pages.Where(p => p.Tab != null), p => Assert.Contains(p.Tab, QuickTabs));
     }
+
+    [Theory]
+    [InlineData("respuestas")]
+    [InlineData("extensiones")]
+    [InlineData("cuentas")]
+    public void AlgunasSeccionesSoloEstanEnLaConsole(string id) =>
+        Assert.Null(SettingsPages.Build(Full).Single(p => p.Id == id).Tab);
 
     [Fact]
     public void UnaAccionPorFila()
@@ -30,13 +44,11 @@ public sealed class SettingsPagesTests
     [Fact]
     public void LaConsoleEligeCadaTipoYCadaPermisoEnSuFila()
     {
-        var rows = SettingsPages.Build(Full).SelectMany(p => p.Rows).ToList();
-        Assert.Contains(rows, r => r is { Key: "topic:hora", Kind: RowKind.Choice, Place: RowPlace.Console });
-        Assert.Contains(rows, r => r is { Text: "Internet, archivos y tareas", Kind: RowKind.Info, Place: RowPlace.Console }); // fijo: no se elige
-        Assert.Contains(rows, r => r is { Key: "grant:captura", On: true, Place: RowPlace.Console });
-        // En la bandeja siguen siendo un menú cada uno.
-        Assert.Contains(rows, r => r is { Key: "topics", Place: RowPlace.Tray });
-        Assert.Contains(rows, r => r is { Key: "grants", Place: RowPlace.Tray });
+        var pages = SettingsPages.Build(Full);
+        var answers = pages.Single(p => p.Id == "respuestas").Rows;
+        Assert.Contains(answers, r => r is { Key: "topic:hora", Kind: RowKind.Choice });
+        Assert.Contains(answers, r => r is { Text: "Internet, archivos y tareas", Kind: RowKind.Info }); // fijo: no se elige
+        Assert.Contains(pages.SelectMany(p => p.Rows), r => r is { Key: "grant:captura", On: true, Place: RowPlace.Console });
     }
 
     [Fact]

@@ -26,7 +26,7 @@ sealed class SettingsView : StackPanel
 
     public void Show(SettingsPage page, Ink ink, bool rebuild)
     {
-        var rows = page.Rows.Where(r => r.Place != RowPlace.Tray).ToList();
+        var rows = page.Rows.ToList();
         var shape = string.Join("|", rows.Select(r => $"{r.Kind}:{r.Key}:{r.Tone}:{r.Text.Length > 0}"));
         if (!rebuild && page.Id == _page && shape == _shape && _rows.Count > 0)
         {

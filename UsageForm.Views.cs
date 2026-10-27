@@ -10,7 +10,7 @@ sealed partial class UsageForm
     static readonly View[] Selectable = [View.Usage, View.Sessions, View.Activity, View.Flows];
 
     /// <summary>Las pestañas de Ajustes, en orden.</summary>
-    public enum SettingsTab { Avisos, Apariencia, Asistente, Isla, Respuestas, Sistema }
+    public enum SettingsTab { Avisos, Apariencia, Asistente, Isla, Sistema }
 
     /// <summary>Se cambió de pestaña en Ajustes (para recordarla).</summary>
     public event Action<SettingsTab>? SettingsTabChanged;
@@ -232,12 +232,12 @@ sealed partial class UsageForm
 
     int ComposeSettingsHeader(Graphics g, bool draw, int y)
     {
-        var height = TextRenderer.MeasureText(g, L.T("Ajustes"), _title, Size.Empty, Line).Height;
+        var height = TextRenderer.MeasureText(g, L.T("Ajustes rápidos"), _title, Size.Empty, Line).Height;
         var close = new Rectangle(ClientSize.Width - Pad - S(24), y + (height - S(30)) / 2, S(30), S(30));
         AddHit("settings-close", close, HitKind.CloseSettings);
         if (draw)
         {
-            Write(g, L.T("Ajustes"), _title, _t.Text, new Rectangle(Pad, y, Inner - S(40), height));
+            Write(g, L.T("Ajustes rápidos"), _title, _t.Text, new Rectangle(Pad, y, Inner - S(40), height));
             if (_hoverKey == "settings-close") Draw.Fill(g, _t.Hover, close, S(8));
             Write(g, GlyphClose, _glyphSmall, _t.Secondary, close, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
@@ -252,7 +252,6 @@ sealed partial class UsageForm
         SettingsTab.Apariencia => L.T("Apariencia"),
         SettingsTab.Asistente => L.T("Asistente"),
         SettingsTab.Isla => L.T("Isla"),
-        SettingsTab.Respuestas => L.T("Respuestas"),
         _ => L.T("Sistema"),
     };
 
@@ -310,9 +309,36 @@ sealed partial class UsageForm
         foreach (var tab in AllTabs)
             if (tab != _settingsTab) bottom = Math.Max(bottom, ComposeSettingsTab(g, false, tab, y));
         _hits.RemoveRange(hits, _hits.Count - hits);
-        // Lo demás (cada tipo de pregunta, y más adelante el editor y las extensiones), en la ventana grande.
-        bottom = LinkRow(g, draw, L.T("Todos los ajustes, en Claupet Console"), L.T("Abrir"), "console", _t.Accent, bottom + S(6));
-        return bottom + S(14);
+        // Aquí solo lo de todos los días; lo demás, en la ventana grande.
+        return ConsoleCard(g, draw, bottom + S(16)) + S(14);
+    }
+
+    /// <summary>«Todos los ajustes»: la tarjeta que abre Claupet Console, con la cabeza del chibi.</summary>
+    int ConsoleCard(Graphics g, bool draw, int y)
+    {
+        var card = new Rectangle(Pad, y, Inner, S(68));
+        AddHit("set:console", card, HitKind.Setting);
+        if (!draw) return card.Bottom;
+        Draw.Fill(g, _t.Raised, card, S(14));
+        Draw.Outline(g, _t.Border, card, S(14));
+        var tile = new Rectangle(card.X + S(14), card.Y + (card.Height - S(40)) / 2, S(40), S(40));
+        Draw.Fill(g, _t.Hover, tile, S(10));
+        var unit = Math.Max(1, (tile.Width - S(8)) / 16);
+        ToastArt.Pixels(g, tile.X + (tile.Width - 16 * unit) / 2, tile.Y + (tile.Height - 16 * unit) / 2, unit,
+            fill => ChibiSprite.PaintHead(fill, MascotFrame.Open, small: true));
+        var open = L.T("Abrir");
+        var pillWidth = TextRenderer.MeasureText(g, open, _bodyStrong, Size.Empty, Line).Width + S(36);
+        var pill = new Rectangle(card.Right - S(14) - pillWidth, card.Y + (card.Height - S(36)) / 2, pillWidth, S(36));
+        var hover = _hoverKey == "set:console";
+        Draw.Fill(g, hover ? Blend(_t.Accent, Color.White, 0.12) : _t.Accent, pill, S(18));
+        Write(g, open, _bodyStrong, Color.FromArgb(0x14, 0x14, 0x13), pill, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        var textX = tile.Right + S(14);
+        var textWidth = pill.X - S(12) - textX;
+        var lines = _bodyStrong.Height + S(2) + _small.Height;
+        var top = card.Y + (card.Height - lines) / 2;
+        Write(g, L.T("Todos los ajustes"), _bodyStrong, _t.Text, new Rectangle(textX, top, textWidth, _bodyStrong.Height), TextFormatFlags.EndEllipsis);
+        Write(g, L.T("En Claupet Console"), _small, _t.Tertiary, new Rectangle(textX, top + _bodyStrong.Height + S(2), textWidth, _small.Height), TextFormatFlags.EndEllipsis);
+        return card.Bottom;
     }
 
     int ComposeSettingsTab(Graphics g, bool draw, SettingsTab tab, int y)

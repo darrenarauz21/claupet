@@ -194,22 +194,25 @@ La cabecera muestra siempre 3 vistas fijas (por defecto Uso, Sesiones y Activida
 tachuela abre la lista de todas: clic en el nombre la abre sin fijarla (el botón muestra su nombre
 si cabe); el pin de una vista libre la prepara y el pin de una fija hace el cambio en ese lugar,
 así nunca hay más ni menos de 3. Se guardan en `PinnedViews` del `settings.json` de la app. El
-engranaje del pie abre **Ajustes**, en seis pestañas: Avisos (notificaciones y sonido), Apariencia,
-Asistente (chat, voz y teclas), Isla, Respuestas y Sistema (cuentas, inicio con el sistema, hook y diagnóstico);
-la última abierta queda en `SettingsTab`. Todas miden lo que la más alta (con lo que esté
+engranaje del pie abre los **Ajustes rápidos**, en cinco pestañas: Avisos (notificaciones y sonido), Apariencia
+(color, mascota y su tamaño), Asistente (chat, micrófono y leer en voz alta), Isla y Sistema (idioma, inicio con
+Windows y diagnóstico); la última abierta queda en `SettingsTab`. Todas miden lo que la más alta (con lo que esté
 encendido), así que al cambiar de pestaña el cuadro no cambia de tamaño. El menú del ícono queda en abrir, actualizar, nueva
 sesión, ajustes y salir.
 
 Las filas de cada pestaña no están escritas en la ventana: salen de `SettingsPages.Build` (`Core/SettingsPages.cs`),
 la misma lista que muestra Claupet Console. Cada fila dice su tipo (interruptor, lista, dato, nota, enlace), su
-acción (la que atiende `OnSetting` en `TrayApp.cs`) y dónde va: en las dos, solo en la bandeja (los menús de
-«Por tipo de pregunta» y «Permisos») o solo en la Console (una fila por tipo de pregunta y un interruptor por
-permiso). Al pie de los ajustes rápidos, **Todos los ajustes, en Claupet Console › Abrir** abre la Console.
+acción (la que atiende `OnSetting` en `TrayApp.cs`) y dónde va: en las dos o solo en la Console
+(`RowPlace.Console`). Los rápidos llevan solo lo de todos los días; lo demás (los gestos de la mascota, la cuenta
+y la carpeta del asistente, los permisos, las teclas, el resto de la isla, el hook) está en la Console. Las
+secciones sin pestaña (`Tab` nulo: Respuestas, Extensiones y Cuentas) solo están en la Console. Al pie de los
+rápidos, la tarjeta **Todos los ajustes › Abrir** abre la Console.
 
 ## Claupet Console
 
-La ventana grande (Windows por ahora): todos los ajustes por secciones (General, Avisos, Apariencia, Mascota,
-Asistente, Respuestas, Isla, Cuentas y Sistema); más adelante, el chat y el editor. Es el mismo `Claupet.exe`
+La ventana grande (Windows por ahora). A la izquierda, un riel con Chat, Editor y Ajustes (el chat y el editor
+llegan en las próximas etapas); al lado, las secciones de los ajustes (General, Avisos, Apariencia, Mascota,
+Asistente, Respuestas, Extensiones, Isla, Cuentas y Sistema). Es el mismo `Claupet.exe`
 en otro proceso (`Claupet.exe --console`, código en `Console/`, Avalonia 11): se abre solo cuando se pide y se
 cierra con su ventana. La bandeja no carga Avalonia ni Skia; solo ese proceso. Una sola ventana a la vez:
 abrirla de nuevo la trae al frente. Tiene su propia barra de arriba (la cabeza del chibi, minimizar, maximizar y cerrar) y las esquinas
@@ -603,7 +606,7 @@ Solo en Windows, para probar el asistente:
 - `--decir <F4|M1> <texto>`: lo dice con esa voz, frase por frase, y escribe cuánto tardó cada una.
 - `--responder <pregunta>`: la reparte como la mascota (Ajustes › Respuestas) y dice quién respondió, en
   cuánto tiempo y qué (la acción no se hace). Usa el modelo local si está descargado.
-- `--settings --pestana <Avisos|Apariencia|Asistente|Isla|Respuestas|Sistema>`: abre Ajustes en esa pestaña
+- `--settings --pestana <Avisos|Apariencia|Asistente|Isla|Sistema>`: abre Ajustes en esa pestaña
   sin cambiar la guardada (con `--preview`, para revisarla junto a la que está abierta).
 - `--modelo-local <id> [pregunta]`: baja ese modelo local (`qwen3.5-0.8b`, `qwen3.5-2b` o `qwen3.5-4b`) y
   llama-server como desde **Ajustes**, con el avance; con una pregunta, se la hace como la mascota y
