@@ -16,8 +16,6 @@ sealed partial class UsageForm : Form
     public event Action<Account>? RenameRequested;
     public event Action? ThemeChanged;
     public event Action<SessionInfo>? NewSessionRequested;
-    /// <summary>Las vistas fijas cambiaron (nombres de View, en orden).</summary>
-    public event Action<IReadOnlyList<string>>? PinnedChanged;
     /// <summary>Una acción de la vista Ajustes (notify, sound, pack, palette, anim, startup, sample, sounds, add, setup, diag, unsetup).</summary>
     public event Action<string>? SettingRequested;
 
@@ -28,12 +26,10 @@ sealed partial class UsageForm : Form
     public DateTime LastHidden { get; private set; }
     public Theme Theme => _t;
 
-    enum View { Usage, Sessions, Activity, Flows, Settings }
-    enum HitKind { Refresh, Account, Add, View, Session, IdleToggle, Day, ViewMenu, MenuPanel, ViewRow, ViewPin, Gear, CloseSettings, Setting, SettingsTab, FlowSession, FlowBack }
-    sealed record Hit(string Key, Rectangle Bounds, HitKind Kind, Account? Account = null, SessionInfo? Session = null, View View = View.Usage, DateOnly Day = default);
-
-    /// <summary>Semanas completas del cuadro de actividad, más la actual.</summary>
-    const int HeatmapWeeks = 26;
+    /// <summary>Activity es la vista de los carriles por sesión (antes «Flujos»).</summary>
+    enum View { Usage, Sessions, Activity, Settings }
+    enum HitKind { Refresh, Account, Add, View, Session, IdleToggle, Gear, CloseSettings, Setting, SettingsTab, FlowSession, FlowBack }
+    sealed record Hit(string Key, Rectangle Bounds, HitKind Kind, Account? Account = null, SessionInfo? Session = null, View View = View.Usage);
 
     const string GlyphRefresh = "", GlyphAdd = "", GlyphCheck = "", GlyphClose = "", GlyphBell = "", GlyphBellOff = "", GlyphChevronDown = "", GlyphChevronUp = "";
     // El asterisco animado de Claude Code: va y vuelve.
@@ -55,7 +51,6 @@ sealed partial class UsageForm : Form
     IReadOnlyDictionary<string, UsageSnapshot> _snapshots = new Dictionary<string, UsageSnapshot>();
     IReadOnlyDictionary<string, Profile> _profiles = new Dictionary<string, Profile>();
     IReadOnlyList<SessionInfo> _sessions = Array.Empty<SessionInfo>();
-    ActivitySummary? _activity;
     RefreshFrame? _refresh;
     string _refreshStyle = RefreshSprite.Styles[0].Id;
     LocalTotals? _local;
@@ -117,9 +112,7 @@ sealed partial class UsageForm : Form
         };
         KeyDown += (_, e) =>
         {
-            if (e.KeyCode != Keys.Escape) return;
-            if (_viewMenuOpen) CloseViewMenu();
-            else Hide();
+            if (e.KeyCode == Keys.Escape) Hide();
         };
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
     }
@@ -199,7 +192,6 @@ sealed partial class UsageForm : Form
         BeginTransition(Slide.Up);
         _beforeSettings = _view;
         _view = View.Settings;
-        _viewMenuOpen = false;
         Relayout();
     }
 
@@ -225,12 +217,6 @@ sealed partial class UsageForm : Form
         _refresh = frame;
         _refreshStyle = style;
         if (Visible) Invalidate();
-    }
-
-    public void SetActivity(ActivitySummary activity)
-    {
-        _activity = activity;
-        if (_view == View.Activity) Relayout();
     }
 
     public void SetSessions(IReadOnlyList<SessionInfo> sessions)
@@ -299,25 +285,22 @@ sealed partial class UsageForm : Form
         {
             View.Usage => ComposeUsage(g, draw, y),
             View.Sessions => ComposeSessions(g, draw, y),
-            View.Flows => ComposeFlows(g, draw, y),
             View.Settings => ComposeSettings(g, draw, y),
-            _ => ComposeActivity(g, draw, y),
+            _ => ComposeFlows(g, draw, y),
         };
-        var height = ComposeFooter(g, draw, y);
-        // El selector de vistas va encima de todo; la ventana crece si no cabe.
-        return _viewMenuOpen ? Math.Max(height, ComposeViewMenu(g, draw) + S(12)) : height;
+        return ComposeFooter(g, draw, y);
     }
 
     int Pad => S(20);
     int Inner => ClientSize.Width - 2 * Pad;
 
-    // ── Encabezado: las 3 vistas fijas, el selector y actualizar ────────────────────────────
+    // ── Encabezado: las 3 vistas y actualizar ─────────────────────────────────────────────────
 
     int ComposeHeader(Graphics g, bool draw, int y)
     {
         var height = TextRenderer.MeasureText(g, L.T("Sesiones"), _title, Size.Empty, Line).Height;
         var x = Pad;
-        foreach (var view in _pinned)
+        foreach (var view in Tabs)
         {
             var label = ViewLabel(view);
             var width = TextRenderer.MeasureText(g, label, _title, Size.Empty, Line).Width;
@@ -351,7 +334,6 @@ sealed partial class UsageForm : Form
             }
             else Write(g, GlyphRefresh, _glyph, _t.Secondary, refresh, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
-        ComposeViewSelector(g, draw, refresh.X - S(6), refresh.Y, x - S(14));
         return y + height + S(16);
     }
 
@@ -703,138 +685,6 @@ sealed partial class UsageForm : Form
         g.Restore(state);
     }
 
-    // ── Vista «Actividad»: mapa de calor de 6 meses ─────────────────────────────────────────
-
-    int ComposeActivity(Graphics g, bool draw, int y)
-    {
-        var smallHeight = _small.Height;
-        if (_activity is null)
-        {
-            if (draw) Write(g, L.T("Calculando…"), _body, _t.Tertiary, new Rectangle(Pad, y, Inner, _body.Height));
-            return y + _body.Height + S(24);
-        }
-
-        var today = DateOnly.FromDateTime(DateTime.Today);
-        var monday = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
-        var start = monday.AddDays(-7 * HeatmapWeeks);
-        var columns = HeatmapWeeks + 1;
-        var labelWidth = S(28);
-        var gap = S(3);
-        var cell = (Inner - labelWidth - gap * (columns - 1)) / columns;
-        var gridX = Pad + Inner - (cell * columns + gap * (columns - 1));
-
-        // Meses: se rotula la columna en la que empieza cada mes.
-        var lastLabelRight = int.MinValue;
-        for (var c = 0; c < columns; c++)
-        {
-            var sunday = start.AddDays(7 * c + 6);
-            if (c > 0 && sunday.Month == start.AddDays(7 * (c - 1) + 6).Month) continue;
-            var x = gridX + c * (cell + gap);
-            var text = sunday.ToString("MMM").TrimEnd('.');
-            var width = TextRenderer.MeasureText(g, text, _small, Size.Empty, Line).Width;
-            if (x < lastLabelRight + S(6)) continue;
-            if (draw) Write(g, text, _small, _t.Tertiary, new Rectangle(x, y, width, smallHeight));
-            lastLabelRight = x + width;
-        }
-        y += smallHeight + S(6);
-
-        // Umbrales por cuartiles de los días con actividad, como el cuadro de GitHub.
-        var values = Enumerable.Range(0, columns * 7).Select(i => start.AddDays(i))
-            .Where(d => d <= today).Select(d => _activity.Get(d)?.Tokens ?? 0).Where(v => v > 0).OrderBy(v => v).ToList();
-        long Quartile(double q) => values.Count == 0 ? 0 : values[(int)Math.Min(values.Count - 1, Math.Floor(q * values.Count))];
-        var (q1, q2, q3) = (Quartile(0.25), Quartile(0.5), Quartile(0.75));
-        int Level(long v) => v <= 0 ? 0 : v <= q1 ? 1 : v <= q2 ? 2 : v <= q3 ? 3 : 4;
-
-        string[] dayLabels = [L.T("lun"), "", L.T("mié"), "", L.T("vie"), "", ""];
-        for (var r = 0; r < 7; r++)
-            if (draw && dayLabels[r].Length > 0)
-                Write(g, dayLabels[r], _small, _t.Tertiary, new Rectangle(Pad, y + r * (cell + gap), labelWidth, cell), TextFormatFlags.VerticalCenter);
-
-        DateOnly? hovered = null;
-        for (var c = 0; c < columns; c++)
-        {
-            for (var r = 0; r < 7; r++)
-            {
-                var day = start.AddDays(7 * c + r);
-                if (day > today) break;
-                var rect = new Rectangle(gridX + c * (cell + gap), y + r * (cell + gap), cell, cell);
-                var key = "day:" + day.DayNumber;
-                AddHit(key, Rectangle.Inflate(rect, (gap + 1) / 2, (gap + 1) / 2), HitKind.Day, day: day);
-                if (_hoverKey == key) hovered = day;
-                if (!draw) continue;
-                Draw.Fill(g, HeatColor(Level(_activity.Get(day)?.Tokens ?? 0)), rect, S(2));
-                if (_hoverKey == key || day == today) Draw.Outline(g, _hoverKey == key ? _t.Text : _t.Tertiary, rect, S(2));
-            }
-        }
-        y += 7 * cell + 6 * gap + S(12);
-
-        // Detalle del día bajo el mouse y leyenda.
-        var legendBox = S(9);
-        var less = TextRenderer.MeasureText(g, L.T("Menos"), _small, Size.Empty, Line).Width;
-        var more = TextRenderer.MeasureText(g, L.T("Más"), _small, Size.Empty, Line).Width;
-        var legendWidth = less + S(5) + 5 * (legendBox + S(3)) + S(2) + more;
-        if (draw)
-        {
-            string detail;
-            if (hovered is { } d)
-            {
-                var record = _activity.Get(d);
-                detail = $"{d:ddd d MMM}".Replace(".", "") + " · " + (record is null || record.Tokens == 0
-                    ? L.T("sin actividad")
-                    : L.T("{0} tokens · {1} respuestas", Format.Tokens(record.Tokens), record.Responses));
-            }
-            else
-            {
-                detail = _activity.FirstDay is { } first && first > start ? L.T("Desde el {0:d 'de' MMMM}", first) : L.T("Últimos 6 meses");
-            }
-            Write(g, detail, _small, hovered is null ? _t.Tertiary : _t.Secondary,
-                new Rectangle(Pad, y, Inner - legendWidth - S(10), smallHeight), TextFormatFlags.EndEllipsis);
-
-            var x = Pad + Inner - legendWidth;
-            Write(g, L.T("Menos"), _small, _t.Tertiary, new Rectangle(x, y, less, smallHeight));
-            x += less + S(5);
-            for (var level = 0; level <= 4; level++)
-            {
-                Draw.Fill(g, HeatColor(level), new Rectangle(x, y + (smallHeight - legendBox) / 2, legendBox, legendBox), S(2));
-                x += legendBox + S(3);
-            }
-            Write(g, L.T("Más"), _small, _t.Tertiary, new Rectangle(x + S(2), y, more, smallHeight));
-        }
-        y += smallHeight + S(22);
-
-        // Cifras del período, en dos columnas.
-        var stats = ActivityStats.Compute(_activity, start, today);
-        static string Days(int n) => n == 1 ? L.T("1 día") : L.T("{0} días", n);
-        var items = new (string Value, string Label)[]
-        {
-            (Format.Tokens(stats.Tokens), L.T("tokens")),
-            (stats.ActiveDays.ToString(), L.T("días activos")),
-            (Days(stats.CurrentStreak), L.T("racha actual")),
-            (Days(stats.LongestStreak), L.T("racha más larga")),
-            (stats.BusiestDay is { } busiest ? $"{busiest:d MMM}".Replace(".", "") : "—", L.T("día más activo")),
-            (stats.FavoriteModel ?? "—", L.T("modelo favorito")),
-        };
-        var columnWidth = Inner / 2;
-        var rowHeight = _bodyStrong.Height + S(2) + smallHeight + S(14);
-        for (var i = 0; i < items.Length && draw; i++)
-        {
-            var x = Pad + i % 2 * columnWidth;
-            var top = y + i / 2 * rowHeight;
-            Write(g, items[i].Value, _bodyStrong, _t.Text, new Rectangle(x, top, columnWidth - S(8), _bodyStrong.Height), TextFormatFlags.EndEllipsis);
-            Write(g, items[i].Label, _small, _t.Tertiary, new Rectangle(x, top + _bodyStrong.Height + S(2), columnWidth - S(8), smallHeight));
-        }
-        return y + (items.Length + 1) / 2 * rowHeight + S(6);
-    }
-
-    Color HeatColor(int level) => level switch
-    {
-        0 => _t.Track,
-        1 => Blend(_t.Background, _t.Accent, 0.3),
-        2 => Blend(_t.Background, _t.Accent, 0.52),
-        3 => Blend(_t.Background, _t.Accent, 0.76),
-        _ => _t.Accent,
-    };
-
     static Color Blend(Color from, Color to, double amount) => Color.FromArgb(
         (int)(from.R + (to.R - from.R) * amount),
         (int)(from.G + (to.G - from.G) * amount),
@@ -893,8 +743,8 @@ sealed partial class UsageForm : Form
 
     // ── Interacción ─────────────────────────────────────────────────────────────────────────
 
-    void AddHit(string key, Rectangle bounds, HitKind kind, Account? account = null, SessionInfo? session = null, View view = View.Usage, DateOnly day = default) =>
-        _hits.Add(new Hit(key, bounds, kind, account, session, view, day));
+    void AddHit(string key, Rectangle bounds, HitKind kind, Account? account = null, SessionInfo? session = null, View view = View.Usage) =>
+        _hits.Add(new Hit(key, bounds, kind, account, session, view));
 
     void Write(Graphics g, string text, Font font, Color color, Rectangle bounds, TextFormatFlags extra = TextFormatFlags.Default) =>
         TextRenderer.DrawText(g, text, font, bounds, color, Line | extra);
@@ -905,7 +755,7 @@ sealed partial class UsageForm : Form
     {
         base.OnMouseMove(e);
         var hit = HitAt(e.Location);
-        Cursor = hit is null || hit.Kind == HitKind.Day ? Cursors.Default : Cursors.Hand;
+        Cursor = hit is null ? Cursors.Default : Cursors.Hand;
         if (hit?.Key == _hoverKey) return;
         _hoverKey = hit?.Key;
         Invalidate();
@@ -922,14 +772,7 @@ sealed partial class UsageForm : Form
     protected override void OnMouseClick(MouseEventArgs e)
     {
         base.OnMouseClick(e);
-        var target = HitAt(e.Location);
-        // Con el selector abierto, un clic fuera de él solo lo cierra.
-        if (_viewMenuOpen && target?.Kind is not (HitKind.ViewMenu or HitKind.MenuPanel or HitKind.ViewRow or HitKind.ViewPin))
-        {
-            CloseViewMenu();
-            return;
-        }
-        if (target is not { } hit) return;
+        if (HitAt(e.Location) is not { } hit) return;
 
         if (e.Button == MouseButtons.Right)
         {
@@ -956,15 +799,7 @@ sealed partial class UsageForm : Form
                 AddRequested?.Invoke();
                 break;
             case HitKind.View:
-            case HitKind.ViewRow:
                 OpenView(hit.View);
-                break;
-            case HitKind.ViewMenu:
-                if (_viewMenuOpen) CloseViewMenu();
-                else { BeginTransition(Slide.Fade); _viewMenuOpen = true; Relayout(); }
-                break;
-            case HitKind.ViewPin:
-                TogglePin(hit.View);
                 break;
             case HitKind.Gear:
                 if (_view == View.Settings) OpenView(_beforeSettings);

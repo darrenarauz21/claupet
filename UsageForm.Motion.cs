@@ -65,8 +65,7 @@ sealed partial class UsageForm
     {
         if (to == View.Settings) return Slide.Up;
         if (from == View.Settings) return Slide.Down;
-        int Order(View v) => _pinned.IndexOf(v) is var i && i >= 0 ? i : 3;
-        return Order(to) >= Order(from) ? Slide.FromRight : Slide.FromLeft;
+        return Array.IndexOf(Tabs, to) >= Array.IndexOf(Tabs, from) ? Slide.FromRight : Slide.FromLeft;
     }
 
     void StartMotion()

@@ -3,7 +3,7 @@ namespace Claupet;
 /// <summary>Pasos seguidos de la misma familia, juntos en un nodo («Leyendo ×3»).</summary>
 sealed record FlowGroup(ToolKind Kind, string Verb, string? Detail, int Count, bool Done, FlowStep Last);
 
-/// <summary>Lo que la vista Flujos necesita saber de una sesión, igual en las dos apps.</summary>
+/// <summary>Lo que la vista Actividad (los carriles por sesión) necesita saber de una sesión, igual en las dos apps.</summary>
 static class Flows
 {
     public static readonly ToolKind[] MapKinds = [ToolKind.Read, ToolKind.Search, ToolKind.Edit, ToolKind.Run, ToolKind.Agent, ToolKind.Web];

@@ -134,16 +134,12 @@ sealed class AppSettings
     public bool SetupDone { get; set; }
     /// <summary>Lo último elegido en «Nueva sesión».</summary>
     public LaunchOptions Launch { get; set; } = new();
-    /// <summary>Las 3 vistas fijas como pestañas, en orden. Las demás se abren desde el selector.</summary>
-    public List<string> PinnedViews { get; set; } = [.. DefaultPinned];
 
     /// <summary>Las extensiones: encendidas, sus permisos y ajustes, y quién ocupa cada ranura exclusiva.</summary>
     public ExtensionSettings Extensions { get; set; } = new();
 
     /// <summary>La mascota del escritorio de un paquete (su id); null: la elegida en Mascot. Los avisos siguen con la de Mascot.</summary>
     public string? CustomPet { get; set; }
-
-    public static readonly string[] DefaultPinned = ["Usage", "Sessions", "Activity"];
 }
 
 /// <summary>

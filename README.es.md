@@ -28,8 +28,8 @@ le necesita y en qué anda cada una, sin abrir una terminal.
   que se reinician. El ícono de la bandeja muestra el porcentaje de su sesión.
 - 🧭 **Sesiones en vivo.** Qué sesiones de Claude Code están trabajando, esperándole o terminadas,
   y una sesión nueva con la cuenta, la carpeta y el modelo que usted elija.
-- 🎬 **Flujos y actividad.** Cada sesión paso a paso y seis meses de uso en un
-  calendario. Todo sale de archivos locales: no gasta tokens.
+- 🎬 **Actividad.** Cada sesión paso a paso, en vivo. Todo sale de archivos locales: no gasta
+  tokens.
 - 🔔 **Avisos amables.** Un mensajito, con sonido, cuando una sesión termina, pregunta algo,
   necesita permiso, falla o se acerca a un límite.
 - 🦀 **Una mascota de escritorio.** La criaturita clásica o una chibi con hoodie de

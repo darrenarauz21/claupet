@@ -5,7 +5,7 @@ using SD = System.Drawing;
 namespace Claupet;
 
 /// <summary>
-/// Vista «Flujos» (igual que en Windows): un carril por sesión con sus pasos del turno; clic en un
+/// Vista «Actividad», antes «Flujos» (igual que en Windows): un carril por sesión con sus pasos del turno; clic en un
 /// carril abre el mapa de esa sesión. Mientras una sesión trabaja siempre hay algo animado.
 /// </summary>
 sealed partial class UsageView

@@ -458,7 +458,7 @@ sealed class ChatBubble : Form
                         OneLine | TextFormatFlags.EndEllipsis);
                     y += _small.Height + S(4);
                 }
-                // Tres puntos que saltan uno detrás del otro (como «Pensando» en Flujos).
+                // Tres puntos que saltan uno detrás del otro (como «Pensando» en Actividad).
                 for (var i = 0; i < 3; i++)
                 {
                     var bounce = (float)Flows.DotBounce(tick, i);

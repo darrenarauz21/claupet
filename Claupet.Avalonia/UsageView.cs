@@ -19,17 +19,16 @@ sealed partial class UsageView : Control
     public event Action<Account>? RemoveRequested;
     public event Action<Account>? RenameRequested;
     public event Action<SessionInfo>? NewSessionRequested;
-    public event Action<IReadOnlyList<string>>? PinnedChanged;
     /// <summary>Una acción de «Ajustes» (notify, sound, pack:id, startup, sample, sounds, add, setup, diag, unsetup).</summary>
     public event Action<string>? SettingRequested;
 
     public const double ViewWidth = 360;
 
-    enum View { Usage, Sessions, Activity, Flows, Settings }
-    enum HitKind { Refresh, Account, Add, View, Session, IdleToggle, Day, ViewMenu, MenuPanel, ViewRow, ViewPin, Gear, CloseSettings, Setting, FlowSession, FlowBack }
-    sealed record Hit(string Key, Rect Bounds, HitKind Kind, Account? Account = null, SessionInfo? Session = null, View View = View.Usage, DateOnly Day = default);
+    /// <summary>Activity es la vista de los carriles por sesión (antes «Flujos»).</summary>
+    enum View { Usage, Sessions, Activity, Settings }
+    enum HitKind { Refresh, Account, Add, View, Session, IdleToggle, Gear, CloseSettings, Setting, FlowSession, FlowBack }
+    sealed record Hit(string Key, Rect Bounds, HitKind Kind, Account? Account = null, SessionInfo? Session = null, View View = View.Usage);
 
-    const int HeatmapWeeks = 26;
     static readonly string[] SpinnerFrames = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
 
     readonly List<Hit> _hits = new();
@@ -43,7 +42,6 @@ sealed partial class UsageView : Control
     IReadOnlyDictionary<string, UsageSnapshot> _snapshots = new Dictionary<string, UsageSnapshot>();
     IReadOnlyDictionary<string, Profile> _profiles = new Dictionary<string, Profile>();
     IReadOnlyList<SessionInfo> _sessions = Array.Empty<SessionInfo>();
-    ActivitySummary? _activity;
     RefreshFrame? _refresh;
     string _refreshStyle = RefreshSprite.Styles[0].Id;
     LocalTotals? _local;
@@ -112,12 +110,6 @@ sealed partial class UsageView : Control
     /// <summary>El cuadro de la animación al actualizar (null: no está corriendo) y su estilo.</summary>
     public void SetRefreshFrame(RefreshFrame? frame, string style) { _refresh = frame; _refreshStyle = style; InvalidateVisual(); }
 
-    public void SetActivity(ActivitySummary activity)
-    {
-        _activity = activity;
-        if (_view == View.Activity) Relayout();
-    }
-
     public void SetSessions(IReadOnlyList<SessionInfo> sessions)
     {
         _sessions = sessions;
@@ -161,22 +153,19 @@ sealed partial class UsageView : Control
         {
             View.Usage => ComposeUsage(dc, y),
             View.Sessions => ComposeSessions(dc, y),
-            View.Flows => ComposeFlows(dc, y),
             View.Settings => ComposeSettings(dc, y),
-            _ => ComposeActivity(dc, y),
+            _ => ComposeFlows(dc, y),
         };
-        var height = ComposeFooter(dc, y);
-        // El selector de vistas va encima de todo; la ventana crece si no cabe.
-        return _viewMenuOpen ? Math.Max(height, ComposeViewMenu(dc) + 12) : height;
+        return ComposeFooter(dc, y);
     }
 
-    // ── Encabezado: las 3 vistas fijas, el selector y actualizar ────────────────────────────
+    // ── Encabezado: las 3 vistas y actualizar ─────────────────────────────────────────────────
 
     double ComposeHeader(DrawingContext? dc, double y)
     {
         var height = Gfx.Title.LineHeight;
         var x = Pad;
-        foreach (var view in _pinned)
+        foreach (var view in Tabs)
         {
             var label = ViewLabel(view);
             var width = Gfx.Measure(label, Gfx.Title).Width;
@@ -207,7 +196,6 @@ sealed partial class UsageView : Control
             }
             else Gfx.Icon(dc, Glyph.Refresh, _t.Secondary, refresh);
         }
-        ComposeViewSelector(dc, refresh.X - 6, refresh.Y, x - 14);
         return y + height + 16;
     }
 
@@ -509,127 +497,6 @@ sealed partial class UsageView : Control
             dc.FillRectangle(brush, new Rect(x, bar.Y, segment, bar.Height));
     }
 
-    // ── Actividad ───────────────────────────────────────────────────────────────────────────
-
-    double ComposeActivity(DrawingContext? dc, double y)
-    {
-        var small = Gfx.Small.LineHeight;
-        if (_activity is null)
-        {
-            Gfx.Write(dc, L.T("Calculando…"), Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, Gfx.Body.LineHeight));
-            return y + Gfx.Body.LineHeight + 24;
-        }
-
-        var today = DateOnly.FromDateTime(DateTime.Today);
-        var monday = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
-        var start = monday.AddDays(-7 * HeatmapWeeks);
-        const int columns = HeatmapWeeks + 1;
-        const double labelWidth = 28, gap = 3;
-        var cell = Math.Floor((Inner - labelWidth - gap * (columns - 1)) / columns);
-        var gridX = Pad + Inner - (cell * columns + gap * (columns - 1));
-
-        var lastLabelRight = double.MinValue;
-        for (var c = 0; c < columns; c++)
-        {
-            var sunday = start.AddDays(7 * c + 6);
-            if (c > 0 && sunday.Month == start.AddDays(7 * (c - 1) + 6).Month) continue;
-            var x = gridX + c * (cell + gap);
-            var text = sunday.ToString("MMM").TrimEnd('.');
-            var width = Gfx.Measure(text, Gfx.Small).Width;
-            if (x < lastLabelRight + 6) continue;
-            Gfx.Write(dc, text, Gfx.Small, _t.Tertiary, new Rect(x, y, width + 2, small));
-            lastLabelRight = x + width;
-        }
-        y += small + 6;
-
-        var values = Enumerable.Range(0, columns * 7).Select(i => start.AddDays(i))
-            .Where(d => d <= today).Select(d => _activity.Get(d)?.Tokens ?? 0).Where(v => v > 0).OrderBy(v => v).ToList();
-        long Quartile(double q) => values.Count == 0 ? 0 : values[(int)Math.Min(values.Count - 1, Math.Floor(q * values.Count))];
-        var (q1, q2, q3) = (Quartile(0.25), Quartile(0.5), Quartile(0.75));
-        int Level(long v) => v <= 0 ? 0 : v <= q1 ? 1 : v <= q2 ? 2 : v <= q3 ? 3 : 4;
-
-        string[] dayLabels = [L.T("lun"), "", L.T("mié"), "", L.T("vie"), "", ""];
-        for (var r = 0; r < 7; r++)
-            if (dayLabels[r].Length > 0)
-                Gfx.Write(dc, dayLabels[r], Gfx.Small, _t.Tertiary, new Rect(Pad, y + r * (cell + gap), labelWidth, cell), center: true);
-
-        DateOnly? hovered = null;
-        for (var c = 0; c < columns; c++)
-            for (var r = 0; r < 7; r++)
-            {
-                var day = start.AddDays(7 * c + r);
-                if (day > today) break;
-                var rect = new Rect(gridX + c * (cell + gap), y + r * (cell + gap), cell, cell);
-                var key = "day:" + day.DayNumber;
-                AddHit(key, rect.Inflate(gap / 2), HitKind.Day, day: day);
-                if (_hoverKey == key) hovered = day;
-                if (dc is null) continue;
-                Gfx.Fill(dc, HeatColor(Level(_activity.Get(day)?.Tokens ?? 0)), rect, 2);
-                if (_hoverKey == key || day == today) Gfx.Outline(dc, _hoverKey == key ? _t.Text : _t.Tertiary, rect, 2);
-            }
-        y += 7 * cell + 6 * gap + 12;
-
-        const double legendBox = 9;
-        var less = Gfx.Measure(L.T("Menos"), Gfx.Small).Width;
-        var more = Gfx.Measure(L.T("Más"), Gfx.Small).Width;
-        var legendWidth = less + 5 + 5 * (legendBox + 3) + 2 + more;
-        if (dc is not null)
-        {
-            string detail;
-            if (hovered is { } d)
-            {
-                var record = _activity.Get(d);
-                detail = L.T("{0:ddd d MMM}", d).Replace(".", "") + (record is null || record.Tokens == 0
-                    ? L.T(" · sin actividad")
-                    : L.T(" · {0} tokens · {1} respuestas", Format.Tokens(record.Tokens), record.Responses));
-            }
-            else detail = _activity.FirstDay is { } first && first > start ? L.T("Desde el {0:d 'de' MMMM}", first) : L.T("Últimos 6 meses");
-            Gfx.Write(dc, detail, Gfx.Small, hovered is null ? _t.Tertiary : _t.Secondary, new Rect(Pad, y, Inner - legendWidth - 10, small));
-
-            var x = Pad + Inner - legendWidth;
-            Gfx.Write(dc, L.T("Menos"), Gfx.Small, _t.Tertiary, new Rect(x, y, less + 2, small));
-            x += less + 5;
-            for (var level = 0; level <= 4; level++)
-            {
-                Gfx.Fill(dc, HeatColor(level), new Rect(x, y + (small - legendBox) / 2, legendBox, legendBox), 2);
-                x += legendBox + 3;
-            }
-            Gfx.Write(dc, L.T("Más"), Gfx.Small, _t.Tertiary, new Rect(x + 2, y, more + 2, small));
-        }
-        y += small + 22;
-
-        var stats = ActivityStats.Compute(_activity, start, today);
-        static string Days(int n) => n == 1 ? L.T("1 día") : L.T("{0} días", n);
-        var items = new (string Value, string Label)[]
-        {
-            (Format.Tokens(stats.Tokens), L.T("tokens")),
-            (stats.ActiveDays.ToString(), L.T("días activos")),
-            (Days(stats.CurrentStreak), L.T("racha actual")),
-            (Days(stats.LongestStreak), L.T("racha más larga")),
-            (stats.BusiestDay is { } busiest ? L.T("{0:d MMM}", busiest).Replace(".", "") : "—", L.T("día más activo")),
-            (stats.FavoriteModel ?? "—", L.T("modelo favorito")),
-        };
-        var columnWidth = Inner / 2;
-        var rowHeight = Gfx.BodyStrong.LineHeight + 2 + small + 14;
-        for (var i = 0; i < items.Length && dc is not null; i++)
-        {
-            var x = Pad + i % 2 * columnWidth;
-            var rowTop = y + i / 2 * rowHeight;
-            Gfx.Write(dc, items[i].Value, Gfx.BodyStrong, _t.Text, new Rect(x, rowTop, columnWidth - 8, Gfx.BodyStrong.LineHeight));
-            Gfx.Write(dc, items[i].Label, Gfx.Small, _t.Tertiary, new Rect(x, rowTop + Gfx.BodyStrong.LineHeight + 2, columnWidth - 8, small));
-        }
-        return y + (items.Length + 1) / 2 * rowHeight + 6;
-    }
-
-    SD.Color HeatColor(int level) => level switch
-    {
-        0 => _t.Track,
-        1 => Gfx.Blend(_t.Background, _t.Accent, 0.3),
-        2 => Gfx.Blend(_t.Background, _t.Accent, 0.52),
-        3 => Gfx.Blend(_t.Background, _t.Accent, 0.76),
-        _ => _t.Accent,
-    };
-
     // ── Pie ─────────────────────────────────────────────────────────────────────────────────
 
     double ComposeFooter(DrawingContext? dc, double y)
@@ -664,8 +531,8 @@ sealed partial class UsageView : Control
 
     // ── Interacción ─────────────────────────────────────────────────────────────────────────
 
-    void AddHit(string key, Rect bounds, HitKind kind, Account? account = null, SessionInfo? session = null, View view = View.Usage, DateOnly day = default) =>
-        _hits.Add(new Hit(key, bounds, kind, account, session, view, day));
+    void AddHit(string key, Rect bounds, HitKind kind, Account? account = null, SessionInfo? session = null, View view = View.Usage) =>
+        _hits.Add(new Hit(key, bounds, kind, account, session, view));
 
     Hit? HitAt(Point p) => _hits.LastOrDefault(h => h.Bounds.Contains(p));
 
@@ -673,7 +540,7 @@ sealed partial class UsageView : Control
     {
         base.OnPointerMoved(e);
         var hit = HitAt(e.GetPosition(this));
-        Cursor = hit is null || hit.Kind == HitKind.Day ? Cursor.Default : new Cursor(StandardCursorType.Hand);
+        Cursor = hit is null ? Cursor.Default : new Cursor(StandardCursorType.Hand);
         if (hit?.Key == _hoverKey) return;
         _hoverKey = hit?.Key;
         InvalidateVisual();
@@ -690,14 +557,7 @@ sealed partial class UsageView : Control
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        var target = HitAt(e.GetPosition(this));
-        // Con el selector abierto, un clic fuera de él solo lo cierra.
-        if (_viewMenuOpen && target?.Kind is not (HitKind.ViewMenu or HitKind.MenuPanel or HitKind.ViewRow or HitKind.ViewPin))
-        {
-            CloseMenus();
-            return;
-        }
-        if (target is not { } hit) return;
+        if (HitAt(e.GetPosition(this)) is not { } hit) return;
 
         if (e.InitialPressMouseButton == MouseButton.Right)
         {
@@ -717,12 +577,7 @@ sealed partial class UsageView : Control
         {
             case HitKind.Refresh when !_busy: RefreshRequested?.Invoke(); break;
             case HitKind.Add: AddRequested?.Invoke(); break;
-            case HitKind.View or HitKind.ViewRow: OpenView(hit.View); break;
-            case HitKind.ViewMenu:
-                if (_viewMenuOpen) CloseMenus();
-                else { _viewMenuOpen = true; Relayout(); }
-                break;
-            case HitKind.ViewPin: TogglePin(hit.View); break;
+            case HitKind.View: OpenView(hit.View); break;
             case HitKind.Gear:
                 if (_view == View.Settings) OpenView(_beforeSettings);
                 else ShowSettings();

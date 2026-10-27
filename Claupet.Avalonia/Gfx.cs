@@ -117,26 +117,6 @@ static class Gfx
         [Glyph.Other] = Geometry.Parse("M4,8 L4.01,8 M8,8 L8.01,8 M12,8 L12.01,8"),
     };
 
-    // La tachuela, en una caja de 24 × 24: cuerpo cerrado (para rellenarlo) y aguja aparte.
-    static readonly Geometry PinBody = Geometry.Parse(
-        "M8.5,2.5 L15.5,2.5 L15.5,5.5 L14.8,5.5 L16,12.5 L18.5,13.5 L18.5,16 L5.5,16 L5.5,13.5 L8,12.5 L9.2,5.5 L8.5,5.5 Z");
-    static readonly Geometry PinNeedle = Geometry.Parse("M12,16 L12,22");
-
-    /// <summary>Tachuela inclinada 30°; rellena cuando la vista está fija.</summary>
-    public static void Pin(DrawingContext? dc, SD.Color color, Rect box, bool filled)
-    {
-        if (dc is null) return;
-        var scale = box.Width / 24;
-        var transform = Matrix.CreateTranslation(-12, -12) * Matrix.CreateRotation(Math.PI / 6)
-            * Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(box.Center.X, box.Center.Y);
-        using (dc.PushTransform(transform))
-        {
-            var pen = P(color, 2);
-            dc.DrawGeometry(filled ? B(color) : null, pen, PinBody);
-            dc.DrawGeometry(null, pen, PinNeedle);
-        }
-    }
-
     public static void Icon(DrawingContext? dc, Glyph glyph, SD.Color color, Rect box, double size = 16)
     {
         if (dc is null) return;

@@ -5,10 +5,11 @@ using SD = System.Drawing;
 
 namespace Claupet;
 
-/// <summary>Selector de vistas con pin y vista «Ajustes» (igual que en Windows).</summary>
+/// <summary>Las pestañas de las vistas y la vista «Ajustes» (igual que en Windows).</summary>
 sealed partial class UsageView
 {
-    static readonly View[] Selectable = [View.Usage, View.Sessions, View.Activity, View.Flows];
+    /// <summary>Las pestañas de arriba, en orden: las tres caben, así que no hay que elegir.</summary>
+    static readonly View[] Tabs = [View.Usage, View.Sessions, View.Activity];
 
     /// <summary>
     /// Lo que muestra «Ajustes»; lo manda TrayController cada vez que cambia algo. Speak y Behavior son
@@ -21,12 +22,7 @@ sealed partial class UsageView
     public sealed record MascotBehavior(bool FlowGestures, bool DanceToMusic, bool NoticeGestures, bool GreetOnAppear,
         bool AngryOnClicks, bool SleepWithoutSessions);
 
-    readonly List<View> _pinned = [View.Usage, View.Sessions, View.Activity];
-    bool _viewMenuOpen;
-    /// <summary>Vista que se quiere fijar: el próximo pin de una fija la reemplaza.</summary>
-    View? _replacing;
     View _beforeSettings = View.Usage;
-    Rect _selectorBounds;
     SettingsState _settingsState = new(true, true, "", "", "", false, null, null, false, 0, "");
     string _soundPackId = "", _paletteId = "", _mascotId = "";
 
@@ -35,19 +31,8 @@ sealed partial class UsageView
         View.Usage => L.T("Uso"),
         View.Sessions => L.T("Sesiones"),
         View.Activity => L.T("Actividad"),
-        View.Flows => L.T("Flujos"),
         _ => L.T("Ajustes"),
     };
-
-    /// <summary>Tres vistas distintas y elegibles; si no, las de siempre.</summary>
-    public void SetPinned(IEnumerable<string> names)
-    {
-        var views = names.Select(n => Enum.TryParse<View>(n, out var v) ? v : (View?)null).ToList();
-        var valid = views.Count == 3 && views.All(v => v is { } x && Selectable.Contains(x)) && views.Distinct().Count() == 3;
-        _pinned.Clear();
-        _pinned.AddRange(valid ? views.Select(v => v!.Value) : [View.Usage, View.Sessions, View.Activity]);
-        Relayout();
-    }
 
     /// <summary>Los Id marcan la opción elegida en cada lista.</summary>
     public void SetSettingsState(SettingsState state, string soundPackId, string paletteId, string mascotId)
@@ -59,123 +44,10 @@ sealed partial class UsageView
         if (_view == View.Settings) InvalidateVisual();
     }
 
-    /// <summary>Cierra el selector si está abierto. Devuelve si había algo que cerrar (para Escape).</summary>
-    public bool CloseMenus()
-    {
-        if (!_viewMenuOpen) return false;
-        _viewMenuOpen = false;
-        _replacing = null;
-        Relayout();
-        return true;
-    }
-
     void OpenView(View view)
     {
         _view = view;
-        _viewMenuOpen = false;
-        _replacing = null;
         Relayout();
-    }
-
-    /// <summary>Siempre hay 3 fijas: el pin de una libre la prepara y el pin de una fija hace el cambio.</summary>
-    void TogglePin(View view)
-    {
-        if (!_pinned.Contains(view))
-            _replacing = _replacing == view ? null : view;
-        else if (_replacing is { } incoming)
-        {
-            _pinned[_pinned.IndexOf(view)] = incoming;
-            _replacing = null;
-            PinnedChanged?.Invoke(_pinned.Select(v => v.ToString()).ToList());
-        }
-        Relayout();
-    }
-
-    // ── Selector de la cabecera ─────────────────────────────────────────────────────────────
-
-    void ComposeViewSelector(DrawingContext? dc, double right, double top, double tabsRight)
-    {
-        const double height = 30, compact = 10 + 16 + 4 + 12 + 8;
-        var extra = !_pinned.Contains(_view);
-        var label = ViewLabel(_view);
-        var labelWidth = Gfx.Measure(label, Gfx.Body).Width;
-        var width = extra && right - (compact + 6 + labelWidth) >= tabsRight + 10 ? compact + 6 + labelWidth : compact;
-        var showLabel = width > compact;
-        _selectorBounds = new Rect(right - width, top, width, height);
-        AddHit("viewmenu", _selectorBounds, HitKind.ViewMenu);
-        if (dc is null) return;
-
-        if (_viewMenuOpen) Gfx.Fill(dc, _t.Raised, _selectorBounds, 8);
-        else if (_hoverKey == "viewmenu") Gfx.Fill(dc, _t.Hover, _selectorBounds, 8);
-        Gfx.Outline(dc, extra || _viewMenuOpen ? _t.Accent : _t.Border, _selectorBounds, 8);
-
-        var x = _selectorBounds.X + 10;
-        Gfx.Pin(dc, extra ? _t.Accent : _t.Secondary, new Rect(x, top + (height - 16) / 2, 16, 16), filled: false);
-        x += 16;
-        if (showLabel)
-        {
-            Gfx.Write(dc, label, Gfx.Body, _t.Text, new Rect(x + 6, top, labelWidth + 2, height), center: true);
-            x += 6 + labelWidth;
-        }
-        Gfx.Icon(dc, Glyph.ChevronDown, _t.Secondary, new Rect(x + 4, top, 12, height), 12);
-    }
-
-    /// <summary>La lista de vistas bajo el selector. Devuelve su borde inferior.</summary>
-    double ComposeViewMenu(DrawingContext? dc)
-    {
-        const double width = 250, rowHeight = 34;
-        var x = Math.Min(_selectorBounds.Right, ViewWidth - 10) - width;
-        var top = _selectorBounds.Bottom + 6;
-        var small = Gfx.Small.LineHeight;
-        var hint = _replacing is { } incoming
-            ? L.T("Pulse el pin de la fija que cambia por {0}.", ViewLabel(incoming))
-            : L.T("Siempre hay 3 pestañas fijas. Para fijar otra, pulse su pin y luego el de la que cambia.");
-        var hintHeight = Gfx.MeasureWrapped(hint, Gfx.Small, width - 24, 4);
-        var height = 8 + small + 8 + Selectable.Length * rowHeight + 9 + hintHeight + 12;
-        var panel = new Rect(x, top, width, height);
-        AddHit("viewmenu-panel", panel, HitKind.MenuPanel);
-
-        if (dc is not null)
-        {
-            Gfx.Fill(dc, _t.Raised, panel, 10);
-            Gfx.Outline(dc, _t.Border, panel, 10);
-            Gfx.Write(dc, L.T("Clic: abrir · Pin: fijar como pestaña"), Gfx.Small, _t.Tertiary, new Rect(x + 12, top + 8, width - 24, small));
-        }
-
-        var y = top + 8 + small + 8;
-        foreach (var view in Selectable)
-        {
-            var row = new Rect(x + 6, y, width - 12, rowHeight);
-            var pin = new Rect(row.Right - 32, row.Y + (rowHeight - 30) / 2, 30, 30);
-            var rowKey = "vrow:" + view;
-            var pinKey = "vpin:" + view;
-            AddHit(rowKey, row, HitKind.ViewRow, view: view);
-            AddHit(pinKey, pin, HitKind.ViewPin, view: view);
-            if (dc is not null)
-            {
-                var pinned = _pinned.Contains(view);
-                if (_replacing == view) Gfx.Fill(dc, Gfx.Blend(_t.Raised, _t.Warn, 0.18), row, 8);
-                else if (_view == view) Gfx.Fill(dc, _t.Hover, row, 8);
-                else if (_hoverKey == rowKey) Gfx.Fill(dc, Gfx.Blend(_t.Raised, _t.Hover, 0.6), row, 8);
-                var text = ViewLabel(view);
-                var textWidth = Gfx.Measure(text, Gfx.Body).Width;
-                Gfx.Write(dc, text, Gfx.Body, _t.Text, new Rect(row.X + 10, row.Y, textWidth + 2, rowHeight), center: true);
-                if (_view == view)
-                    Gfx.Write(dc, L.T("abierta"), Gfx.Small, _t.Tertiary, new Rect(row.X + 10 + textWidth + 8, row.Y, 80, rowHeight), center: true);
-                if (_hoverKey == pinKey) Gfx.Fill(dc, _t.Hover, pin, 8);
-                var color = pinned ? (_replacing is null ? _t.Accent : _t.Warn) : _replacing == view ? _t.Warn : _t.Tertiary;
-                Gfx.Pin(dc, color, new Rect(pin.X + 7, pin.Y + 7, 16, 16), filled: pinned);
-            }
-            y += rowHeight;
-        }
-
-        y += 4;
-        if (dc is not null)
-        {
-            dc.DrawLine(Gfx.P(_t.Border), new Point(x + 10, y), new Point(x + width - 10, y));
-            Gfx.Write(dc, hint, Gfx.Small, _replacing is null ? _t.Tertiary : _t.Warn, new Rect(x + 12, y + 5, width - 24, hintHeight), maxLines: 4);
-        }
-        return panel.Bottom;
     }
 
     // ── Vista «Ajustes» ─────────────────────────────────────────────────────────────────────

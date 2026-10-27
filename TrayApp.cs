@@ -116,12 +116,6 @@ sealed partial class TrayApp : ApplicationContext
         _form.RenameRequested += RenameAccount;
         _form.NewSessionRequested += NewSession;
         _form.ThemeChanged += () => { ApplyMenus(); ClearRefreshIcons(); UpdateTray(); };
-        _form.SetPinned(_settings.PinnedViews);
-        _form.PinnedChanged += views =>
-        {
-            _settings.PinnedViews = views.ToList();
-            SettingsStore.Save(_settings);
-        };
         _form.SettingRequested += OnSetting;
         // --pestana <nombre>: con --settings, abre esa pestaña de Ajustes (para revisarla sin cambiar la guardada).
         var args = Environment.GetCommandLineArgs();
@@ -256,7 +250,6 @@ sealed partial class TrayApp : ApplicationContext
         try
         {
             var summary = await Task.Run(() => _activity.Scan(accounts.Select(a => a.ConfigDir)));
-            _form.SetActivity(summary);
             _activitySummary = summary;
             MaybeShowRecap(false);
         }

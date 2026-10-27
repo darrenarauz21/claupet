@@ -95,12 +95,6 @@ sealed class TrayController
             SettingsStore.Save(_settings);
             UpdateTray();
         };
-        View.SetPinned(_settings.PinnedViews);
-        View.PinnedChanged += views =>
-        {
-            _settings.PinnedViews = views.ToList();
-            SettingsStore.Save(_settings);
-        };
         View.SettingRequested += action => _ = OnSettingAsync(action);
         View.NewSessionRequested += session => _ = NewSessionAsync(session);
         PushSettings();
@@ -191,11 +185,12 @@ sealed class TrayController
         }
     }
 
+    /// <summary>Sigue contando aunque ya no haya mapa de calor, para que el historial no pierda días.</summary>
     async Task CountActivityAsync(List<Account> accounts)
     {
         if (_counting) return;
         _counting = true;
-        try { View.SetActivity(await Task.Run(() => _activity.Scan(accounts.Select(a => a.ConfigDir)))); }
+        try { await Task.Run(() => _activity.Scan(accounts.Select(a => a.ConfigDir))); }
         finally { _counting = false; }
     }
 

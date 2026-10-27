@@ -188,12 +188,9 @@ con que el proceso exista.
 La línea «Modelo» sale de la última respuesta del `.jsonl`: `message.model`, `effort` y
 `advisorModel` (no documentados). Un `/model` o `/effort` se ve recién en la respuesta siguiente.
 
-## Vistas fijas y ajustes
+## Vistas y ajustes
 
-La cabecera muestra siempre 3 vistas fijas (por defecto Uso, Sesiones y Actividad). El botón de la
-tachuela abre la lista de todas: clic en el nombre la abre sin fijarla (el botón muestra su nombre
-si cabe); el pin de una vista libre la prepara y el pin de una fija hace el cambio en ese lugar,
-así nunca hay más ni menos de 3. Se guardan en `PinnedViews` del `settings.json` de la app. El
+La cabecera muestra las 3 vistas: Uso, Sesiones y Actividad. El
 engranaje del pie abre los **Ajustes rápidos**, en cinco pestañas: Avisos (notificaciones y sonido), Apariencia
 (color, mascota y su tamaño), Asistente (chat, micrófono y leer en voz alta), Isla y Sistema (idioma, inicio con
 Windows y diagnóstico); la última abierta queda en `SettingsTab`. Todas miden lo que la más alta (con lo que esté
@@ -235,9 +232,9 @@ hook) se abre desde Claupet, al frente. Si Claupet no está abierto, la Console 
 `Claupet.exe --console --seccion=<id>` abre en esa sección (`general`, `avisos`, `apariencia`, `mascota`,
 `asistente`, `respuestas`, `isla`, `cuentas` o `sistema`).
 
-## Flujos
+## Actividad
 
-Un carril por sesión activa: «Pedido», «+N» con lo anterior y los últimos grupos de pasos del
+Un carril por sesión activa (los nodos los dibuja `LaneNodes.cs`, que usa también la isla): «Pedido», «+N» con lo anterior y los últimos grupos de pasos del
 turno (los seguidos de la misma herramienta se juntan: «Leyendo ×3»). Mientras la sesión trabaja
 siempre hay algo animado: si el último paso sigue en curso, late; si ya volvió (leer o buscar duran
 milisegundos), aparece al final «Pensando…» con el asterisco que gira. Un punto viaja hacia el
@@ -357,15 +354,18 @@ como el chat.
 
 **La isla** (`IslandForm.cs`) es una ventana siempre oscura, con el acento de la paleta. Oculta, una
 franja invisible de 320 × 6 px en el centro del borde de arriba la hace asomar compacta (300 × 36);
-con el cursor encima (o un clic, según `IslandHover`) se abre con Inicio (las sesiones y sus pasos,
-los cambios por archivo con su diff, ir a la terminal), Chat y «+ Sesión». Se pliega al irse el
-cursor, salvo si está fijada, se está escribiendo, hay una pregunta en curso o acaba de llegar una
-respuesta: esa queda a la vista de 5 a 15 s, según su largo. Un clic en cualquier otra parte (otra
-ventana, el escritorio, la barra de tareas) la pliega, salvo fijada: un gancho de mouse de bajo nivel
+con el cursor encima (o un clic, según `IslandHover`) se abre con Actividad (cada sesión con los nodos de
+su carril, como en la vista Actividad de la bandeja, con `LaneNodes.cs`; el nodo de la edición de un archivo
+abre su diff; ir a la terminal), Chat y «+ Sesión». Se pliega al irse el cursor, salvo si se está
+escribiendo, hay una pregunta en curso o acaba de llegar una respuesta: esa queda a la vista de 5 a
+15 s, según su largo. Un clic en cualquier otra parte (otra
+ventana, el escritorio, la barra de tareas) la pliega: un gancho de mouse de bajo nivel
 (`MouseDownHook`), puesto solo mientras está abierta. No cuentan los menús que abrió la isla; un permiso
 de Claude Code o una pregunta de Claupet siguen esperando en la compacta y, si estaba respondiendo, se abre de nuevo al llegar la
 respuesta. Con `IslandWhileBusy` queda compacta a la vista mientras alguna sesión trabaja; con
-`WeeklyRecap`, los lunes muestra el resumen de la semana.
+`WeeklyRecap`, los lunes muestra el resumen de la semana. Lo saca de los tokens por día (entrada + escritura en
+caché + salida) de los `.jsonl` de Claude Code de este equipo; como Claude Code borra los registros de más de 30
+días, la app guarda un resumen diario (solo cifras) en `history.json`, aunque la ventana esté cerrada.
 
 El chat muestra toda la conversación (se guardan las últimas 40 y se olvida a los 10 minutos sin
 escribir, o con «Nueva conversación») en un marco de 300 px como mucho: lo que no cabe se ve con la rueda
@@ -548,12 +548,6 @@ lectura en japonés), con una variante por caso. Carpetas `clasico/`,
 donde un `.wav` o `.mp3` con el mismo nombre (`terminado`, `pregunta`, `permiso`, `fallo`, `uso`,
 `aviso`) manda sobre el estilo. Se reproducen con winmm en Windows, `afplay` en macOS y `paplay`,
 `pw-play` o `aplay` en Linux.
-
-## Actividad
-
-Una casilla por día de los últimos 6 meses; el color sube con los tokens (entrada + escritura en
-caché + salida). Sale de los `.jsonl` de Claude Code de este equipo. Como Claude Code borra los
-registros de más de 30 días, la app guarda un resumen diario (solo cifras) en `history.json`.
 
 ## Compilar
 

@@ -7,7 +7,7 @@ namespace Claupet;
 /// <summary>El orden define el orden de la lista: lo que trabaja va primero.</summary>
 enum SessionState { Working, Waiting, Failed, Done, Idle }
 
-/// <summary>Familia de herramienta, para agrupar los pasos en la vista Flujos.</summary>
+/// <summary>Familia de herramienta, para agrupar los pasos en la vista Actividad.</summary>
 enum ToolKind { Read, Search, Edit, Run, Agent, Web, Ask, Other }
 
 /// <summary>Una llamada a herramienta del turno actual. Done: ya llegó su resultado.</summary>
