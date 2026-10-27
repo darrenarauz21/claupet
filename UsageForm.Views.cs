@@ -9,75 +9,6 @@ sealed partial class UsageForm
 
     static readonly View[] Selectable = [View.Usage, View.Sessions, View.Activity, View.Flows];
 
-    /// <summary>Lo que muestra «Ajustes»; lo manda TrayApp cada vez que cambia algo. Los textos son los valores ya listos para mostrar.</summary>
-    public sealed record SettingsState
-    {
-        public bool Notifications { get; init; } = true;
-        public bool Sound { get; init; } = true;
-        public string SoundPack { get; init; } = "";
-        public string Palette { get; init; } = "";
-        public string Mascot { get; init; } = "";
-        public string MascotSize { get; init; } = "";
-        public bool DesktopMascot { get; init; }
-        public bool Speak { get; init; }
-        public bool FlowGestures { get; init; }
-        public bool DanceToMusic { get; init; }
-        public bool NoticeGestures { get; init; }
-        public bool GreetOnAppear { get; init; }
-        public bool AngryOnClicks { get; init; }
-        public bool SleepWithoutSessions { get; init; }
-        public bool Chat { get; init; }
-        public string MascotModel { get; init; } = "";
-        public string AssistantAccount { get; init; } = "";
-        public string TaskFolder { get; init; } = "";
-        public bool AnalyzeDrops { get; init; }
-        /// <summary>Cuántas capacidades tienen «Permitir siempre» («3 de 10 permitidas»).</summary>
-        public string Permissions { get; init; } = "";
-        public bool Mic { get; init; }
-        public string MicKey { get; init; } = "";
-        public string ChatKey { get; init; } = "";
-        public bool CopilotKey { get; init; }
-        /// <summary>El modelo de voz: lo que dice la fila y su enlace (descargar, el avance o listo).</summary>
-        public string VoiceStatus { get; init; } = "";
-        public string VoiceAction { get; init; } = "";
-        public bool ReadAloud { get; init; }
-        /// <summary>La voz que lee y, si es de Claupet y falta su modelo, lo que dice su fila y su enlace (vacío: sin fila).</summary>
-        public string ReadAloudVoice { get; init; } = "";
-        public string SpeechStatus { get; init; } = "";
-        public string SpeechAction { get; init; } = "";
-        /// <summary>El modelo local: el elegido (nombre y RAM) y lo que dice su fila y su enlace (descargar, el avance, borrar).</summary>
-        public string LocalModel { get; init; } = "";
-        public string LocalStatus { get; init; } = "";
-        public string LocalAction { get; init; } = "";
-        public bool Island { get; init; }
-        public string IslandModel { get; init; } = "";
-        public bool IslandHover { get; init; }
-        public bool IslandWhileBusy { get; init; }
-        public bool WeeklyRecap { get; init; }
-        /// <summary>El hook de permisos y preguntas: «Configurar…» o «Listo».</summary>
-        public string Approvals { get; init; } = "";
-        public bool StartWithWindows { get; init; }
-        public int Accounts { get; init; }
-        /// <summary>El idioma elegido, en su idioma («Español», «English»).</summary>
-        public string Language { get; init; } = "";
-        /// <summary>Cuántas extensiones hay y cuántas encendidas («Ninguna», «2 de 3 encendidas»).</summary>
-        public string Extensions { get; init; } = "";
-        /// <summary>Respuestas: el modelo local listo, cuándo suelta la memoria y el modelo de la nube («Claude · Haiku»).</summary>
-        public bool LocalReady { get; init; }
-        public string LocalIdle { get; init; } = "";
-        public string CloudModel { get; init; } = "";
-        /// <summary>Quién responde primero, en resumen («4 sin IA · 7 en la nube»); el detalle se elige en su menú.</summary>
-        public string Topics { get; init; } = "";
-        /// <summary>El modelo local responde preguntas generales: se avisa que puede inventar.</summary>
-        public bool GeneralLocal { get; init; }
-        public string Fallback { get; init; } = "";
-        public string FallbackHint { get; init; } = "";
-        public bool ShowWho { get; init; }
-        public string City { get; init; } = "";
-        public string Saved { get; init; } = "";
-        public string SavedDetail { get; init; } = "";
-    }
-
     /// <summary>Las pestañas de Ajustes, en orden.</summary>
     public enum SettingsTab { Avisos, Apariencia, Asistente, Isla, Respuestas, Sistema }
 
@@ -91,6 +22,8 @@ sealed partial class UsageForm
     View _beforeSettings = View.Usage;
     Rectangle _selectorBounds;
     SettingsState _settingsState = new();
+    /// <summary>Las secciones de Ajustes armadas con el estado (las mismas de Claupet Console).</summary>
+    IReadOnlyList<SettingsPage> _settingsPages = SettingsPages.Build(new());
     SettingsTab _settingsTab;
     /// <summary>Desde qué pestaña se desliza el indicador y cuándo empezó.</summary>
     SettingsTab _tabFrom;
@@ -119,6 +52,7 @@ sealed partial class UsageForm
     {
         var old = _settingsState;
         _settingsState = state;
+        _settingsPages = SettingsPages.Build(state);
         if (_view != View.Settings) return;
         // Las filas que aparecen o se van (al encender el chat, la isla, el micrófono…) entran con una transición.
         if (old.Chat != state.Chat || old.Mic != state.Mic || old.Island != state.Island || old.DesktopMascot != state.DesktopMascot || old.DanceToMusic != state.DanceToMusic
@@ -376,117 +310,44 @@ sealed partial class UsageForm
         foreach (var tab in AllTabs)
             if (tab != _settingsTab) bottom = Math.Max(bottom, ComposeSettingsTab(g, false, tab, y));
         _hits.RemoveRange(hits, _hits.Count - hits);
+        // Lo demás (cada tipo de pregunta, y más adelante el editor y las extensiones), en la ventana grande.
+        bottom = LinkRow(g, draw, L.T("Todos los ajustes, en Claupet Console"), L.T("Abrir"), "console", _t.Accent, bottom + S(6));
         return bottom + S(14);
     }
 
     int ComposeSettingsTab(Graphics g, bool draw, SettingsTab tab, int y)
     {
-        var s = _settingsState;
-        switch (tab)
+        var first = true;
+        foreach (var page in _settingsPages)
         {
-            case SettingsTab.Avisos:
-                y = SwitchRow(g, draw, L.T("Notificaciones"), "notify", s.Notifications, y);
-                y = SwitchRow(g, draw, L.T("Sonido"), "sound", s.Sound, y);
-                y = ChoiceRow(g, draw, L.T("Estilo de sonido"), "pack", s.SoundPack, y);
-                y = LinksRow(g, draw, y, (L.T("Ver un aviso de ejemplo"), "sample"), (L.T("Abrir carpeta de sonidos"), "sounds"));
-                break;
-            case SettingsTab.Apariencia:
-                y = ChoiceRow(g, draw, L.T("Color"), "palette", s.Palette, y, swatch: _t.Accent);
-                y = ChoiceRow(g, draw, L.T("Mascota"), "mascot", s.Mascot, y);
-                y = ChoiceRow(g, draw, L.T("Tamaño de la mascota"), "size", s.MascotSize, y);
-                y = SwitchRow(g, draw, L.T("Mascota en el escritorio"), "desk", s.DesktopMascot, y);
-                if (s.DesktopMascot)
+            if (page.Tab != tab.ToString()) continue;
+            foreach (var row in page.Rows)
+            {
+                if (row.Place == RowPlace.Console) continue;
+                y = row.Kind switch
                 {
-                    y = SwitchRow(g, draw, L.T("Gestos del flujo (lo que hace la sesión)"), "flowgest", s.FlowGestures, y);
-                    y = SwitchRow(g, draw, L.T("Bailar con música"), "music", s.DanceToMusic, y);
-                    y = SwitchRow(g, draw, L.T("Gesto de los avisos"), "noticegest", s.NoticeGestures, y);
-                    y = SwitchRow(g, draw, L.T("Saludar al aparecer"), "greet", s.GreetOnAppear, y);
-                    y = SwitchRow(g, draw, L.T("Enojarse con muchos clics"), "angry", s.AngryOnClicks, y);
-                    y = SwitchRow(g, draw, L.T("Dormir sin sesiones"), "sleep", s.SleepWithoutSessions, y);
-                    y = SwitchRow(g, draw, L.T("Hablar (los avisos en una nubecita)"), "speak", s.Speak, y);
-                }
-                break;
-            case SettingsTab.Asistente:
-                y = SettingsCaption(g, draw, L.T("Chat"), y);
-                y = SwitchRow(g, draw, L.T("Chat con la mascota"), "chat", s.Chat, y);
-                if (s.Chat)
-                {
-                    y = ChoiceRow(g, draw, L.T("Modelo de la mascota"), "mmodel", s.MascotModel, y);
-                    y = ChoiceRow(g, draw, L.T("Cuenta que responde"), "account", s.AssistantAccount, y);
-                    y = ChoiceRow(g, draw, L.T("Carpeta de las tareas"), "folder", s.TaskFolder, y);
-                    y = SwitchRow(g, draw, L.T("Analizar los archivos que le suelte"), "drops", s.AnalyzeDrops, y);
-                }
-                // Lo que hace en el equipo (captura, calendario, ventanas…) se pide desde el chat o la isla.
-                if (s.Chat || s.Island) y = ChoiceRow(g, draw, L.T("Permisos"), "grants", s.Permissions, y);
-                y = SettingsCaption(g, draw, L.T("Voz"), y + S(8));
-                y = SwitchRow(g, draw, L.T("Micrófono"), "mic", s.Mic, y);
-                if (s.Mic)
-                {
-                    y = ChoiceRow(g, draw, L.T("Tecla para hablar"), "mickey", s.MicKey, y);
-                    y = LinkRow(g, draw, s.VoiceStatus, s.VoiceAction, "voice", _t.Accent, y);
-                }
-                // Aparte del micrófono: puede escribirle y que le responda hablando.
-                y = SwitchRow(g, draw, L.T("Leer las respuestas en voz alta"), "readaloud", s.ReadAloud, y);
-                if (s.ReadAloud)
-                {
-                    y = ChoiceRow(g, draw, L.T("Voz"), "readvoice", s.ReadAloudVoice, y);
-                    if (s.SpeechStatus.Length > 0) y = LinkRow(g, draw, s.SpeechStatus, s.SpeechAction, "speech", _t.Accent, y);
-                }
-                // Responde sin internet ni tokens cuando se lo elige como modelo de la mascota o de la isla.
-                if (s.Chat || s.Island)
-                {
-                    y = SettingsCaption(g, draw, L.T("Teclas"), y + S(8));
-                    y = ChoiceRow(g, draw, L.T("Atajo del chat"), "chatkey", s.ChatKey, y);
-                    y = SwitchRow(g, draw, s.Mic ? L.T("Tecla Copilot: chat y voz") : L.T("Tecla Copilot: abre el chat"), "copilot", s.CopilotKey, y);
-                    y = LinkRow(g, draw, L.T("Atajos de teclado"), L.T("Ver…"), "shortcuts", _t.Accent, y);
-                }
-                break;
-            case SettingsTab.Isla:
-                y = SwitchRow(g, draw, L.T("Isla en el borde de arriba"), "island", s.Island, y);
-                if (s.Island)
-                {
-                    y = ChoiceRow(g, draw, L.T("Modelo de la isla"), "imodel", s.IslandModel, y);
-                    y = SwitchRow(g, draw, L.T("Abrir al pasar el cursor"), "hover", s.IslandHover, y);
-                    y = SwitchRow(g, draw, L.T("A la vista mientras algo trabaja"), "busy", s.IslandWhileBusy, y);
-                    y = LinkRow(g, draw, L.T("Permisos y preguntas en la isla"), s.Approvals, "approvals", _t.Accent, y);
-                    y = SwitchRow(g, draw, L.T("Resumen de la semana, los lunes"), "recap", s.WeeklyRecap, y);
-                    y = LinkRow(g, draw, L.T("El de esta semana"), L.T("Ver ahora"), "recapnow", _t.Accent, y);
-                }
-                break;
-            case SettingsTab.Respuestas:
-                y = SettingsCaption(g, draw, L.T("Motores"), y);
-                y = InfoRow(g, draw, L.T("Sin IA"), L.T("Siempre activo · 0 tokens"), y);
-                y = ChoiceRow(g, draw, L.T("Modelo local"), "localmodel", s.LocalModel, y);
-                y = LinkRow(g, draw, s.LocalStatus, s.LocalAction, "local", s.LocalAction == L.T("Borrar") ? _t.Danger : _t.Accent, y);
-                if (s.LocalReady) y = ChoiceRow(g, draw, L.T("Liberar la memoria tras"), "localidle", s.LocalIdle, y);
-                y = InfoRow(g, draw, L.T("Nube"), s.CloudModel, y);
-                y = SettingsCaption(g, draw, L.T("Quién responde primero"), y + S(8));
-                y = ChoiceRow(g, draw, L.T("Por tipo de pregunta"), "topics", s.Topics, y);
-                if (s.GeneralLocal) y = NoteRow(g, draw, L.T("El modelo local puede inventar datos en las preguntas generales."), _t.Warn, y);
-                y = SettingsCaption(g, draw, L.T("Si no entiende"), y + S(8));
-                y = ChoiceRow(g, draw, L.T("Pasar al siguiente motor"), "fallback", s.Fallback, y);
-                y = NoteRow(g, draw, s.FallbackHint, _t.Tertiary, y);
-                y = SwitchRow(g, draw, L.T("Mostrar quién respondió"), "who", s.ShowWho, y);
-                y = SettingsCaption(g, draw, L.T("Clima (Open-Meteo)"), y + S(8));
-                y = ChoiceRow(g, draw, L.T("Mi ciudad"), "city", s.City, y);
-                y = SettingsCaption(g, draw, L.T("Ahorro"), y + S(8));
-                y = InfoRow(g, draw, L.T("Esta semana, sin la nube"), s.Saved, y);
-                if (s.SavedDetail.Length > 0) y = NoteRow(g, draw, s.SavedDetail, _t.Tertiary, y);
-                y = NoteRow(g, draw, L.T("Sin IA no gasta tokens ni sale del equipo, salvo el clima (Open-Meteo, y la ubicación por la IP con ipwho.is). Internet, archivos y tareas van siempre a la nube."), _t.Tertiary, y + S(4));
-                break;
-            default:
-                y = ChoiceRow(g, draw, L.T("Idioma"), "language", s.Language, y);
-                y = LinkRow(g, draw, s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add", _t.Accent, y);
-                y = SwitchRow(g, draw, L.T("Iniciar con Windows"), "startup", s.StartWithWindows, y);
-                y = ChoiceRow(g, draw, L.T("Extensiones"), "extensions", s.Extensions, y);
-                y = LinkRow(g, draw, L.T("Un paquete .claupet (o suéltelo en la mascota)"), L.T("Instalar…"), "extinstall", _t.Accent, y);
-                y = LinkRow(g, draw, L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup", _t.Accent, y);
-                y = LinkRow(g, draw, L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag", _t.Accent, y);
-                y = LinkRow(g, draw, L.T("Quitar hook e inicio con Windows"), L.T("Quitar…"), "unsetup", _t.Danger, y);
-                break;
+                    RowKind.Caption => SettingsCaption(g, draw, row.Text, first ? y : y + S(8)),
+                    RowKind.Switch => SwitchRow(g, draw, row.Text, row.Key, row.On, y),
+                    RowKind.Choice => ChoiceRow(g, draw, row.Text, row.Key, row.Value, y, swatch: row.Swatch ? _t.Accent : null),
+                    RowKind.Info => InfoRow(g, draw, row.Text, row.Value, y),
+                    RowKind.Note => NoteRow(g, draw, row.Text, ToneColor(row.Tone), y),
+                    RowKind.Link => LinkRow(g, draw, row.Text, row.Value, row.Key, ToneColor(row.Tone), y),
+                    _ => LinksRow(g, draw, y, (row.Links ?? []).Select(l => (l.Text, l.Key)).ToArray()),
+                };
+                first = false;
+            }
         }
         return y;
     }
+
+    Color ToneColor(RowTone tone) => tone switch
+    {
+        RowTone.Muted => _t.Tertiary,
+        RowTone.Warn => _t.Warn,
+        RowTone.Accent => _t.Accent,
+        RowTone.Danger => _t.Danger,
+        _ => _t.Text,
+    };
 
     int SettingsCaption(Graphics g, bool draw, string text, int y)
     {

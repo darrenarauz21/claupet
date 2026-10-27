@@ -5,6 +5,9 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        // --console: Claupet Console, la ventana grande, en su propio proceso (la abre la bandeja).
+        if (args.Contains(ConsoleApp.Flag)) return ConsoleApp.Run(args);
+
         // --idioma <es|en>: ese idioma solo en esta ejecución (para probar las traducciones sin tocar los ajustes).
         L.Use(Array.IndexOf(args, "--idioma") is var li and >= 0 && li + 1 < args.Length ? args[li + 1] : SettingsStore.Load().Language);
 

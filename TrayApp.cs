@@ -191,6 +191,7 @@ sealed partial class TrayApp : ApplicationContext
             UpdateKeyHook();
             CheckReminders(); // los que pasaron con la app cerrada
             _ = StartExtensionsAsync();
+            StartConsoleServer();
             if (demoDrop is not null) _ = DemoDropAsync(demoDrop);
             if (demoVoice is not null && _voice is { } voice) _ = Task.Delay(1500).ContinueWith(_ => voice.DemoAsync(demoVoice),
                 TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
@@ -312,7 +313,7 @@ sealed partial class TrayApp : ApplicationContext
     void PushSettings()
     {
         var s = _settings;
-        _form.SetSettingsState(new UsageForm.SettingsState
+        var state = new SettingsState
         {
             Notifications = s.Notifications,
             Sound = s.Sound,
@@ -375,7 +376,12 @@ sealed partial class TrayApp : ApplicationContext
             City = CityLabel(),
             Saved = AnswerStats.ThisWeek() is var (none, local) && none + local == 1 ? L.T("1 respuesta") : L.T("{0} respuestas", none + local),
             SavedDetail = AnswerStats.ThisWeek() is var (n, l) && n + l > 0 ? L.T("{0} sin IA · {1} con el modelo local", n, l) : "",
-        });
+            TopicEngines = AnswerTopics.All.Select(t => new TopicState(t.Id, L.T(t.Label),
+                t.Fixed ? L.T("Siempre la nube") : EngineLabel(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
+            Grants = Capabilities.All.Select(c => new GrantState(c.Id, c.Label, Capabilities.Allowed(s, c.Id))).ToList(),
+        };
+        _form.SetSettingsState(state);
+        SendConsoleState(state);
     }
 
     /// <summary>La extensión que ocupa una ranura exclusiva, dicha para Ajustes; null: el integrado.</summary>
@@ -561,6 +567,23 @@ sealed partial class TrayApp : ApplicationContext
 
     void OnSetting(string action)
     {
+        // Las filas de Claupet Console: el motor de un tipo de pregunta y el permiso de una capacidad.
+        if (action.StartsWith("topic:", StringComparison.Ordinal))
+        {
+            var topic = AnswerTopics.Find(action["topic:".Length..]);
+            ShowOptions(AnswerTopics.Choices(topic).Select(e => (e.ToString(), EngineLabel(e))), AnswerTopics.First(_settings, topic.Id).ToString(),
+                v => PickEngine(topic, Enum.Parse<Engine>(v)));
+            return;
+        }
+        if (action.StartsWith("grant:", StringComparison.Ordinal))
+        {
+            var id = action["grant:".Length..];
+            Change(s =>
+            {
+                if (!s.Permissions.Remove(id)) s.Permissions.Add(id);
+            });
+            return;
+        }
         switch (action)
         {
             case "notify": ToggleNotifications(); break;
@@ -665,6 +688,7 @@ sealed partial class TrayApp : ApplicationContext
             case "who": Toggle(s => s.ShowWhoAnswered = !s.ShowWhoAnswered); break;
             case "city": PickCity(); break;
             case "topics": ShowTopics(); break;
+            case "console": OpenConsole(); break;
             case "local": LocalModelAction(); break;
             case "island": Toggle(s => s.Island = !s.Island); break;
             case "imodel":
@@ -1533,6 +1557,7 @@ sealed partial class TrayApp : ApplicationContext
     /// <summary>Una lista armada al momento (cuentas, carpetas…), con la elegida marcada; elegir llama a pick con su Id.</summary>
     void ShowOptions(IEnumerable<(string Id, string Label)> options, string selected, Action<string> pick, Action? onClosed = null)
     {
+        if (OfferToConsole(options, selected, pick, onClosed)) return;
         var menu = new ContextMenuStrip();
         foreach (var (id, label) in options)
         {
@@ -1820,6 +1845,8 @@ sealed partial class TrayApp : ApplicationContext
     /// <summary>La lista de una opción de Ajustes (estilo de sonido, color, animación), con la elegida marcada.</summary>
     void ShowChoiceMenu(ContextMenuStrip choices, string selected)
     {
+        var items = choices.Items.OfType<ToolStripMenuItem>().Where(i => i.Tag is string).ToList();
+        if (OfferToConsole(items.Select(i => ((string)i.Tag!, i.Text ?? "")), selected, id => items.First(i => (string)i.Tag! == id).PerformClick(), null)) return;
         foreach (ToolStripMenuItem item in choices.Items) item.Checked = (string?)item.Tag == selected;
         _form.HoldOpen = true;
         choices.Show(Cursor.Position);
@@ -2388,6 +2415,7 @@ sealed partial class TrayApp : ApplicationContext
         _speechDownload?.Cancel();
         _localDownload?.Cancel();
         _localServer.Dispose();
+        _console.Dispose();
         _voice?.Dispose();
         _readAloud?.Dispose();
         _island?.Dispose();

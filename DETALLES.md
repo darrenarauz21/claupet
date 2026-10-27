@@ -9,6 +9,7 @@ se compila y cuáles son los límites conocidos.
 Core/                    núcleo común, sin interfaz: uso, sesiones, actividad, avisos, sonidos,
                          hook, credenciales, inicio con el sistema y diagnóstico
 *.cs + Claupet.csproj            app de Windows (WinForms)
+Console/                 Claupet Console (Avalonia 11), la ventana grande: el mismo Claupet.exe con --console
 Claupet.Avalonia/        app de Linux y macOS (Avalonia 11); también corre en Windows para probar
 herramientas/            empaquetado (empaquetar.py), scripts de instalación y Info.plist de macOS
 app.ico                  ícono de la mascota
@@ -193,11 +194,43 @@ La cabecera muestra siempre 3 vistas fijas (por defecto Uso, Sesiones y Activida
 tachuela abre la lista de todas: clic en el nombre la abre sin fijarla (el botón muestra su nombre
 si cabe); el pin de una vista libre la prepara y el pin de una fija hace el cambio en ese lugar,
 así nunca hay más ni menos de 3. Se guardan en `PinnedViews` del `settings.json` de la app. El
-engranaje del pie abre **Ajustes**, en cinco pestañas: Avisos (notificaciones y sonido), Apariencia,
-Asistente (chat, voz y teclas), Isla y Sistema (cuentas, inicio con el sistema, hook y diagnóstico);
+engranaje del pie abre **Ajustes**, en seis pestañas: Avisos (notificaciones y sonido), Apariencia,
+Asistente (chat, voz y teclas), Isla, Respuestas y Sistema (cuentas, inicio con el sistema, hook y diagnóstico);
 la última abierta queda en `SettingsTab`. Todas miden lo que la más alta (con lo que esté
 encendido), así que al cambiar de pestaña el cuadro no cambia de tamaño. El menú del ícono queda en abrir, actualizar, nueva
 sesión, ajustes y salir.
+
+Las filas de cada pestaña no están escritas en la ventana: salen de `SettingsPages.Build` (`Core/SettingsPages.cs`),
+la misma lista que muestra Claupet Console. Cada fila dice su tipo (interruptor, lista, dato, nota, enlace), su
+acción (la que atiende `OnSetting` en `TrayApp.cs`) y dónde va: en las dos, solo en la bandeja (los menús de
+«Por tipo de pregunta» y «Permisos») o solo en la Console (una fila por tipo de pregunta y un interruptor por
+permiso). Al pie de los ajustes rápidos, **Todos los ajustes, en Claupet Console › Abrir** abre la Console.
+
+## Claupet Console
+
+La ventana grande (Windows por ahora): todos los ajustes por secciones (General, Avisos, Apariencia, Mascota,
+Asistente, Respuestas, Isla, Cuentas y Sistema); más adelante, el chat y el editor. Es el mismo `Claupet.exe`
+en otro proceso (`Claupet.exe --console`, código en `Console/`, Avalonia 11): se abre solo cuando se pide y se
+cierra con su ventana. La bandeja no carga Avalonia ni Skia; solo ese proceso. Una sola ventana a la vez:
+abrirla de nuevo la trae al frente. Tiene su propia barra de arriba (la cabeza del chibi, minimizar, maximizar y cerrar) y las esquinas
+redondeadas de Windows 11; sigue el modo claro u oscuro de Windows y el color elegido en Apariencia.
+
+Solo la bandeja guarda los ajustes. Las dos se hablan por una tubería con nombre, `Claupet.Console.<usuario>`,
+que solo abre el mismo usuario de Windows (`PipeOptions.CurrentUserOnly`), con un mensaje JSON por línea
+(`Core/ConsoleLink.cs`):
+
+| Mensaje | De | Qué lleva |
+|---|---|---|
+| `estado` | bandeja | las secciones ya armadas, el idioma y la paleta; se manda al conectarse y con cada cambio |
+| `accion` | Console | la acción de la fila que se tocó (la misma de los ajustes rápidos) |
+| `opciones` | bandeja | la lista que esa acción mostraría como menú, con la elegida y un número |
+| `elegir` | Console | la opción elegida de la lista con ese número; sin valor, se cerró sin elegir |
+| `mostrar` | bandeja | traer la ventana al frente, en una sección |
+
+Lo que todavía abre una ventana de la bandeja (grabar una tecla, escribir la ciudad, las extensiones, el
+hook) se abre desde Claupet, al frente. Si Claupet no está abierto, la Console lo dice y ofrece abrirlo.
+`Claupet.exe --console --seccion=<id>` abre en esa sección (`general`, `avisos`, `apariencia`, `mascota`,
+`asistente`, `respuestas`, `isla`, `cuentas` o `sistema`).
 
 ## Flujos
 
