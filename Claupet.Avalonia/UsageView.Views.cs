@@ -3,7 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using SD = System.Drawing;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Selector de vistas con pin y vista «Ajustes» (igual que en Windows).</summary>
 sealed partial class UsageView
@@ -314,7 +314,7 @@ sealed partial class UsageView
     {
         IEnumerable<(string Id, string Label)> choices = key switch
         {
-            "palette" => ClaudeUsageTray.Theme.Palettes.Select(p => (p.Id, p.Label)),
+            "palette" => Claupet.Theme.Palettes.Select(p => (p.Id, p.Label)),
             "mascot" => Mascots.Choices,
             "language" => L.Choices,
             _ => Sounds.Packs,
@@ -326,7 +326,7 @@ sealed partial class UsageView
             var item = new MenuItem { Header = (id == selected ? "✓  " : "     ") + label };
             if (key == "palette") // cada paleta con un punto de su color en el modo actual
             {
-                var palette = ClaudeUsageTray.Theme.Palettes.First(p => p.Id == id);
+                var palette = Claupet.Theme.Palettes.First(p => p.Id == id);
                 item.Icon = new Avalonia.Controls.Shapes.Ellipse { Width = 12, Height = 12, Fill = Gfx.B(_t.Dark ? palette.Dark : palette.Light) };
             }
             item.Click += (_, _) => SettingRequested?.Invoke(key + ":" + id);

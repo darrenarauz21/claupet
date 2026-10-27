@@ -1,5 +1,5 @@
 using System.Drawing;
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Pinta un rectángulo de casillas: cada app lo traduce a pixeles con sus herramientas.</summary>
 delegate void PixelFill(Color color, int x, int y, int width, int height);

@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Las claves de las extensiones (ajustes «secret»: una clave de API, un token), cifradas con DPAPI de

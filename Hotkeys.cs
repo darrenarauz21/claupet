@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Una tecla con sus modificadores, como se guarda en Ajustes (KeyNames: «Ctrl+Alt+Space»).</summary>
 readonly record struct KeyCombo(Keys Key, bool Ctrl = false, bool Alt = false, bool Shift = false, bool Win = false)

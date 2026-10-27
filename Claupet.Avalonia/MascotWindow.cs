@@ -4,7 +4,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La mascota sobre el escritorio (el chibi o la clásica), sin marco ni fondo y siempre encima (igual

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Las DLL de terceros (cualquier lenguaje con la ABI de C: C, C++, Rust, Go, Zig, .NET con NativeAOT…)

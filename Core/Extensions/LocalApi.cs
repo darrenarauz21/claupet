@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Un token de la API local creado en Ajustes: se guarda solo su SHA-256; el token se muestra una vez.</summary>
 sealed class ApiToken

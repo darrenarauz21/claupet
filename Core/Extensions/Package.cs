@@ -2,7 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Un archivo del paquete: su ruta (con «/»), su tamaño y su SHA-256 en hexadecimal (minúsculas).</summary>
 sealed record PackageFile(string Path, long Size, string Sha256);

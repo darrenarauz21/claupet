@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// ¿Hay internet? Una petición corta a la API de Anthropic por el proxy del momento: cualquier respuesta

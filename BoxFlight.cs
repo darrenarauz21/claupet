@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La caja que vuela de las manos de la mascota a la boca de la isla, en su propia ventanita sin fondo.

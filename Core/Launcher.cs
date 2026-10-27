@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Opciones de una sesión nueva. Null es «lo que diga la configuración de la cuenta».</summary>
 sealed class LaunchOptions

@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Whisper.net;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// El micrófono, por WinMM (waveIn): 16 kHz, 16 bits, mono, en trozos de 100 ms. Un hilo propio espera
@@ -203,8 +203,7 @@ static class VoiceModel
     public const long Size = 487_601_967;
     const string Sha256 = "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b";
 
-    public static readonly string FilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "voz", "ggml-small.bin");
+    public static string FilePath => DataFolder.In("voz", "ggml-small.bin");
 
     /// <summary>Ya está descargado (y no a medias).</summary>
     public static bool Ready => Length(FilePath) == Size;
@@ -310,7 +309,7 @@ sealed class Transcriber : IDisposable
     static readonly string[] Phantoms = ["amara.org", "subtítulos realizados", "subtitulado por", "suscríbete", "gracias por ver",
         "thanks for watching", "thank you for watching", "subtitles by", "please subscribe"];
     /// <summary>El tono y las palabras que se esperan: ayuda a escribir bien «Claude» y los signos de pregunta.</summary>
-    static string Prompt => L.T("Hola, Claude. ¿Cómo van mis sesiones de Claude Code?");
+    static string Prompt => L.T("Hola, Claupet. ¿Cómo van mis sesiones de Claude Code?");
 
     readonly string _model;
     readonly SemaphoreSlim _one = new(1, 1);

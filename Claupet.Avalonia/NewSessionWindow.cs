@@ -4,9 +4,9 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 // Window tiene su propia propiedad Launcher: la clase del núcleo va con otro nombre.
-using SessionLauncher = ClaudeUsageTray.Launcher;
+using SessionLauncher = Claupet.Launcher;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Elige cuenta, carpeta, modelo, esfuerzo y asesor de una sesión nueva de Claude Code.</summary>
 sealed class NewSessionWindow : Window

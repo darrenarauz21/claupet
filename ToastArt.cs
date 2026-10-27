@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Dibuja en Windows la mascota de los avisos (ToastSprite) o el chibi (ChibiSprite).</summary>
 static class ToastArt

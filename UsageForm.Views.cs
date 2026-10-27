@@ -1,6 +1,6 @@
 using System.Drawing.Drawing2D;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Selector de vistas con pin y vista «Ajustes».</summary>
 sealed partial class UsageForm

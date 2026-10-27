@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Por dónde se le habla a una extensión que corre: un proceso por stdio (también el anfitrión de una DLL) o un servidor claupet-rpc.</summary>
 interface IExtensionChannel : IAsyncDisposable

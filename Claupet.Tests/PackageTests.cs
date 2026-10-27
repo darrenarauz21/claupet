@@ -1,6 +1,6 @@
 using System.IO.Compression;
 
-namespace ClaudeUsageTray.Tests;
+namespace Claupet.Tests;
 
 public class PackageTests
 {

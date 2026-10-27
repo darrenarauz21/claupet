@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Credenciales de Claude Code de una carpeta de configuración. En Windows y Linux están en

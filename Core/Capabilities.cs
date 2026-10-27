@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Lo que Claupet hace en el equipo además de lo de siempre (fondo, tema, color, volumen, música y abrir):

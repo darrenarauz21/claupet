@@ -1,7 +1,7 @@
 using System.Drawing.Drawing2D;
 using Microsoft.Win32;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Ventana emergente sobre la bandeja, dibujada a mano. Tres vistas fijas como pestañas (por defecto

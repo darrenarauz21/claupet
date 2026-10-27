@@ -1,6 +1,6 @@
 using System.Drawing.Drawing2D;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Vista «Flujos»: un carril por sesión con sus pasos del turno; clic en un carril abre el mapa de

@@ -2,7 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace ClaudeUsageTray.Tests;
+namespace Claupet.Tests;
 
 /// <summary>Una carpeta temporal que se borra al terminar la prueba.</summary>
 sealed class TempDir : IDisposable

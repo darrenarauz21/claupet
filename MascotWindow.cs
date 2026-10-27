@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La mascota sobre el escritorio (el chibi o la clásica), sin marco ni fondo, siempre encima y sin

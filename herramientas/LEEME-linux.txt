@@ -7,5 +7,5 @@ Claupet para Linux
 La app lee el uso de su cuenta de Claude Code y le avisa cuando una sesión termina, le pregunta
 algo o falla. Necesita tener Claude Code instalado y con la sesión iniciada.
 
-Para quitarla: borre ~/.local/share/uso-de-claude y ~/.local/share/applications/uso-de-claude.desktop
+Para quitarla: borre ~/.local/share/claupet y ~/.local/share/applications/claupet.desktop
 (antes, use «Quitar configuración…» en el menú del ícono).

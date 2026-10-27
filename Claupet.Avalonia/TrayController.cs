@@ -6,7 +6,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using SD = System.Drawing;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// El ícono de la bandeja (barra de menús en macOS) y todo lo que coordina: consultas, sesiones,

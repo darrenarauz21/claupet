@@ -2,7 +2,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Drawing.Text;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La isla del borde de arriba de la pantalla. Oculta, una franja invisible en el centro del borde la
@@ -1452,7 +1452,7 @@ sealed class IslandForm : Form
         var row = ty;
         var stepsY = row + titleH + S(8);
         var textY = stepsY + S(16) + S(10);
-        var text = _analysisError ?? (_analysis.Length > 0 ? _analysis : _analysisDone ? "" : L.T("Claude está leyendo; el resumen aparece aquí mientras lo escribe."));
+        var text = _analysisError ?? (_analysis.Length > 0 ? _analysis : _analysisDone ? "" : L.T("Leyendo; el resumen aparece aquí mientras se escribe."));
         var textH = Math.Max(S(38), MeasureWrapped(g, text, _body, tw).Height);
         var footY = textY + textH + S(10);
         var bottom = footY + S(_analysisDone ? 28 : 18) + pad;
@@ -1593,7 +1593,7 @@ sealed class IslandForm : Form
         {
             Fill(g, Card, card, S(14));
             DrawHead(g, new Rectangle(x + pad, row, head, head), small: false, talking: false);
-            Write(g, L.T("Su semana con Claude"), _bodyStrong, Ink, new RectangleF(tx, row, tw * 0.55f, S(22)), StringAlignment.Near);
+            Write(g, L.T("Su semana"), _bodyStrong, Ink, new RectangleF(tx, row, tw * 0.55f, S(22)), StringAlignment.Near);
             Write(g, w.Range, _small, Dim, new RectangleF(tx + tw * 0.55f, row, tw * 0.45f, S(22)), StringAlignment.Far, ellipsis: true);
             for (var i = 0; i < stats.Length; i++)
             {

@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 sealed class LocalTotals
 {

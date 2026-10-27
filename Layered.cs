@@ -1,7 +1,7 @@
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Ventanas con transparencia por pixel (WS_EX_LAYERED + UpdateLayeredWindow): bordes suaves, sombra

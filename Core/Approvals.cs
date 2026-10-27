@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Una pregunta de Claude Code (AskUserQuestion) con sus opciones.</summary>
 sealed record AskedQuestion(string Question, IReadOnlyList<(string Label, string Description)> Options, bool MultiSelect);
@@ -31,7 +31,7 @@ static class Approvals
     /// <summary>Lo que el hook espera a la app; Claude Code le da 120 s (el timeout del hook).</summary>
     public const int DecisionSeconds = 110;
 
-    public static string PipeName => "UsoDeClaude-permisos-" + new string(Environment.UserName.Where(char.IsLetterOrDigit).ToArray());
+    public static string PipeName => "Claupet-permisos-" + new string(Environment.UserName.Where(char.IsLetterOrDigit).ToArray());
 
     // ── El hook ─────────────────────────────────────────────────────────────────────────────
 

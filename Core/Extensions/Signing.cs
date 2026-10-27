@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La firma de un paquete (_claupet/signature.json): ECDSA P-256 con SHA-256 (ES256), que .NET trae en

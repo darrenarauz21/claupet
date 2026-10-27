@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace ClaudeUsageTray.Tests;
+namespace Claupet.Tests;
 
 public class SigningTests
 {

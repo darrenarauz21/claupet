@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>El orden define el orden de la lista: lo que trabaja va primero.</summary>
 enum SessionState { Working, Waiting, Failed, Done, Idle }

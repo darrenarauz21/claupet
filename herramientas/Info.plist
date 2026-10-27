@@ -4,8 +4,8 @@
 <dict>
   <key>CFBundleName</key><string>Claupet</string>
   <key>CFBundleDisplayName</key><string>Claupet</string>
-  <key>CFBundleIdentifier</key><string>local.usodeclaude</string>
-  <key>CFBundleExecutable</key><string>UsoDeClaude</string>
+  <key>CFBundleIdentifier</key><string>local.claupet</string>
+  <key>CFBundleExecutable</key><string>Claupet</string>
   <key>CFBundleIconFile</key><string>app</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>{VERSION}</string>

@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray.Tests;
+namespace Claupet.Tests;
 
 /// <summary>Un cerebro de prueba: responde lo que se le diga, en trozos, y guarda lo que recibió.</summary>
 sealed class FakeBrain(params string[] pieces) : IAssistantBrain

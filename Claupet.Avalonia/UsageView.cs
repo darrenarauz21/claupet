@@ -5,7 +5,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using SD = System.Drawing;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Contenido de la ventana, dibujado a mano igual que en Windows: 3 vistas fijas, las demás desde el selector con pin y «Ajustes» desde el pie.
@@ -37,7 +37,7 @@ sealed partial class UsageView : Control
     readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
     readonly DispatcherTimer _animation = new() { Interval = TimeSpan.FromMilliseconds(50) };
 
-    Theme _t = ClaudeUsageTray.Theme.Light;
+    Theme _t = Claupet.Theme.Light;
     View _view = View.Usage;
     IReadOnlyList<Account> _accounts = Array.Empty<Account>();
     IReadOnlyDictionary<string, UsageSnapshot> _snapshots = new Dictionary<string, UsageSnapshot>();

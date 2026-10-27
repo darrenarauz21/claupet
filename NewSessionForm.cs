@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Elige cuenta, carpeta, modelo, esfuerzo y asesor de una sesión nueva de Claude Code.</summary>
 sealed class NewSessionForm : Form

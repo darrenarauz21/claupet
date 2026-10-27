@@ -1,7 +1,7 @@
 using System.Drawing;
 using Microsoft.Win32;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Colores de Claude Desktop: marfil y gris cálido, con el acento de la paleta elegida en Ajustes
@@ -42,7 +42,7 @@ sealed record Theme
     /// <summary>Paletas del acento, cada una con su tono para el modo claro y para el oscuro.</summary>
     public static readonly (string Id, string Label, Color Light, Color Dark)[] Palettes =
     [
-        ("claude", "Claude", Hex(0xD97757), Hex(0xD97757)),
+        ("terracota", L.T("Terracota"), Hex(0xD97757), Hex(0xD97757)),
         ("oceano", L.T("Océano"), Hex(0x2F7FC1), Hex(0x5BA3E0)),
         ("bosque", L.T("Bosque"), Hex(0x3F8A57), Hex(0x6DB283)),
         ("lavanda", L.T("Lavanda"), Hex(0x7E62C4), Hex(0xA48BE0)),
@@ -50,8 +50,8 @@ sealed record Theme
         ("grafito", L.T("Grafito"), Hex(0x6E6C66), Hex(0xA8A69E)),
     ];
 
-    /// <summary>La paleta elegida (Id de Palettes); si no existe, la de Claude.</summary>
-    public static string SelectedPalette { get; set; } = "claude";
+    /// <summary>La paleta elegida (Id de Palettes); si no existe, la primera.</summary>
+    public static string SelectedPalette { get; set; } = "terracota";
 
     /// <summary>Sigue el modo de las aplicaciones de Windows.</summary>
     public static Theme Current

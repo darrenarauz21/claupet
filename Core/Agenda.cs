@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Lo que las acciones de la agenda leen del JSON que manda Claude: textos y fechas de este equipo.</summary>
 static class AgendaJson
@@ -94,12 +94,11 @@ sealed record CalendarEvent(string Title, DateTime Start, DateTime End, bool All
 /// <summary>
 /// El calendario: Claupet escribe el evento en un .ics (iCalendar) y lo abre con el calendario de Windows de
 /// la persona (Outlook, el nuevo Outlook, Calendario…), que lo muestra para guardarlo. Quedan los últimos
-/// KeepFiles en …\ClaudeUsageTray\calendario.
+/// KeepFiles en …\Claupet\calendario.
 /// </summary>
 static class CalendarFile
 {
-    static readonly string Folder = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "calendario");
+    static string Folder => DataFolder.In("calendario");
 
     const int KeepFiles = 10;
 
@@ -190,13 +189,12 @@ sealed class Reminder
 }
 
 /// <summary>
-/// Los recordatorios, en …\ClaudeUsageTray\recordatorios.json. La app los mira cada pocos segundos y avisa
+/// Los recordatorios, en …\Claupet\recordatorios.json. La app los mira cada pocos segundos y avisa
 /// los que llegaron (también los que pasaron con la app cerrada); los avisados se borran a la semana.
 /// </summary>
 static class ReminderStore
 {
-    static readonly string FilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "recordatorios.json");
+    static string FilePath => DataFolder.In("recordatorios.json");
 
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 

@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// «Otras herramientas»: el chibi construye una casita de madera con el mazo, concentrado, y la

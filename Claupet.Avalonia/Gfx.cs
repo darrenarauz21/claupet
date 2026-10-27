@@ -8,7 +8,7 @@ using Avalonia.Media.Immutable;
 using Avalonia.Platform;
 using SD = System.Drawing;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 sealed record UiFont(Typeface Typeface, double Size)
 {

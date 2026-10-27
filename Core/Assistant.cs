@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Los modelos que se pueden elegir para la mascota y para la isla: alias de Claude Code, que siempre
@@ -202,8 +202,7 @@ static class Expressions
 static class Assistant
 {
     /// <summary>La carpeta donde corren las consultas (y donde quedan los prompts de sistema).</summary>
-    public static readonly string WorkDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "asistente");
+    public static string WorkDir => DataFolder.In("asistente");
 
     /// <summary>Una sesión que corre en la carpeta del asistente: no es de la persona.</summary>
     public static bool IsOwn(string? cwd) =>
@@ -676,9 +675,9 @@ static class Assistant
         // protocolo con SystemActions: van igual en todos los idiomas.
         var who = r.Chibi
             ? L.T("una chica chibi de pelo naranja con un hoodie de cangrejo")
-            : L.T("la mascota clásica de Claude, una criaturita naranja de pixeles");
+            : L.T("la mascota clásica, una criaturita naranja de pixeles");
         var prompt = new StringBuilder();
-        prompt.AppendLine(L.T("Eres Claupet, la mascota de escritorio de Claude: {0}. Hablas en español, de tú, con calidez y alguna carita de texto como (^_^).", who));
+        prompt.AppendLine(L.T("Eres Claupet, una mascota de escritorio: {0}. Hablas en español, de tú, con calidez y alguna carita de texto como (^_^).", who));
         if (r.File is not null)
         {
             prompt.AppendLine(tools

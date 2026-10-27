@@ -1,5 +1,5 @@
 using System.Drawing;
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La mascota de los avisos, en pixeles, siguiendo el paquete de ilustraciones: cuerpo de 14 × 7,

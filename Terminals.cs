@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Trae al frente la ventana donde corre una sesión de Claude Code: sube por los procesos padres del

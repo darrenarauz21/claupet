@@ -8,8 +8,8 @@ se compila y cuáles son los límites conocidos.
 ```text
 Core/                    núcleo común, sin interfaz: uso, sesiones, actividad, avisos, sonidos,
                          hook, credenciales, inicio con el sistema y diagnóstico
-*.cs + ClaudeUsageTray.csproj    app de Windows (WinForms)
-ClaudeUsage.Avalonia/    app de Linux y macOS (Avalonia 11); también corre en Windows para probar
+*.cs + Claupet.csproj            app de Windows (WinForms)
+Claupet.Avalonia/        app de Linux y macOS (Avalonia 11); también corre en Windows para probar
 herramientas/            empaquetado (empaquetar.py), scripts de instalación y Info.plist de macOS
 app.ico                  ícono de la mascota
 ```
@@ -32,20 +32,20 @@ mascota (`[ACCION]`) son del protocolo y van siempre en español. Para otro idio
 
 | Qué | Windows | Linux y macOS |
 |---|---|---|
-| Configuración de la app | `%APPDATA%\ClaudeUsageTray\settings.json` | `~/.config/ClaudeUsageTray/settings.json` |
-| Historial diario (actividad) | `…\ClaudeUsageTray\history.json` | `…/ClaudeUsageTray/history.json` |
-| Eventos del hook | `…\ClaudeUsageTray\events.jsonl` | `…/ClaudeUsageTray/events.jsonl` |
-| Sonidos | `…\ClaudeUsageTray\sonidos` | `…/ClaudeUsageTray/sonidos` |
-| Modelo de voz (Whisper) | `…\ClaudeUsageTray\voz\ggml-small.bin` | — |
-| Voz de Claupet (Supertonic 3) | `…\ClaudeUsageTray\voz\supertonic-3` | — |
-| Consultas del asistente (prompts de sistema) | `…\ClaudeUsageTray\asistente` | — |
+| Configuración de la app | `%APPDATA%\Claupet\settings.json` | `~/.config/Claupet/settings.json` |
+| Historial diario (actividad) | `…\Claupet\history.json` | `…/Claupet/history.json` |
+| Eventos del hook | `…\Claupet\events.jsonl` | `…/Claupet/events.jsonl` |
+| Sonidos | `…\Claupet\sonidos` | `…/Claupet/sonidos` |
+| Modelo de voz (Whisper) | `…\Claupet\voz\ggml-small.bin` | — |
+| Voz de Claupet (Supertonic 3) | `…\Claupet\voz\supertonic-3` | — |
+| Consultas del asistente (prompts de sistema) | `…\Claupet\asistente` | — |
 | Permisos de lo que la mascota hace en el equipo | `Permissions` en `settings.json` | — |
 | Notas | `Documentos\Claupet\Notas`, un `.md` por nota | — |
-| Recordatorios | `…\ClaudeUsageTray\recordatorios.json` y, por cada uno, la tarea `\Claupet\Recordatorio <id>` del Programador de tareas | — |
-| Eventos para el calendario | `…\ClaudeUsageTray\calendario` (los 10 últimos `.ics`) | — |
-| Capturas de pantalla | la carpeta Capturas de pantalla de Windows; la que mira Claude, sola en `…\ClaudeUsageTray\capturas` | — |
+| Recordatorios | `…\Claupet\recordatorios.json` y, por cada uno, la tarea `\Claupet\Recordatorio <id>` del Programador de tareas | — |
+| Eventos para el calendario | `…\Claupet\calendario` (los 10 últimos `.ics`) | — |
+| Capturas de pantalla | la carpeta Capturas de pantalla de Windows; la que mira Claude, sola en `…\Claupet\capturas` | — |
 | Credenciales de Claude Code (solo se leen) | `.credentials.json` de cada carpeta | Linux: igual; macOS: el Llavero |
-| Iniciar con el sistema | registro, `HKCU\…\Run` | Linux: `~/.config/autostart/uso-de-claude.desktop`; macOS: `~/Library/LaunchAgents/local.usodeclaude.plist` |
+| Iniciar con el sistema | registro, `HKCU\…\Run` | Linux: `~/.config/autostart/claupet.desktop`; macOS: `~/Library/LaunchAgents/local.claupet.plist` |
 
 En macOS, Claude Code guarda las credenciales en el Llavero: «Claude Code-credentials» para
 `~/.claude` y, desde Claude Code 2.1.144, «Claude Code-credentials-» seguido de los 8 primeros
@@ -80,7 +80,7 @@ En **Ajustes**, con el mismo patrón que el estilo de sonido: una lista, la eleg
 muestra al elegir.
 
 - **Color:** paletas fijas, cada una con su tono para el modo claro y el oscuro (el modo sigue al
-  sistema): Claude (`#D97757`, la predeterminada), Océano, Bosque, Lavanda, Rosa y Grafito. Cambia
+  sistema): Terracota (`#D97757`, la predeterminada), Océano, Bosque, Lavanda, Rosa y Grafito. Cambia
   el acento: barras, interruptores, enlaces, el número del ícono y la mascota del ícono, del pie y
   de los avisos. Fondos, textos y colores de estado (peligro, aviso, éxito) no cambian. Están en
   `Theme.Palettes` (`Core/Theme.cs`).
@@ -107,7 +107,7 @@ Se guardan en `Palette`, `Animation` (el estilo al actualizar), `Mascot` (la de 
 
 ## Chibi
 
-Claude con pelo naranja y hoodie de cangrejo (ojitos sobre antenas), en pixeles y con colores
+Una mascota con pelo naranja y hoodie de cangrejo (ojitos sobre antenas), en pixeles y con colores
 propios: no cambia con la paleta. Está en `ChibiSprite` (`Core/ChibiSprite.cs`): el cuerpo se
 escribe como su mitad izquierda, una letra por color, y se espeja; cada cuadro cambia ojos, boca,
 ojitos de cangrejo y brazos, mueve la cabeza o el cuerpo y agrega efectos. El lienzo es de 40 × 52
@@ -235,7 +235,7 @@ Inspirado en [coucou](https://github.com/Louis-CFM/coucou), pero con Claude Code
 apagado: `Chat`, `Island` y `Mic` en el `settings.json` de la app.
 
 **Cómo responde.** Cada pregunta corre `claude -p` con la cuenta elegida (`AssistantAccount`; si no,
-la de Uso) en `…\ClaudeUsageTray\asistente`, con `--safe-mode` (sin el CLAUDE.md de la persona,
+la de Uso) en `…\Claupet\asistente`, con `--safe-mode` (sin el CLAUDE.md de la persona,
 hooks ni MCP: la entrada baja de unos 7.400 a 1.000 tokens), `--no-session-persistence` y
 `--output-format stream-json`, para mostrar la respuesta mientras llega. La pregunta va por la
 entrada estándar y el prompt de sistema en un archivo. El chat solo puede buscar en internet
@@ -259,7 +259,7 @@ hacer otra cosa; lo demás se encarga a Claude Code:
 
 | Acción | Valor | Cómo |
 |---|---|---|
-| `fondo` | ruta de una imagen o URL https de un JPEG, PNG o BMP (hasta 25 MB) | `SystemParametersInfo`; las bajadas quedan en `…\ClaudeUsageTray\fondos` (las 5 últimas) |
+| `fondo` | ruta de una imagen o URL https de un JPEG, PNG o BMP (hasta 25 MB) | `SystemParametersInfo`; las bajadas quedan en `…\Claupet\fondos` (las 5 últimas) |
 | `tema` | `claro` u `oscuro` | `AppsUseLightTheme` y `SystemUsesLightTheme` del registro, y aviso a las ventanas |
 | `color` | una paleta de la app | como elegirla en **Ajustes** |
 | `volumen` | 0 a 100, `subir`, `bajar` (de a 10), `silenciar` o `activar` | Core Audio, en la salida predeterminada |
@@ -301,7 +301,7 @@ una imagen reescalada). `recorte` muestra esa pantalla congelada y oscurecida pa
 mouse (Esc o el clic derecho cancelan). La mascota, las nubecitas, la isla y los avisos se esconden con
 `DWMWA_CLOAK` mientras se toma. Queda como PNG en Capturas de pantalla, con el nombre de Windows
 («Captura de pantalla 2026-10-24 141503.png») y en el portapapeles. Si se pidió mirarla, una copia queda
-sola en `…\ClaudeUsageTray\capturas` y se analiza como un archivo soltado: Claude solo puede leer esa
+sola en `…\Claupet\capturas` y se analiza como un archivo soltado: Claude solo puede leer esa
 carpeta, no las demás capturas.
 
 **Recordatorios.** Quedan en `recordatorios.json`; la app los mira cada 15 s y, a su hora, muestra un aviso
@@ -374,7 +374,7 @@ pasar a fonemas. La inferencia está adaptada de su ejemplo en C# (MIT); el mode
 
 | Qué | Cómo |
 |---|---|
-| Modelo | los 9 archivos que se usan (unos 400 MB), de una versión fija de Hugging Face y con su SHA-256, en `…\ClaudeUsageTray\voz\supertonic-3`; se bajan al elegir una voz de Claupet, retomando como el de Whisper |
+| Modelo | los 9 archivos que se usan (unos 400 MB), de una versión fija de Hugging Face y con su SHA-256, en `…\Claupet\voz\supertonic-3`; se bajan al elegir una voz de Claupet, retomando como el de Whisper |
 | Velocidad | 8 pasos, como el ejemplo: una frase de 5 s tarda unos 2 s en un Ryzen 7 5700U. Se habla frase por frase: la primera va sola (sale en menos de 1 s) y las demás se generan mientras suena la anterior |
 | Memoria | unos 550 MB con el modelo cargado; se suelta a los 3 minutos sin hablar |
 | Sonido | `waveOut`, aparte de los sonidos de los avisos (que van por `PlaySound` y se cortarían entre sí) |
@@ -462,13 +462,13 @@ registros de más de 30 días, la app guarda un resumen diario (solo cifras) en 
 Requiere el SDK de .NET 8.
 
 ```powershell
-dotnet build ClaudeUsageTray.csproj -c Release           # Windows (WinForms)
-dotnet build ClaudeUsage.Avalonia -c Release            # Linux y macOS (corre también en Windows)
+dotnet build Claupet.csproj -c Release                   # Windows (WinForms)
+dotnet build Claupet.Avalonia -c Release                # Linux y macOS (corre también en Windows)
 python herramientas/empaquetar.py                       # los paquetes de los tres sistemas en paquetes/
 ```
 
-`empaquetar.py` (solo biblioteca estándar) genera en `paquetes/` `UsoDeClaude-windows-x64.exe`,
-`UsoDeClaude-linux-x64.tar.gz` y `UsoDeClaude-macos-{arm64,x64}.zip`, con los permisos de ejecución
+`empaquetar.py` (solo biblioteca estándar) genera en `paquetes/` `Claupet-windows-x64.exe`,
+`Claupet-linux-x64.tar.gz` y `Claupet-macos-{arm64,x64}.zip`, con los permisos de ejecución
 y el ícono de cada sistema. Todos son autocontenidos: no piden instalar .NET. Los nombres no llevan
 versión porque el README enlaza a `releases/latest/download/<archivo>`: en cada versión se crea una
 Release en GitHub (etiqueta `vX.Y.Z`) y se adjuntan esos cuatro archivos con el mismo nombre.
@@ -553,5 +553,5 @@ Lo que no se pudo probar sin una Mac. Para quien la pruebe por primera vez:
 3. **Sesiones** muestra las sesiones abiertas de Claude Code y su estado.
 4. **Ajustes › Ver un aviso de ejemplo** muestra el aviso arriba a la derecha y suena.
 5. **Ajustes › Configurar…** agrega el hook; al pedir permiso una sesión nueva, sale «Necesita su permiso».
-6. **Iniciar con el sistema** crea `~/Library/LaunchAgents/local.usodeclaude.plist`.
+6. **Iniciar con el sistema** crea `~/Library/LaunchAgents/local.claupet.plist`.
 7. **Ajustes › Copiar diagnóstico**: pegar el resultado si algo falla.

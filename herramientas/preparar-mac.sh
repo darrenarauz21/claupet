@@ -10,11 +10,13 @@ DEST="/Applications"
 [ -w "$DEST" ] || DEST="$HOME/Applications"
 mkdir -p "$DEST"
 
-# Hasta la 2.1 se llamaba «Uso de Claude.app»: se cierra y se quita para no dejar dos copias.
+# Se cierra la copia abierta. Hasta la 2.1 se llamaba «Uso de Claude.app», y hasta la 2.2 su
+# ejecutable era UsoDeClaude: se quita para no dejar dos copias.
+pkill -f "/Contents/MacOS/Claupet" 2>/dev/null || true
 pkill -f "/Contents/MacOS/UsoDeClaude" 2>/dev/null || true
 rm -rf "$DEST/$APP" "$DEST/Uso de Claude.app"
 cp -R "$APP" "$DEST/"
-chmod +x "$DEST/$APP/Contents/MacOS/UsoDeClaude"
+chmod +x "$DEST/$APP/Contents/MacOS/Claupet"
 xattr -dr com.apple.quarantine "$DEST/$APP" 2>/dev/null || true
 codesign --force --deep --sign - "$DEST/$APP"
 

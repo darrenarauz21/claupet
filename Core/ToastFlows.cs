@@ -1,5 +1,5 @@
 using System.Drawing;
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Los gestos del flujo en la mascota clásica, con un objeto al costado o encima (no tiene cara

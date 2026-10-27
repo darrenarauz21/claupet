@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Aviso que entra desde la derecha, abajo, sin quitarle el foco a lo que esté usando.</summary>
 sealed class ToastForm : Form

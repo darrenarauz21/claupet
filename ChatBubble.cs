@@ -1,4 +1,4 @@
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// La nubecita del chat con la mascota, de pixeles como la de «Hablar» (BubbleSprite). Tiene cuatro

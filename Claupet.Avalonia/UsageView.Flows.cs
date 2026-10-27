@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Media;
 using SD = System.Drawing;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// Vista «Flujos» (igual que en Windows): un carril por sesión con sus pasos del turno; clic en un

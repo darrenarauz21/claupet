@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>Voz a texto: el integrado (Whisper) o el de una extensión.</summary>
 interface ISpeechToText

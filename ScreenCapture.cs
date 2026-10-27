@@ -2,13 +2,13 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
-namespace ClaudeUsageTray;
+namespace Claupet;
 
 /// <summary>
 /// «captura»: la pantalla donde está el cursor o, con «recorte», la parte que se marque con el mouse sobre
 /// esa pantalla congelada. Se guarda como PNG en la carpeta Capturas de pantalla de Windows y se copia al
 /// portapapeles; la mascota, las nubecitas, la isla y los avisos se esconden mientras tanto. Si se pidió
-/// mirarla, una copia queda sola en …\ClaudeUsageTray\capturas, la única carpeta que Claude puede leer.
+/// mirarla, una copia queda sola en …\Claupet\capturas, la única carpeta que Claude puede leer.
 /// </summary>
 static class ScreenCapture
 {
@@ -16,8 +16,7 @@ static class ScreenCapture
     public static string Folder => KnownFolders.Get(KnownFolders.Screenshots)
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots");
 
-    static readonly string LookDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeUsageTray", "capturas");
+    static string LookDir => DataFolder.In("capturas");
 
     public static ActionOutcome Run(string value, string? question)
     {
