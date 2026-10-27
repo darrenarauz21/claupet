@@ -82,6 +82,11 @@ sealed class AppSettings
     public string MascotModel { get; set; } = "haiku";
     /// <summary>Modelo de la isla; null: el de sus sesiones (Claude Code usa el predeterminado de la cuenta).</summary>
     public string? IslandModel { get; set; }
+    /// <summary>
+    /// El modelo local (LocalModel.Choices): el que se descarga y responde cuando la mascota o la isla tienen
+    /// «local» como modelo. null: ninguno elegido todavía.
+    /// </summary>
+    public string? LocalModel { get; set; }
     /// <summary>Cuenta que responde el chat (su carpeta de configuración); null: la elegida en Uso.</summary>
     public string? AssistantAccount { get; set; }
     /// <summary>Carpeta donde se abren las tareas que se le piden a la mascota; null: la última de «Nueva sesión».</summary>

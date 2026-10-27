@@ -70,6 +70,39 @@ static class Program
             return follow.Failed ? 1 : 0;
         }
 
+        // --modelo-local <id> [pregunta]: baja ese modelo local (y llama-server) como desde Ajustes, con el avance a
+        // la salida estándar; con una pregunta, se la hace como la mascota y dice cuánto tardó en arrancar y en responder.
+        if (Array.IndexOf(args, "--modelo-local") is var lm and >= 0 && lm + 1 < args.Length)
+        {
+            var choice = LocalModel.Find(args[lm + 1]);
+            if (!LocalModel.Ready(choice))
+            {
+                Console.WriteLine($"descargando {choice.Name} ({LocalModel.Missing(choice) / 1_000_000} MB)");
+                var last = -1;
+                LocalModel.DownloadAsync(choice, new Progress<double>(p =>
+                {
+                    var percent = (int)(p * 100);
+                    if (percent / 10 != last / 10) Console.WriteLine($"{percent} %");
+                    last = percent;
+                }), CancellationToken.None).GetAwaiter().GetResult();
+            }
+            Console.WriteLine(LocalModel.Ready(choice) ? $"{choice.Name}: listo" : $"{choice.Name}: incompleto");
+            if (!LocalModel.Ready(choice) || lm + 2 >= args.Length) return LocalModel.Ready(choice) ? 0 : 1;
+            using var server = new LocalModelServer();
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            server.EnsureAsync(choice, CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine($"arranque: {clock.ElapsedMilliseconds} ms");
+            Assistant.Local = () => new LocalBrain(server, choice);
+            clock.Restart();
+            var answer = Assistant.AskAsync(new AssistantRequest { Prompt = args[lm + 2], Voice = AssistantVoice.Mascot, Model = AssistantModels.Local })
+                .GetAwaiter().GetResult();
+            Console.WriteLine($"respuesta en {clock.ElapsedMilliseconds} ms ({answer.Model}):");
+            if (answer.Action is { } action) Console.WriteLine($"[ACCION] {action.Kind} {action.Value}");
+            if (answer.Task is { } task) Console.WriteLine($"[TAREA] {task.Prompt}");
+            Console.WriteLine(answer.Error ?? answer.Text);
+            return answer.Failed ? 1 : 0;
+        }
+
         // --descargar-voz: baja la voz de Claupet como desde Ajustes, con el avance a la salida estándar.
         if (args.Contains("--descargar-voz"))
         {

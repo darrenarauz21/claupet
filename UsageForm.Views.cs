@@ -45,6 +45,10 @@ sealed partial class UsageForm
         public string ReadAloudVoice { get; init; } = "";
         public string SpeechStatus { get; init; } = "";
         public string SpeechAction { get; init; } = "";
+        /// <summary>El modelo local: el elegido (nombre y RAM) y lo que dice su fila y su enlace (descargar, el avance, borrar).</summary>
+        public string LocalModel { get; init; } = "";
+        public string LocalStatus { get; init; } = "";
+        public string LocalAction { get; init; } = "";
         public bool Island { get; init; }
         public string IslandModel { get; init; } = "";
         public bool IslandHover { get; init; }
@@ -413,6 +417,10 @@ sealed partial class UsageForm
                     y = ChoiceRow(g, draw, L.T("Voz"), "readvoice", s.ReadAloudVoice, y);
                     if (s.SpeechStatus.Length > 0) y = LinkRow(g, draw, s.SpeechStatus, s.SpeechAction, "speech", _t.Accent, y);
                 }
+                // Responde sin internet ni tokens cuando se lo elige como modelo de la mascota o de la isla.
+                y = SettingsCaption(g, draw, L.T("Modelo local"), y + S(8));
+                y = ChoiceRow(g, draw, L.T("Modelo"), "localmodel", s.LocalModel, y);
+                y = LinkRow(g, draw, s.LocalStatus, s.LocalAction, "local", s.LocalAction == L.T("Borrar") ? _t.Danger : _t.Accent, y);
                 if (s.Chat || s.Island)
                 {
                     y = SettingsCaption(g, draw, L.T("Teclas"), y + S(8));

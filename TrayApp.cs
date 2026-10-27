@@ -326,7 +326,7 @@ sealed partial class TrayApp : ApplicationContext
             AngryOnClicks = s.AngryOnClicks,
             SleepWithoutSessions = s.SleepWithoutSessions,
             Chat = s.Chat,
-            MascotModel = ExternalLabel(ExtensionSlots.Assistant) ?? AssistantModels.Label(s.MascotModel),
+            MascotModel = ExternalLabel(ExtensionSlots.Assistant) ?? ModelLabel(s.MascotModel),
             AssistantAccount = AssistantAccountLabel(),
             TaskFolder = TaskFolderLabel(),
             AnalyzeDrops = s.AnalyzeDrops,
@@ -341,8 +341,11 @@ sealed partial class TrayApp : ApplicationContext
             ReadAloudVoice = ExternalLabel(ExtensionSlots.TextToSpeech) ?? VoiceChoices().FirstOrDefault(v => v.Id == s.ReadAloudVoice).Label ?? ClaupetVoices.Label(s.ReadAloudVoice),
             SpeechStatus = SpeechStatusText().Status,
             SpeechAction = SpeechStatusText().Action,
+            LocalModel = L.T("{0} · unos {1} de RAM", LocalChoice.Name, LocalChoice.Ram),
+            LocalStatus = LocalStatusText().Status,
+            LocalAction = LocalStatusText().Action,
             Island = s.Island,
-            IslandModel = ExternalLabel(ExtensionSlots.Assistant) ?? AssistantModels.Label(s.IslandModel),
+            IslandModel = ExternalLabel(ExtensionSlots.Assistant) ?? ModelLabel(s.IslandModel),
             IslandHover = s.IslandHover,
             IslandWhileBusy = s.IslandWhileBusy,
             WeeklyRecap = s.WeeklyRecap,
@@ -572,7 +575,11 @@ sealed partial class TrayApp : ApplicationContext
             case "mmodel":
                 // Con un asistente de una extensión, el modelo se elige en sus ajustes.
                 if (_extensions.ProviderFor(ExtensionSlots.Assistant) is not null) ShowExtensions();
-                else ShowOptions(AssistantModels.Choices, _settings.MascotModel, m => Change(s => s.MascotModel = m));
+                else ShowOptions(MascotModelChoices(), _settings.MascotModel, m =>
+                {
+                    Change(s => s.MascotModel = m);
+                    ModelPicked(m);
+                });
                 break;
             case "account": ShowOptions(AssistantAccountChoices(), _settings.AssistantAccount ?? "", a => Change(s => s.AssistantAccount = a.Length == 0 ? null : a)); break;
             case "folder": ShowOptions(TaskFolderChoices(), _settings.TaskFolder ?? "", PickTaskFolder); break;
@@ -622,10 +629,16 @@ sealed partial class TrayApp : ApplicationContext
                 if (_speechDownload is { } speech) speech.Cancel();
                 else _ = DownloadSpeechAsync();
                 break;
+            case "localmodel": PickLocalModel(); break;
+            case "local": LocalModelAction(); break;
             case "island": Toggle(s => s.Island = !s.Island); break;
             case "imodel":
                 if (_extensions.ProviderFor(ExtensionSlots.Assistant) is not null) ShowExtensions();
-                else ShowOptions(AssistantModels.IslandChoices, _settings.IslandModel ?? "", m => Change(s => s.IslandModel = m.Length == 0 ? null : m));
+                else ShowOptions(IslandModelChoices(), _settings.IslandModel ?? "", m =>
+                {
+                    Change(s => s.IslandModel = m.Length == 0 ? null : m);
+                    ModelPicked(m);
+                });
                 break;
             case "hover": Toggle(s => s.IslandHover = !s.IslandHover); break;
             case "busy": Toggle(s => s.IslandWhileBusy = !s.IslandWhileBusy); break;
@@ -981,9 +994,10 @@ sealed partial class TrayApp : ApplicationContext
             island.TerminalClicked += s => Terminals.Focus(s.Pid);
             island.NewSessionClicked += () => NewSession(null);
             island.SettingsClicked += () => { ShowForm(); _form.ShowSettings(); };
-            island.ModelClicked += () => ShowOptions(AssistantModels.IslandChoices, _settings.IslandModel ?? "", m =>
+            island.ModelClicked += () => ShowOptions(IslandModelChoices(), _settings.IslandModel ?? "", m =>
             {
                 Change(s => s.IslandModel = m.Length == 0 ? null : m);
+                ModelPicked(m);
                 PushIslandModel();
             });
             island.NewChatClicked += () =>
@@ -1027,7 +1041,7 @@ sealed partial class TrayApp : ApplicationContext
     void PushIslandModel()
     {
         var label = _settings.IslandModel is { } model
-            ? AssistantModels.Label(model)
+            ? ModelLabel(model)
             : _defaultModel ?? AssistantModels.Label(null);
         var account = AssistantConfigDir is { } dir ? _settings.Accounts.FirstOrDefault(a => Account.SamePath(a.ConfigDir, dir))?.Label ?? "" : "";
         _island?.SetModel(label, account);
@@ -1517,7 +1531,7 @@ sealed partial class TrayApp : ApplicationContext
         _bubble.Hide();
         _asking?.Cancel(); // si estaba respondiendo, deja de esperar esa respuesta
         _pendingTask = null;
-        ChatBubbleFor().AskInput(mascot.Bounds, AssistantModels.Label(_settings.MascotModel));
+        ChatBubbleFor().AskInput(mascot.Bounds, ModelLabel(_settings.MascotModel));
         _director.SetMood(ChibiMove.Listen);
     }
 
@@ -1529,10 +1543,11 @@ sealed partial class TrayApp : ApplicationContext
         bubble.ModelClicked += () =>
         {
             bubble.HoldOpen = true;
-            ShowOptions(AssistantModels.Choices, _settings.MascotModel, m =>
+            ShowOptions(MascotModelChoices(), _settings.MascotModel, m =>
             {
                 Change(s => s.MascotModel = m);
-                bubble.SetModel(AssistantModels.Label(m));
+                ModelPicked(m);
+                bubble.SetModel(ModelLabel(m));
             }, onClosed: () =>
             {
                 bubble.HoldOpen = false;
@@ -2217,7 +2232,17 @@ sealed partial class TrayApp : ApplicationContext
         if (setup.Mic != _settings.Mic || setup.ReadAloud != _settings.ReadAloud)
             Change(s => (s.Mic, s.ReadAloud) = (setup.Mic, setup.ReadAloud));
         if (!_settings.ReadAloud) _readAloud?.Stop();
-        if (relaunch && (voiceMissing || speechMissing))
+        // El modelo local: la mascota responde con él; al apagarlo vuelve a Haiku.
+        if (setup.LocalModelId != LocalChoice.Id || setup.LocalModelOn && _settings.LocalModel is null)
+        {
+            _localDownload?.Cancel();
+            _localServer.Stop();
+            Change(s => s.LocalModel = setup.LocalModelId);
+        }
+        if (setup.LocalModelOn != (_settings.MascotModel == AssistantModels.Local))
+            Change(s => s.MascotModel = setup.LocalModelOn ? AssistantModels.Local : "haiku");
+        var localMissing = setup.LocalModelOn && !LocalModel.Ready(LocalChoice);
+        if (relaunch && (voiceMissing || speechMissing || localMissing))
             lines.Add(L.T("Al reiniciar, descargue los modelos en Ajustes › Asistente."));
         else
         {
@@ -2230,6 +2255,11 @@ sealed partial class TrayApp : ApplicationContext
             {
                 _ = DownloadSpeechAsync();
                 lines.Add(L.T("La voz de Claupet se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+            }
+            if (localMissing)
+            {
+                _ = DownloadLocalModelAsync();
+                lines.Add(L.T("El modelo local se descarga en segundo plano; el avance está en Ajustes › Asistente."));
             }
         }
 
@@ -2303,6 +2333,8 @@ sealed partial class TrayApp : ApplicationContext
         _keyHook?.Dispose();
         _modelDownload?.Cancel();
         _speechDownload?.Cancel();
+        _localDownload?.Cancel();
+        _localServer.Dispose();
         _voice?.Dispose();
         _readAloud?.Dispose();
         _island?.Dispose();

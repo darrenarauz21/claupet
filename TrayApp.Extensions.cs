@@ -39,6 +39,7 @@ sealed partial class TrayApp : IExtensionsPanelHost
         // Las ranuras exclusivas: si una extensión las ocupa, el integrado (Claude Code, Whisper, la voz de
         // Claupet o la de Windows) no corre; si no, todo es como siempre.
         Assistant.External = () => ExtensionProviders.Assistant(_extensions);
+        Assistant.Local = LocalBrainIfReady;
         VoiceInput.External = () => ExtensionProviders.SpeechToText(_extensions);
         ReadAloud.External = () => ExtensionProviders.TextToSpeech(_extensions);
         ReadAloud.PackVoice = (voice, cancel) => _extensions.VoiceFileAsync(voice, cancel);

@@ -20,8 +20,13 @@ static class AssistantModels
     /// <summary>Para la isla: primero «el de sus sesiones» (Id vacío).</summary>
     public static readonly (string Id, string Label)[] IslandChoices = [("", L.T("El de sus sesiones")), .. Choices];
 
+    /// <summary>El modelo local de Claupet (llama-server en este equipo) en vez de Claude: lo pone la app (Assistant.Local).</summary>
+    public const string Local = "local";
+
     public static string Label(string? id) =>
-        string.IsNullOrEmpty(id) ? L.T("El de sus sesiones") : Choices.FirstOrDefault(c => c.Id == id).Label ?? id;
+        string.IsNullOrEmpty(id) ? L.T("El de sus sesiones")
+        : id == Local ? L.T("Modelo local")
+        : Choices.FirstOrDefault(c => c.Id == id).Label ?? id;
 
 }
 
@@ -232,6 +237,9 @@ static class Assistant
         Action<AssistantStage>? onStage = null, CancellationToken cancel = default)
     {
         if (External?.Invoke() is { } brain) return await AskBrainAsync(brain, request, onText, onStage, cancel);
+        if (request.Model == AssistantModels.Local)
+            return Local?.Invoke() is { } local ? await AskBrainAsync(local, request, onText, onStage, cancel)
+                : new AssistantResult("", null, null, null, L.T("El modelo local no está descargado: descárguelo en Ajustes › Asistente."));
         string? claude = FindClaude();
         if (claude is null)
             return new AssistantResult("", null, null, null, L.T("No encontré Claude Code. ¿Está instalado y en el PATH?"));
@@ -365,8 +373,10 @@ static class Assistant
         var writing = false;
         try
         {
-            // El modelo lo elige la extensión (sus ajustes): los alias de Claude (haiku, sonnet…) no le sirven.
-            var reply = await brain.RespondAsync(new BrainRequest(SystemPrompt(request, tools: false), messages, null), piece =>
+            // El modelo lo elige la extensión (sus ajustes): los alias de Claude (haiku, sonnet…) no le sirven. El
+            // modelo local es chico: con la lista de acciones las inventa o las arma mal, así que solo conversa.
+            var system = SystemPrompt(request, tools: false, actions: request.Model != AssistantModels.Local);
+            var reply = await brain.RespondAsync(new BrainRequest(system, messages, null), piece =>
             {
                 if (!writing) { writing = true; onStage?.Invoke(AssistantStage.Writing); }
                 shown.Push(piece);
@@ -450,6 +460,9 @@ static class Assistant
 
     /// <summary>El asistente de una extensión que ocupa la ranura (Ajustes › Extensiones); null: Claude Code. Lo pone la app.</summary>
     public static Func<IAssistantBrain?>? External { get; set; }
+
+    /// <summary>El modelo local, cuando se eligió «local» como modelo; null si no está descargado. Lo pone la app.</summary>
+    public static Func<IAssistantBrain?>? Local { get; set; }
 
     /// <summary>
     /// Lo que se muestra mientras llega la respuesta: la línea de la tarea o de la acción no (se espera a ver
@@ -669,7 +682,7 @@ static class Assistant
     }
 
     /// <summary>tools: el asistente puede buscar en internet y leer archivos (Claude Code); un modelo de una extensión, no.</summary>
-    static string SystemPrompt(AssistantRequest r, bool tools = true)
+    static string SystemPrompt(AssistantRequest r, bool tools = true, bool actions = true)
     {
         // En el idioma de la app (L.T). Las marcas y los nombres de las acciones y sus valores son del
         // protocolo con SystemActions: van igual en todos los idiomas.
@@ -712,6 +725,11 @@ static class Assistant
             if (!tools) prompt.AppendLine(L.T("No tienes acceso a internet: si para responder hace falta (el clima, noticias, precios), dilo en una frase; no inventes."));
             else prompt.AppendLine(L.T("Internet: puedes buscar con WebSearch y leer páginas con WebFetch. No anuncies que vas a buscar: busca y responde, sin enlaces ni lista de fuentes. Para el clima, usa WebFetch con https://wttr.in/<ciudad>?format=j1&lang=es (sin ciudad, https://wttr.in/?format=j1&lang=es, que usa la ubicación del equipo)."));
             prompt.AppendLine();
+            if (!actions)
+            {
+                prompt.AppendLine(L.T("Solo conversas: no puedes hacer nada en el equipo (abrir programas, cambiar ajustes, guardar notas o recordatorios). Si te lo piden, dilo en una frase: para eso hay que elegir un modelo de Claude en Ajustes › Asistente."));
+                return Context(prompt, r);
+            }
             prompt.AppendLine(L.T("Acciones en este equipo: si te piden una de esta lista, empieza la respuesta con una línea exacta «{0} {{\"accion\":\"…\",\"valor\":\"…\"}}» (el JSON en una sola línea) y, en la línea siguiente, una frase corta diciendo lo que hiciste. Una acción por respuesta.", ActionMark));
             prompt.AppendLine(L.T("Los textos que escribas dentro de una acción (títulos, notas, recordatorios, eventos) van en el idioma de la persona; solo los nombres de las acciones y sus valores fijos van como están."));
             prompt.AppendLine(L.T("- fondo: el fondo de pantalla. valor: la ruta de una imagen del equipo o la URL https directa de una imagen .jpg o .png."));
@@ -739,6 +757,11 @@ static class Assistant
             prompt.AppendLine();
             prompt.AppendLine(L.T("Lo demás, encárgaselo a Claude Code: si te piden algo que no puedes hacer con tus herramientas ni con esas acciones (abrir o editar archivos, otros ajustes de Windows, instalar algo, programar, revisar un proyecto…), no lo intentes ni digas que no puedes. Empieza la respuesta con una línea exacta «{0} <la instrucción completa y clara para Claude Code, en español>» y, en la línea siguiente, una frase corta para la persona. La sesión se abrirá en la carpeta que elija la persona: no inventes rutas, pero si la persona nombró un archivo o una carpeta, ponlo tal cual. Si solo preguntan algo, responde normal.", TaskMark));
         }
+        return Context(prompt, r);
+    }
+
+    static string Context(StringBuilder prompt, AssistantRequest r)
+    {
         if (r.Context.Length > 0)
         {
             prompt.AppendLine();

@@ -38,6 +38,7 @@ mascota (`[ACCION]`) son del protocolo y van siempre en español. Para otro idio
 | Sonidos | `…\Claupet\sonidos` | `…/Claupet/sonidos` |
 | Modelo de voz (Whisper) | `…\Claupet\voz\ggml-small.bin` | — |
 | Voz de Claupet (Supertonic 3) | `…\Claupet\voz\supertonic-3` | — |
+| Modelo local (llama-server y el GGUF elegido) | `…\Claupet\modelo-local` | — |
 | Consultas del asistente (prompts de sistema) | `…\Claupet\asistente` | — |
 | Permisos de lo que la mascota hace en el equipo | `Permissions` en `settings.json` | — |
 | Notas | `Documentos\Claupet\Notas`, un `.md` por nota | — |
@@ -383,6 +384,23 @@ pasar a fonemas. La inferencia está adaptada de su ejemplo en C# (MIT); el mode
 
 Las caritas de texto, como `(^_^)`, no se leen.
 
+**Modelo local** (`LocalModel.cs`, `TrayApp.LocalModel.cs`). Responde en la mascota o la isla sin internet
+ni tokens cuando se elige «Local: …» como su modelo (`AssistantModels.Local`), o con «La mascota responde
+con un modelo local» en el asistente de configuración. Recibe el mismo prompt de sistema que Claude, sin
+las herramientas que no tiene, y su respuesta pasa por las mismas reglas (marcas, acciones y permisos),
+como el asistente de una extensión.
+
+| Qué | Cómo |
+|---|---|
+| Modelos | Qwen3.5 0.8B (533 MB), 2B (1,3 GB, el propuesto) o 4B (2,7 GB), Apache 2.0, en GGUF Q4_K_M de Unsloth fijado a un commit de Hugging Face y con su SHA-256 (`LocalModel.Choices`, `LocalModel` en `settings.json`) |
+| Programa | `llama-server` de llama.cpp b11913 para CPU x64 (24 MB, MIT), de su Release de GitHub y con su SHA-256; del zip se sacan solo el servidor, sus DLL y las de ggml para cada CPU |
+| Descarga | a pedido, en `…\Claupet\modelo-local`, retomando como la de Whisper; al terminar se borran los otros modelos. **Ajustes › Asistente › Modelo local** muestra el avance, cancela o borra |
+| Arranque | la primera pregunta lo arranca en `127.0.0.1`, en un puerto libre y con una clave nueva en cada arranque (`--api-key`): otro programa del equipo no puede usarlo. Va en un Job que lo cierra si Claupet termina; a los 10 minutos sin uso suelta la memoria (`--sleep-idle-seconds`) |
+| Respuestas | por `/v1/chat/completions` con stream, como una extensión `openai-chat`; sin razonamiento (`--reasoning-budget 0`), contexto de 4.096 y una conversación a la vez |
+| Solo conversa | no recibe la lista de acciones ni puede encargar tareas a Claude Code: con ella, el 0.8B y el 2B inventaban acciones (ante un «Hola», minimizar todo) o las armaban mal. Si le piden una, dice que hace falta un modelo de Claude |
+| Velocidad | en un Ryzen 7 5700U arranca en 2 s; el 2B responde a la mascota en 3 a 5 s (el 0.8B escribe unos 35 tokens por segundo) |
+| Memoria | unos 1, 2 o 3,5 GB mientras responde, según el tamaño (estimado) |
+
 | Para hablar | Qué pasa |
 |---|---|
 | Mantener la tecla (Ctrl derecho, `MicKey`) | escucha mientras está pulsada; si se pulsa otra tecla con ella, era un atajo y se cancela |
@@ -506,6 +524,9 @@ Solo en Windows, para probar el asistente:
 - `--recordatorio <id>`: la usa la tarea programada de un recordatorio para abrir la app.
 - `--descargar-voz`: baja la voz de Claupet como desde **Ajustes**, con el avance.
 - `--decir <F4|M1> <texto>`: lo dice con esa voz, frase por frase, y escribe cuánto tardó cada una.
+- `--modelo-local <id> [pregunta]`: baja ese modelo local (`qwen3.5-0.8b`, `qwen3.5-2b` o `qwen3.5-4b`) y
+  llama-server como desde **Ajustes**, con el avance; con una pregunta, se la hace como la mascota y
+  escribe cuánto tardó en arrancar y en responder.
 
 ## Si no salen avisos
 

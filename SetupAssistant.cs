@@ -44,6 +44,10 @@ sealed class SetupForm : Form
     public bool Mic { get; private set; }
     /// <summary>Leer las respuestas en voz alta (baja la voz de Claupet si falta).</summary>
     public bool ReadAloud { get; private set; }
+    /// <summary>La mascota responde con el modelo local (lo baja si falta).</summary>
+    public bool LocalModelOn { get; private set; }
+    /// <summary>El modelo local elegido (LocalModel.Choices).</summary>
+    public string LocalModelId { get; private set; }
 
     /// <summary>Lo que la app sabe de los modelos de voz; sin esto, el paso los da por faltantes.</summary>
     public ModelState Models { get; init; } = new(false, null, false, true, null);
@@ -64,6 +68,8 @@ sealed class SetupForm : Form
         NotificationsOn = settings.Notifications;
         Mic = settings.Mic;
         ReadAloud = settings.ReadAloud;
+        LocalModelOn = settings.MascotModel == AssistantModels.Local;
+        LocalModelId = LocalModel.Find(settings.LocalModel).Id;
         foreach (var dir in configDirs)
         {
             var row = new HookRow(dir, HookInstaller.Status(dir, exePath), dir.Replace(Account.Home, "~"));
@@ -288,9 +294,21 @@ sealed class SetupForm : Form
             Add(ActionRow(L.T("Extensiones"), L.T("Voces, modelos de voz y asistentes de terceros en paquetes firmados."), button));
         }
 
-        Add(Eyebrow(L.T("PRÓXIMAMENTE"), 14));
-        Add(Cards((L.T("Modelo de apoyo local"),
-            L.T("Un modelo pequeño en su equipo que responde lo simple sin gastar tokens y funciona sin internet. Se activa a pedido: usa más memoria."), null)));
+        // El modelo local: la mascota responde con él, sin internet ni tokens; la isla sigue con Claude.
+        var local = LocalModel.Find(LocalModelId);
+        var localDetail = LocalModel.Ready(local)
+            ? L.T("{0} ya está en este equipo; usa unos {1} de RAM al responder.", local.Name, local.Ram)
+            : L.T("Descarga {0} ({1} MB) y usa unos {2} de RAM al responder.", local.Name, (LocalModel.Missing(local) + 500_000) / 1_000_000, local.Ram);
+        Add(new SwitchRow(_t, L.T("La mascota responde con un modelo local"), localDetail, LocalModelOn, true, BodyWidth, Font, _small, v => LocalModelOn = v));
+        var sizes = new Segmented(_t, LocalModel.Choices.Select(c => c.Name.Replace("Qwen3.5 ", "")).ToArray(),
+            Array.FindIndex(LocalModel.Choices, c => c.Id == LocalModelId));
+        sizes.Picked += i =>
+        {
+            LocalModelId = LocalModel.Choices[i].Id;
+            LocalModelOn = true;
+            BeginInvoke(() => GoTo(_current)); // el detalle dice lo que baja y la RAM de este
+        };
+        Add(Field(L.T("Tamaño (Qwen3.5)"), sizes));
     }
 
     void Startup()

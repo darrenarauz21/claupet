@@ -18,12 +18,15 @@ El texto completo de cada licencia viene en su paquete NuGet.
 
 ## Modelos que se descargan al usarlos
 
-La app no incluye estos modelos: los baja de Hugging Face la primera vez que se activa la función.
+La app no incluye estos modelos ni programas: los baja (de Hugging Face y de GitHub) la primera vez que
+se activa la función.
 
 | Modelo | Uso | Licencia | Fuente |
 |---|---|---|---|
 | Whisper `ggml-small.bin` | Micrófono (voz a texto) | MIT | https://huggingface.co/ggerganov/whisper.cpp |
 | Supertonic 3 | Voz de Claupet (texto a voz) | BigScience Open RAIL-M | https://huggingface.co/supertone-oss-archive/supertonic-3 |
+| Qwen3.5 0.8B, 2B o 4B (GGUF Q4_K_M de Unsloth) | Modelo local de la mascota y la isla | Apache 2.0 | https://huggingface.co/Qwen |
+| llama.cpp `llama-server` b11913 (CPU x64) | Corre el modelo local | MIT; incluye LLVM OpenMP (Apache 2.0 con excepción LLVM) | https://github.com/ggml-org/llama.cpp |
 
 Open RAIL-M prohíbe ciertos usos del modelo (los de su Anexo A); quien use la voz de Claupet acepta
 esas condiciones.
