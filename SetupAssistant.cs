@@ -5,14 +5,21 @@ namespace ClaudeUsageTray;
 
 /// <summary>
 /// La bienvenida de Claupet, por pasos: el idioma y las novedades, el hook de permisos en cada carpeta de
-/// Claude Code, la mascota y la isla, y el inicio con Windows y las notificaciones, con lo que viene.
-/// Ventana sin marco y redondeada, como Claupet Console. Nada cambia hasta «Aplicar».
+/// Claude Code, la mascota y la isla, los modelos de voz y las extensiones, y el inicio con Windows y las
+/// notificaciones, con lo que viene. Ventana sin marco y redondeada, como Claupet Console. Nada cambia hasta
+/// «Aplicar», salvo instalar una extensión, que pide su propia confirmación.
 /// </summary>
 sealed class SetupForm : Form
 {
     sealed record HookRow(string Dir, HookInstaller.State State, string Name);
 
-    const int Steps = 4;
+    /// <summary>
+    /// Cómo están los modelos de voz: listos en el equipo, o dados por una extensión (su nombre). La voz de
+    /// Claupet hace falta solo si la voz elegida para leer es la suya.
+    /// </summary>
+    public sealed record ModelState(bool VoiceReady, string? VoiceExtension, bool SpeechReady, bool SpeechNeeded, string? SpeechExtension);
+
+    const int Steps = 5;
 
     readonly Theme _t;
     readonly Font _small, _strong, _title, _eyebrow;
@@ -33,6 +40,15 @@ sealed class SetupForm : Form
     public bool Chat { get; private set; }
     public bool StartWithWindows { get; private set; }
     public bool NotificationsOn { get; private set; }
+    /// <summary>Hablarle con el micrófono (baja el modelo de voz si falta).</summary>
+    public bool Mic { get; private set; }
+    /// <summary>Leer las respuestas en voz alta (baja la voz de Claupet si falta).</summary>
+    public bool ReadAloud { get; private set; }
+
+    /// <summary>Lo que la app sabe de los modelos de voz; sin esto, el paso los da por faltantes.</summary>
+    public ModelState Models { get; init; } = new(false, null, false, true, null);
+    /// <summary>Instala un paquete .claupet con la revisión de siempre (firma, permisos, ranuras).</summary>
+    public Func<string, IWin32Window, Task>? InstallPackage { get; init; }
 
     readonly string _currentMascot;
 
@@ -46,6 +62,8 @@ sealed class SetupForm : Form
         Chat = settings.Chat;
         StartWithWindows = StartupRegistration.IsEnabled || !settings.SetupDone;
         NotificationsOn = settings.Notifications;
+        Mic = settings.Mic;
+        ReadAloud = settings.ReadAloud;
         foreach (var dir in configDirs)
         {
             var row = new HookRow(dir, HookInstaller.Status(dir, exePath), dir.Replace(Account.Home, "~"));
@@ -109,7 +127,7 @@ sealed class SetupForm : Form
         return v is null ? "" : $"{v.Major}.{v.Minor}.{v.Build}";
     }
 
-    string[] StepNames => [L.T("Bienvenida"), L.T("Avisos de permisos"), L.T("Su compañero"), L.T("Inicio y avisos")];
+    string[] StepNames => [L.T("Bienvenida"), L.T("Avisos de permisos"), L.T("Su compañero"), L.T("Modelos y voz"), L.T("Inicio y avisos")];
 
     /// <summary>Muestra un paso: lo rehace entero, así también sirve al cambiar de idioma.</summary>
     void GoTo(int index)
@@ -131,6 +149,7 @@ sealed class SetupForm : Form
             case 0: Welcome(); break;
             case 1: Hooks(); break;
             case 2: Companion(); break;
+            case 3: ModelsAndVoice(); break;
             default: Startup(); break;
         }
         _body.ResumeLayout();
@@ -234,7 +253,44 @@ sealed class SetupForm : Form
             L.T("Escríbale a la mascota para pedirle cosas a Claude Code."), Chat, true, BodyWidth, Font, _small, v => Chat = v));
         Add(new SwitchRow(_t, L.T("Isla"),
             L.T("Asoma arriba de la pantalla con sus sesiones, los permisos y un chat rápido."), Island, true, BodyWidth, Font, _small, v => Island = v));
-        Add(Note(L.T("La voz, el micrófono, las acciones de Windows y las extensiones se ajustan después en Ajustes.")));
+        Add(Note(L.T("Las acciones de Windows piden permiso la primera vez que se usan; se ajustan en Ajustes › Asistente.")));
+    }
+
+    void ModelsAndVoice()
+    {
+        Header(L.T("Modelos y voz"),
+            L.T("Los modelos corren en su equipo: se descargan una vez, en segundo plano, y luego funcionan sin internet."));
+        var m = Models;
+        var mb = (VoiceModel.Size + 500_000) / 1_000_000;
+        var (micDetail, micEnabled) = m.VoiceExtension is { } stt ? (L.T("Lo entiende la extensión {0}.", stt), true)
+            : m.VoiceReady ? (L.T("El modelo de voz ya está en este equipo."), true)
+            : (L.T("Descarga el modelo de voz Whisper ({0} MB).", mb), true);
+        Add(new SwitchRow(_t, L.T("Hablarle con el micrófono"), micDetail, Mic, micEnabled, BodyWidth, Font, _small, v =>
+        {
+            Mic = v;
+            if (v && !Chat && !Island) Chat = true; // el micrófono necesita a quién hablarle
+        }));
+        var speechMb = (ClaupetVoiceModel.Size + 500_000) / 1_000_000;
+        var readDetail = m.SpeechExtension is { } tts ? L.T("Con la voz de la extensión {0}.", tts)
+            : !m.SpeechNeeded ? L.T("Con la voz elegida en Ajustes › Asistente.")
+            : m.SpeechReady ? L.T("La voz de Claupet ya está en este equipo.")
+            : L.T("Descarga la voz de Claupet ({0} MB); mientras, lee la de Windows.", speechMb);
+        Add(new SwitchRow(_t, L.T("Leer las respuestas en voz alta"), readDetail, ReadAloud, true, BodyWidth, Font, _small, v => ReadAloud = v));
+
+        if (InstallPackage is { } install)
+        {
+            var button = new PillButton(_t, L.T("Instalar…"), PillButton.Kind.Quiet);
+            button.Click += async (_, _) =>
+            {
+                using var dialog = new OpenFileDialog { Filter = L.T("Paquetes de Claupet") + " (*.claupet)|*.claupet", Title = L.T("Instalar una extensión") };
+                if (dialog.ShowDialog(this) == DialogResult.OK) await install(dialog.FileName, this);
+            };
+            Add(ActionRow(L.T("Extensiones"), L.T("Voces, modelos de voz y asistentes de terceros en paquetes firmados."), button));
+        }
+
+        Add(Eyebrow(L.T("PRÓXIMAMENTE"), 14));
+        Add(Cards((L.T("Modelo de apoyo local"),
+            L.T("Un modelo pequeño en su equipo que responde lo simple sin gastar tokens y funciona sin internet. Se activa a pedido: usa más memoria."), null)));
     }
 
     void Startup()
@@ -246,7 +302,7 @@ sealed class SetupForm : Form
             L.T("Cuando una sesión termina o falla, y cuando el uso se acerca al límite."), NotificationsOn, true, BodyWidth, Font, _small, v => NotificationsOn = v));
         Add(Eyebrow(L.T("PRÓXIMAMENTE"), 18));
         Add(Cards(
-            ("Claupet Console", L.T("Una ventana con chat, editor de documentos y de código con IA, y todos los ajustes. Vendrá incluida."), L.T("Próximamente")),
+            ("Claupet Console", L.T("Una ventana con chat, editor de documentos y de código con IA, y todos los ajustes. Vendrá incluida."), L.T("Incluida")),
             ("Claupet IDE", L.T("Una extensión que lleva el editor de código a nivel de IDE: vista previa de interfaces y webs, y artifacts."), L.T("Extensión"))));
     }
 
@@ -277,11 +333,28 @@ sealed class SetupForm : Form
         return row;
     }
 
-    /// <summary>Tarjetas de dos en dos: título, una etiqueta opcional y una línea.</summary>
+    /// <summary>Como una fila con interruptor, pero con un botón a la derecha.</summary>
+    Control ActionRow(string title, string detail, Control action)
+    {
+        var row = new Panel { Width = BodyWidth, Margin = new Padding(0, 0, 0, U(4)), BackColor = _t.Background };
+        var textWidth = BodyWidth - action.Width - U(20);
+        var name = new Label { Text = title, ForeColor = _t.Text, AutoSize = false };
+        name.Size = name.GetPreferredSize(new Size(textWidth, 0)) with { Width = textWidth };
+        var line = new Label { Text = detail, Font = _small, ForeColor = _t.Tertiary, AutoSize = false };
+        line.Size = line.GetPreferredSize(new Size(textWidth, 0)) with { Width = textWidth };
+        name.Location = new Point(0, U(8));
+        line.Location = new Point(0, name.Bottom + U(1));
+        row.Height = Math.Max(line.Bottom + U(8), action.Height + U(8));
+        action.Location = new Point(BodyWidth - action.Width, (row.Height - action.Height) / 2);
+        row.Controls.AddRange([name, line, action]);
+        return row;
+    }
+
+    /// <summary>Tarjetas de dos en dos (una sola, a todo lo ancho): título, una etiqueta opcional y una línea.</summary>
     Control Cards(params (string Title, string Text, string? Badge)[] cards)
     {
         var gap = U(12);
-        var width = (BodyWidth - gap) / 2;
+        var width = cards.Length == 1 ? BodyWidth : (BodyWidth - gap) / 2;
         var grid = new Panel { Width = BodyWidth, Margin = Padding.Empty, BackColor = _t.Background };
         var made = cards.Select(c => new Card(_t, _t.Background, width, c.Title, c.Text, c.Badge, _strong, _small)).ToList();
         var height = made.Max(c => c.Height); // todas del mismo alto

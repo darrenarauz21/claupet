@@ -2178,7 +2178,12 @@ sealed partial class TrayApp : ApplicationContext
     {
         _form.Hide();
         var language = L.Language; // el asistente puede cambiarlo mientras está abierto
-        using var setup = new SetupForm(_settings, ExePath, _form.Theme, SetupDirs());
+        using var setup = new SetupForm(_settings, ExePath, _form.Theme, SetupDirs())
+        {
+            Models = new(VoiceModel.Ready, _extensions.ProviderFor(ExtensionSlots.SpeechToText)?.Manifest.Name.Text,
+                ClaupetVoiceModel.Ready, NeedsSupertonic(_settings.ReadAloudVoice), _extensions.ProviderFor(ExtensionSlots.TextToSpeech)?.Manifest.Name.Text),
+            InstallPackage = InstallPackageAsync,
+        };
         var accepted = setup.ShowDialog() == DialogResult.OK;
         _settings.SetupDone = true; // «Ahora no» tampoco vuelve a preguntar, salvo que la app cambie de lugar
         SettingsStore.Save(_settings);
@@ -2204,9 +2209,32 @@ sealed partial class TrayApp : ApplicationContext
         if (setup.Island != _settings.Island || setup.Chat != _settings.Chat)
             Change(s => (s.Island, s.Chat) = (setup.Island, setup.Chat));
 
+        // Modelos y voz: como encenderlos en Ajustes, que baja lo que falte (salvo que lo dé una extensión).
+        var relaunch = setup.Language != language;
+        var voiceMissing = setup.Mic && !VoiceModel.Ready && _extensions.ProviderFor(ExtensionSlots.SpeechToText) is null;
+        var speechMissing = setup.ReadAloud && NeedsSupertonic(_settings.ReadAloudVoice) && !ClaupetVoiceModel.Ready
+            && _extensions.ProviderFor(ExtensionSlots.TextToSpeech) is null;
+        if (setup.Mic != _settings.Mic || setup.ReadAloud != _settings.ReadAloud)
+            Change(s => (s.Mic, s.ReadAloud) = (setup.Mic, setup.ReadAloud));
+        if (!_settings.ReadAloud) _readAloud?.Stop();
+        if (relaunch && (voiceMissing || speechMissing))
+            lines.Add(L.T("Al reiniciar, descargue los modelos en Ajustes › Asistente."));
+        else
+        {
+            if (voiceMissing)
+            {
+                _ = DownloadVoiceModelAsync();
+                lines.Add(L.T("El modelo de voz se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+            }
+            if (speechMissing)
+            {
+                _ = DownloadSpeechAsync();
+                lines.Add(L.T("La voz de Claupet se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+            }
+        }
+
         if (hooked)
             lines.Add(L.T("Los avisos de permisos funcionan en las sesiones de Claude Code que se abran desde ahora."));
-        var relaunch = setup.Language != language;
         if (relaunch) lines.Add(L.T("Claupet se reinicia para cambiar el idioma."));
         MessageBox.Show(string.Join(Environment.NewLine, lines), "Claupet", MessageBoxButtons.OK, MessageBoxIcon.Information);
         if (!relaunch) return;
