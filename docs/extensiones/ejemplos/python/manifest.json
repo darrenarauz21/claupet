@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "ejemplo.notas-python",
+  "name": { "es": "Notas (Python)", "en": "Notes (Python)" },
+  "description": {
+    "es": "Ejemplo: /nota guarda una nota, /notas las lee y la mascota avisa al guardar. Anota también los avisos de Claupet.",
+    "en": "Sample: /nota saves a note, /notas reads them back and the pet speaks up when one is saved. It also logs Claupet's notices."
+  },
+  "version": "1.0.0",
+  "author": "Claupet",
+  "license": "MIT",
+  "claupet": ">=2.3.0",
+  "provides": ["skill"],
+  "runtime": { "type": "process", "program": "python", "args": ["-u", "{package}/main.py"] },
+  "commands": [
+    { "name": "nota", "description": { "es": "Guarda una nota", "en": "Saves a note" } },
+    { "name": "notas", "description": { "es": "Lee las notas guardadas", "en": "Reads the saved notes" } }
+  ],
+  "events": ["notice"],
+  "permissions": ["pet"],
+  "settings": [
+    { "key": "maximo", "type": "number", "label": { "es": "Notas que se guardan", "en": "Notes to keep" }, "default": 50 },
+    { "key": "avisar", "type": "bool", "label": { "es": "La mascota avisa al guardar", "en": "The pet speaks up on save" }, "default": true }
+  ]
+}
