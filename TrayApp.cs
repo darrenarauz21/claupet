@@ -1,6 +1,6 @@
 namespace ClaudeUsageTray;
 
-sealed class TrayApp : ApplicationContext
+sealed partial class TrayApp : ApplicationContext
 {
     readonly NotifyIcon _tray = new();
     readonly UsageForm _form = new();
@@ -77,6 +77,7 @@ sealed class TrayApp : ApplicationContext
         if (SettingsStore.DetectNew(_settings)) SettingsStore.Save(_settings);
         _settings.Selected ??= _settings.Accounts.FirstOrDefault()?.ConfigDir;
         Sounds.EnsureDefaults();
+        SetupExtensions();
         // La ventana se creó con la paleta por defecto: toma la elegida.
         Theme.SelectedPalette = _settings.Palette;
         _form.ApplyTheme();
@@ -186,6 +187,7 @@ sealed class TrayApp : ApplicationContext
             UpdateVoice();
             UpdateKeyHook();
             CheckReminders(); // los que pasaron con la app cerrada
+            _ = StartExtensionsAsync();
             if (demoDrop is not null) _ = DemoDropAsync(demoDrop);
             if (demoVoice is not null && _voice is { } voice) _ = Task.Delay(1500).ContinueWith(_ => voice.DemoAsync(demoVoice),
                 TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
@@ -262,7 +264,8 @@ sealed class TrayApp : ApplicationContext
 
     async Task ScanSessionsAsync()
     {
-        if (_scanning || (!_form.Visible && !_settings.Notifications && _mascotWindow is null && _island is null)) return;
+        if (_scanning || (!_form.Visible && !_settings.Notifications && _mascotWindow is null && _island is null
+            && !_extensions.Skills.Any(s => s.Manifest.Events.Contains("session") || s.Manifest.Events.Contains("toolUse")))) return;
         _scanning = true;
         try
         {
@@ -271,6 +274,7 @@ sealed class TrayApp : ApplicationContext
             _form.SetSessions(sessions);
             _director.SetSessions(sessions);
             _lastSessions = sessions;
+            BroadcastSessions(sessions);
             _island?.SetSessions(sessions);
             if (_defaultModel is null && sessions.Where(s => s.Model is not null).OrderByDescending(s => s.TurnEndedAt ?? s.StatusAt).FirstOrDefault() is { } recent)
             {
@@ -295,6 +299,10 @@ sealed class TrayApp : ApplicationContext
         _director.Notice(notice.Kind);
         if (_mascotWindow is { } mascot && _settings.Speak && _chatBubble?.Visible != true) _bubble.Say(notice, mascot.Chibi, mascot.Bounds);
         if (_settings.Sound && _island?.Muted != true) _sounds.Play(notice.Kind, _settings.SoundPack);
+        _ = BroadcastAsync("notice", new System.Text.Json.Nodes.JsonObject
+        {
+            ["kind"] = notice.Kind.ToString().ToLowerInvariant(), ["title"] = notice.Title, ["text"] = notice.Subtitle, ["session"] = notice.SessionId,
+        });
     }
 
     /// <summary>Lo que la vista Ajustes muestra: se manda de nuevo cada vez que algo cambia.</summary>
@@ -305,9 +313,9 @@ sealed class TrayApp : ApplicationContext
         {
             Notifications = s.Notifications,
             Sound = s.Sound,
-            SoundPack = Sounds.Packs.FirstOrDefault(p => p.Id == s.SoundPack).Label ?? s.SoundPack,
+            SoundPack = SoundPackChoices().FirstOrDefault(p => p.Id == s.SoundPack).Label ?? Sounds.Packs[0].Label,
             Palette = Theme.PaletteLabel(s.Palette),
-            Mascot = Mascots.Label(Mascots.ChoiceOf(s)),
+            Mascot = _pet is { } pet ? pet.Name : Mascots.Label(Mascots.ChoiceOf(s)),
             MascotSize = MascotSizes.Label(s.MascotSize),
             DesktopMascot = s.DesktopMascot,
             Speak = s.Speak,
@@ -318,7 +326,7 @@ sealed class TrayApp : ApplicationContext
             AngryOnClicks = s.AngryOnClicks,
             SleepWithoutSessions = s.SleepWithoutSessions,
             Chat = s.Chat,
-            MascotModel = AssistantModels.Label(s.MascotModel),
+            MascotModel = ExternalLabel(ExtensionSlots.Assistant) ?? AssistantModels.Label(s.MascotModel),
             AssistantAccount = AssistantAccountLabel(),
             TaskFolder = TaskFolderLabel(),
             AnalyzeDrops = s.AnalyzeDrops,
@@ -330,11 +338,11 @@ sealed class TrayApp : ApplicationContext
             VoiceStatus = VoiceStatusText().Status,
             VoiceAction = VoiceStatusText().Action,
             ReadAloud = s.ReadAloud,
-            ReadAloudVoice = ClaupetVoices.Label(s.ReadAloudVoice),
+            ReadAloudVoice = ExternalLabel(ExtensionSlots.TextToSpeech) ?? VoiceChoices().FirstOrDefault(v => v.Id == s.ReadAloudVoice).Label ?? ClaupetVoices.Label(s.ReadAloudVoice),
             SpeechStatus = SpeechStatusText().Status,
             SpeechAction = SpeechStatusText().Action,
             Island = s.Island,
-            IslandModel = AssistantModels.Label(s.IslandModel),
+            IslandModel = ExternalLabel(ExtensionSlots.Assistant) ?? AssistantModels.Label(s.IslandModel),
             IslandHover = s.IslandHover,
             IslandWhileBusy = s.IslandWhileBusy,
             WeeklyRecap = s.WeeklyRecap,
@@ -342,8 +350,20 @@ sealed class TrayApp : ApplicationContext
             StartWithWindows = StartupRegistration.IsEnabled,
             Accounts = s.Accounts.Count,
             Language = L.Label,
+            Extensions = _extensions.Installed.Count == 0 ? L.T("Ninguna")
+                : L.T("{0} de {1} encendidas", _extensions.Installed.Count(e => _extensions.IsEnabled(e.Id)), _extensions.Installed.Count),
         });
     }
+
+    /// <summary>La extensión que ocupa una ranura exclusiva, dicha para Ajustes; null: el integrado.</summary>
+    string? ExternalLabel(string slot) => _extensions.ProviderFor(slot) is { } ext ? L.T("{0} (extensión)", ext.Manifest.Name.Text) : null;
+
+    IEnumerable<(string Id, string Label)> SoundPackChoices() => Sounds.Packs.Concat(_extensions.SoundPacks());
+
+    IEnumerable<(string Id, string Label)> VoiceChoices() => ClaupetVoices.Choices.Concat(_extensions.PackVoices());
+
+    /// <summary>Una voz que necesita el modelo de Supertonic: la de Claupet o la de un paquete.</summary>
+    static bool NeedsSupertonic(string voice) => ClaupetVoices.IsClaupet(voice) || voice.StartsWith(ExtensionManager.PackPrefix, StringComparison.Ordinal);
 
     string AssistantAccountLabel() =>
         _settings.AssistantAccount is { } dir && _settings.Accounts.FirstOrDefault(a => Account.SamePath(a.ConfigDir, dir)) is { } account
@@ -357,7 +377,8 @@ sealed class TrayApp : ApplicationContext
 
     /// <summary>La fila del modelo de voz en Ajustes: qué dice y qué enlace lleva.</summary>
     (string Status, string Action) VoiceStatusText() =>
-        VoiceModel.Ready ? (L.T("Modelo de voz: listo, en este equipo"), "")
+        _extensions.ProviderFor(ExtensionSlots.SpeechToText) is { } stt ? (L.T("Voz a texto: {0} (extensión)", stt.Manifest.Name.Text), "")
+        : VoiceModel.Ready ? (L.T("Modelo de voz: listo, en este equipo"), "")
         : _modelDownload is not null ? (L.T("Descargando el modelo de voz… {0} %", _modelPercent ?? 0), L.T("Cancelar"))
         : _modelError is not null ? (L.T("No se pudo descargar ({0})", _modelError), L.T("Reintentar"))
         : (L.T("Modelo de voz (488 MB, una sola vez)"), L.T("Descargar"));
@@ -395,7 +416,7 @@ sealed class TrayApp : ApplicationContext
 
     /// <summary>La fila de la voz de Claupet en Ajustes; vacía si no hace falta (ya está, o se eligió la de Windows).</summary>
     (string Status, string Action) SpeechStatusText() =>
-        !ClaupetVoices.IsClaupet(_settings.ReadAloudVoice) || ClaupetVoiceModel.Ready ? ("", "")
+        !NeedsSupertonic(_settings.ReadAloudVoice) || ClaupetVoiceModel.Ready || _extensions.ProviderFor(ExtensionSlots.TextToSpeech) is not null ? ("", "")
         : _speechDownload is not null ? (L.T("Descargando la voz… {0} %", _speechPercent ?? 0), L.T("Cancelar"))
         : _speechError is not null ? (L.T("No se pudo descargar ({0})", _speechError), L.T("Reintentar"))
         : (L.T("Voz de Claupet ({0} MB, una sola vez)", ClaupetVoiceModel.Size / 1_000_000), L.T("Descargar"));
@@ -521,9 +542,20 @@ sealed class TrayApp : ApplicationContext
         {
             case "notify": ToggleNotifications(); break;
             case "sound": ToggleSound(); break;
-            case "pack": ShowChoiceMenu(_packMenu, _settings.SoundPack); break;
+            case "pack":
+                // Con estilos de sonido de paquetes, la lista los suma a los de la app.
+                if (_extensions.SoundPacks().Count > 0) ShowOptions(SoundPackChoices(), _settings.SoundPack, SetSoundPack);
+                else ShowChoiceMenu(_packMenu, _settings.SoundPack);
+                break;
             case "palette": ShowChoiceMenu(_paletteMenu, _settings.Palette); break;
-            case "mascot": ShowChoiceMenu(_mascotMenu, Mascots.ChoiceOf(_settings)); break;
+            case "mascot":
+                if (_extensions.Pets() is { Count: > 0 } pets)
+                    ShowOptions(Mascots.Choices.Concat(pets.Select(p => (ExtensionManager.PackPrefix + p.Id, p.Label))),
+                        _settings.CustomPet is { } pet ? ExtensionManager.PackPrefix + pet : Mascots.ChoiceOf(_settings), PickMascot);
+                else ShowChoiceMenu(_mascotMenu, Mascots.ChoiceOf(_settings));
+                break;
+            case "extensions": ShowExtensions(); break;
+            case "extinstall": _ = PickPackageAsync(); break;
             case "size": ShowOptions(MascotSizes.Choices, _settings.MascotSize, SetMascotSize); break;
             case "desk": ToggleDesktopMascot(); break;
             case "speak": ToggleSpeak(); break;
@@ -537,14 +569,19 @@ sealed class TrayApp : ApplicationContext
                 _ = ScanSessionsAsync(); // para que se duerma o se despierte ya
                 break;
             case "chat": Toggle(s => s.Chat = !s.Chat); break;
-            case "mmodel": ShowOptions(AssistantModels.Choices, _settings.MascotModel, m => Change(s => s.MascotModel = m)); break;
+            case "mmodel":
+                // Con un asistente de una extensión, el modelo se elige en sus ajustes.
+                if (_extensions.ProviderFor(ExtensionSlots.Assistant) is not null) ShowExtensions();
+                else ShowOptions(AssistantModels.Choices, _settings.MascotModel, m => Change(s => s.MascotModel = m));
+                break;
             case "account": ShowOptions(AssistantAccountChoices(), _settings.AssistantAccount ?? "", a => Change(s => s.AssistantAccount = a.Length == 0 ? null : a)); break;
             case "folder": ShowOptions(TaskFolderChoices(), _settings.TaskFolder ?? "", PickTaskFolder); break;
             case "drops": Toggle(s => s.AnalyzeDrops = !s.AnalyzeDrops); break;
             case "grants": ShowPermissions(); break;
             case "mic":
                 Toggle(s => s.Mic = !s.Mic);
-                if (_settings.Mic) _ = DownloadVoiceModelAsync(); // se descarga una vez, al encenderlo
+                // Se descarga una vez, al encenderlo; con una extensión de voz a texto no hace falta.
+                if (_settings.Mic && _extensions.ProviderFor(ExtensionSlots.SpeechToText) is null) _ = DownloadVoiceModelAsync();
                 break;
             case "mickey":
                 ShowOptions(KeyChoices(MicKeys.Choices, _settings.MicKey, L.T("Grabar otra tecla…")), _settings.MicKey, k =>
@@ -570,13 +607,15 @@ sealed class TrayApp : ApplicationContext
             case "readaloud":
                 Toggle(s => s.ReadAloud = !s.ReadAloud);
                 if (!_settings.ReadAloud) _readAloud?.Stop();
-                else if (ClaupetVoices.IsClaupet(_settings.ReadAloudVoice)) _ = DownloadSpeechAsync(); // se descarga una vez
+                else if (NeedsSupertonic(_settings.ReadAloudVoice) && _extensions.ProviderFor(ExtensionSlots.TextToSpeech) is null)
+                    _ = DownloadSpeechAsync(); // se descarga una vez
                 break;
             case "readvoice":
-                ShowOptions(ClaupetVoices.Choices, _settings.ReadAloudVoice, v =>
+                if (_extensions.ProviderFor(ExtensionSlots.TextToSpeech) is not null) ShowExtensions(); // la voz se elige en sus ajustes
+                else ShowOptions(VoiceChoices(), _settings.ReadAloudVoice, v =>
                 {
                     Change(s => s.ReadAloudVoice = v);
-                    if (ClaupetVoices.IsClaupet(v)) _ = DownloadSpeechAsync();
+                    if (NeedsSupertonic(v)) _ = DownloadSpeechAsync();
                 });
                 break;
             case "speech":
@@ -584,7 +623,10 @@ sealed class TrayApp : ApplicationContext
                 else _ = DownloadSpeechAsync();
                 break;
             case "island": Toggle(s => s.Island = !s.Island); break;
-            case "imodel": ShowOptions(AssistantModels.IslandChoices, _settings.IslandModel ?? "", m => Change(s => s.IslandModel = m.Length == 0 ? null : m)); break;
+            case "imodel":
+                if (_extensions.ProviderFor(ExtensionSlots.Assistant) is not null) ShowExtensions();
+                else ShowOptions(AssistantModels.IslandChoices, _settings.IslandModel ?? "", m => Change(s => s.IslandModel = m.Length == 0 ? null : m));
+                break;
             case "hover": Toggle(s => s.IslandHover = !s.IslandHover); break;
             case "busy": Toggle(s => s.IslandWhileBusy = !s.IslandWhileBusy); break;
             case "recap": Toggle(s => s.WeeklyRecap = !s.WeeklyRecap); break;
@@ -814,7 +856,7 @@ sealed class TrayApp : ApplicationContext
         ReadAloudIfOn(shown == result.Text && result.Spoken is { } spoken ? spoken : shown, show);
 
     /// <summary>La respuesta se leerá con la voz de Claupet: Claude puede ponerle risas o suspiros.</summary>
-    bool Expressive => _settings.ReadAloud && ClaupetVoices.IsClaupet(_settings.ReadAloudVoice);
+    bool Expressive => _settings.ReadAloud && (ExtensionProviders.TextToSpeech(_extensions) is { } tts ? tts.Expressive : NeedsSupertonic(_settings.ReadAloudVoice));
 
     /// <summary>
     /// Los lunes (o la primera vez que la app corre en la semana), el resumen de la semana pasada en la
@@ -951,7 +993,12 @@ sealed class TrayApp : ApplicationContext
                 PushIslandChat(false);
             };
             island.Asked += text => _ = AskIslandAsync(text);
-            island.FilesDropped += files => _ = AnalyzeAsync(files[0]);
+            island.FilesDropped += files =>
+            {
+                if (IsPackage(files[0])) { _ = InstallPackageAsync(files[0]); return; }
+                _ = BroadcastAsync("drop", new System.Text.Json.Nodes.JsonObject { ["file"] = files[0], ["where"] = "island" });
+                _ = AnalyzeAsync(files[0]);
+            };
             island.CancelClicked += () =>
             {
                 _islandAsking?.Cancel();
@@ -1009,6 +1056,29 @@ sealed class TrayApp : ApplicationContext
         PushIslandChat(true);
         // Con la voz encendida, la respuesta no se muestra mientras llega: sale cuando empieza a sonar.
         var speaking = _settings.ReadAloud;
+        if (SkillCommand(text) is { } command)
+        {
+            var reply = await RunSkillCommandAsync(command, piece =>
+            {
+                if (cancel.IsCancellationRequested || speaking) return;
+                _islandStreaming = (_islandStreaming ?? "") + piece;
+                PushIslandChat(true);
+            }, cancel.Token);
+            _islandStreaming = null;
+            if (cancel.IsCancellationRequested)
+            {
+                PushIslandChat(false);
+                return;
+            }
+            if (reply.Length == 0) reply = L.T("Listo. (^_^)");
+            ReadAloudIfOn(reply, () =>
+            {
+                if (cancel.IsCancellationRequested) return;
+                _chat.Add(new ChatTurn(false, reply));
+                PushIslandChat(false);
+            });
+            return;
+        }
         var request = new AssistantRequest
         {
             Prompt = text,
@@ -1492,6 +1562,26 @@ sealed class TrayApp : ApplicationContext
         var cancel = _asking = new CancellationTokenSource();
         bubble.Think(mascot.Bounds, text);
         _director.SetMood(ChibiMove.Think);
+        if (SkillCommand(text) is { } command)
+        {
+            // «/comando…» de una habilidad: responde ella, no el asistente.
+            _chat.Add(new ChatTurn(true, text));
+            var reply = await RunSkillCommandAsync(command, piece =>
+            {
+                if (cancel.IsCancellationRequested || bubble.IsDisposed || _settings.ReadAloud) return;
+                bubble.Append(piece);
+                _director.SetMood(ChibiMove.Talk);
+            }, cancel.Token);
+            if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
+            if (reply.Length == 0) reply = L.T("Listo. (^_^)");
+            _chat.Add(new ChatTurn(false, reply));
+            ReadAloudIfOn(reply, () =>
+            {
+                if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
+                bubble.Finish(reply, _settings.Island);
+            });
+            return;
+        }
         var request = new AssistantRequest
         {
             Prompt = text,
@@ -1620,7 +1710,9 @@ sealed class TrayApp : ApplicationContext
     void SetMascotSize(string size)
     {
         Change(s => s.MascotSize = size);
-        _mascotWindow?.SetSize(MascotSizes.Unit(size, _mascotWindow.Chibi, _mascotWindow.DeviceDpi / 96f));
+        if (_mascotWindow is not { } mascot) return;
+        var scale = mascot.DeviceDpi / 96f;
+        mascot.SetSize(mascot.Pet is { } pet ? MascotSizes.PetUnit(size, pet.Height, scale) : MascotSizes.Unit(size, mascot.Chibi, scale));
     }
 
     IEnumerable<(string Id, string Label)> AssistantAccountChoices() =>
@@ -1690,6 +1782,25 @@ sealed class TrayApp : ApplicationContext
     }
 
     /// <summary>Lo elegido en «Mascota»: la mascota de los avisos y la animación al actualizar.</summary>
+    /// <summary>De la lista con las mascotas de paquetes: una de ellas («ext:id») o una de la app.</summary>
+    void PickMascot(string choice)
+    {
+        if (choice.StartsWith(ExtensionManager.PackPrefix, StringComparison.Ordinal))
+        {
+            _settings.CustomPet = choice[ExtensionManager.PackPrefix.Length..];
+            _settings.DesktopMascot = true;
+            SettingsStore.Save(_settings);
+            _ = LoadPetAsync();
+            return;
+        }
+        if (_settings.CustomPet is not null)
+        {
+            _settings.CustomPet = null;
+            _pet = null;
+        }
+        SetMascot(choice);
+    }
+
     void SetMascot(string choice)
     {
         var wasChibi = _settings.Mascot == Mascots.Chibi;
@@ -1727,7 +1838,7 @@ sealed class TrayApp : ApplicationContext
     {
         var wanted = _settings.DesktopMascot;
         Music.Watch(wanted && _settings.DanceToMusic); // la música solo se mira si hay mascota que baile
-        if (_mascotWindow is { } current && (!wanted || current.Chibi != Mascots.IsChibi))
+        if (_mascotWindow is { } current && (!wanted || current.Pet != _pet || (_pet is null && current.Chibi != Mascots.IsChibi)))
         {
             _bubble.Hide();
             _chatBubble?.Close(dismissed: true);
@@ -1737,7 +1848,7 @@ sealed class TrayApp : ApplicationContext
         }
         if (!wanted || _mascotWindow is not null) return;
         Point? saved = _settings.DesktopMascotX is { } x && _settings.DesktopMascotY is { } y ? new Point(x, y) : null;
-        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _form.Theme.Accent, _settings.MascotSize);
+        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _form.Theme.Accent, _settings.MascotSize, _pet);
         _mascotWindow.LocationChanged += (_, _) =>
         {
             if (_mascotWindow is not { } moved) return;
@@ -1753,7 +1864,18 @@ sealed class TrayApp : ApplicationContext
             if (_carrying) return;
             _director.SetMood(over ? ChibiMove.Catch : null);
         };
-        _mascotWindow.FilesDropped += files => _ = CarryAsync(files[0]);
+        _mascotWindow.FilesDropped += files =>
+        {
+            // Un paquete de Claupet no se analiza: se instala (después de mostrar lo que es).
+            if (IsPackage(files[0]))
+            {
+                _director.SetMood(null);
+                _ = InstallPackageAsync(files[0]);
+                return;
+            }
+            _ = BroadcastAsync("drop", new System.Text.Json.Nodes.JsonObject { ["file"] = files[0], ["where"] = "pet" });
+            _ = CarryAsync(files[0]);
+        };
         _mascotWindow.OpenRequested += ShowForm;
         _mascotWindow.HideRequested += () => { ToggleDesktopMascot(); PushSettings(); };
         _mascotWindow.Moved += at =>
@@ -2149,8 +2271,10 @@ sealed class TrayApp : ApplicationContext
         foreach (var icon in _refreshIcons.Values) icon.Dispose();
         _tray.Visible = false;
         _tray.Dispose();
+        _extensionsForm?.Dispose();
         _form.Dispose();
         _icon?.Dispose();
-        ExitThread();
+        // Las extensiones se cierran en orden (shutdown, exit) y, si tardan, el Job las termina al salir.
+        _ = Task.WhenAny(StopExtensionsAsync(), Task.Delay(3000)).ContinueWith(_ => ExitThread(), TaskScheduler.FromCurrentSynchronizationContext());
     }
 }

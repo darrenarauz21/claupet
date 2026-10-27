@@ -56,6 +56,8 @@ sealed partial class UsageForm
         public int Accounts { get; init; }
         /// <summary>El idioma elegido, en su idioma («Español», «English»).</summary>
         public string Language { get; init; } = "";
+        /// <summary>Cuántas extensiones hay y cuántas encendidas («Ninguna», «2 de 3 encendidas»).</summary>
+        public string Extensions { get; init; } = "";
     }
 
     /// <summary>Las pestañas de Ajustes, en orden.</summary>
@@ -435,6 +437,8 @@ sealed partial class UsageForm
                 y = ChoiceRow(g, draw, L.T("Idioma"), "language", s.Language, y);
                 y = LinkRow(g, draw, s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add", _t.Accent, y);
                 y = SwitchRow(g, draw, L.T("Iniciar con Windows"), "startup", s.StartWithWindows, y);
+                y = ChoiceRow(g, draw, L.T("Extensiones"), "extensions", s.Extensions, y);
+                y = LinkRow(g, draw, L.T("Un paquete .claupet (o suéltelo en la mascota)"), L.T("Instalar…"), "extinstall", _t.Accent, y);
                 y = LinkRow(g, draw, L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup", _t.Accent, y);
                 y = LinkRow(g, draw, L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag", _t.Accent, y);
                 y = LinkRow(g, draw, L.T("Quitar hook e inicio con Windows"), L.T("Quitar…"), "unsetup", _t.Danger, y);

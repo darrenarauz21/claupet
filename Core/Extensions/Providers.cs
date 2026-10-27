@@ -116,21 +116,25 @@ static class AudioCodec
 /// <summary>Los proveedores que da una extensión según su runtime: por JSON-RPC, por HTTP o por consola.</summary>
 static class ExtensionProviders
 {
+    /// <summary>Un servidor con un formato de OpenAI; uno «claupet-rpc» habla JSON-RPC como un programa.</summary>
+    static bool OpenAiFormat(InstalledExtension ext) =>
+        ext.Manifest.Runtime is { Type: RuntimeSpec.Http } runtime && runtime.Format != RuntimeSpec.ClaupetRpc;
+
     public static ISpeechToText? SpeechToText(ExtensionManager manager) =>
         manager.ProviderFor(ExtensionSlots.SpeechToText) is { } ext
-            ? ext.Manifest.Runtime!.Type == RuntimeSpec.Http ? new OpenAiTranscription(manager, ext) : new RpcSpeechToText(manager, ext)
+            ? OpenAiFormat(ext) ? new OpenAiTranscription(manager, ext) : new RpcSpeechToText(manager, ext)
             : null;
 
     public static ITextToSpeech? TextToSpeech(ExtensionManager manager) =>
         manager.ProviderFor(ExtensionSlots.TextToSpeech) is { } ext
-            ? ext.Manifest.Runtime!.Type == RuntimeSpec.Http ? new OpenAiSpeech(manager, ext) : new RpcTextToSpeech(manager, ext)
+            ? OpenAiFormat(ext) ? new OpenAiSpeech(manager, ext) : new RpcTextToSpeech(manager, ext)
             : null;
 
     public static IAssistantBrain? Assistant(ExtensionManager manager) =>
         manager.ProviderFor(ExtensionSlots.Assistant) is { } ext
             ? ext.Manifest.Runtime! switch
             {
-                { Type: RuntimeSpec.Http } => new OpenAiChat(manager, ext),
+                _ when OpenAiFormat(ext) => new OpenAiChat(manager, ext),
                 { Protocol: RuntimeSpec.Text } => new TextCliBrain(manager, ext),
                 _ => new RpcBrain(manager, ext),
             }

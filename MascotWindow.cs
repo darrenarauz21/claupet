@@ -36,12 +36,16 @@ sealed class MascotWindow : Form
     /// <summary>El chibi (true) o la clásica, que se pinta con el acento de la paleta.</summary>
     public bool Chibi { get; }
 
-    public MascotWindow(ChibiDirector director, Point? location, bool chibi, Func<Color> accent, string size)
+    /// <summary>La mascota de un paquete (Ajustes › Apariencia), en vez del chibi o la clásica.</summary>
+    public PetSheet? Pet { get; }
+
+    public MascotWindow(ChibiDirector director, Point? location, bool chibi, Func<Color> accent, string size, PetSheet? pet = null)
     {
         _director = director;
         _accent = accent;
-        Chibi = chibi;
-        _unit = MascotSizes.Unit(size, chibi, DeviceDpi / 96f);
+        Pet = pet;
+        Chibi = chibi && pet is null;
+        _unit = pet is null ? MascotSizes.Unit(size, chibi, DeviceDpi / 96f) : MascotSizes.PetUnit(size, pet.Height, DeviceDpi / 96f);
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         TopMost = true;
@@ -49,9 +53,7 @@ sealed class MascotWindow : Form
         DoubleBuffered = true;
         BackColor = Key;
         TransparencyKey = Key;
-        ClientSize = chibi
-            ? new Size(ChibiSprite.Columns * _unit, ChibiSprite.Rows * _unit)
-            : new Size(ToastSprite.Columns * _unit, ToastSprite.Rows * _unit);
+        ClientSize = SizeFor(_unit);
         Location = Fit(location ?? DefaultLocation());
         Cursor = Cursors.Hand;
         AllowDrop = true;
@@ -67,6 +69,11 @@ sealed class MascotWindow : Form
     /// <summary>Pixeles por casilla (el tamaño elegido en Ajustes, con la escala de la pantalla).</summary>
     public int Unit => _unit;
 
+    Size SizeFor(int unit) =>
+        Pet is { } pet ? new Size(pet.Width * unit, pet.Height * unit)
+        : Chibi ? new Size(ChibiSprite.Columns * unit, ChibiSprite.Rows * unit)
+        : new Size(ToastSprite.Columns * unit, ToastSprite.Rows * unit);
+
     /// <summary>
     /// Otro tamaño: crece o se achica desde los pies, en el mismo lugar, y da un saltito para que se
     /// note el cambio.
@@ -76,9 +83,7 @@ sealed class MascotWindow : Form
         if (unit == _unit) return;
         var feet = new Point(Left + Width / 2, Bottom);
         _unit = unit;
-        ClientSize = Chibi
-            ? new Size(ChibiSprite.Columns * _unit, ChibiSprite.Rows * _unit)
-            : new Size(ToastSprite.Columns * _unit, ToastSprite.Rows * _unit);
+        ClientSize = SizeFor(_unit);
         Location = Fit(new Point(feet.X - Width / 2, feet.Y - Height));
         _shown = (ChibiMove.Sleep, -1, -1);
         _director.Gesture(ChibiMove.Cheer, 700);
@@ -136,7 +141,8 @@ sealed class MascotWindow : Form
     {
         e.Graphics.Clear(Key);
         var (move, t, music) = _director.Now();
-        if (Chibi) ToastArt.Pixels(e.Graphics, 0, 0, _unit, fill => ChibiSprite.Paint(fill, move, t, music));
+        if (Pet is { } pet) ToastArt.Pixels(e.Graphics, 0, 0, _unit, fill => pet.Paint(fill, move, t));
+        else if (Chibi) ToastArt.Pixels(e.Graphics, 0, 0, _unit, fill => ChibiSprite.Paint(fill, move, t, music));
         else ToastArt.Pixels(e.Graphics, 0, 0, _unit, fill => ToastSprite.PaintMove(fill, move, t, _accent(), music));
     }
 

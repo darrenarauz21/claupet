@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace ClaudeUsageTray;
 
@@ -393,6 +394,48 @@ static class Assistant
         }
     }
 
+    /// <summary>
+    /// Una pregunta suelta a Claude, para una extensión (claude/ask): sin la personalidad de Claupet, sin
+    /// herramientas (--tools "") y con --safe-mode, que deja fuera CLAUDE.md, hooks y servidores MCP. model:
+    /// un alias o un id de modelo; cualquier otra cosa se rechaza (va como argumento de claude).
+    /// </summary>
+    public static async Task<(string? Text, string? Error)> AskPlainAsync(string prompt, string? model, string? configDir, CancellationToken cancel)
+    {
+        if (model is not null && !Regex.IsMatch(model, @"^[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,63}$")) return (null, L.T("Modelo inválido: «{0}».", model));
+        if (FindClaude() is not { } claude) return (null, L.T("No encontré Claude Code. ¿Está instalado y en el PATH?"));
+        Directory.CreateDirectory(WorkDir);
+        var systemFile = Path.Combine(WorkDir, "extension.txt");
+        await File.WriteAllTextAsync(systemFile, L.T("Respondes lo que te pide una extensión de Claupet (una app de escritorio). Responde solo con lo pedido, en texto plano."), cancel);
+        var args = new List<string> { "-p", "--safe-mode", "--no-session-persistence", "--output-format", "json", "--tools", "",
+            "--permission-mode", "dontAsk", "--permission-prompts", "none", "--system-prompt-file", systemFile };
+        if (model is not null) args.AddRange(["--model", model]);
+        using var process = new Process { StartInfo = ClaudeStart(claude, configDir, args) };
+        try { process.Start(); }
+        catch (Exception ex) { return (null, L.T("No se pudo abrir Claude Code: {0}", ex.Message)); }
+        using var kill = cancel.Register(() => Kill(process));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        using var killOnTimeout = timeout.Token.Register(() => Kill(process));
+        await process.StandardInput.WriteAsync(prompt);
+        process.StandardInput.Close();
+        var stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
+        var output = await process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+        await process.WaitForExitAsync(CancellationToken.None);
+        if (cancel.IsCancellationRequested) return (null, "Cancelado.");
+        if (timeout.IsCancellationRequested) return (null, L.T("Claude Code no respondió a tiempo."));
+        try
+        {
+            using var doc = JsonDocument.Parse(output);
+            var result = Json.Str(doc.RootElement, "result");
+            var failed = doc.RootElement.TryGetProperty("is_error", out var e) && e.ValueKind == JsonValueKind.True;
+            return failed || result is null ? (null, Friendly(result ?? L.T("Claude Code no pudo responder."))) : (result.Trim(), null);
+        }
+        catch (JsonException)
+        {
+            var problem = (await stderr).Trim();
+            return (null, problem.Length > 0 ? Friendly(problem.Split('\n')[0].Trim()) : L.T("Claude Code no respondió."));
+        }
+    }
+
     /// <summary>El contenido de un archivo de texto (UTF-8, sin bytes nulos) de hasta 200 KB; null si no lo es.</summary>
     static string? TextFile(string path)
     {
@@ -763,9 +806,13 @@ sealed class ChatThread
         }
     }
 
+    /// <summary>Un mensaje nuevo en la conversación (para el evento «chat» de las habilidades).</summary>
+    public event Action<ChatTurn>? Added;
+
     public void Add(ChatTurn turn)
     {
         if (DateTime.Now - _last > Forget) _turns.Clear();
+        Added?.Invoke(turn);
         _turns.Add(turn);
         if (_turns.Count > 40) _turns.RemoveAt(0);
         _last = DateTime.Now;

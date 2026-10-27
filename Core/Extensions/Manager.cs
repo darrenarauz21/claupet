@@ -67,7 +67,7 @@ interface IExtensionHostApi
     Task<string?> ClipboardReadAsync();
     Task ClipboardWriteAsync(string text);
     /// <summary>Audio de 16 kHz, mono, 16 bits, en trozos de 100 ms: del micrófono o de lo que suena en el equipo.</summary>
-    IDisposable SubscribeAudio(string source, Action<short[]> chunk);
+    IDisposable SubscribeAudio(string extensionId, string source, Action<short[]> chunk);
 }
 
 /// <summary>
@@ -574,7 +574,9 @@ sealed class ExtensionManager : IAsyncDisposable
     /// <summary>Avisa un evento a las habilidades encendidas que lo escuchan (y las arranca si hace falta).</summary>
     public async Task BroadcastAsync(string eventName, JsonNode data)
     {
-        foreach (var skill in Skills.Where(s => s.Manifest.Events.Contains(eventName)).ToList())
+        // Lo de las sesiones (su estado, la herramienta que usan) es lo mismo que sessions/list: pide su permiso.
+        var needed = eventName is "session" or "toolUse" ? ExtensionPermissions.Sessions : null;
+        foreach (var skill in Skills.Where(s => s.Manifest.Events.Contains(eventName) && (needed is null || StateOf(s.Id).Granted.Contains(needed))).ToList())
         {
             try
             {
@@ -697,7 +699,7 @@ sealed class ExtensionManager : IAsyncDisposable
                     if (!_running.TryGetValue(ext.Id, out var running)) throw new JsonRpcException(JsonRpcException.InternalError, L.T("La extensión no está corriendo."));
                     var subscription = Guid.NewGuid().ToString("N");
                     var channel = running.Channel;
-                    running.Audio[subscription] = api.SubscribeAudio(source, pcm =>
+                    running.Audio[subscription] = api.SubscribeAudio(ext.Id, source, pcm =>
                     {
                         if (!channel.Alive) return;
                         var bytes = new byte[pcm.Length * 2];

@@ -122,6 +122,9 @@ sealed class AppSettings
     /// <summary>Las extensiones: encendidas, sus permisos y ajustes, y quién ocupa cada ranura exclusiva.</summary>
     public ExtensionSettings Extensions { get; set; } = new();
 
+    /// <summary>La mascota del escritorio de un paquete (su id); null: la elegida en Mascot. Los avisos siguen con la de Mascot.</summary>
+    public string? CustomPet { get; set; }
+
     public static readonly string[] DefaultPinned = ["Usage", "Sessions", "Activity"];
 }
 

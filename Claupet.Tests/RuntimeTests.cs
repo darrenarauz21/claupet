@@ -394,6 +394,40 @@ public class HttpProviderTests
         Assert.Equal([(2400, 24000)], audio);
         Assert.Equal("nova", JsonNode.Parse(server.Requests.Single(r => r.Path == "/audio/speech").Body)!["voice"]!.GetValue<string>());
     }
+
+    [Fact]
+    public async Task ClaupetRpcServerFillsTheExclusiveSlots()
+    {
+        // Un servidor «claupet-rpc» en una ranura habla JSON-RPC, no los formatos de OpenAI.
+        using var server = new FakeHttpServer((_, path, _, body) =>
+        {
+            var request = JsonNode.Parse(body)!;
+            JsonNode result = request["method"]!.GetValue<string>() switch
+            {
+                "initialize" => new JsonObject(),
+                "assistant/respond" => new JsonObject { ["text"] = "respuesta del servidor", ["model"] = "rpc-1" },
+                "speechToText/transcribe" => new JsonObject { ["text"] = "dicho al servidor" },
+                "textToSpeech/synthesize" => new JsonObject { ["audio"] = Convert.ToBase64String(new byte[3200]), ["sampleRate"] = 16000 },
+                _ => new JsonObject(),
+            };
+            var reply = new JsonObject { ["jsonrpc"] = "2.0", ["id"] = request["id"]!.DeepClone(), ["result"] = result };
+            return path == "/rpc" ? (200, "application/json", Encoding.UTF8.GetBytes(reply.ToJsonString())) : (404, "text/plain", []);
+        });
+        await using var f = new ManagerFixture();
+        await f.InstallAsync($$"""
+            { "schema": 1, "id": "prueba.rpc", "name": "Servidor RPC", "version": "1.0.0",
+              "provides": ["assistant", "speech-to-text", "text-to-speech"],
+              "runtime": { "type": "http", "format": "claupet-rpc", "url": "{{server.Url}}/rpc" } }
+            """, [], ExtensionSlots.Assistant, ExtensionSlots.SpeechToText, ExtensionSlots.TextToSpeech);
+
+        var answer = await ExtensionProviders.Assistant(f.Manager)!.RespondAsync(new BrainRequest("s", [new BrainMessage("user", "hola")], null), null, CancellationToken.None);
+        Assert.Equal("respuesta del servidor", answer.Text);
+        Assert.Equal("dicho al servidor", await ExtensionProviders.SpeechToText(f.Manager)!.TranscribeAsync(new short[1600], "es", CancellationToken.None));
+        var audio = new List<(int, int)>();
+        await ExtensionProviders.TextToSpeech(f.Manager)!.SpeakAsync("hola", null, "es", (s, r) => audio.Add((s.Length, r)), CancellationToken.None);
+        Assert.Equal([(1600, 16000)], audio);
+        Assert.All(server.Requests, r => Assert.Equal("/rpc", r.Path));
+    }
 }
 
 public class TextCliTests

@@ -22,7 +22,7 @@ sealed class FakeHostApi : IExtensionHostApi
     public JsonNode Sessions() => new JsonArray();
     public Task<string?> ClipboardReadAsync() => Task.FromResult(Clipboard);
     public Task ClipboardWriteAsync(string text) { Clipboard = text; return Task.CompletedTask; }
-    public IDisposable SubscribeAudio(string source, Action<short[]> chunk)
+    public IDisposable SubscribeAudio(string extensionId, string source, Action<short[]> chunk)
     {
         chunk(new short[1600]);
         return new Unsubscribe();

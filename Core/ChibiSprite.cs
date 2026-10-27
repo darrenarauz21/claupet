@@ -51,6 +51,10 @@ static class MascotSizes
     /// pequeño, la mitad. Si dos quedarían iguales, el más chico baja uno. Con el chibi: 1, 2, 3 y 4 a 100 %;
     /// 2, 3, 4 y 5 a 125 %.
     /// </summary>
+    /// <summary>La mascota de un paquete mide en pantalla lo mismo que el chibi de ese tamaño, sea cual sea su alto en pixeles.</summary>
+    public static int PetUnit(string size, int height, float scale) =>
+        Math.Max(1, (int)Math.Round(Unit(size, chibi: true, scale) * (double)ChibiSprite.Rows / Math.Max(1, height)));
+
     public static int Unit(string size, bool chibi, float scale)
     {
         int Scaled(int units) => Math.Max(1, (int)Math.Round(units * scale));
