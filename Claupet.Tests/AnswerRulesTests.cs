@@ -42,6 +42,14 @@ public sealed class AnswerRulesTests
         Assert.True(intent.Rain);
     }
 
+    [Theory]
+    [InlineData("¿Qué tal el clima?")]
+    [InlineData("¿qué tal el tiempo en Madrid?")]
+    [InlineData("¿Hace sol?")]
+    [InlineData("¿Está haciendo calor?")]
+    [InlineData("¿cómo está el día?")]
+    public void OtrasFormasDelClima(string prompt) => Assert.Equal(AnswerTopics.Weather, AnswerRules.Match(prompt)?.Topic);
+
     [Fact]
     public void ElClimaDePasadoManana() => Assert.Equal(2, AnswerRules.Match("clima en Madrid pasado mañana")?.Day);
 
