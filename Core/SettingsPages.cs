@@ -46,6 +46,9 @@ sealed record SettingsState
     /// <summary>El hook de permisos y preguntas: «Configurar…» o «Listo».</summary>
     public string Approvals { get; init; } = "";
     public bool StartWithWindows { get; init; }
+    /// <summary>Los accesos directos que abren Claupet Console, en el menú Inicio y en el escritorio.</summary>
+    public bool StartMenuShortcut { get; init; }
+    public bool DesktopShortcut { get; init; }
     public int Accounts { get; init; }
     /// <summary>El idioma elegido, en su idioma («Español», «English»).</summary>
     public string Language { get; init; } = "";
@@ -121,10 +124,14 @@ static class SettingsPages
     /// <summary>Solo en Claupet Console: no es de todos los días.</summary>
     static SettingsRow Full(SettingsRow row) => row with { Place = RowPlace.Console };
 
-    static SettingsPage GeneralPage(SettingsState s) => new("general", L.T("General"), L.T("El idioma y el inicio de Claupet."), "Sistema",
+    static SettingsPage GeneralPage(SettingsState s) => new("general", L.T("General"), L.T("El idioma, el inicio de Claupet y sus accesos directos."), "Sistema",
     [
         Choice(L.T("Idioma"), "language", s.Language),
         Switch(L.T("Iniciar con Windows"), "startup", s.StartWithWindows),
+        Full(Caption(L.T("Accesos directos"))),
+        Full(Switch(L.T("En el menú Inicio"), "startmenu", s.StartMenuShortcut)),
+        Full(Switch(L.T("En el escritorio"), "desktoplink", s.DesktopShortcut)),
+        Full(Note(L.T("Abren Claupet Console, como cualquier app; si Claupet no estaba abierto, lo abren también."))),
     ]);
 
     static SettingsPage NoticesPage(SettingsState s) => new("avisos", L.T("Avisos"), L.T("Cómo le avisa Claupet cuando una sesión termina o necesita algo."), "Avisos",

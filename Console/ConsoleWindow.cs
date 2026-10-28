@@ -3,6 +3,7 @@ namespace Claupet;
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -10,27 +11,41 @@ using Avalonia.Platform;
 using Avalonia.Styling;
 
 /// <summary>
-/// La ventana de Claupet Console: bordes redondeados, la barra de arriba propia (con la cabeza del chibi) y,
-/// por ahora, todos los ajustes por secciones. Lo que muestra lo manda la bandeja; aquí no se guarda nada.
+/// La ventana de Claupet Console: bordes redondeados, la barra de arriba propia (con la cabeza del chibi), el riel
+/// con Chat y Ajustes y, al lado, la lista de chats o las secciones de los ajustes. Lo que muestra lo manda la
+/// bandeja; aquí no se guarda nada.
 /// </summary>
 sealed class ConsoleWindow : Window
 {
+    enum Mode { Chat, Settings }
+
     readonly ConsoleClient _client = new();
     readonly Grid _root = new() { RowDefinitions = new RowDefinitions("48,*") };
+    readonly Grid _body = new() { ColumnDefinitions = new ColumnDefinitions("60,210,*"), Margin = new Thickness(0, 0, 10, 10) };
     readonly Border _header = new();
     readonly Border _rail = new();
+    readonly Border _asideTop = new();
     readonly StackPanel _sections = new() { Spacing = 2 };
+    readonly StackPanel _chatList = new() { Spacing = 2 };
+    readonly ScrollViewer _asideScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     readonly SettingsView _view = new() { MaxWidth = 700, HorizontalAlignment = HorizontalAlignment.Left };
     readonly ScrollViewer _scroll = new();
+    readonly ChatPane _chat = new();
     readonly Border _main = new() { CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(1), ClipToBounds = true };
-    readonly TextBlock _heading = new() { FontFamily = Ink.Display, FontSize = 19, FontWeight = FontWeight.SemiBold, Margin = new Thickness(10, 2, 10, 12) };
+    readonly TextBlock _heading = new() { FontFamily = Ink.Display, FontSize = 19, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
     Ink _ink;
+    Mode _mode;
     IReadOnlyList<SettingsPage> _pages = [];
+    IReadOnlyList<ChatSummary> _chats = [];
     string _section;
+    /// <summary>La conversación que se muestra: los mensajes de otra que lleguen tarde se ignoran.</summary>
+    string _chatId = ConsoleLink.QuickChat;
     bool _connected;
 
     public ConsoleWindow(string? section)
     {
+        // Sin sección se abre en el chat; con una, en esa sección de Ajustes.
+        _mode = section is null ? Mode.Chat : Mode.Settings;
         _section = section ?? "general";
         Title = "Claupet Console";
         Icon = Ui.HeadIcon();
@@ -49,25 +64,28 @@ sealed class ConsoleWindow : Window
         // La columna ocupa lo que haya, hasta 700 (las tarjetas no se encogen a lo que dicen sus filas).
         _scroll.SizeChanged += (_, e) => _view.Width = Math.Clamp(e.NewSize.Width - 64, 0, 700);
         _view.Action += key => _client.Send(new ConsoleMessage { Type = ConsoleLink.Action, Key = key });
+        _chat.Request += OnChatRequest;
         _client.ConnectedChanged += connected =>
         {
             _connected = connected;
-            if (!connected) Render(rebuild: true);
+            // La bandeja manda la lista de chats y la conversación al pedirla.
+            if (connected) _client.Send(new ConsoleMessage { Type = ConsoleLink.ChatOpen, Key = _chatId });
+            else Render(rebuild: true);
         };
         _client.Received += OnMessage;
         // El esqueleto se arma una vez; al cambiar el tema o el idioma se rehacen la barra y el contenido.
         _root.Children.Add(_header);
-        var body = new Grid { ColumnDefinitions = new ColumnDefinitions("60,210,*"), Margin = new Thickness(0, 0, 10, 10) };
-        Grid.SetRow(body, 1);
-        body.Children.Add(_rail);
-        var aside = new StackPanel { Margin = new Thickness(4, 6, 10, 10) };
-        aside.Children.Add(_heading);
-        aside.Children.Add(_sections);
+        Grid.SetRow(_body, 1);
+        _body.Children.Add(_rail);
+        var aside = new Grid { RowDefinitions = new RowDefinitions("Auto,*"), Margin = new Thickness(4, 6, 10, 0) };
+        aside.Children.Add(_asideTop);
+        Grid.SetRow(_asideScroll, 1);
+        aside.Children.Add(_asideScroll);
         Grid.SetColumn(aside, 1);
-        body.Children.Add(aside);
+        _body.Children.Add(aside);
         Grid.SetColumn(_main, 2);
-        body.Children.Add(_main);
-        _root.Children.Add(body);
+        _body.Children.Add(_main);
+        _root.Children.Add(_body);
         Content = _root;
         Render(rebuild: true);
         _client.Start();
@@ -109,17 +127,40 @@ sealed class ConsoleWindow : Window
                 Render(rebuild);
                 break;
             case ConsoleLink.Options:
-                _view.ShowOptions(message, _main, value => _client.Send(new ConsoleMessage { Type = ConsoleLink.Pick, Token = message.Token, Value = value }));
+                var anchor = (_mode == Mode.Chat ? _chat.AnchorFor(message.Key) : _view.AnchorFor(message.Key)) ?? _main;
+                Ui.ShowOptions(message, anchor, value => _client.Send(new ConsoleMessage { Type = ConsoleLink.Pick, Token = message.Token, Value = value }));
                 break;
             case ConsoleLink.Show:
                 if (message.Key is { Length: > 0 } section && _pages.Any(p => p.Id == section))
                 {
+                    _mode = Mode.Settings;
                     _section = section;
+                    Render(rebuild: true);
+                }
+                else if (message.Key is null or ConsoleLink.Chat && _mode != Mode.Chat)
+                {
+                    _mode = Mode.Chat;
                     Render(rebuild: true);
                 }
                 BringToFront();
                 break;
+            case ConsoleLink.Chats:
+                _chats = message.Chats ?? [];
+                // La que se mostraba ya no está (se borró): queda la rápida.
+                if (_chats.All(c => c.Id != _chatId)) _chatId = ConsoleLink.QuickChat;
+                if (_mode == Mode.Chat) RenderChatList();
+                break;
+            case ConsoleLink.Chat when message.Chat is { } chat && chat.Id == _chatId:
+                _chat.Show(chat);
+                break;
         }
+    }
+
+    void OnChatRequest(ConsoleMessage message)
+    {
+        // Al borrar se vuelve a la rápida; la bandeja hace lo mismo y manda esa.
+        if (message.Type == ConsoleLink.ChatDelete) _chatId = ConsoleLink.QuickChat;
+        _client.Send(message);
     }
 
     /// <summary>Trae la ventana al frente (si estaba minimizada, la restaura).</summary>
@@ -136,18 +177,31 @@ sealed class ConsoleWindow : Window
         Background = _ink.Window;
         if (rebuild)
         {
+            ScrollTheme.Paint(Resources, _ink);
             _header.Child = Header();
             _rail.Child = Rail();
             _main.Background = _ink.Surface;
             _main.BorderBrush = _ink.Hairline;
+            _chat.SetInk(_ink);
+            _body.ColumnDefinitions[1].Width = new GridLength(_mode == Mode.Chat ? 250 : 210);
+            _asideTop.Child = _mode == Mode.Chat ? ChatsHeader() : _heading;
+            _asideScroll.Content = _mode == Mode.Chat ? _chatList : _sections;
         }
         _heading.Text = L.T("Ajustes");
         _heading.Foreground = _ink.Text;
+        _heading.Margin = new Thickness(10, 2, 10, 12);
 
         if (!_connected || _pages.Count == 0)
         {
             _sections.Children.Clear();
+            _chatList.Children.Clear();
             _main.Child = Waiting();
+            return;
+        }
+        if (_mode == Mode.Chat)
+        {
+            RenderChatList();
+            if (_main.Child != _chat) _main.Child = _chat;
             return;
         }
         if (_pages.All(p => p.Id != _section)) _section = _pages[0].Id;
@@ -175,6 +229,131 @@ sealed class ConsoleWindow : Window
         Render(rebuild: true);
         _scroll.Offset = default;
     }
+
+    void SetMode(Mode mode)
+    {
+        if (mode == _mode) return;
+        _mode = mode;
+        Render(rebuild: true);
+        if (mode == Mode.Chat) _chat.FocusInput();
+    }
+
+    // ── Chats ───────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>«Chats» y el botón de chat nuevo, como en el diseño.</summary>
+    Control ChatsHeader()
+    {
+        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(8, 2, 6, 10) };
+        bar.Children.Add(new TextBlock
+        {
+            Text = L.T("Chats"),
+            FontFamily = Ink.Display,
+            FontSize = 19,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = _ink.Text,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        var plus = new Viewbox
+        {
+            Width = 15,
+            Height = 15,
+            Child = new Avalonia.Controls.Shapes.Path
+            {
+                Data = Geometry.Parse("M12,5 V19 M5,12 H19"),
+                Stroke = new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)),
+                StrokeThickness = 2.2,
+                StrokeLineCap = PenLineCap.Round,
+                Width = 24,
+                Height = 24,
+            },
+        };
+        var add = Ui.Press(plus, NewChat, (b, on) => b.Opacity = on ? 0.88 : 1, L.T("Chat nuevo"));
+        add.Width = 34;
+        add.Height = 34;
+        add.CornerRadius = new CornerRadius(999);
+        add.Background = _ink.Accent;
+        ToolTip.SetTip(add, L.T("Chat nuevo"));
+        Grid.SetColumn(add, 1);
+        bar.Children.Add(add);
+        return bar;
+    }
+
+    void NewChat()
+    {
+        // El id lo pone la Console: así sabe cuál mostrar sin esperar a la bandeja.
+        _chatId = Guid.NewGuid().ToString("N")[..12];
+        _client.Send(new ConsoleMessage { Type = ConsoleLink.ChatNew, Key = _chatId });
+        if (_mode != Mode.Chat) SetMode(Mode.Chat);
+        _chat.FocusInput();
+    }
+
+    void OpenChat(string id)
+    {
+        if (id == _chatId) return;
+        _chatId = id;
+        _client.Send(new ConsoleMessage { Type = ConsoleLink.ChatOpen, Key = id });
+        RenderChatList();
+        _chat.FocusInput();
+    }
+
+    /// <summary>La rápida arriba y las guardadas agrupadas por cuándo se usaron (Hoy, Ayer, Esta semana, Antes).</summary>
+    void RenderChatList()
+    {
+        _chatList.Children.Clear();
+        string? group = null;
+        foreach (var chat in _chats)
+        {
+            if (!chat.Quick && Conversations.GroupOf(chat.Updated, DateTime.Now) is var g && g != group)
+            {
+                group = g;
+                _chatList.Children.Add(new TextBlock
+                {
+                    Text = g,
+                    FontFamily = Ink.Sans,
+                    FontSize = 12,
+                    FontWeight = FontWeight.Medium,
+                    Foreground = _ink.Tertiary,
+                    Margin = new Thickness(10, 14, 10, 4),
+                });
+            }
+            _chatList.Children.Add(ChatItem(chat));
+        }
+    }
+
+    Control ChatItem(ChatSummary chat)
+    {
+        var current = chat.Id == _chatId;
+        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        if (chat.Quick) title.Children.Add(new HeadLogo { Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center });
+        title.Children.Add(new TextBlock
+        {
+            Text = chat.Title,
+            FontFamily = Ink.Sans,
+            FontSize = 14.5,
+            Foreground = _ink.Text,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        var stack = new StackPanel { Spacing = 2 };
+        stack.Children.Add(title);
+        if (chat.Preview.Length > 0)
+            stack.Children.Add(new TextBlock
+            {
+                Text = chat.Preview,
+                FontFamily = Ink.Sans,
+                FontSize = 12.5,
+                Foreground = _ink.Tertiary,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+        var id = chat.Id;
+        var item = Ui.Press(stack, () => OpenChat(id), current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, chat.Title);
+        item.MinHeight = 46;
+        item.Padding = new Thickness(12, 8);
+        item.CornerRadius = new CornerRadius(12);
+        if (current) item.Background = _ink.Pill;
+        return item;
+    }
+
+    // ── Barra y riel ────────────────────────────────────────────────────────────────────────
 
     Control Header()
     {
@@ -205,45 +384,45 @@ sealed class ConsoleWindow : Window
     const string SettingsIcon = "M15,12 A3,3 0 1 1 9,12 A3,3 0 1 1 15,12 Z M12,2.5 V5 M12,19 V21.5 M5.3,5.3 L7.1,7.1 M16.9,16.9 L18.7,18.7 M2.5,12 H5 "
         + "M19,12 H21.5 M5.3,18.7 L7.1,16.9 M16.9,7.1 L18.7,5.3";
 
-    /// <summary>El riel de la izquierda: Chat, Editor y Ajustes. El chat y el editor llegan en las próximas etapas.</summary>
+    /// <summary>El riel de la izquierda: Chat, Editor y Ajustes. El editor llega en una próxima etapa.</summary>
     Control Rail()
     {
         var rail = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
-        rail.Children.Add(RailButton(ChatIcon, L.T("Chat"), current: false));
-        rail.Children.Add(RailButton(EditorIcon, L.T("Editor"), current: false));
-        rail.Children.Add(RailButton(SettingsIcon, L.T("Ajustes"), current: true));
+        rail.Children.Add(RailButton(ChatIcon, L.T("Chat"), _mode == Mode.Chat, () => SetMode(Mode.Chat)));
+        rail.Children.Add(RailButton(EditorIcon, L.T("Editor"), current: false, onClick: null));
+        rail.Children.Add(RailButton(SettingsIcon, L.T("Ajustes"), _mode == Mode.Settings, () => SetMode(Mode.Settings)));
         return rail;
     }
 
-    Control RailButton(string path, string name, bool current)
+    /// <summary>Un botón del riel; sin onClick está apagado y dice «próximamente».</summary>
+    Control RailButton(string path, string name, bool current, Action? onClick)
     {
+        var shape = new Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse(path),
+            Stroke = current ? _ink.Text : _ink.Secondary,
+            StrokeThickness = 1.7,
+            StrokeLineCap = PenLineCap.Round,
+            StrokeJoin = PenLineJoin.Round,
+            Width = 24,
+            Height = 24,
+        };
         var icon = new Viewbox
         {
             Width = 19,
             Height = 19,
-            Child = new Avalonia.Controls.Shapes.Path
-            {
-                Data = Geometry.Parse(path),
-                Stroke = current ? _ink.Text : _ink.Tertiary,
-                StrokeThickness = 1.7,
-                StrokeLineCap = PenLineCap.Round,
-                StrokeJoin = PenLineJoin.Round,
-                Width = 24,
-                Height = 24,
-            },
+            Child = shape,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
         };
-        var button = new Border
-        {
-            Width = 42,
-            Height = 42,
-            CornerRadius = new CornerRadius(12),
-            Background = current ? _ink.Pill : Brushes.Transparent,
-            Child = icon,
-            Opacity = current ? 1 : 0.6,
-        };
-        icon.HorizontalAlignment = HorizontalAlignment.Center;
-        icon.VerticalAlignment = VerticalAlignment.Center;
-        ToolTip.SetTip(button, current ? name : L.T("{0}: próximamente", name));
+        var button = onClick is null
+            ? new Border { Child = icon, Opacity = 0.45 }
+            : Ui.Press(icon, onClick, current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name);
+        button.Width = 42;
+        button.Height = 42;
+        button.CornerRadius = new CornerRadius(12);
+        button.Background = current ? _ink.Pill : Brushes.Transparent;
+        ToolTip.SetTip(button, onClick is null ? L.T("{0}: próximamente", name) : name);
         Ui.AutomationName(button, name);
         return button;
     }
@@ -288,7 +467,7 @@ sealed class ConsoleWindow : Window
         foreach (var process in processes) process.Dispose();
         panel.Children.Add(new TextBlock
         {
-            Text = running ? L.T("Conectando con Claupet…") : L.T("Claupet no está abierto. Los ajustes los guarda Claupet: ábralo para verlos aquí."),
+            Text = running ? L.T("Conectando con Claupet…") : L.T("Claupet no está abierto. El chat y los ajustes los atiende Claupet: ábralo para verlos aquí."),
             FontSize = 14.5,
             FontFamily = Ink.Sans,
             Foreground = _ink.Secondary,

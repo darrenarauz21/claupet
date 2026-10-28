@@ -86,8 +86,11 @@ static class KeyNames
     }
 }
 
-/// <summary>Quién pregunta: la mascota responde corto, en la nubecita; la isla, algo más largo.</summary>
-enum AssistantVoice { Mascot, Island }
+/// <summary>
+/// Quién pregunta: la mascota responde corto, en la nubecita; la isla, algo más largo; Claupet Console, completo y
+/// con bloques de código si hacen falta.
+/// </summary>
+enum AssistantVoice { Mascot, Island, Console }
 
 /// <summary>En qué va una respuesta: arrancó Claude Code, está leyendo el archivo o ya escribe.</summary>
 enum AssistantStage { Opening, Reading, Writing }
@@ -248,7 +251,8 @@ static class Assistant
             return new AssistantResult("", null, null, null, L.T("No encontré Claude Code. ¿Está instalado y en el PATH?"));
 
         Directory.CreateDirectory(WorkDir);
-        var systemFile = Path.Combine(WorkDir, request.Voice == AssistantVoice.Mascot ? "mascota.txt" : "isla.txt");
+        // Uno por voz: la isla y la Console pueden estar preguntando a la vez.
+        var systemFile = Path.Combine(WorkDir, request.Voice switch { AssistantVoice.Mascot => "mascota.txt", AssistantVoice.Console => "console.txt", _ => "isla.txt" });
         await File.WriteAllTextAsync(systemFile, SystemPrompt(request, AssistantModels.Label(request.Model)), cancel);
 
         var args = new List<string> { "-p", "--safe-mode", "--no-session-persistence", "--verbose",
@@ -714,6 +718,8 @@ static class Assistant
         }
         else if (r.Voice == AssistantVoice.Mascot)
             prompt.AppendLine(L.T("Respondes en una o dos frases cortas: como máximo 220 caracteres, sin listas, sin markdown, sin títulos."));
+        else if (r.Voice == AssistantVoice.Console)
+            prompt.AppendLine(L.T("Respondes claro y completo, sin relleno. Si ayuda, usa una lista con guiones o un bloque de código entre ``` con su lenguaje (```csharp); el código en línea, entre comillas invertidas. Sin títulos ni negritas."));
         else
             prompt.AppendLine(L.T("Respondes claro y breve: hasta 4 frases, o una lista corta con guiones si ayuda. En texto plano: sin títulos, negritas ni markdown."));
         prompt.AppendLine(L.T("Si no sabes algo, dilo; no inventes."));
@@ -826,7 +832,7 @@ static class Assistant
 /// La conversación que comparten la nubecita y la isla: se olvida a los 10 minutos sin escribir o con
 /// «Nueva conversación».
 /// </summary>
-sealed class ChatThread
+sealed class ChatThread : IChatLog
 {
     static readonly TimeSpan Forget = TimeSpan.FromMinutes(10);
     readonly List<ChatTurn> _turns = new();

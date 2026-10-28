@@ -5,13 +5,15 @@ using Avalonia.Media.Immutable;
 
 /// <summary>
 /// Los colores y las letras de Claupet Console (los del diseño aprobado), en modo claro u oscuro, con el
-/// acento de la paleta elegida en Ajustes.
+/// acento de la paleta elegida en Ajustes. Keyword y String son los del código en el chat.
 /// </summary>
 sealed record Ink(bool Dark, IBrush Window, IBrush Surface, IBrush Raised, IBrush Pill, IBrush Hairline, IBrush Text,
-    IBrush Secondary, IBrush Tertiary, IBrush Track, IBrush Accent, IBrush Warn, IBrush Danger)
+    IBrush Secondary, IBrush Tertiary, IBrush Track, IBrush Accent, IBrush Warn, IBrush Danger, IBrush Keyword, IBrush String)
 {
     public static readonly FontFamily Sans = new("Segoe UI Variable Text, Segoe UI, SF Pro Text, Helvetica Neue, Ubuntu, Cantarell, Noto Sans, DejaVu Sans, Arial");
     public static readonly FontFamily Display = new("Segoe UI Variable Display, Segoe UI, SF Pro Display, Helvetica Neue, Ubuntu, Noto Sans, Arial");
+    /// <summary>Sin ligaduras (Cascadia Mono y no Code): «&lt;=» se ve como se escribe, no como «≤».</summary>
+    public static readonly FontFamily Mono = new("Cascadia Mono, Consolas, SF Mono, Menlo, Ubuntu Mono, DejaVu Sans Mono, monospace");
 
     public static Ink For(bool dark)
     {
@@ -21,9 +23,9 @@ sealed record Ink(bool Dark, IBrush Window, IBrush Surface, IBrush Raised, IBrus
         var accentBrush = new ImmutableSolidColorBrush(Color.FromRgb(accent.R, accent.G, accent.B));
         return dark
             ? new(true, B("#1E1E1C"), B("#262624"), B("#2F2F2C"), B("#3A3A37"), B("#12FFFFFF"), B("#F5F4EF"),
-                B("#BFBDB5"), B("#9A988F"), B("#4A4946"), accentBrush, B("#E0A84B"), B("#F08A7A"))
+                B("#BFBDB5"), B("#9A988F"), B("#4A4946"), accentBrush, B("#E0A84B"), B("#F08A7A"), B("#E8987C"), B("#A8C7A0"))
             : new(false, B("#F3F1EB"), B("#F8F6F1"), B("#FFFFFF"), B("#ECE9E1"), B("#14000000"), B("#1F1E1D"),
-                B("#5E5D59"), B("#6B6963"), B("#D9D6CC"), accentBrush, B("#8A5A12"), B("#A33A2A"));
+                B("#5E5D59"), B("#6B6963"), B("#D9D6CC"), accentBrush, B("#8A5A12"), B("#A33A2A"), B("#B4532F"), B("#3F6B3A"));
     }
 
     public IBrush For(RowTone tone) => tone switch

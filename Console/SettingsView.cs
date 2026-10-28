@@ -106,34 +106,9 @@ sealed class SettingsView : StackPanel
         }
     }
 
-    /// <summary>La lista que mandó la bandeja, junto a la fila que la pidió. reply: la elegida, o null si se cerró sin elegir.</summary>
-    public void ShowOptions(ConsoleMessage message, Control fallback, Action<string?> reply)
-    {
-        var anchor = _rows.FirstOrDefault(r => r.Row.Key == message.Key && r.Pill is not null)?.Pill
-            ?? _rows.FirstOrDefault(r => r.Row.Key == message.Key)?.Root as Control ?? fallback;
-        var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
-        var picked = false;
-        foreach (var option in message.Options ?? [])
-        {
-            var item = new MenuItem { Header = option.Label, ToggleType = MenuItemToggleType.Radio, IsChecked = option.Id == message.Value };
-            var id = option.Id;
-            item.Click += (_, _) =>
-            {
-                if (picked) return;
-                picked = true;
-                reply(id);
-            };
-            flyout.Items.Add(item);
-        }
-        // El clic llega antes o después del cierre según el caso: se espera una vuelta para saber si se eligió.
-        flyout.Closed += (_, _) => Dispatcher.UIThread.Post(() =>
-        {
-            if (picked) return;
-            picked = true;
-            reply(null);
-        });
-        flyout.ShowAt(anchor);
-    }
+    /// <summary>La fila que pidió una lista, para mostrarla a su lado (su botón, si tiene); null si no está aquí.</summary>
+    public Control? AnchorFor(string? key) =>
+        _rows.FirstOrDefault(r => r.Row.Key == key && r.Pill is not null)?.Pill ?? _rows.FirstOrDefault(r => r.Row.Key == key)?.Root;
 }
 
 /// <summary>Una fila: su etiqueta (con aclaraciones debajo) y, a la derecha, lo que corresponde a su tipo.</summary>

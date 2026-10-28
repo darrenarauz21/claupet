@@ -9,8 +9,12 @@ sealed record ConsoleOption(string Id, string Label);
 /// <summary>
 /// Un mensaje entre Claupet (la bandeja) y Claupet Console, una línea de JSON cada uno.
 /// De la bandeja: «estado» (las secciones ya armadas, el idioma y los colores), «opciones» (una lista para
-/// elegir, con su número) y «mostrar» (traer la ventana al frente, en una sección).
-/// De la Console: «accion» (se tocó la fila Key) y «elegir» (Value de la lista Token; sin Value, se cerró sin elegir).
+/// elegir, con su número), «mostrar» (traer la ventana al frente, en una sección o en «chat»), «chats» (la lista
+/// de conversaciones) y «chat» (la conversación abierta, con lo que va llegando).
+/// De la Console: «accion» (se tocó la fila Key), «elegir» (Value de la lista Token; sin Value, se cerró sin
+/// elegir) y los del chat, con la conversación en Key: «chat-abrir», «chat-nuevo» (con el id que elige la
+/// Console), «chat-enviar» (Value: el mensaje), «chat-parar», «chat-borrar» y «chat-limpiar» (vacía la
+/// conversación rápida).
 /// </summary>
 sealed record ConsoleMessage
 {
@@ -22,6 +26,8 @@ sealed record ConsoleMessage
     public string? Palette { get; init; }
     public IReadOnlyList<SettingsPage>? Pages { get; init; }
     public IReadOnlyList<ConsoleOption>? Options { get; init; }
+    public IReadOnlyList<ChatSummary>? Chats { get; init; }
+    public ChatView? Chat { get; init; }
 }
 
 /// <summary>
@@ -31,6 +37,11 @@ sealed record ConsoleMessage
 static class ConsoleLink
 {
     public const string State = "estado", Options = "opciones", Show = "mostrar", Action = "accion", Pick = "elegir";
+    public const string Chats = "chats", Chat = "chat", ChatOpen = "chat-abrir", ChatNew = "chat-nuevo", ChatSend = "chat-enviar",
+        ChatStop = "chat-parar", ChatDelete = "chat-borrar", ChatClear = "chat-limpiar";
+
+    /// <summary>La conversación de la isla y la nubecita, que la Console muestra arriba de las guardadas.</summary>
+    public const string QuickChat = "rapida";
 
     /// <summary>Una tubería por usuario: con otra sesión abierta en el equipo, cada una tiene la suya.</summary>
     public static string PipeName => "Claupet.Console." + Environment.UserName;

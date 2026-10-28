@@ -1,9 +1,11 @@
 namespace Claupet;
 
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Primitives;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
@@ -39,8 +41,25 @@ static class ConsoleApp
         {
             while (wake.WaitOne()) Dispatcher.UIThread.Post(() => ConsoleApplication.Window?.BringToFront());
         }) { IsBackground = true, Name = "Mostrar la Console" }.Start();
+        StartTrayIfClosed();
 
         return AppBuilder.Configure<ConsoleApplication>().UsePlatformDetect().LogToTrace().StartWithClassicDesktopLifetime(args);
+    }
+
+    /// <summary>
+    /// Desde un acceso directo, Claupet puede no estar abierto: se abre (el chat y los ajustes los atiende él) y la
+    /// Console se conecta en cuanto esté listo.
+    /// </summary>
+    static void StartTrayIfClosed()
+    {
+        if (Mutex.TryOpenExisting(Program.InstanceMutex, out var running))
+        {
+            running.Dispose();
+            return;
+        }
+        if (Environment.ProcessPath is not { } exe) return;
+        try { Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = AppContext.BaseDirectory })?.Dispose(); }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException) { ErrorLog.Write(ex); }
     }
 }
 
@@ -51,6 +70,8 @@ sealed class ConsoleApplication : Application
     public override void Initialize()
     {
         Styles.Add(new FluentTheme());
+        // Las barras de desplazamiento de toda la Console son las del diseño: finas, sin flechas y tenues.
+        Resources[typeof(ScrollBar)] = ScrollTheme.Theme();
         RequestedThemeVariant = ThemeVariant.Default; // sigue el modo claro u oscuro de Windows
         Name = "Claupet Console";
     }

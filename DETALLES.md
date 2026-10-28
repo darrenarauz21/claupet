@@ -207,9 +207,14 @@ rápidos, la tarjeta **Todos los ajustes › Abrir** abre la Console.
 
 ## Claupet Console
 
-La ventana grande (Windows por ahora). A la izquierda, un riel con Chat, Editor y Ajustes (el chat y el editor
-llegan en las próximas etapas); al lado, las secciones de los ajustes (General, Avisos, Apariencia, Mascota,
-Asistente, Respuestas, Extensiones, Isla, Cuentas y Sistema). Es el mismo `Claupet.exe`
+La ventana grande (Windows por ahora). A la izquierda, un riel con Chat, Editor y Ajustes (el editor llega en una
+próxima etapa). En **Chat**, la lista de conversaciones (la **Conversación rápida**, que es la de la isla y la
+nubecita, y las guardadas, agrupadas en Hoy, Ayer, Esta semana y Antes) y la conversación abierta: el modelo, leer
+en voz alta, los bloques de código con «Copiar» y de dónde vino cada respuesta; Intro envía y Mayús+Intro hace otra
+línea. Las guardadas van una por archivo en `conversaciones\<id>.json`, junto a los ajustes, y no se escriben hasta
+su primer mensaje; responde el mismo asistente de la isla, con respuestas más completas. En **Ajustes**, las
+secciones (General, Avisos, Apariencia, Mascota, Asistente, Respuestas, Extensiones, Isla, Cuentas y Sistema).
+Las barras de desplazamiento son las del diseño (`Console/ScrollTheme.cs`). Es el mismo `Claupet.exe`
 en otro proceso (`Claupet.exe --console`, código en `Console/`, Avalonia 11): se abre solo cuando se pide y se
 cierra con su ventana. La bandeja no carga Avalonia ni Skia; solo ese proceso. Una sola ventana a la vez:
 abrirla de nuevo la trae al frente. Tiene su propia barra de arriba (la cabeza del chibi, minimizar, maximizar y cerrar) y las esquinas
@@ -225,12 +230,25 @@ que solo abre el mismo usuario de Windows (`PipeOptions.CurrentUserOnly`), con u
 | `accion` | Console | la acción de la fila que se tocó (la misma de los ajustes rápidos) |
 | `opciones` | bandeja | la lista que esa acción mostraría como menú, con la elegida y un número |
 | `elegir` | Console | la opción elegida de la lista con ese número; sin valor, se cerró sin elegir |
-| `mostrar` | bandeja | traer la ventana al frente, en una sección |
+| `mostrar` | bandeja | traer la ventana al frente, en una sección o, sin ella, en el chat |
+| `chats` | bandeja | la lista de conversaciones: la rápida y las guardadas |
+| `chat` | bandeja | la conversación abierta, con lo que va llegando de la respuesta |
+| `chat-abrir`, `chat-nuevo` | Console | abrir una conversación o crear una (con el id que elige la Console) |
+| `chat-enviar`, `chat-parar` | Console | mandar un mensaje o detener la respuesta |
+| `chat-borrar`, `chat-limpiar` | Console | borrar una guardada o vaciar la rápida |
 
 Lo que todavía abre una ventana de la bandeja (grabar una tecla, escribir la ciudad, las extensiones, el
 hook) se abre desde Claupet, al frente. Si Claupet no está abierto, la Console lo dice y ofrece abrirlo.
-`Claupet.exe --console --seccion=<id>` abre en esa sección (`general`, `avisos`, `apariencia`, `mascota`,
+`Claupet.exe --console` abre en el chat (también la entrada «Claupet Console» del menú del ícono) y
+`Claupet.exe --console --seccion=<id>`, en esa sección de Ajustes (`general`, `avisos`, `apariencia`, `mascota`,
 `asistente`, `respuestas`, `isla`, `cuentas` o `sistema`).
+
+Como cualquier app, Claupet tiene su acceso directo en el menú Inicio (encendido por defecto) y, si se pide, en
+el escritorio (Ajustes › General › Accesos directos; `StartMenuShortcut` y `DesktopShortcut`). Abren
+`Claupet.exe --console` con la cabeza del chibi como ícono (`claupet.ico`, junto a los ajustes); si Claupet no
+estaba abierto, la Console lo abre y se conecta cuando está listo. Al arrancar, la bandeja vuelve a crear los
+encendidos si faltan o apuntan a otra carpeta (`Shortcuts.cs`); una copia de prueba (`--preview`) no los toca.
+Abrir `Claupet.exe` otra vez, sin argumentos, con Claupet ya abierto, también trae la Console.
 
 ## Actividad
 

@@ -34,7 +34,8 @@ sealed partial class TrayApp : ApplicationContext
     TaskProposal? _pendingTask;
     IslandForm? _island;
     CancellationTokenSource? _islandAsking, _analyzing;
-    string? _islandStreaming;
+    /// <summary>La conversación de la isla y la nubecita mientras Claupet responde (la Console la muestra como «Conversación rápida»).</summary>
+    readonly ChatTarget _islandChat;
     /// <summary>El modelo de sus sesiones, con nombre: de la última respuesta de la isla o, antes, de la sesión más reciente.</summary>
     string? _defaultModel;
     string? _lastAnalysis, _lastAnalysisFile;
@@ -70,6 +71,7 @@ sealed partial class TrayApp : ApplicationContext
 
     public TrayApp(bool showOnStart, bool sessionsView = false, bool activityView = false, bool settingsView = false, bool demo = false, bool autoSetup = true, bool preview = false, string? demoDrop = null, string? demoVoice = null, string? reminderTask = null)
     {
+        _islandChat = new ChatTarget(_chat, AssistantVoice.Island, island: true, ShowIslandChat);
         _form.StayOpen = preview;
         _launchedReminder = reminderTask;
         _settings = SettingsStore.Load();
@@ -84,12 +86,19 @@ sealed partial class TrayApp : ApplicationContext
         Mascots.Choose(_settings, Mascots.ChoiceOf(_settings)); // deja en orden lo guardado por versiones anteriores
         Mascots.Selected = _settings.Mascot;
         _refresh.Style = RefreshSprite.Resolve(_settings.Animation, _settings.Mascot);
+        // Los accesos directos a Claupet Console, como los de cualquier app (no los de una copia de prueba).
+        if (!preview)
+        {
+            if (_settings.StartMenuShortcut) Shortcuts.Ensure(Shortcuts.StartMenu);
+            if (_settings.DesktopShortcut) Shortcuts.Ensure(Shortcuts.Desktop);
+        }
 
         // El menú del ícono queda corto: lo demás está en la vista Ajustes (botón del pie).
         var menu = _menu;
         menu.Items.Add(L.T("Abrir"), null, (_, _) => ShowForm());
         menu.Items.Add(L.T("Actualizar"), null, async (_, _) => await RefreshAsync(renewSelected: true));
         menu.Items.Add(L.T("Nueva sesión…"), null, (_, _) => NewSession(null));
+        menu.Items.Add("Claupet Console", null, (_, _) => OpenConsole());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(L.T("Ajustes…"), null, (_, _) => { ShowForm(); _form.ShowSettings(); });
         menu.Items.Add(new ToolStripSeparator());
@@ -348,6 +357,8 @@ sealed partial class TrayApp : ApplicationContext
             WeeklyRecap = s.WeeklyRecap,
             Approvals = ApprovalsText(),
             StartWithWindows = StartupRegistration.IsEnabled,
+            StartMenuShortcut = s.StartMenuShortcut,
+            DesktopShortcut = s.DesktopShortcut,
             Accounts = s.Accounts.Count,
             Language = L.Label,
             Extensions = _extensions.Installed.Count == 0 ? L.T("Ninguna")
@@ -678,7 +689,7 @@ sealed partial class TrayApp : ApplicationContext
                 break;
             case "who": Toggle(s => s.ShowWhoAnswered = !s.ShowWhoAnswered); break;
             case "city": PickCity(); break;
-            case "console": OpenConsole(); break;
+            case "console": OpenConsole("general"); break;
             case "local": LocalModelAction(); break;
             case "island": Toggle(s => s.Island = !s.Island); break;
             case "imodel":
@@ -696,6 +707,14 @@ sealed partial class TrayApp : ApplicationContext
             case "shortcuts": ShowShortcuts(); break;
             case "recapnow": MaybeShowRecap(true); break;
             case "startup": ToggleStartup(); break;
+            case "startmenu":
+                Toggle(s => s.StartMenuShortcut = !s.StartMenuShortcut);
+                Shortcuts.Set(Shortcuts.StartMenu, _settings.StartMenuShortcut);
+                break;
+            case "desktoplink":
+                Toggle(s => s.DesktopShortcut = !s.DesktopShortcut);
+                Shortcuts.Set(Shortcuts.Desktop, _settings.DesktopShortcut);
+                break;
             case "language": ShowOptions(L.Choices, L.Language, SetLanguage); break;
             case "sample": ShowNextSample(); break;
             case "sounds": OpenSoundsFolder(); break;
@@ -1053,7 +1072,7 @@ sealed partial class TrayApp : ApplicationContext
             {
                 _islandAsking?.Cancel();
                 _chat.Clear();
-                PushIslandChat(false);
+                _islandChat.Show(false);
             };
             island.Asked += text => _ = AskIslandAsync(text);
             island.FilesDropped += files =>
@@ -1083,7 +1102,7 @@ sealed partial class TrayApp : ApplicationContext
         _island.SetMascot(Mascots.IsChibi);
         PushIslandModel();
         PushIslandUsage();
-        PushIslandChat(_islandAsking is { IsCancellationRequested: false } && _islandStreaming is not null);
+        _islandChat.Show(_islandAsking is { IsCancellationRequested: false } && _islandChat.Streaming is not null);
         if (_lastSessions is { } sessions) _island.SetSessions(sessions);
     }
 
@@ -1106,46 +1125,62 @@ sealed partial class TrayApp : ApplicationContext
         _island.SetUsage(snap?.Session?.Percent, snap?.Weekly?.Percent);
     }
 
-    void PushIslandChat(bool asking) => _island?.SetChat(_chat.Turns.ToList(), _islandStreaming, asking);
+    /// <summary>Muestra la conversación de la isla en la isla y, si la tiene abierta, en la Console.</summary>
+    void ShowIslandChat(bool asking)
+    {
+        _island?.SetChat(_chat.Turns.ToList(), _islandChat.Streaming, asking);
+        if (_consoleChatId == ConsoleLink.QuickChat) PushConsoleChat(ConsoleLink.QuickChat);
+        if (!asking && _consoleChatId is not null) PushConsoleChats(); // lo que se ve debajo de «Conversación rápida»
+    }
 
     /// <summary>Le pregunta a Claude desde la isla, con el modelo de sus sesiones (o el elegido).</summary>
-    async Task AskIslandAsync(string text)
+    Task AskIslandAsync(string text)
     {
         _islandAsking?.Cancel();
         var cancel = _islandAsking = new CancellationTokenSource();
-        var history = _chat.Turns.ToList();
-        _chat.Add(new ChatTurn(true, text));
-        _islandStreaming = "";
-        PushIslandChat(true);
+        return AskChatAsync(_islandChat, text, cancel.Token);
+    }
+
+    /// <summary>
+    /// Le pregunta a Claude en una conversación (la de la isla y la nubecita, o una de Claupet Console), con el
+    /// modelo de la isla. Lo que va llegando queda en chat.Streaming y chat.Show lo muestra donde se ve.
+    /// </summary>
+    async Task AskChatAsync(ChatTarget chat, string text, CancellationToken cancel)
+    {
+        var history = chat.Log.Turns.TakeLast(40).ToList();
+        chat.Log.Add(new ChatTurn(true, text));
+        chat.Streaming = "";
+        chat.Show(true);
         // Con la voz encendida, la respuesta no se muestra mientras llega: sale cuando empieza a sonar.
         var speaking = _settings.ReadAloud;
+        void Stream(string piece)
+        {
+            if (cancel.IsCancellationRequested || speaking) return;
+            chat.Streaming = (chat.Streaming ?? "") + piece;
+            chat.Show(true);
+        }
         if (SkillCommand(text) is { } command)
         {
-            var reply = await RunSkillCommandAsync(command, piece =>
-            {
-                if (cancel.IsCancellationRequested || speaking) return;
-                _islandStreaming = (_islandStreaming ?? "") + piece;
-                PushIslandChat(true);
-            }, cancel.Token);
-            _islandStreaming = null;
+            var reply = await RunSkillCommandAsync(command, Stream, cancel);
+            chat.Streaming = null;
             if (cancel.IsCancellationRequested)
             {
-                PushIslandChat(false);
+                chat.Show(false);
                 return;
             }
             if (reply.Length == 0) reply = L.T("Listo. (^_^)");
             ReadAloudIfOn(reply, () =>
             {
                 if (cancel.IsCancellationRequested) return;
-                _chat.Add(new ChatTurn(false, reply));
-                PushIslandChat(false);
+                chat.Log.Add(new ChatTurn(false, reply));
+                chat.Show(false);
             });
             return;
         }
         var request = new AssistantRequest
         {
             Prompt = text,
-            Voice = AssistantVoice.Island,
+            Voice = chat.Voice,
             Model = _settings.IslandModel,
             ConfigDir = AssistantConfigDir,
             Context = AssistantContext(),
@@ -1153,17 +1188,11 @@ sealed partial class TrayApp : ApplicationContext
             Chibi = Mascots.IsChibi,
             Expressive = Expressive,
         };
-        void Stream(string piece)
-        {
-            if (cancel.IsCancellationRequested || speaking) return;
-            _islandStreaming = (_islandStreaming ?? "") + piece;
-            PushIslandChat(true);
-        }
-        var result = await Answers.AskAsync(request, _settings, Stream, cancel: cancel.Token);
-        _islandStreaming = null;
+        var result = await Answers.AskAsync(request, _settings, Stream, cancel: cancel);
+        chat.Streaming = null;
         if (cancel.IsCancellationRequested)
         {
-            PushIslandChat(false);
+            chat.Show(false);
             return;
         }
         if (result.By is { Engine: Engine.Cloud } && result.Model is { } used && _settings.IslandModel is null)
@@ -1171,33 +1200,33 @@ sealed partial class TrayApp : ApplicationContext
             _defaultModel = Format.Model(used);
             PushIslandModel();
         }
-        if (result.Failed) _chat.Add(new ChatTurn(false, $"{result.Error} (._.)"));
+        if (result.Failed) chat.Log.Add(new ChatTurn(false, $"{result.Error} (._.)"));
         else if (result.Task is { } task)
         {
-            _chat.Add(new ChatTurn(false, result.Text.Length > 0 ? result.Text : L.T("Eso es una tarea para Claude Code.")));
+            chat.Log.Add(new ChatTurn(false, result.Text.Length > 0 ? result.Text : L.T("Eso es una tarea para Claude Code.")));
             OfferTask(task);
         }
         else
         {
             // Si Claude vuelve a responder con lo que encontró la acción, la respuesta en curso empieza de nuevo.
-            var answer = await RunActionAsync(result, request, island: true, Stream, () =>
+            var answer = await RunActionAsync(result, request, chat.Island, Stream, () =>
             {
-                _islandStreaming = null;
-                PushIslandChat(true);
-                _islandStreaming = "";
-                PushIslandChat(true);
-            }, cancel.Token);
-            _islandStreaming = null;
+                chat.Streaming = null;
+                chat.Show(true);
+                chat.Streaming = "";
+                chat.Show(true);
+            }, cancel);
+            chat.Streaming = null;
             if (cancel.IsCancellationRequested) return;
             ReadAloudIfOn(result, answer, () =>
             {
                 if (cancel.IsCancellationRequested) return;
-                _chat.Add(new ChatTurn(false, answer, WhoAnswered(result)));
-                PushIslandChat(false);
+                chat.Log.Add(new ChatTurn(false, answer, WhoAnswered(result)));
+                chat.Show(false);
             });
             return;
         }
-        PushIslandChat(false);
+        chat.Show(false);
     }
 
     /// <summary>
@@ -1492,7 +1521,7 @@ sealed partial class TrayApp : ApplicationContext
         {
             case "ask":
                 _chat.Add(new ChatTurn(false, L.T("(Resumen de {0}) {1}", Path.GetFileName(file), analysis)));
-                PushIslandChat(false);
+                _islandChat.Show(false);
                 _island?.ShowPage(IslandForm.Page.Chat);
                 break;
             case "copy":
