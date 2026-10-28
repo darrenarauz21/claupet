@@ -32,7 +32,7 @@ sealed class ConsoleServer : IDisposable
         {
             try
             {
-                // CurrentUserOnly: la tubería solo la abre el mismo usuario de Windows.
+                // CurrentUserOnly: la tubería solo la abre el mismo usuario del sistema.
                 await using var pipe = new NamedPipeServerStream(ConsoleLink.PipeName, PipeDirection.InOut, 1,
                     PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 await pipe.WaitForConnectionAsync(_stop.Token);

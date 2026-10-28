@@ -54,6 +54,31 @@ public sealed class SettingsPagesTests
     }
 
     [Fact]
+    public void LoQueElSistemaNoTieneNoAparece()
+    {
+        var pages = SettingsPages.Build(Full with { Features = PlatformFeatures.None });
+        var keys = pages.SelectMany(p => p.Rows).Select(r => r.Key).ToHashSet();
+        foreach (var missing in new[] { "chat", "mic", "readaloud", "island", "extensions", "localmodel", "size", "startmenu", "chatkey" })
+            Assert.DoesNotContain(missing, keys);
+        Assert.DoesNotContain(pages.SelectMany(p => p.Rows), r => r.Key.StartsWith("grant:", StringComparison.Ordinal));
+        // En vez de filas que no hacen nada, una nota.
+        foreach (var id in new[] { "isla", "extensiones", "asistente" })
+            Assert.Contains(pages.Single(p => p.Id == id).Rows, r => r.Kind == RowKind.Note);
+        // Lo que sí tiene sigue ahí.
+        Assert.Contains("notify", keys);
+        Assert.Contains("answerpreset", keys);
+        Assert.Contains("desk", keys);
+    }
+
+    [Fact]
+    public void ConTodoComoEnWindowsNoFaltaNada()
+    {
+        var keys = SettingsPages.Build(Full).SelectMany(p => p.Rows).Select(r => r.Key).ToHashSet();
+        foreach (var key in new[] { "chat", "mic", "readaloud", "island", "extensions", "localmodel", "size", "startmenu" })
+            Assert.Contains(key, keys);
+    }
+
+    [Fact]
     public void ConUnModoArmadoNoSeEligeTipoPorTipo()
     {
         var answers = SettingsPages.Build(Full).Single(p => p.Id == "respuestas").Rows;
@@ -94,6 +119,14 @@ public sealed class SettingsPagesTests
         Assert.Equal(["terracota", "bosque"], offer.Options!.Select(o => o.Id));
         var cancel = ConsoleLink.Decode(ConsoleLink.Encode(new ConsoleMessage { Type = ConsoleLink.Pick, Token = 7 }))!;
         Assert.Null(cancel.Value); // se cerró sin elegir
+    }
+
+    [Fact]
+    public void LosMutexSonDeLaSesionDeWindows()
+    {
+        // En Windows siguen en «Local\» (la sesión de Windows); en Linux y macOS van en «Global\» con el usuario.
+        string[] names = [ConsoleLink.TrayMutex, ConsoleLink.AvaloniaTrayMutex, ConsoleLink.ConsoleMutex];
+        Assert.Equal([@"Local\Claupet", @"Local\Claupet-avalonia", @"Local\Claupet-console"], names);
     }
 
     [Theory]

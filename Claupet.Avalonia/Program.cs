@@ -38,12 +38,22 @@ static class Program
             return 1;
         }
 
+        // --console: Claupet Console, la ventana grande, en su propio proceso (la misma de Windows).
+        if (args.Contains(ConsoleApp.Flag)) return ConsoleApp.Run(args);
+
         // --preview: abre la ventana aunque ya haya otra instancia (para probar cambios).
         var preview = args.Contains("--preview");
-        using var mutex = new Mutex(true, @"Local\Claupet-avalonia", out var created);
+        using var mutex = new Mutex(true, ConsoleLink.AvaloniaTrayMutex, out var created);
         // --reiniciar: la abrió la anterior al cambiar el idioma; espera a que termine de cerrarse.
         if (!created && args.Contains("--reiniciar")) created = WaitFor(mutex);
-        if (!created && !preview) return 0;
+        if (!created && !preview)
+        {
+            if (args.Length > 0) return 0;
+            // Abrir Claupet otra vez, sin argumentos, trae Claupet Console, como cualquier app (como en Windows).
+            // El mutex se suelta antes: si no, una bandeja que arranque después creería que ya hay otra.
+            mutex.Dispose();
+            return ConsoleApp.Run(args);
+        }
         // Lo que quedó con el nombre de antes de Claupet (la carpeta de datos, la entrada de inicio) pasa a este .exe.
         if (!preview)
         {

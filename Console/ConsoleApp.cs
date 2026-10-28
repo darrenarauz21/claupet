@@ -1,7 +1,9 @@
 namespace Claupet;
 
 using System.Diagnostics;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
+using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -11,20 +13,23 @@ using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 
 /// <summary>
-/// Claupet Console es un modo de Claupet.exe (--console): otro proceso, que se abre solo cuando se pide y se
-/// cierra con su ventana. La bandeja no carga Avalonia; solo este proceso.
+/// Claupet Console es un modo de Claupet (--console): otro proceso, que se abre solo cuando se pide y se cierra con su
+/// ventana. Es la misma en Windows, Linux y macOS: la atiende la bandeja de cada app por la tubería de ConsoleLink.
 /// </summary>
 static class ConsoleApp
 {
-    public const string Flag = "--console";
+    public const string Flag = ConsoleLink.Flag;
 
     public static string? Section { get; private set; }
 
     /// <summary>Los archivos que se pidió abrir en el editor (Claupet.exe --console archivo…).</summary>
     public static IReadOnlyList<string> Files { get; private set; } = [];
 
-    /// <summary>Si la Console ya estaba abierta, los archivos le llegan por aquí (uno por línea) junto con la señal de venir al frente.</summary>
-    static string Handoff => DataFolder.In("console-abrir.txt");
+    /// <summary>
+    /// Por aquí una Console que se abre con otra ya abierta le pide venir al frente (y le pasa sus archivos, uno por
+    /// línea). Una tubería con nombre, porque los eventos con nombre solo existen en Windows.
+    /// </summary>
+    static string WakePipe => "Claupet.ConsoleWake." + Environment.UserName;
 
     public static int Run(string[] args)
     {
@@ -36,43 +41,57 @@ static class ConsoleApp
         Claupet.Theme.SelectedPalette = settings.Palette;
 
         // Una sola ventana: si ya hay una abierta, se le pide que venga al frente (con los archivos) y esta se cierra.
-        using var mutex = new Mutex(true, @"Local\Claupet-console", out var created);
-        using var wake = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\Claupet-console-mostrar");
+        using var mutex = new Mutex(true, ConsoleLink.ConsoleMutex, out var created);
         if (!created)
         {
-            if (Files.Count > 0)
-                try { File.AppendAllLines(Handoff, Files); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ErrorLog.Write(ex); }
             Native.AllowForeground();
-            wake.Set();
+            Wake(Files);
             return 0;
         }
-        new Thread(() =>
-        {
-            while (wake.WaitOne()) Dispatcher.UIThread.Post(() =>
-            {
-                ConsoleApplication.Window?.OpenFiles(TakeHandoff());
-                ConsoleApplication.Window?.BringToFront();
-            });
-        }) { IsBackground = true, Name = "Mostrar la Console" }.Start();
+        _ = Task.Run(ListenAsync);
         StartTrayIfClosed();
 
         return AppBuilder.Configure<ConsoleApplication>().UsePlatformDetect().LogToTrace().StartWithClassicDesktopLifetime(args);
     }
 
-    static IReadOnlyList<string> TakeHandoff()
+    /// <summary>Le pide a la Console abierta que venga al frente, con estos archivos.</summary>
+    static void Wake(IReadOnlyList<string> files)
     {
         try
         {
-            if (!File.Exists(Handoff)) return [];
-            var files = File.ReadAllLines(Handoff).Where(File.Exists).ToList();
-            File.Delete(Handoff);
-            return files;
+            using var pipe = new NamedPipeClientStream(".", WakePipe, PipeDirection.Out, PipeOptions.CurrentUserOnly);
+            pipe.Connect(2000);
+            using var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { NewLine = "\n" };
+            foreach (var file in files) writer.WriteLine(file);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is TimeoutException or IOException or UnauthorizedAccessException) { ErrorLog.Write(ex); }
+    }
+
+    /// <summary>Espera los pedidos de otras Console que se abren: viene al frente y abre sus archivos.</summary>
+    static async Task ListenAsync()
+    {
+        while (true)
         {
-            ErrorLog.Write(ex);
-            return [];
+            try
+            {
+                await using var pipe = new NamedPipeServerStream(WakePipe, PipeDirection.In, 1, PipeTransmissionMode.Byte,
+                    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+                await pipe.WaitForConnectionAsync();
+                using var reader = new StreamReader(pipe, new UTF8Encoding(false));
+                var files = new List<string>();
+                while (await reader.ReadLineAsync() is { } line)
+                    if (File.Exists(line)) files.Add(line);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    ConsoleApplication.Window?.OpenFiles(files);
+                    ConsoleApplication.Window?.BringToFront();
+                });
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ErrorLog.Write(ex);
+                await Task.Delay(1000);
+            }
         }
     }
 
@@ -82,12 +101,7 @@ static class ConsoleApp
     /// </summary>
     static void StartTrayIfClosed()
     {
-        if (Mutex.TryOpenExisting(Program.InstanceMutex, out var running))
-        {
-            running.Dispose();
-            return;
-        }
-        if (Environment.ProcessPath is not { } exe) return;
+        if (ConsoleLink.TrayRunning() || Environment.ProcessPath is not { } exe) return;
         try { Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = AppContext.BaseDirectory })?.Dispose(); }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException) { ErrorLog.Write(ex); }
     }
@@ -104,7 +118,7 @@ sealed class ConsoleApplication : Application
         Styles.Add(new StyleInclude(new Uri("avares://Claupet/")) { Source = new Uri("avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml") });
         // Las barras de desplazamiento y los globos de ayuda de toda la Console son los del diseño.
         Themes.Register(Resources);
-        RequestedThemeVariant = ThemeVariant.Default; // sigue el modo claro u oscuro de Windows
+        RequestedThemeVariant = ThemeVariant.Default; // sigue el modo claro u oscuro del sistema
         Name = "Claupet Console";
     }
 

@@ -10,9 +10,9 @@ namespace Claupet;
 
 /// <summary>
 /// El ícono de la bandeja (barra de menús en macOS) y todo lo que coordina: consultas, sesiones,
-/// actividad, avisos, sonidos y configuración. Es la misma lógica que TrayApp en Windows.
+/// actividad, avisos, sonidos, configuración y Claupet Console. Es la misma lógica que TrayApp en Windows.
 /// </summary>
-sealed class TrayController
+sealed partial class TrayController
 {
     readonly App _app;
     readonly TrayIcon _tray = new();
@@ -73,6 +73,7 @@ sealed class TrayController
         Item(L.T("Abrir"), ShowForm);
         Item(L.T("Actualizar"), () => _ = RefreshAsync(renewSelected: true));
         Item(L.T("Nueva sesión…"), () => _ = NewSessionAsync(null));
+        Item("Claupet Console", () => _ = OpenConsoleAsync());
         menu.Add(new NativeMenuItemSeparator());
         Item(L.T("Ajustes…"), () => { ShowForm(); View.ShowSettings(); });
         menu.Add(new NativeMenuItemSeparator());
@@ -97,6 +98,7 @@ sealed class TrayController
         };
         View.SettingRequested += action => _ = OnSettingAsync(action);
         View.NewSessionRequested += session => _ = NewSessionAsync(session);
+        StartConsole();
         PushSettings();
         _toasts.Clicked += OpenNotice;
         _bubble.Clicked += OpenNotice;
@@ -233,6 +235,7 @@ sealed class TrayController
                 Mascots.Label(Mascots.ChoiceOf(s)), s.DesktopMascot, s.DesktopMascot ? s.Speak : null, s.DesktopMascot ? behavior : null,
                 StartupRegistration.IsEnabled, s.Accounts.Count, L.Label),
             _settings.SoundPack, _settings.Palette, Mascots.ChoiceOf(_settings));
+        _consoleHost?.PushSettings(); // Claupet Console, si está abierta
     }
 
     async Task OnSettingAsync(string action)
@@ -680,6 +683,7 @@ sealed class TrayController
         _bubble.Close();
         _sounds.Dispose();
         _refresh.Dispose();
+        _consoleHost?.Dispose();
         _tray.IsVisible = false;
         _tray.Dispose();
         if (_app.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime lifetime) lifetime.Shutdown();

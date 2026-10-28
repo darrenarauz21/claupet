@@ -3,7 +3,7 @@ namespace Claupet;
 static class Program
 {
     /// <summary>Lo toma la bandeja: con él, una segunda Claupet sabe que ya hay otra abierta.</summary>
-    public const string InstanceMutex = @"Local\Claupet";
+    public static readonly string InstanceMutex = ConsoleLink.TrayMutex;
 
     [STAThread]
     static int Main(string[] args)

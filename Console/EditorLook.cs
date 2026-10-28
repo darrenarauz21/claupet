@@ -156,7 +156,7 @@ sealed class MarkdownLook(TextArea area, Ink ink, EditorInk colors, double size)
 }
 
 /// <summary>Esconde las marcas de Markdown fuera de la línea del cursor y cambia la viñeta de las listas por «•».</summary>
-sealed class MarkdownHider(TextArea area, IBrush bulletBrush) : VisualLineElementGenerator
+sealed class MarkdownHider(TextArea area) : VisualLineElementGenerator
 {
     /// <summary>Las marcas (y viñetas) de la línea que se está armando: se calculan una vez por línea.</summary>
     int _line = -1;

@@ -1,8 +1,34 @@
 namespace Claupet;
 
+/// <summary>
+/// Lo que una app sabe hacer en este sistema. Las filas de Ajustes de lo que falta no aparecen (en vez de quedar como
+/// botones que no hacen nada); al llegar a Linux o macOS, aparecen solas.
+/// </summary>
+[Flags]
+enum PlatformFeatures
+{
+    None = 0,
+    /// <summary>El chat con la mascota (la nubecita).</summary>
+    MascotChat = 1,
+    /// <summary>Lo que hace en el equipo (captura, calendario, ventanas…), con sus permisos.</summary>
+    Actions = 2,
+    Mic = 4,
+    ReadAloud = 8,
+    Hotkeys = 16,
+    Island = 32,
+    Extensions = 64,
+    LocalModel = 128,
+    MascotSize = 256,
+    Shortcuts = 512,
+    All = MascotChat | Actions | Mic | ReadAloud | Hotkeys | Island | Extensions | LocalModel | MascotSize | Shortcuts,
+}
+
 /// <summary>Lo que muestra «Ajustes»; lo manda TrayApp cada vez que cambia algo. Los textos son los valores ya listos para mostrar.</summary>
 sealed record SettingsState
 {
+    /// <summary>Lo que esta app sabe hacer en este sistema (Windows: todo).</summary>
+    public PlatformFeatures Features { get; init; } = PlatformFeatures.All;
+    public bool Has(PlatformFeatures feature) => (Features & feature) == feature;
     public bool Notifications { get; init; } = true;
     public bool Sound { get; init; } = true;
     public string SoundPack { get; init; } = "";
@@ -129,15 +155,26 @@ static class SettingsPages
     /// <summary>Solo en Claupet Console: no es de todos los días.</summary>
     static SettingsRow Full(SettingsRow row) => row with { Place = RowPlace.Console };
 
-    static SettingsPage GeneralPage(SettingsState s) => new("general", L.T("General"), L.T("El idioma, el inicio de Claupet y sus accesos directos."), "Sistema",
-    [
-        Choice(L.T("Idioma"), "language", s.Language),
-        Switch(L.T("Iniciar con Windows"), "startup", s.StartWithWindows),
-        Full(Caption(L.T("Accesos directos"))),
-        Full(Switch(L.T("En el menú Inicio"), "startmenu", s.StartMenuShortcut)),
-        Full(Switch(L.T("En el escritorio"), "desktoplink", s.DesktopShortcut)),
-        Full(Note(L.T("Abren Claupet Console, como cualquier app; si Claupet no estaba abierto, lo abren también."))),
-    ]);
+    /// <summary>Lo que falta en este sistema: una nota en vez de filas que no hacen nada.</summary>
+    static SettingsRow NotHere() => Note(L.T("Todavía no está disponible en este sistema."));
+
+    static SettingsPage GeneralPage(SettingsState s)
+    {
+        List<SettingsRow> rows =
+        [
+            Choice(L.T("Idioma"), "language", s.Language),
+            Switch(OperatingSystem.IsWindows() ? L.T("Iniciar con Windows") : L.T("Iniciar con el sistema"), "startup", s.StartWithWindows),
+        ];
+        if (s.Has(PlatformFeatures.Shortcuts))
+            rows.AddRange(new[]
+            {
+                Caption(L.T("Accesos directos")),
+                Switch(L.T("En el menú Inicio"), "startmenu", s.StartMenuShortcut),
+                Switch(L.T("En el escritorio"), "desktoplink", s.DesktopShortcut),
+                Note(L.T("Abren Claupet Console, como cualquier app; si Claupet no estaba abierto, lo abren también.")),
+            }.Select(Full));
+        return new("general", L.T("General"), L.T("El idioma, el inicio de Claupet y sus accesos directos."), "Sistema", rows);
+    }
 
     static SettingsPage NoticesPage(SettingsState s) => new("avisos", L.T("Avisos"), L.T("Cómo le avisa Claupet cuando una sesión termina o necesita algo."), "Avisos",
     [
@@ -151,7 +188,7 @@ static class SettingsPages
     [
         new(RowKind.Choice, L.T("Color"), "palette", s.Palette, Swatch: true),
         Choice(L.T("Mascota"), "mascot", s.Mascot),
-        Choice(L.T("Tamaño de la mascota"), "size", s.MascotSize),
+        .. s.Has(PlatformFeatures.MascotSize) ? [Choice(L.T("Tamaño de la mascota"), "size", s.MascotSize)] : Array.Empty<SettingsRow>(),
     ]);
 
     static SettingsPage MascotPage(SettingsState s)
@@ -175,8 +212,9 @@ static class SettingsPages
 
     static SettingsPage AssistantPage(SettingsState s)
     {
-        List<SettingsRow> rows = [Caption(L.T("Chat")), Switch(L.T("Chat con la mascota"), "chat", s.Chat)];
-        if (s.Chat)
+        List<SettingsRow> rows = [];
+        if (s.Has(PlatformFeatures.MascotChat)) rows.AddRange([Caption(L.T("Chat")), Switch(L.T("Chat con la mascota"), "chat", s.Chat)]);
+        if (s.Chat && s.Has(PlatformFeatures.MascotChat))
         {
             rows.Add(Choice(L.T("Modelo de la mascota"), "mmodel", s.MascotModel));
             rows.AddRange(new[]
@@ -187,15 +225,15 @@ static class SettingsPages
             }.Select(Full));
         }
         // Lo que hace en el equipo (captura, calendario, ventanas…) se pide desde el chat o la isla: un interruptor por capacidad.
-        if (s.Chat || s.Island)
+        if ((s.Chat || s.Island) && s.Has(PlatformFeatures.Actions))
         {
             rows.Add(Caption(L.T("Permisos")));
             rows.AddRange(s.Grants.Select(g => Full(Switch(g.Label, "grant:" + g.Id, g.Allowed))));
             rows.Add(Full(Note(L.T("Apagado: se pregunta la primera vez que lo use."))));
         }
-        rows.Add(Caption(L.T("Voz")));
-        rows.Add(Switch(L.T("Micrófono"), "mic", s.Mic));
-        if (s.Mic)
+        if (s.Has(PlatformFeatures.Mic) || s.Has(PlatformFeatures.ReadAloud)) rows.Add(Caption(L.T("Voz")));
+        if (s.Has(PlatformFeatures.Mic)) rows.Add(Switch(L.T("Micrófono"), "mic", s.Mic));
+        if (s.Mic && s.Has(PlatformFeatures.Mic))
         {
             rows.Add(Full(Choice(L.T("Tecla para hablar"), "mickey", s.MicKey)));
             // Mientras falta el modelo de voz (o baja), también en los rápidos: al encender el micrófono se ve que descarga.
@@ -203,13 +241,13 @@ static class SettingsPages
             rows.Add(s.VoiceAction.Length > 0 ? voice : Full(voice));
         }
         // Aparte del micrófono: puede escribirle y que le responda hablando.
-        rows.Add(Switch(L.T("Leer las respuestas en voz alta"), "readaloud", s.ReadAloud));
-        if (s.ReadAloud)
+        if (s.Has(PlatformFeatures.ReadAloud)) rows.Add(Switch(L.T("Leer las respuestas en voz alta"), "readaloud", s.ReadAloud));
+        if (s.ReadAloud && s.Has(PlatformFeatures.ReadAloud))
         {
             rows.Add(Full(Choice(L.T("Voz"), "readvoice", s.ReadAloudVoice)));
             if (s.SpeechStatus.Length > 0) rows.Add(Link(s.SpeechStatus, s.SpeechAction, "speech"));
         }
-        if (s.Chat || s.Island)
+        if ((s.Chat || s.Island) && s.Has(PlatformFeatures.Hotkeys))
             rows.AddRange(new[]
             {
                 Caption(L.T("Teclas")),
@@ -217,6 +255,7 @@ static class SettingsPages
                 Switch(s.Mic ? L.T("Tecla Copilot: chat y voz") : L.T("Tecla Copilot: abre el chat"), "copilot", s.CopilotKey),
                 Link(L.T("Atajos de teclado"), L.T("Ver…"), "shortcuts"),
             }.Select(Full));
+        if (rows.Count == 0) rows.Add(NotHere());
         return new("asistente", L.T("Asistente"), L.T("El chat con la mascota, la voz y las teclas."), "Asistente", rows);
     }
 
@@ -226,10 +265,13 @@ static class SettingsPages
         [
             Caption(L.T("Motores")),
             Info(L.T("Sin IA"), L.T("Siempre activo · 0 tokens")),
-            Choice(L.T("Modelo local"), "localmodel", s.LocalModel),
-            Link(s.LocalStatus, s.LocalAction, "local", s.LocalAction == L.T("Borrar") ? RowTone.Danger : RowTone.Accent),
         ];
-        if (s.LocalReady) rows.Add(Choice(L.T("Liberar la memoria tras"), "localidle", s.LocalIdle));
+        if (s.Has(PlatformFeatures.LocalModel))
+        {
+            rows.Add(Choice(L.T("Modelo local"), "localmodel", s.LocalModel));
+            rows.Add(Link(s.LocalStatus, s.LocalAction, "local", s.LocalAction == L.T("Borrar") ? RowTone.Danger : RowTone.Accent));
+            if (s.LocalReady) rows.Add(Choice(L.T("Liberar la memoria tras"), "localidle", s.LocalIdle));
+        }
         rows.Add(Info(L.T("Nube"), s.CloudModel));
         rows.Add(Caption(L.T("Quién responde primero")));
         rows.Add(Choice(L.T("Modo"), "answerpreset", s.AnswerPreset));
@@ -257,13 +299,14 @@ static class SettingsPages
 
     static SettingsPage ExtensionsPage(SettingsState s) => new("extensiones", L.T("Extensiones"),
         L.T("Habilidades, voces, mascotas y modelos de otros. También puede soltar un .claupet sobre la mascota."), null,
-    [
-        Choice(L.T("Instaladas"), "extensions", s.Extensions),
-        Link(L.T("Un paquete .claupet"), L.T("Instalar desde archivo…"), "extinstall"),
-    ]);
+        s.Has(PlatformFeatures.Extensions)
+            ? [Choice(L.T("Instaladas"), "extensions", s.Extensions), Link(L.T("Un paquete .claupet"), L.T("Instalar desde archivo…"), "extinstall")]
+            : [NotHere()]);
 
     static SettingsPage IslandPage(SettingsState s)
     {
+        if (!s.Has(PlatformFeatures.Island))
+            return new("isla", L.T("Isla"), L.T("La isla del borde de arriba: el chat, los permisos y el resumen de la semana."), "Isla", [NotHere()]);
         List<SettingsRow> rows = [Switch(L.T("Isla en el borde de arriba"), "island", s.Island)];
         if (s.Island)
         {
@@ -289,6 +332,7 @@ static class SettingsPages
     [
         Full(Link(L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup")),
         Link(L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag"),
-        Full(Link(L.T("Quitar hook e inicio con Windows"), L.T("Quitar…"), "unsetup", RowTone.Danger)),
+        Full(Link(OperatingSystem.IsWindows() ? L.T("Quitar hook e inicio con Windows") : L.T("Quitar hook e inicio con el sistema"),
+            L.T("Quitar…"), "unsetup", RowTone.Danger)),
     ]);
 }

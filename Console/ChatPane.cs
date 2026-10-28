@@ -134,7 +134,7 @@ sealed class ChatPane : Grid
         }
         if (chat.Turns.Count == 0 && chat.Streaming is null)
         {
-            _empty = Empty(chat.Id == ConsoleLink.QuickChat);
+            _empty = Empty(chat.About);
             _messages.Children.Add(_empty);
         }
         if (atEnd) Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
@@ -386,8 +386,8 @@ sealed class ChatPane : Grid
         _ => language,
     };
 
-    /// <summary>Una conversación sin mensajes: qué es y qué se puede hacer.</summary>
-    Control Empty(bool quick)
+    /// <summary>Una conversación sin mensajes: qué es (la rápida lo dice la bandeja) y qué se puede hacer.</summary>
+    Control Empty(string? about)
     {
         var panel = new StackPanel { Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 96, 0, 0), MaxWidth = 420 };
         panel.Children.Add(new HeadLogo { Width = 44, Height = 44, HorizontalAlignment = HorizontalAlignment.Center });
@@ -402,9 +402,7 @@ sealed class ChatPane : Grid
         });
         panel.Children.Add(new TextBlock
         {
-            Text = quick
-                ? L.T("Es la misma conversación de la isla y la nubecita; se olvida a los 10 minutos sin escribir.")
-                : L.T("Esta conversación se guarda en este equipo y queda en la lista de la izquierda."),
+            Text = about ?? L.T("Esta conversación se guarda en este equipo y queda en la lista de la izquierda."),
             FontFamily = Ink.Sans,
             FontSize = 13.5,
             Foreground = _ink.Tertiary,

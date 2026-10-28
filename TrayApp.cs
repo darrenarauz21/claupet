@@ -317,8 +317,16 @@ sealed partial class TrayApp : ApplicationContext
     /// <summary>Lo que la vista Ajustes muestra: se manda de nuevo cada vez que algo cambia.</summary>
     void PushSettings()
     {
+        var state = BuildSettingsState();
+        _form.SetSettingsState(state);
+        ConsoleHost.PushSettings(state);
+    }
+
+    /// <summary>Lo que muestran Ajustes y Claupet Console, con los textos ya listos.</summary>
+    SettingsState BuildSettingsState()
+    {
         var s = _settings;
-        var state = new SettingsState
+        return new SettingsState
         {
             Notifications = s.Notifications,
             Sound = s.Sound,
@@ -389,8 +397,6 @@ sealed partial class TrayApp : ApplicationContext
                 t.Fixed ? L.T("Siempre la nube") : EngineLabel(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
             Grants = Capabilities.All.Select(c => new GrantState(c.Id, c.Label, Capabilities.Allowed(s, c.Id))).ToList(),
         };
-        _form.SetSettingsState(state);
-        SendConsoleState(state);
     }
 
     /// <summary>La extensión que ocupa una ranura exclusiva, dicha para Ajustes; null: el integrado.</summary>
@@ -1147,8 +1153,7 @@ sealed partial class TrayApp : ApplicationContext
     void ShowIslandChat(bool asking)
     {
         _island?.SetChat(_chat.Turns.ToList(), _islandChat.Streaming, asking);
-        if (_consoleChatId == ConsoleLink.QuickChat) PushConsoleChat(ConsoleLink.QuickChat);
-        if (!asking && _consoleChatId is not null) PushConsoleChats(); // lo que se ve debajo de «Conversación rápida»
+        ConsoleHost.QuickChanged(asking);
     }
 
     /// <summary>Le pregunta a Claude desde la isla, con el modelo de sus sesiones (o el elegido).</summary>
@@ -2496,7 +2501,7 @@ sealed partial class TrayApp : ApplicationContext
         _speechDownload?.Cancel();
         _localDownload?.Cancel();
         _localServer.Dispose();
-        _console.Dispose();
+        _consoleHost?.Dispose();
         _voice?.Dispose();
         _readAloud?.Dispose();
         _island?.Dispose();

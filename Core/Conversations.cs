@@ -43,8 +43,12 @@ sealed class Conversation
 /// <summary>Lo que muestra la lista de chats de la Console.</summary>
 sealed record ChatSummary(string Id, string Title, string Preview, DateTimeOffset Updated, bool Quick = false);
 
-/// <summary>Una conversación abierta en la Console: sus turnos, lo que va llegando y el modelo de la cabecera.</summary>
-sealed record ChatView(string Id, string Title, IReadOnlyList<ChatTurn> Turns, string? Streaming, bool Asking, string Model, bool ReadAloud);
+/// <summary>
+/// Una conversación abierta en la Console: sus turnos, lo que va llegando, el modelo de la cabecera y, en la rápida, qué
+/// es (cambia según el sistema: donde hay isla, es la misma).
+/// </summary>
+sealed record ChatView(string Id, string Title, IReadOnlyList<ChatTurn> Turns, string? Streaming, bool Asking, string Model, bool ReadAloud,
+    string? About = null);
 
 /// <summary>Una conversación guardada como IChatLog: cada turno nuevo se guarda; la primera pregunta le da el título.</summary>
 sealed class SavedChat(Conversation conversation, ConversationStore store) : IChatLog

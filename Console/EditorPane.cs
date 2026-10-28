@@ -347,7 +347,7 @@ sealed class EditorPane : Grid
             _editor.FontSize = DocumentSize;
             _editor.TextArea.SelectionBrush = _colors.SelectionDoc;
             view.LineTransformers.Add(new MarkdownLook(_editor.TextArea, _ink, _colors, DocumentSize));
-            view.ElementGenerators.Add(new MarkdownHider(_editor.TextArea, _colors.Marks));
+            view.ElementGenerators.Add(new MarkdownHider(_editor.TextArea));
         }
         Pad();
         if (_body.Child != _editor) _body.Child = _editor;

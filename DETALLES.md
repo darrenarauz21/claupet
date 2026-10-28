@@ -250,6 +250,20 @@ hook) se abre desde Claupet, al frente. Si Claupet no está abierto, la Console 
 `Claupet.exe --console --seccion=<id>`, en esa sección de Ajustes (`general`, `avisos`, `apariencia`, `mascota`,
 `asistente`, `respuestas`, `isla`, `cuentas` o `sistema`).
 
+**En Linux y macOS** la Console es la misma (`Claupet --console`, la entrada «Claupet Console» del menú del ícono o
+abrir Claupet otra vez). Lo que no depende del sistema (la tubería, las conversaciones, las listas para elegir) lo hace
+`Core/ConsoleHost.cs`; cada bandeja le da lo suyo con `IConsoleApp` (`TrayApp.Console.cs` en Windows,
+`Claupet.Avalonia/TrayController.Console.cs` en la app Avalonia): sus ajustes, sus acciones y el asistente del chat.
+Las filas de lo que un sistema todavía no tiene no aparecen (`PlatformFeatures` en `SettingsState`); una sección que
+queda sin nada dice «Todavía no está disponible en este sistema.». En la app Avalonia el chat responde como en
+Respuestas, sin la isla y sin acciones en el equipo (si se le pide una, lo dice).
+
+Una sola bandeja y una sola Console por persona, con mutex con nombre (`Core/ConsoleLink.cs`). En Windows van en
+`Local\` (la sesión de Windows). En Linux y macOS, .NET limita `Local\` a la sesión del proceso (cada terminal tiene
+la suya) y la Console abierta desde el menú no vería la bandeja abierta al iniciar: allí van en `Global\`, con el
+nombre del usuario. La Console nueva le pasa los archivos a la abierta, y la trae al frente, por la tubería
+`Claupet.ConsoleWake.<usuario>` (los eventos con nombre solo existen en Windows).
+
 **Editor** (etapa 1). AvaloniaEdit es solo el motor; el aspecto es el del diseño (`Console/EditorPane.cs` y
 `Console/EditorLook.cs`). Arriba, el botón de la lista de archivos (abiertos y recientes, en `editor-recientes.json`
 junto a los ajustes), las pestañas con un punto si hay cambios sin guardar, **Documento** o **Código** y más opciones
@@ -683,8 +697,8 @@ registradas y vivas, y el hook. Lo habitual:
 - Linux: Avalonia 11 necesita `libICE`, `libSM` y `fontconfig` (vienen en los escritorios
   habituales). En GNOME, el ícono de la bandeja necesita la extensión AppIndicator.
 - Windows 11 deja los íconos nuevos en el desbordamiento (^).
-- El chat, la isla, la voz y las teclas son solo de Windows por ahora; Linux y macOS, en una etapa
-  siguiente.
+- La isla, la voz, las teclas, el chat con la mascota y las acciones en el equipo son solo de Windows por
+  ahora. En Linux y macOS ya está Claupet Console, con su chat; lo demás, en las etapas siguientes.
 - Con ruido de fondo, Whisper a veces «oye» frases que nadie dijo; las conocidas («subtítulos
   realizados por…») se descartan.
 - La tecla Copilot se probó simulándola (Win+Mayús+F23); en algunos equipos, como los Surface, puede

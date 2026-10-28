@@ -123,13 +123,18 @@ public class ConversationTests
     public void La_conversacion_y_la_lista_pasan_enteras_por_el_canal()
     {
         var view = new ChatView("rapida", "Conversación rápida",
-            [new ChatTurn(true, "hola"), new ChatTurn(false, "¡Hola! (^_^)", "Sin IA · 0 tokens")], "escrib", true, "Claude · Haiku", ReadAloud: true);
+            [new ChatTurn(true, "hola"), new ChatTurn(false, "¡Hola! (^_^)", "Sin IA · 0 tokens")], "escrib", true, "Claude · Haiku", ReadAloud: true,
+            About: "Para preguntas sueltas.");
         var back = ConsoleLink.Decode(ConsoleLink.Encode(new ConsoleMessage { Type = ConsoleLink.Chat, Chat = view }))!.Chat!;
         Assert.Equal(view.Id, back.Id);
         Assert.Equal(view.Turns, back.Turns);
         Assert.Equal("escrib", back.Streaming);
         Assert.True(back.Asking);
         Assert.True(back.ReadAloud);
+        Assert.Equal("Para preguntas sueltas.", back.About); // lo dice la bandeja: cambia según el sistema
+        // Una guardada no lo lleva: la Console pone el suyo.
+        var saved = ConsoleLink.Decode(ConsoleLink.Encode(new ConsoleMessage { Type = ConsoleLink.Chat, Chat = view with { Id = "abc", About = null } }))!;
+        Assert.Null(saved.Chat!.About);
 
         var list = new List<ChatSummary> { new("rapida", "Conversación rápida", "hola", DateTimeOffset.Now, Quick: true) };
         var chats = ConsoleLink.Decode(ConsoleLink.Encode(new ConsoleMessage { Type = ConsoleLink.Chats, Chats = list }))!.Chats!;

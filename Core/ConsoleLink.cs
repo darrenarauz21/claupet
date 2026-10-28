@@ -43,6 +43,37 @@ static class ConsoleLink
     /// <summary>La conversación de la isla y la nubecita, que la Console muestra arriba de las guardadas.</summary>
     public const string QuickChat = "rapida";
 
+    /// <summary>Claupet.exe --console: Claupet Console, en su propio proceso.</summary>
+    public const string Flag = "--console";
+
+    /// <summary>
+    /// Los mutex que toma la bandeja (la de Windows y la de la app Avalonia): con uno tomado, Claupet ya está abierto.
+    /// </summary>
+    public static readonly string TrayMutex = MutexName("Claupet"), AvaloniaTrayMutex = MutexName("Claupet-avalonia");
+
+    /// <summary>El de Claupet Console: una sola ventana.</summary>
+    public static readonly string ConsoleMutex = MutexName("Claupet-console");
+
+    /// <summary>
+    /// En Windows, «Local\» es la sesión de Windows. En Linux y macOS, .NET lo limita a la sesión del proceso (cada
+    /// terminal tiene la suya), y la Console abierta desde el menú no vería la bandeja abierta al iniciar: allí va en
+    /// «Global\», con el nombre del usuario para que siga siendo uno por persona.
+    /// </summary>
+    static string MutexName(string name) =>
+        OperatingSystem.IsWindows() ? @"Local\" + name : @"Global\" + name + "." + Environment.UserName;
+
+    /// <summary>Si alguna de las dos bandejas está abierta.</summary>
+    public static bool TrayRunning()
+    {
+        foreach (var name in new[] { TrayMutex, AvaloniaTrayMutex })
+            if (Mutex.TryOpenExisting(name, out var running))
+            {
+                running.Dispose();
+                return true;
+            }
+        return false;
+    }
+
     /// <summary>Una tubería por usuario: con otra sesión abierta en el equipo, cada una tiene la suya.</summary>
     public static string PipeName => "Claupet.Console." + Environment.UserName;
 
