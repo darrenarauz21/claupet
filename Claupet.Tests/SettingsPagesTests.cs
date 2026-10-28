@@ -44,11 +44,21 @@ public sealed class SettingsPagesTests
     [Fact]
     public void LaConsoleEligeCadaTipoYCadaPermisoEnSuFila()
     {
-        var pages = SettingsPages.Build(Full);
+        // En «Personalizado», cada tipo de pregunta tiene su fila.
+        var pages = SettingsPages.Build(Full with { AnswerCustom = true });
         var answers = pages.Single(p => p.Id == "respuestas").Rows;
+        Assert.Contains(answers, r => r is { Key: "answerpreset", Kind: RowKind.Choice });
         Assert.Contains(answers, r => r is { Key: "topic:hora", Kind: RowKind.Choice });
         Assert.Contains(answers, r => r is { Text: "Internet, archivos y tareas", Kind: RowKind.Info }); // fijo: no se elige
         Assert.Contains(pages.SelectMany(p => p.Rows), r => r is { Key: "grant:captura", On: true, Place: RowPlace.Console });
+    }
+
+    [Fact]
+    public void ConUnModoArmadoNoSeEligeTipoPorTipo()
+    {
+        var answers = SettingsPages.Build(Full).Single(p => p.Id == "respuestas").Rows;
+        Assert.Contains(answers, r => r is { Key: "answerpreset", Kind: RowKind.Choice });
+        Assert.DoesNotContain(answers, r => r.Key.StartsWith("topic:", StringComparison.Ordinal));
     }
 
     [Fact]

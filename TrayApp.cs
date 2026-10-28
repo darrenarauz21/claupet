@@ -379,6 +379,9 @@ sealed partial class TrayApp : ApplicationContext
             City = CityLabel(),
             Saved = AnswerStats.ThisWeek() is var (none, local) && none + local == 1 ? L.T("1 respuesta") : L.T("{0} respuestas", none + local),
             SavedDetail = AnswerStats.ThisWeek() is var (n, l) && n + l > 0 ? L.T("{0} sin IA · {1} con el modelo local", n, l) : "",
+            AnswerPreset = AnswerPresets.Label(AnswerPresets.Current(s)),
+            AnswerPresetHint = AnswerPresets.Describe(AnswerPresets.Current(s)),
+            AnswerCustom = AnswerPresets.Current(s) == AnswerPresets.Custom,
             TopicEngines = AnswerTopics.All.Select(t => new TopicState(t.Id, L.T(t.Label),
                 t.Fixed ? L.T("Siempre la nube") : EngineLabel(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
             Grants = Capabilities.All.Select(c => new GrantState(c.Id, c.Label, Capabilities.Allowed(s, c.Id))).ToList(),
@@ -403,8 +406,9 @@ sealed partial class TrayApp : ApplicationContext
 
     string TaskFolderLabel()
     {
-        var folder = _settings.TaskFolder ?? _settings.Launch.Folder;
-        return string.IsNullOrEmpty(folder) ? L.T("Elegir…") : Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : folder;
+        var folder = TaskFolderPath;
+        return folder == AssistantFolder ? L.T("La de Claupet")
+            : Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : folder;
     }
 
     /// <summary>La fila del modelo de voz en Ajustes: qué dice y qué enlace lleva.</summary>
@@ -681,6 +685,13 @@ sealed partial class TrayApp : ApplicationContext
                     Change(s => s.LocalIdleMinutes = int.Parse(v));
                     _localServer.IdleMinutes = _settings.LocalIdleMinutes;
                     _localServer.Stop(); // vuelve a arrancar con el nuevo tiempo en la próxima pregunta
+                });
+                break;
+            case "answerpreset":
+                ShowOptions(AnswerPresets.Choices(), AnswerPresets.Current(_settings), v =>
+                {
+                    Change(s => AnswerPresets.Apply(s, v));
+                    if (AnswerPresets.UsesLocal(v)) ModelPicked(AssistantModels.Local); // si falta, se descarga
                 });
                 break;
             case "fallback":
@@ -1342,16 +1353,9 @@ sealed partial class TrayApp : ApplicationContext
             return;
         }
         var folder = task.Folder ?? TaskFolderPath;
-        var where = folder is null ? L.T("una carpeta que elija") : L.T("«{0}»", FolderLabel(folder));
-        if (MessageBox.Show(L.T("¿Abro Claude Code en {0} con esta tarea?\n\n«{1}»", where, task.Prompt), "Claupet",
+        if (MessageBox.Show(L.T("¿Abro Claude Code en {0} con esta tarea?\n\n«{1}»", L.T("«{0}»", FolderLabel(folder)), task.Prompt), "Claupet",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-        if (folder is null)
-        {
-            using var dialog = new FolderBrowserDialog { Description = L.T("Carpeta donde se abre la sesión."), UseDescriptionForTitle = true };
-            if (dialog.ShowDialog() != DialogResult.OK) return;
-            folder = dialog.SelectedPath;
-            Change(s => s.TaskFolder = folder);
-        }
+        Prepare(folder);
         try
         {
             Launcher.Start(new LaunchOptions
@@ -1587,9 +1591,21 @@ sealed partial class TrayApp : ApplicationContext
     /// <summary>La cuenta que responde: la elegida en Ajustes o, si no, la de Uso.</summary>
     string? AssistantConfigDir => _settings.AssistantAccount ?? _settings.Selected;
 
-    /// <summary>Dónde se abren las tareas: la carpeta elegida o la última de «Nueva sesión».</summary>
-    string? TaskFolderPath =>
-        new[] { _settings.TaskFolder, _settings.Launch.Folder }.FirstOrDefault(f => !string.IsNullOrEmpty(f) && Directory.Exists(f));
+    /// <summary>
+    /// La carpeta propia del asistente para las tareas que abre en Claude Code: ~\Claupet\Tareas. No va en Documentos
+    /// porque suele estar en OneDrive, que sincronizaría todo lo que generen las tareas.
+    /// </summary>
+    static string AssistantFolder => Path.Combine(Account.Home, "Claupet", "Tareas");
+
+    /// <summary>Dónde se abren las tareas: la carpeta elegida o, si no hay (o ya no existe), la del asistente.</summary>
+    string TaskFolderPath => _settings.TaskFolder is { Length: > 0 } chosen && Directory.Exists(chosen) ? chosen : AssistantFolder;
+
+    /// <summary>La carpeta del asistente se crea recién al abrir una tarea en ella (no al mostrar los ajustes).</summary>
+    static void Prepare(string folder)
+    {
+        try { Directory.CreateDirectory(folder); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ErrorLog.Write(ex); }
+    }
 
     /// <summary>El campo para escribirle, en la nubecita, con la mascota escuchando.</summary>
     void OpenChat()
@@ -1732,7 +1748,7 @@ sealed partial class TrayApp : ApplicationContext
                 {
                     Description = L.T("Carpeta donde se abre la sesión de Claude Code con la tarea."),
                     UseDescriptionForTitle = true,
-                    InitialDirectory = TaskFolderPath ?? Account.Home,
+                    InitialDirectory = TaskFolderPath,
                 };
                 if (dialog.ShowDialog() != DialogResult.OK) return;
                 folder = dialog.SelectedPath;
@@ -1741,6 +1757,7 @@ sealed partial class TrayApp : ApplicationContext
             Change(s => s.TaskFolder = folder);
         }
         _pendingTask = null;
+        Prepare(folder);
         try
         {
             Launcher.Start(new LaunchOptions
@@ -1800,14 +1817,16 @@ sealed partial class TrayApp : ApplicationContext
     IEnumerable<(string Id, string Label)> AssistantAccountChoices() =>
         _settings.Accounts.Select(a => (a.ConfigDir, a.Label)).Prepend(("", L.T("La elegida en Uso")));
 
-    /// <summary>Las carpetas de las sesiones abiertas y la última de «Nueva sesión», y elegir otra.</summary>
+    /// <summary>La del asistente primero; después la elegida, las de las sesiones abiertas y la última de «Nueva sesión»; y elegir otra.</summary>
     IEnumerable<(string Id, string Label)> TaskFolderChoices()
     {
         var folders = (_lastSessions ?? []).Select(s => s.Cwd)
             .Prepend(_settings.Launch.Folder ?? "").Prepend(_settings.TaskFolder ?? "")
-            .Where(f => f.Length > 0 && Directory.Exists(f))
+            .Where(f => f.Length > 0 && Directory.Exists(f) && !Account.SamePath(f, AssistantFolder))
             .Distinct(StringComparer.OrdinalIgnoreCase).Take(8);
-        return folders.Select(f => (f, f.Replace(Account.Home, "~"))).Append(("…", L.T("Elegir otra carpeta…")));
+        return folders.Select(f => (f, f.Replace(Account.Home, "~")))
+            .Prepend(("", L.T("La de Claupet ({0})", AssistantFolder.Replace(Account.Home, "~"))))
+            .Append(("…", L.T("Elegir otra carpeta…")));
     }
 
     void PickTaskFolder(string folder)
@@ -1821,14 +1840,15 @@ sealed partial class TrayApp : ApplicationContext
                 {
                     Description = L.T("Carpeta donde se abren las tareas que le pida a la mascota."),
                     UseDescriptionForTitle = true,
-                    InitialDirectory = _settings.TaskFolder ?? _settings.Launch.Folder ?? Account.Home,
+                    InitialDirectory = TaskFolderPath,
                 };
                 if (dialog.ShowDialog(_form) != DialogResult.OK) return;
                 folder = dialog.SelectedPath;
             }
             finally { _form.HoldOpen = false; }
         }
-        Change(s => s.TaskFolder = folder);
+        // Vacío: la del asistente.
+        Change(s => s.TaskFolder = folder.Length == 0 ? null : folder);
     }
 
     /// <summary>La lista de una opción de Ajustes (estilo de sonido, color, animación), con la elegida marcada.</summary>

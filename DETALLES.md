@@ -214,7 +214,9 @@ en voz alta, los bloques de código con «Copiar» y de dónde vino cada respues
 línea. Las guardadas van una por archivo en `conversaciones\<id>.json`, junto a los ajustes, y no se escriben hasta
 su primer mensaje; responde el mismo asistente de la isla, con respuestas más completas. En **Ajustes**, las
 secciones (General, Avisos, Apariencia, Mascota, Asistente, Respuestas, Extensiones, Isla, Cuentas y Sistema).
-Las barras de desplazamiento son las del diseño (`Console/ScrollTheme.cs`). Es el mismo `Claupet.exe`
+Las barras de desplazamiento y los globos de ayuda son los del diseño (`Console/Themes.cs`); las listas para elegir y
+los menús, una tarjeta flotante dentro de la ventana con la elegida marcada y las acciones («Elegir otra carpeta…»)
+separadas abajo, que se maneja también con las flechas, Intro y Esc (`Console/DropList.cs`). Es el mismo `Claupet.exe`
 en otro proceso (`Claupet.exe --console`, código en `Console/`, Avalonia 11): se abre solo cuando se pide y se
 cierra con su ventana. La bandeja no carga Avalonia ni Skia; solo ese proceso. Una sola ventana a la vez:
 abrirla de nuevo la trae al frente. Tiene su propia barra de arriba (la cabeza del chibi, minimizar, maximizar y cerrar) y las esquinas
@@ -319,7 +321,7 @@ La primera línea de la respuesta puede traer una marca, que no se muestra:
 | Marca | Qué pasa |
 |---|---|
 | `[ACCION] {"accion":"…","valor":"…"}` | la app hace esa acción en el equipo (tabla de abajo) y la mascota dice la frase que sigue, o lo que falló |
-| `[TAREA] <pedido>` | lo que Claude no puede hacer con sus herramientas ni con las acciones: se ofrece abrir una sesión de Claude Code con ese pedido, en `TaskFolder` o, si vino de un archivo soltado que no pudo abrir (un Excel, por ejemplo), en la carpeta del archivo |
+| `[TAREA] <pedido>` | lo que Claude no puede hacer con sus herramientas ni con las acciones: se ofrece abrir una sesión de Claude Code con ese pedido, en `TaskFolder` (si no se eligió otra, la propia del asistente, `~\Claupet\Tareas`, que se crea al abrir la primera tarea; no va en Documentos porque suele estar en OneDrive) o, si vino de un archivo soltado que no pudo abrir (un Excel, por ejemplo), en la carpeta del archivo |
 
 Las acciones son una lista cerrada (`SystemActions.cs`), para que una frase mal entendida no pueda
 hacer otra cosa; lo demás se encarga a Claude Code:
@@ -489,6 +491,10 @@ asistente). `Answers.AskAsync` (`Core/Answers.Router.cs`) decide en cada pregunt
 3. **Cada tipo de pregunta tiene quién responde primero** (`AnswerEngines`), y si no entiende o no está
    disponible pasa al siguiente motor, sin IA → local → nube, hasta donde diga «Si no entiende»
    (`AnswerFallback`: hasta la nube, hasta el modelo local o no pasar).
+4. **Modos ya armados** (`AnswerPresets`): **Por defecto** (la tabla de abajo, hasta la nube), **Ahorro de
+   tokens** (sin IA en todo lo que la app sabe, el modelo local en lo demás, hasta la nube) y **Solo en este
+   equipo** (lo mismo, pero sin pasar a la nube). **Personalizado** muestra las filas de cada tipo. El modo no se
+   guarda: es el que coincide con lo elegido; solo «Personalizado» elegido a mano queda en `AnswerPreset`.
 
 | Tipo | Primero, por defecto | Sin IA hace |
 |---|---|---|

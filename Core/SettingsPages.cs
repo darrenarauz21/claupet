@@ -66,6 +66,10 @@ sealed record SettingsState
     public string City { get; init; } = "";
     public string Saved { get; init; } = "";
     public string SavedDetail { get; init; } = "";
+    /// <summary>El modo de «Quién responde primero» (Por defecto, Ahorro…), lo que hace y si es Personalizado (con las filas de cada tipo).</summary>
+    public string AnswerPreset { get; init; } = "";
+    public string AnswerPresetHint { get; init; } = "";
+    public bool AnswerCustom { get; init; }
     /// <summary>Cada tipo de pregunta con su motor, para Claupet Console (en la bandeja van en un menú).</summary>
     public IReadOnlyList<TopicState> TopicEngines { get; init; } = [];
     /// <summary>Cada capacidad y si tiene «Permitir siempre», para Claupet Console (en la bandeja van en un menú).</summary>
@@ -225,8 +229,12 @@ static class SettingsPages
         if (s.LocalReady) rows.Add(Choice(L.T("Liberar la memoria tras"), "localidle", s.LocalIdle));
         rows.Add(Info(L.T("Nube"), s.CloudModel));
         rows.Add(Caption(L.T("Quién responde primero")));
-        foreach (var topic in s.TopicEngines)
-            rows.Add(topic.Fixed ? Info(topic.Label, topic.Engine) : Choice(topic.Label, "topic:" + topic.Id, topic.Engine));
+        rows.Add(Choice(L.T("Modo"), "answerpreset", s.AnswerPreset));
+        rows.Add(Note(s.AnswerPresetHint));
+        // Tipo por tipo, solo en Personalizado; en los demás modos lo arma el modo.
+        if (s.AnswerCustom)
+            foreach (var topic in s.TopicEngines)
+                rows.Add(topic.Fixed ? Info(topic.Label, topic.Engine) : Choice(topic.Label, "topic:" + topic.Id, topic.Engine));
         if (s.GeneralLocal) rows.Add(Note(L.T("El modelo local puede inventar datos en las preguntas generales."), RowTone.Warn));
         rows.AddRange(
         [

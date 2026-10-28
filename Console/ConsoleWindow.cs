@@ -128,7 +128,7 @@ sealed class ConsoleWindow : Window
                 break;
             case ConsoleLink.Options:
                 var anchor = (_mode == Mode.Chat ? _chat.AnchorFor(message.Key) : _view.AnchorFor(message.Key)) ?? _main;
-                Ui.ShowOptions(message, anchor, value => _client.Send(new ConsoleMessage { Type = ConsoleLink.Pick, Token = message.Token, Value = value }));
+                Ui.ShowOptions(message, anchor, _ink, value => _client.Send(new ConsoleMessage { Type = ConsoleLink.Pick, Token = message.Token, Value = value }));
                 break;
             case ConsoleLink.Show:
                 if (message.Key is { Length: > 0 } section && _pages.Any(p => p.Id == section))
@@ -177,7 +177,7 @@ sealed class ConsoleWindow : Window
         Background = _ink.Window;
         if (rebuild)
         {
-            ScrollTheme.Paint(Resources, _ink);
+            Themes.Paint(Resources, _ink);
             _header.Child = Header();
             _rail.Child = Rail();
             _main.Background = _ink.Surface;

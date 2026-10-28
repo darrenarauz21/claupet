@@ -5,7 +5,6 @@ using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Controls.Primitives;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
@@ -70,8 +69,8 @@ sealed class ConsoleApplication : Application
     public override void Initialize()
     {
         Styles.Add(new FluentTheme());
-        // Las barras de desplazamiento de toda la Console son las del diseño: finas, sin flechas y tenues.
-        Resources[typeof(ScrollBar)] = ScrollTheme.Theme();
+        // Las barras de desplazamiento y los globos de ayuda de toda la Console son los del diseño.
+        Themes.Register(Resources);
         RequestedThemeVariant = ThemeVariant.Default; // sigue el modo claro u oscuro de Windows
         Name = "Claupet Console";
     }

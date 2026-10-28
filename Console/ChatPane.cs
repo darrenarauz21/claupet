@@ -230,12 +230,14 @@ sealed class ChatPane : Grid
     void ShowMore(Control anchor)
     {
         if (_chat is not { } chat) return;
-        var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
-        if (chat.Id == ConsoleLink.QuickChat)
-            flyout.Items.Add(MenuItem(L.T("Vaciar la conversación"), () => Ask(ConsoleLink.ChatClear)));
-        else
-            flyout.Items.Add(MenuItem(L.T("Borrar la conversación…"), () => AskDelete(true)));
-        flyout.ShowAt(anchor);
+        DropList.Entry entry = chat.Id == ConsoleLink.QuickChat
+            ? new("clear", L.T("Vaciar la conversación"))
+            : new("delete", L.T("Borrar la conversación…"), Danger: true);
+        DropList.Show(anchor, _ink, [entry], picked =>
+        {
+            if (picked == "clear") Ask(ConsoleLink.ChatClear);
+            else if (picked == "delete") AskDelete(true);
+        });
     }
 
     // ── Mensajes ────────────────────────────────────────────────────────────────────────────
@@ -559,13 +561,6 @@ sealed class ChatPane : Grid
         pill.Padding = new Thickness(14, 0);
         pill.CornerRadius = new CornerRadius(999);
         return pill;
-    }
-
-    static MenuItem MenuItem(string header, Action onClick)
-    {
-        var item = new MenuItem { Header = header };
-        item.Click += (_, _) => onClick();
-        return item;
     }
 
     static IBrush Translucent(IBrush brush, double opacity) =>

@@ -76,6 +76,60 @@ static class AnswerTopics
 }
 
 /// <summary>
+/// Los modos de Ajustes › Respuestas › Quién responde primero: un conjunto ya armado (quién responde cada tipo y hasta
+/// dónde se pasa si no entiende) o «Personalizado», tipo por tipo. El modo no se guarda: es el que coincide con lo
+/// elegido; solo «Personalizado» elegido a mano queda guardado (AnswerPreset), para que se vean las filas.
+/// </summary>
+static class AnswerPresets
+{
+    public const string Default = "defecto", Saving = "ahorro", Private = "local", Custom = "personalizado";
+
+    static readonly string[] Ready = [Default, Saving, Private];
+
+    public static IReadOnlyList<(string Id, string Label)> Choices() =>
+        [(Default, L.T("Por defecto")), (Saving, L.T("Ahorro de tokens")), (Private, L.T("Solo en este equipo")), (Custom, L.T("Personalizado"))];
+
+    public static string Label(string id) => Choices().FirstOrDefault(c => c.Id == id).Label ?? id;
+
+    public static string Describe(string id) => id switch
+    {
+        Saving => L.T("Primero la app; si no sabe, el modelo local; la nube solo si ninguno entiende. Gasta menos tokens."),
+        Private => L.T("Solo la app y el modelo local: nada va a la nube, salvo internet, archivos y tareas."),
+        Custom => L.T("Usted elige quién responde primero cada tipo de pregunta."),
+        _ => L.T("La app responde lo que sabe sola (hora, clima, estado del equipo, uso); lo demás, la nube."),
+    };
+
+    /// <summary>El modo de ahora: «Personalizado» si se eligió a mano; si no, el que coincide con lo elegido.</summary>
+    public static string Current(AppSettings s) =>
+        s.AnswerPreset == Custom ? Custom : Ready.FirstOrDefault(p => Matches(s, p)) ?? Custom;
+
+    /// <summary>Si ese modo usa el modelo local (para descargarlo al elegirlo).</summary>
+    public static bool UsesLocal(string id) => id is Saving or Private;
+
+    public static void Apply(AppSettings s, string id)
+    {
+        if (id == Custom || !Ready.Contains(id))
+        {
+            s.AnswerPreset = Custom;
+            return;
+        }
+        s.AnswerPreset = null;
+        // Solo se guarda lo que no es el de siempre (como al elegir tipo por tipo).
+        s.AnswerEngines = Engines(id).Where(e => e.Value != AnswerTopics.Find(e.Key).Default).ToDictionary(e => e.Key, e => e.Value);
+        s.AnswerFallback = Fallback(id);
+    }
+
+    static bool Matches(AppSettings s, string id) =>
+        s.AnswerFallback == Fallback(id) && Engines(id).All(e => AnswerTopics.First(s, e.Key) == e.Value);
+
+    /// <summary>Quién responde primero cada tipo (los que se pueden elegir) en ese modo.</summary>
+    static Dictionary<string, Engine> Engines(string id) => AnswerTopics.All.Where(t => !t.Fixed).ToDictionary(t => t.Id,
+        t => id == Default ? t.Default : t.None ? Engine.None : Engine.Local);
+
+    static Engine Fallback(string id) => id == Private ? Engine.Local : Engine.Cloud;
+}
+
+/// <summary>
 /// Lo que se entendió de una pregunta: su tipo y, según cuál, la acción, el lugar, el día (0 hoy, 1 mañana,
 /// 2 pasado mañana) o la respuesta ya lista (una cuenta, un saludo). Date: preguntaron la fecha, no la hora;
 /// Rain: preguntaron si va a llover.

@@ -6,7 +6,6 @@ using Avalonia.Layout;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Threading;
 using SD = System.Drawing;
 
 /// <summary>Las piezas chicas de la Console: textos, lo que se toca, el chevrón y la cabeza del chibi.</summary>
@@ -62,32 +61,14 @@ static class Ui
 
     public static void AutomationName(Control control, string name) => Avalonia.Automation.AutomationProperties.SetName(control, name);
 
-    /// <summary>La lista que mandó la bandeja, junto a lo que la pidió. reply: la elegida, o null si se cerró sin elegir.</summary>
-    public static void ShowOptions(ConsoleMessage message, Control anchor, Action<string?> reply)
-    {
-        var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
-        var picked = false;
-        foreach (var option in message.Options ?? [])
-        {
-            var item = new MenuItem { Header = option.Label, ToggleType = MenuItemToggleType.Radio, IsChecked = option.Id == message.Value };
-            var id = option.Id;
-            item.Click += (_, _) =>
-            {
-                if (picked) return;
-                picked = true;
-                reply(id);
-            };
-            flyout.Items.Add(item);
-        }
-        // El clic llega antes o después del cierre según el caso: se espera una vuelta para saber si se eligió.
-        flyout.Closed += (_, _) => Dispatcher.UIThread.Post(() =>
-        {
-            if (picked) return;
-            picked = true;
-            reply(null);
-        });
-        flyout.ShowAt(anchor);
-    }
+    /// <summary>
+    /// La lista que mandó la bandeja, junto a lo que la pidió. Las opciones que terminan en «…» hacen algo en vez de
+    /// elegir («Elegir otra carpeta…»): van separadas, abajo. reply: la elegida, o null si se cerró sin elegir.
+    /// </summary>
+    public static void ShowOptions(ConsoleMessage message, Control anchor, Ink ink, Action<string?> reply) =>
+        DropList.Show(anchor, ink,
+            (message.Options ?? []).Select(o => new DropList.Entry(o.Id, o.Label, Selected: o.Id == message.Value, Action: o.Label.EndsWith('…'))).ToList(),
+            reply);
 
     public static Avalonia.Controls.Shapes.Path Chevron(IBrush brush) => new()
     {

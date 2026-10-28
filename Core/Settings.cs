@@ -92,6 +92,8 @@ sealed class AppSettings
 
     /// <summary>Ajustes › Respuestas: quién responde primero cada tipo de pregunta (AnswerTopics); el que falta, el de siempre.</summary>
     public Dictionary<string, Engine> AnswerEngines { get; set; } = new();
+    /// <summary>«personalizado» si se eligió a mano en Respuestas; si no (null), el modo es el que coincide (AnswerPresets).</summary>
+    public string? AnswerPreset { get; set; }
     /// <summary>Si el primero no entiende, hasta dónde pasa: la nube, el modelo local o (None) a nadie.</summary>
     public Engine AnswerFallback { get; set; } = Engine.Cloud;
     /// <summary>Debajo de cada respuesta, quién respondió («Sin IA · al instante»).</summary>
