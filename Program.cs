@@ -58,10 +58,12 @@ static class Program
             {
                 Prompt = args[q + 1],
                 Voice = AssistantVoice.Mascot,
-                Model = settings.MascotModel,
+                // --modelo <id>: otro que el de la mascota (por ejemplo «auto», para ver qué elige).
+                Model = Array.IndexOf(args, "--modelo") is var qm and >= 0 && qm + 1 < args.Length ? args[qm + 1] : settings.MascotModel,
                 ConfigDir = settings.AssistantAccount ?? settings.Selected,
             };
             var result = Assistant.AskAsync(request).GetAwaiter().GetResult();
+            if (result.Model is { } used) Console.WriteLine($"[MODELO] {used}");
             if (result.Action is { } action)
                 Console.WriteLine($"[ACCION] {action.Kind} {action.Value}" + (action.Question is { } asked ? $" (pregunta: {asked})" : ""));
             if (result.Task is { } task) Console.WriteLine($"[TAREA] {task.Prompt}");

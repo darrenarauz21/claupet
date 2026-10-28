@@ -92,8 +92,17 @@ static class Answers
 
     static async Task<AssistantResult> CloudAsync(AssistantRequest request, Action<string>? onText, Action<AssistantStage>? onStage, CancellationToken cancel)
     {
+        // En «Automático» el chip dice también el esfuerzo que se eligió («Opus 5.5 · esfuerzo alto»).
+        AutoChoice? auto = null;
+        if (request.Model == AutoModel.Id)
+        {
+            auto = AutoModel.Pick(request.Prompt, request.History, request.File is not null);
+            request = request with { Model = auto.Model, Effort = auto.Effort };
+        }
         var result = await Assistant.AskAsync(request, onText, onStage, cancel);
-        return result with { By = new AnswerSource(Engine.Cloud, result.Model is { } model ? Format.Model(model) : "Claude") };
+        var label = result.Model is { } model ? Format.Model(model) : "Claude";
+        if (auto is not null) label += " · " + AutoModel.EffortLabel(auto.Level);
+        return result with { By = new AnswerSource(Engine.Cloud, label) };
     }
 
     /// <summary>La app sola: lo que entendieron las reglas (o el modelo local), sin preguntarle a nadie. null si no puede.</summary>

@@ -303,7 +303,12 @@ hooks ni MCP: la entrada baja de unos 7.400 a 1.000 tokens), `--no-session-persi
 entrada estándar y el prompt de sistema en un archivo. El chat solo puede buscar en internet
 (`WebSearch` y `WebFetch`; el clima sale de `wttr.in`); el análisis de un archivo solo puede leer su
 carpeta (`Read`, `Glob`, `Grep`). La mascota usa `MascotModel` (Haiku, de entrada) y se le pide
-responder en 220 caracteres como mucho; la isla, `IslandModel` (vacío: el modelo de sus sesiones).
+responder en 220 caracteres como mucho; la isla y las conversaciones de Claupet Console, `IslandModel` (vacío:
+el modelo de sus sesiones). Con **Automático** (`auto`), cada pregunta va al modelo y al esfuerzo que pide
+(`Core/AutoModel.cs`, reglas sobre el texto, sin gastar tokens): lo corto y suelto a Haiku con `--effort low`;
+explicar, escribir, traducir o un ejemplo de código, a Sonnet con `medium`; diseñar, analizar, comparar a fondo
+o código que falla (una traza de error), a Opus con `high`. Repreguntar sobre una respuesta con código o
+analizar un archivo no baja de Sonnet. El chip de quién respondió dice también el esfuerzo.
 **Sin internet.** Mientras arranca `claude`, la app comprueba la conexión (`Connectivity`, una
 petición corta a la API por el proxy del momento). Si no hay, lo cierra enseguida y responde ella:
 el saludo, la hora y la fecha se contestan en el equipo, y a lo demás se le dice que no hay
@@ -619,7 +624,8 @@ Solo en Windows, para probar el asistente:
 - `--preguntar <texto>`: se lo pregunta a la mascota (con su cuenta y su modelo) y escribe la
   respuesta y la acción o la tarea que pediría. Con `--hacer`, además hace la acción (sin pedir
   permiso) y, si trajo datos, le vuelve a preguntar con ellos, como el chat. Con `HTTPS_PROXY`
-  apuntando a un puerto cerrado sirve para probar las respuestas sin internet.
+  apuntando a un puerto cerrado sirve para probar las respuestas sin internet. Con `--modelo <id>`
+  usa ese modelo (`auto` para ver qué elige el modo automático) y escribe cuál respondió.
 - `--idioma <es|en>`: ese idioma solo en esta ejecución, sin tocar los ajustes (para probar las
   traducciones con `--accion` o `--preguntar`).
 - `--recordatorio <id>`: la usa la tarea programada de un recordatorio para abrir la app.

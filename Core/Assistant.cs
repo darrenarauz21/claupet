@@ -17,8 +17,9 @@ static class AssistantModels
     public static readonly (string Id, string Label)[] Choices =
         [("haiku", "Haiku"), ("sonnet", "Sonnet"), ("opus", "Opus"), ("fable", "Fable")];
 
-    /// <summary>Para la isla: primero «el de sus sesiones» (Id vacío).</summary>
-    public static readonly (string Id, string Label)[] IslandChoices = [("", L.T("El de sus sesiones")), .. Choices];
+    /// <summary>Para la isla y las conversaciones: primero «Automático» (según el esfuerzo de cada pregunta) y «el de sus sesiones» (Id vacío).</summary>
+    public static readonly (string Id, string Label)[] IslandChoices =
+        [(AutoModel.Id, L.T("Automático")), ("", L.T("El de sus sesiones")), .. Choices];
 
     /// <summary>El modelo local de Claupet (llama-server en este equipo) en vez de Claude: lo pone la app (Assistant.Local).</summary>
     public const string Local = "local";
@@ -26,6 +27,7 @@ static class AssistantModels
     public static string Label(string? id) =>
         string.IsNullOrEmpty(id) ? L.T("El de sus sesiones")
         : id == Local ? L.T("Modelo local")
+        : id == AutoModel.Id ? L.T("Automático")
         : Choices.FirstOrDefault(c => c.Id == id).Label ?? id;
 
 }
@@ -109,13 +111,15 @@ sealed record AssistantAction(string Kind, string Value, string? Question = null
 
 /// <summary>
 /// Lo que se le pide al asistente. File: un archivo o una carpeta para analizar (si no, es una
-/// pregunta). Model null: el de la cuenta. Context: el uso y las sesiones del momento, en texto.
+/// pregunta). Model null: el de la cuenta; «auto»: el que pida la pregunta (AutoModel). Effort: el --effort de
+/// Claude Code (null: el de la cuenta). Context: el uso y las sesiones del momento, en texto.
 /// </summary>
 sealed record AssistantRequest
 {
     public required string Prompt { get; init; }
     public AssistantVoice Voice { get; init; }
     public string? Model { get; init; }
+    public string? Effort { get; init; }
     public string? ConfigDir { get; init; }
     public string Context { get; init; } = "";
     public IReadOnlyList<ChatTurn> History { get; init; } = [];
@@ -249,6 +253,12 @@ static class Assistant
         string? claude = FindClaude();
         if (claude is null)
             return new AssistantResult("", null, null, null, L.T("No encontré Claude Code. ¿Está instalado y en el PATH?"));
+        // «Automático» nunca llega como --model: aquí se convierte en el modelo y el esfuerzo que pide la pregunta.
+        if (request.Model == AutoModel.Id)
+        {
+            var auto = AutoModel.Pick(request.Prompt, request.History, request.File is not null);
+            request = request with { Model = auto.Model, Effort = auto.Effort };
+        }
 
         Directory.CreateDirectory(WorkDir);
         // Uno por voz: la isla y la Console pueden estar preguntando a la vez.
@@ -266,6 +276,7 @@ static class Assistant
         else args.AddRange(["--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch",
             "--permission-mode", "dontAsk", "--permission-prompts", "none"]);
         if (!string.IsNullOrEmpty(request.Model)) args.AddRange(["--model", request.Model]);
+        if (request.Effort is { } effort && Launcher.Efforts.Contains(effort)) args.AddRange(["--effort", effort]);
 
         using var process = new Process { StartInfo = ClaudeStart(claude, request.ConfigDir, args) };
         try { process.Start(); }
