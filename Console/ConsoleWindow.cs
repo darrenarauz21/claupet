@@ -12,12 +12,12 @@ using Avalonia.Styling;
 
 /// <summary>
 /// La ventana de Claupet Console: bordes redondeados, la barra de arriba propia (con la cabeza del chibi), el riel
-/// con Chat y Ajustes y, al lado, la lista de chats o las secciones de los ajustes. Lo que muestra lo manda la
-/// bandeja; aquí no se guarda nada.
+/// con Chat, Editor y Ajustes y, al lado, la lista de chats, la de archivos o las secciones de los ajustes. Lo del chat
+/// y los ajustes lo manda la bandeja (aquí no se guardan ajustes); el editor trabaja con los archivos directamente.
 /// </summary>
 sealed class ConsoleWindow : Window
 {
-    enum Mode { Chat, Settings }
+    enum Mode { Chat, Editor, Settings }
 
     readonly ConsoleClient _client = new();
     readonly Grid _root = new() { RowDefinitions = new RowDefinitions("48,*") };
@@ -25,12 +25,19 @@ sealed class ConsoleWindow : Window
     readonly Border _header = new();
     readonly Border _rail = new();
     readonly Border _asideTop = new();
+    readonly Grid _aside = new() { RowDefinitions = new RowDefinitions("Auto,*"), Margin = new Thickness(4, 6, 10, 0) };
     readonly StackPanel _sections = new() { Spacing = 2 };
     readonly StackPanel _chatList = new() { Spacing = 2 };
     readonly ScrollViewer _asideScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     readonly SettingsView _view = new() { MaxWidth = 700, HorizontalAlignment = HorizontalAlignment.Left };
     readonly ScrollViewer _scroll = new();
     readonly ChatPane _chat = new();
+    readonly EditorPane _editor = new();
+    readonly StackPanel _fileList = new() { Spacing = 2 };
+    /// <summary>La lista de archivos del editor, a la izquierda (se muestra con el botón de la cabecera del editor).</summary>
+    bool _editorFiles;
+    /// <summary>Ya se preguntó por los cambios sin guardar: ahora sí se cierra.</summary>
+    bool _closing;
     readonly Border _main = new() { CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(1), ClipToBounds = true };
     readonly TextBlock _heading = new() { FontFamily = Ink.Display, FontSize = 19, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
     Ink _ink;
@@ -44,8 +51,8 @@ sealed class ConsoleWindow : Window
 
     public ConsoleWindow(string? section)
     {
-        // Sin sección se abre en el chat; con una, en esa sección de Ajustes.
-        _mode = section is null ? Mode.Chat : Mode.Settings;
+        // Con archivos se abre en el editor; sin sección, en el chat; con una, en esa sección de Ajustes.
+        _mode = ConsoleApp.Files.Count > 0 ? Mode.Editor : section is null ? Mode.Chat : Mode.Settings;
         _section = section ?? "general";
         Title = "Claupet Console";
         Icon = Ui.HeadIcon();
@@ -65,6 +72,25 @@ sealed class ConsoleWindow : Window
         _scroll.SizeChanged += (_, e) => _view.Width = Math.Clamp(e.NewSize.Width - 64, 0, 700);
         _view.Action += key => _client.Send(new ConsoleMessage { Type = ConsoleLink.Action, Key = key });
         _chat.Request += OnChatRequest;
+        _editor.FilesToggled += () =>
+        {
+            _editorFiles = !_editorFiles;
+            Render(rebuild: true);
+        };
+        _editor.DocsChanged += () => { if (_mode == Mode.Editor && _editorFiles) RenderFileList(); };
+        // Los atajos del editor (Ctrl+N, O, S, W) mientras se ve.
+        KeyDown += (_, e) => { if (_mode == Mode.Editor) _editor.HandleKey(e); };
+        Closing += (_, e) =>
+        {
+            if (_closing || !_editor.HasUnsaved) return;
+            e.Cancel = true;
+            SetMode(Mode.Editor);
+            _editor.AskBeforeExit(() =>
+            {
+                _closing = true;
+                Close();
+            });
+        };
         _client.ConnectedChanged += connected =>
         {
             _connected = connected;
@@ -77,17 +103,17 @@ sealed class ConsoleWindow : Window
         _root.Children.Add(_header);
         Grid.SetRow(_body, 1);
         _body.Children.Add(_rail);
-        var aside = new Grid { RowDefinitions = new RowDefinitions("Auto,*"), Margin = new Thickness(4, 6, 10, 0) };
-        aside.Children.Add(_asideTop);
+        _aside.Children.Add(_asideTop);
         Grid.SetRow(_asideScroll, 1);
-        aside.Children.Add(_asideScroll);
-        Grid.SetColumn(aside, 1);
-        _body.Children.Add(aside);
+        _aside.Children.Add(_asideScroll);
+        Grid.SetColumn(_aside, 1);
+        _body.Children.Add(_aside);
         Grid.SetColumn(_main, 2);
         _body.Children.Add(_main);
         _root.Children.Add(_body);
         Content = _root;
         Render(rebuild: true);
+        foreach (var file in ConsoleApp.Files) _editor.Open(file);
         _client.Start();
 
         PropertyChanged += (_, e) =>
@@ -104,6 +130,14 @@ sealed class ConsoleWindow : Window
     }
 
     bool IsDark() => (Application.Current?.ActualThemeVariant ?? ThemeVariant.Light) == ThemeVariant.Dark;
+
+    /// <summary>Abre esos archivos en el editor (Claupet.exe --console archivo…, con la Console ya abierta).</summary>
+    public void OpenFiles(IReadOnlyList<string> files)
+    {
+        if (files.Count == 0) return;
+        SetMode(Mode.Editor);
+        foreach (var file in files) _editor.Open(file);
+    }
 
     void OnMessage(ConsoleMessage message)
     {
@@ -137,6 +171,7 @@ sealed class ConsoleWindow : Window
                     _section = section;
                     Render(rebuild: true);
                 }
+                else if (message.Key == "editor" && _mode != Mode.Editor) SetMode(Mode.Editor);
                 else if (message.Key is null or ConsoleLink.Chat && _mode != Mode.Chat)
                 {
                     _mode = Mode.Chat;
@@ -183,14 +218,29 @@ sealed class ConsoleWindow : Window
             _main.Background = _ink.Surface;
             _main.BorderBrush = _ink.Hairline;
             _chat.SetInk(_ink);
-            _body.ColumnDefinitions[1].Width = new GridLength(_mode == Mode.Chat ? 250 : 210);
-            _asideTop.Child = _mode == Mode.Chat ? ChatsHeader() : _heading;
-            _asideScroll.Content = _mode == Mode.Chat ? _chatList : _sections;
+            _editor.SetInk(_ink);
+            _body.ColumnDefinitions[1].Width = new GridLength(_mode switch
+            {
+                Mode.Chat => 250,
+                Mode.Editor => _editorFiles ? 250 : 0,
+                _ => 210,
+            });
+            // Sin columna (el editor con los archivos ocultos), nada de ella asoma.
+            _aside.IsVisible = _body.ColumnDefinitions[1].Width.Value > 0;
+            _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Editor => FilesHeader(), _ => _heading };
+            _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Editor => _fileList, _ => _sections };
         }
         _heading.Text = L.T("Ajustes");
         _heading.Foreground = _ink.Text;
         _heading.Margin = new Thickness(10, 2, 10, 12);
 
+        // El editor no necesita a la bandeja: trabaja con los archivos.
+        if (_mode == Mode.Editor)
+        {
+            if (_editorFiles) RenderFileList();
+            if (_main.Child != _editor) _main.Child = _editor;
+            return;
+        }
         if (!_connected || _pages.Count == 0)
         {
             _sections.Children.Clear();
@@ -236,6 +286,71 @@ sealed class ConsoleWindow : Window
         _mode = mode;
         Render(rebuild: true);
         if (mode == Mode.Chat) _chat.FocusInput();
+        if (mode == Mode.Editor) _editor.FocusText();
+    }
+
+    // ── Archivos del editor ─────────────────────────────────────────────────────────────────
+
+    /// <summary>«Archivos» y el botón de uno nuevo, como «Chats».</summary>
+    Control FilesHeader()
+    {
+        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(8, 2, 6, 10) };
+        bar.Children.Add(new TextBlock
+        {
+            Text = L.T("Archivos"),
+            FontFamily = Ink.Display,
+            FontSize = 19,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = _ink.Text,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        var plus = new Viewbox
+        {
+            Width = 15,
+            Height = 15,
+            Child = new Avalonia.Controls.Shapes.Path
+            {
+                Data = Geometry.Parse("M12,5 V19 M5,12 H19"),
+                Stroke = new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)),
+                StrokeThickness = 2.2,
+                StrokeLineCap = PenLineCap.Round,
+                Width = 24,
+                Height = 24,
+            },
+        };
+        var add = Ui.Press(plus, _editor.New, (b, on) => b.Opacity = on ? 0.88 : 1, L.T("Documento nuevo"));
+        add.Width = 34;
+        add.Height = 34;
+        add.CornerRadius = new CornerRadius(999);
+        add.Background = _ink.Accent;
+        ToolTip.SetTip(add, L.T("Documento nuevo"));
+        Grid.SetColumn(add, 1);
+        bar.Children.Add(add);
+        return bar;
+    }
+
+    /// <summary>Los abiertos (el actual marcado, con su punto si tiene cambios) y, debajo, los recientes.</summary>
+    void RenderFileList()
+    {
+        _fileList.Children.Clear();
+        void Caption(string text) => _fileList.Children.Add(new TextBlock
+        {
+            Text = text,
+            FontFamily = Ink.Sans,
+            FontSize = 12,
+            FontWeight = FontWeight.Medium,
+            Foreground = _ink.Tertiary,
+            Margin = new Thickness(10, 14, 10, 4),
+        });
+        if (_editor.Docs.Count > 0) Caption(L.T("Abiertos"));
+        foreach (var doc in _editor.Docs)
+        {
+            var open = doc;
+            _fileList.Children.Add(_editor.FileRow(doc.Path ?? doc.Title, () => _editor.Select(open), doc == _editor.Current, doc.Dirty));
+        }
+        var recents = _editor.Recents.Where(p => File.Exists(p) && _editor.Docs.All(d => !string.Equals(d.Path, p, StringComparison.OrdinalIgnoreCase))).Take(10).ToList();
+        if (recents.Count > 0) Caption(L.T("Recientes"));
+        foreach (var path in recents) _fileList.Children.Add(_editor.FileRow(path, () => _editor.Open(path)));
     }
 
     // ── Chats ───────────────────────────────────────────────────────────────────────────────
@@ -389,7 +504,7 @@ sealed class ConsoleWindow : Window
     {
         var rail = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
         rail.Children.Add(RailButton(ChatIcon, L.T("Chat"), _mode == Mode.Chat, () => SetMode(Mode.Chat)));
-        rail.Children.Add(RailButton(EditorIcon, L.T("Editor"), current: false, onClick: null));
+        rail.Children.Add(RailButton(EditorIcon, L.T("Editor"), _mode == Mode.Editor, () => SetMode(Mode.Editor)));
         rail.Children.Add(RailButton(SettingsIcon, L.T("Ajustes"), _mode == Mode.Settings, () => SetMode(Mode.Settings)));
         return rail;
     }

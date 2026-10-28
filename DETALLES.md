@@ -250,6 +250,17 @@ hook) se abre desde Claupet, al frente. Si Claupet no está abierto, la Console 
 `Claupet.exe --console --seccion=<id>`, en esa sección de Ajustes (`general`, `avisos`, `apariencia`, `mascota`,
 `asistente`, `respuestas`, `isla`, `cuentas` o `sistema`).
 
+**Editor** (etapa 1). AvaloniaEdit es solo el motor; el aspecto es el del diseño (`Console/EditorPane.cs` y
+`Console/EditorLook.cs`). Arriba, el botón de la lista de archivos (abiertos y recientes, en `editor-recientes.json`
+junto a los ajustes), las pestañas con un punto si hay cambios sin guardar, **Documento** o **Código** y más opciones
+(Nuevo, Abrir, Guardar, Guardar como y Cerrar, con Ctrl+N, O, S, Mayús+S y W). En Documento, el Markdown se ve sin sus
+marcas salvo en la línea del cursor (títulos grandes, negritas, cursivas, código en línea, enlaces sin la dirección,
+viñetas «•» y citas), en una columna de 640 al centro; Markdown y texto se abren así. En Código, números de línea y los
+colores del diseño, iguales en todos los lenguajes que trae AvaloniaEdit (C#, JavaScript, Python, PowerShell, SQL,
+HTML, CSS, JSON, XML y otros). Guarda en UTF-8, primero a un archivo de al lado. Al cerrar un archivo o la ventana con
+cambios, pregunta. `Claupet.exe --console archivo…` los abre en el editor (si la Console ya está abierta, se los pasa).
+La IA en el editor, el texto propuesto, leer en voz alta y su sección de ajustes vienen en las etapas 2 y 3.
+
 Como cualquier app, Claupet tiene su acceso directo en el menú Inicio (encendido por defecto) y, si se pide, en
 el escritorio (Ajustes › General › Accesos directos; `StartMenuShortcut` y `DesktopShortcut`). Abren
 `Claupet.exe --console` con la cabeza del chibi como ícono (`claupet.ico`, junto a los ajustes); si Claupet no

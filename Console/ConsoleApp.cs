@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
@@ -19,30 +20,60 @@ static class ConsoleApp
 
     public static string? Section { get; private set; }
 
+    /// <summary>Los archivos que se pidió abrir en el editor (Claupet.exe --console archivo…).</summary>
+    public static IReadOnlyList<string> Files { get; private set; } = [];
+
+    /// <summary>Si la Console ya estaba abierta, los archivos le llegan por aquí (uno por línea) junto con la señal de venir al frente.</summary>
+    static string Handoff => DataFolder.In("console-abrir.txt");
+
     public static int Run(string[] args)
     {
         // --seccion=<id>: con qué sección de Ajustes se abre (la manda la bandeja).
         Section = args.FirstOrDefault(a => a.StartsWith("--seccion=", StringComparison.Ordinal))?["--seccion=".Length..];
+        Files = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal) && File.Exists(a)).Select(Path.GetFullPath).ToList();
         var settings = SettingsStore.Load(); // solo se lee: los cambios los guarda la bandeja
         L.Use(settings.Language);
         Claupet.Theme.SelectedPalette = settings.Palette;
 
-        // Una sola ventana: si ya hay una abierta, se le pide que venga al frente y esta se cierra.
+        // Una sola ventana: si ya hay una abierta, se le pide que venga al frente (con los archivos) y esta se cierra.
         using var mutex = new Mutex(true, @"Local\Claupet-console", out var created);
         using var wake = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\Claupet-console-mostrar");
         if (!created)
         {
+            if (Files.Count > 0)
+                try { File.AppendAllLines(Handoff, Files); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ErrorLog.Write(ex); }
             Native.AllowForeground();
             wake.Set();
             return 0;
         }
         new Thread(() =>
         {
-            while (wake.WaitOne()) Dispatcher.UIThread.Post(() => ConsoleApplication.Window?.BringToFront());
+            while (wake.WaitOne()) Dispatcher.UIThread.Post(() =>
+            {
+                ConsoleApplication.Window?.OpenFiles(TakeHandoff());
+                ConsoleApplication.Window?.BringToFront();
+            });
         }) { IsBackground = true, Name = "Mostrar la Console" }.Start();
         StartTrayIfClosed();
 
         return AppBuilder.Configure<ConsoleApplication>().UsePlatformDetect().LogToTrace().StartWithClassicDesktopLifetime(args);
+    }
+
+    static IReadOnlyList<string> TakeHandoff()
+    {
+        try
+        {
+            if (!File.Exists(Handoff)) return [];
+            var files = File.ReadAllLines(Handoff).Where(File.Exists).ToList();
+            File.Delete(Handoff);
+            return files;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ErrorLog.Write(ex);
+            return [];
+        }
     }
 
     /// <summary>
@@ -69,6 +100,8 @@ sealed class ConsoleApplication : Application
     public override void Initialize()
     {
         Styles.Add(new FluentTheme());
+        // El tema del motor del editor (sus colores los pone EditorPane).
+        Styles.Add(new StyleInclude(new Uri("avares://Claupet/")) { Source = new Uri("avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml") });
         // Las barras de desplazamiento y los globos de ayuda de toda la Console son los del diseño.
         Themes.Register(Resources);
         RequestedThemeVariant = ThemeVariant.Default; // sigue el modo claro u oscuro de Windows
