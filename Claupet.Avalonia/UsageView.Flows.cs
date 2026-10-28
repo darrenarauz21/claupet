@@ -1,17 +1,22 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Threading;
 using SD = System.Drawing;
 
 namespace Claupet;
 
 /// <summary>
-/// Vista «Actividad», antes «Flujos» (igual que en Windows): un carril por sesión con sus pasos del turno; clic en un
-/// carril abre el mapa de esa sesión. Mientras una sesión trabaja siempre hay algo animado.
+/// Vista «Actividad», antes «Sesiones» y «Flujos» (igual que en Windows): un carril por sesión con sus pasos del turno,
+/// y las inactivas plegadas al final; clic en un carril abre el detalle de esa sesión con su mapa. Mientras una sesión
+/// trabaja siempre hay algo animado.
 /// </summary>
 sealed partial class UsageView
 {
     readonly Flows.Arrivals _arrivals = new();
     string? _flowSession;
+    /// <summary>Cuándo se copió el ID de la sesión (el botón dice «Copiado» un momento).</summary>
+    long _copiedAt = -10_000;
 
     static Glyph KindGlyph(ToolKind kind) => kind switch
     {
@@ -55,15 +60,24 @@ sealed partial class UsageView
             dc.DrawEllipse(Gfx.B(color), null, new Point(center.X + (i - 1) * 5.5, center.Y - 3.5 * Flows.DotBounce(tick, i)), 1.8, 1.8);
     }
 
-    double ComposeFlows(DrawingContext? dc, double y)
+    double ComposeActivity(DrawingContext? dc, double y)
     {
+        foreach (var key in _rowBounds.Keys.Where(k => !_sessions.Any(s => "flow:" + s.SessionId == k)).ToList())
+            _rowBounds.Remove(key);
         if (_flowSession is { } id)
         {
             if (_sessions.FirstOrDefault(s => s.SessionId == id) is { } session) return ComposeFlowDetail(dc, session, y);
             _flowSession = null;
         }
 
+        if (_sessions.Count == 0)
+        {
+            Gfx.Write(dc, L.T("No hay sesiones abiertas."), Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, Gfx.Body.LineHeight));
+            return y + Gfx.Body.LineHeight + 24;
+        }
+
         var lanes = _sessions.Where(s => s.State != SessionState.Idle).ToList();
+        var idle = _sessions.Where(s => s.State == SessionState.Idle).ToList();
         if (lanes.Count == 0)
         {
             Gfx.Write(dc, L.T("No hay sesiones activas."), Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, Gfx.Body.LineHeight));
@@ -72,7 +86,23 @@ sealed partial class UsageView
         foreach (var session in lanes)
             y = ComposeLane(dc, session, y) + 8;
 
-        var hint = L.T("Clic en una sesión: su mapa completo. Sale de los archivos de Claude Code; no gasta tokens.");
+        // Las inactivas, plegadas al final: cada una con su título y desde cuándo no hace nada.
+        if (idle.Count > 0)
+        {
+            var toggleHeight = Gfx.Small.LineHeight + 12;
+            var toggle = new Rect(Pad - 4, y, Inner + 8, toggleHeight);
+            AddHit("idle", toggle, HitKind.IdleToggle);
+            if (dc is not null)
+            {
+                if (_hoverKey == "idle") Gfx.Fill(dc, _t.Hover, toggle, 8);
+                Gfx.Write(dc, L.T("Inactivas ({0})", idle.Count), Gfx.Small, _t.Tertiary, new Rect(Pad + 4, y, Inner - 8, toggleHeight), center: true);
+                Gfx.Icon(dc, _showIdle ? Glyph.ChevronUp : Glyph.ChevronDown, _t.Tertiary, new Rect(Pad + Inner - 20, y, 16, toggleHeight), 13);
+            }
+            y += toggleHeight + 8;
+            if (_showIdle) foreach (var session in idle) y = ComposeLane(dc, session, y) + 8;
+        }
+
+        var hint = L.T("Clic en una sesión: su detalle y su mapa. Sale de los archivos de Claude Code; no gasta tokens.");
         var height = Gfx.MeasureWrapped(hint, Gfx.Small, Inner, 3);
         Gfx.Write(dc, hint, Gfx.Small, _t.Tertiary, new Rect(Pad, y + 2, Inner, height), maxLines: 3);
         return y + height + 14;
@@ -81,7 +111,7 @@ sealed partial class UsageView
     double ComposeLane(DrawingContext? dc, SessionInfo s, double y)
     {
         var key = "flow:" + s.SessionId;
-        var compact = s.State == SessionState.Done;
+        var compact = s.State is SessionState.Done or SessionState.Idle;
         var top = y;
         var x0 = Pad + 4;
         var width = Inner - 8;
@@ -139,7 +169,11 @@ sealed partial class UsageView
                 parts.Add(s.Steps == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Steps));
                 if (s.LastTurn is { } d) parts.Add(Format.Duration(d));
                 return (string.Join(" · ", parts), _t.Tertiary);
+            case SessionState.Idle:
+                parts.Add(L.T("última actividad {0}", Format.Ago(s.TurnEndedAt ?? s.StatusAt)));
+                return (string.Join(" · ", parts), _t.Tertiary);
             default:
+                if (s.TodoTotal > 0) parts.Add(L.T("{0} de {1} tareas", s.TodoDone, s.TodoTotal));
                 if (s.Model is { } model) parts.Add(Format.Model(model) + (s.Effort is { } e ? " " + e : ""));
                 if (s.TurnStartedAt is { } start) parts.Add(Format.Duration(DateTimeOffset.Now - start));
                 return (string.Join(" · ", parts), _t.Tertiary);
@@ -237,7 +271,7 @@ sealed partial class UsageView
         return y;
     }
 
-    // ── Mapa de una sesión ──────────────────────────────────────────────────────────────────
+    // ── Detalle de una sesión: lo que es, su mapa y qué hacer con ella ──────────────────────
 
     double ComposeFlowDetail(DrawingContext? dc, SessionInfo s, double y)
     {
@@ -251,10 +285,21 @@ sealed partial class UsageView
             Gfx.Fill(dc, _hoverKey == "flow-back" ? _t.Hover : _t.Raised, back, 8);
             Gfx.Icon(dc, Glyph.Back, _t.Text, back, 14);
             Gfx.Write(dc, s.DisplayTitle, Gfx.Body, _t.Text, new Rect(back.Right + 10, y - 2, Inner - 40, body));
-            var sub = string.Join(" · ", new[] { Path.GetFileName(s.Cwd.TrimEnd('\\', '/')), Format.ModelLine(s) }.Where(p => !string.IsNullOrEmpty(p)));
-            Gfx.Write(dc, sub, Gfx.Small, _t.Tertiary, new Rect(back.Right + 10, y + body, Inner - 40, small));
+            var (status, color) = StatusLine(s);
+            Gfx.Write(dc, status, Gfx.Small, color, new Rect(back.Right + 10, y + body, Inner - 40, small));
         }
         y += Math.Max(28, body + small) + 14;
+
+        // El pedido, la carpeta, el modelo y cuántas interacciones lleva.
+        const double labelWidth = 84;
+        foreach (var (label, value, lines) in Details(s))
+        {
+            var height = Gfx.MeasureWrapped(value, Gfx.Small, Inner - labelWidth, lines);
+            Gfx.Write(dc, label, Gfx.Small, _t.Tertiary, new Rect(Pad, y, labelWidth, small));
+            Gfx.Write(dc, value, Gfx.Small, _t.Secondary, new Rect(Pad + labelWidth, y, Inner - labelWidth, height), maxLines: lines);
+            y += height + 5;
+        }
+        y += 14;
 
         var active = Flows.Active(s);
         var thinking = Flows.Thinking(s);
@@ -380,6 +425,55 @@ sealed partial class UsageView
             }
             y += small + 5;
         }
-        return y + 10;
+        return ComposeSessionActions(dc, s, y + 10) + 14;
+    }
+
+    /// <summary>Los botones del detalle, los mismos del menú del clic derecho.</summary>
+    double ComposeSessionActions(DrawingContext? dc, SessionInfo s, double y)
+    {
+        var copied = Environment.TickCount64 - _copiedAt < 1500;
+        (string Key, string Label)[] actions =
+        [
+            ("act:new", L.T("Nueva sesión aquí…")),
+            ("act:folder", L.T("Abrir carpeta")),
+            ("act:copy", copied ? L.T("Copiado") : L.T("Copiar ID")),
+        ];
+        const double height = 28;
+        var x = Pad;
+        foreach (var (key, label) in actions)
+        {
+            var width = Gfx.Measure(label, Gfx.Small).Width + 24;
+            if (x + width > Pad + Inner && x > Pad) { x = Pad; y += height + 6; }
+            var box = new Rect(x, y, width, height);
+            AddHit(key, box, HitKind.SessionAction, session: s);
+            if (dc is not null)
+            {
+                Gfx.Fill(dc, _hoverKey == key ? _t.Hover : _t.Raised, box, 8);
+                Gfx.Outline(dc, _t.Border, box, 8);
+                Gfx.Write(dc, label, Gfx.Small, _t.Text, box, TextAlignment.Center, center: true);
+            }
+            x += width + 6;
+        }
+        return y + height;
+    }
+
+    void RunSessionAction(string key, SessionInfo s)
+    {
+        switch (key)
+        {
+            case "act:new":
+                NewSessionRequested?.Invoke(s);
+                break;
+            case "act:folder":
+                Gfx.OpenFolder(s.Cwd);
+                break;
+            case "act:copy":
+                _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(s.SessionId);
+                _copiedAt = Environment.TickCount64;
+                InvalidateVisual();
+                // Vuelve a decir «Copiar ID» aunque no haya ninguna animación corriendo.
+                DispatcherTimer.RunOnce(InvalidateVisual, TimeSpan.FromMilliseconds(1600));
+                break;
+        }
     }
 }

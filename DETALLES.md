@@ -172,16 +172,16 @@ el aviso.
 
 | Estado | Señal | De dónde sale |
 |---|---|---|
-| Trabajando | asterisco animado y barra con destello | `status: busy` en `sessions/<pid>.json` |
+| Trabajando | asterisco animado y su carril de pasos | `status: busy` en `sessions/<pid>.json` |
 | Esperando su respuesta | punto ámbar que late | una pregunta (`AskUserQuestion`) sin responder |
 | Falló | cruz roja y el texto del error | un error de la API (`isApiErrorMessage`) después del último pedido |
 | Terminó | marca verde, «hace 5 min · 2 min 25 s» | `status: idle` y el último turno hace menos de 30 min |
 | Inactiva | punto gris, agrupadas y plegadas | `status: idle` desde hace más de 30 min |
 
-Mientras trabaja, la sesión muestra lo que está haciendo, los pasos del turno y el tiempo. Con
-lista de tareas (`TodoWrite`), la barra pasa a «3 de 5 tareas». Clic: despliega el último pedido,
-la carpeta, el modelo y las interacciones. Clic derecho: nueva sesión en esa carpeta, abrir la
-carpeta o copiar el ID. Solo se cuentan los procesos vivos: `procStart` (no documentado) se compara
+Las sesiones se ven en la vista **Actividad**. Mientras trabaja, cada una muestra su carpeta, el modelo, el
+tiempo del turno y, con lista de tareas (`TodoWrite`), «3 de 5 tareas»; debajo, su carril de pasos. Las
+inactivas van plegadas al final. Clic: el detalle de la sesión (ver Actividad). Clic derecho: nueva sesión en
+esa carpeta, abrir la carpeta o copiar el ID. Solo se cuentan los procesos vivos: `procStart` (no documentado) se compara
 con la hora de inicio del proceso en los formatos conocidos y, si el formato no se reconoce, basta
 con que el proceso exista.
 
@@ -190,8 +190,8 @@ La línea «Modelo» sale de la última respuesta del `.jsonl`: `message.model`,
 
 ## Vistas y ajustes
 
-La cabecera muestra las 3 vistas: Uso, Sesiones y Actividad. El
-engranaje del pie abre los **Ajustes rápidos**, en cinco pestañas: Avisos (notificaciones y sonido), Apariencia
+La cabecera muestra 3 vistas: **Uso** (los límites de la cuenta elegida), **Actividad** (las sesiones, cada
+una con su carril) e **Historial** (el mapa de calor de 6 meses). El engranaje del pie abre los **Ajustes rápidos**, en cinco pestañas: Avisos (notificaciones y sonido), Apariencia
 (color, mascota y su tamaño), Asistente (chat, micrófono y leer en voz alta), Isla y Sistema (idioma, inicio con
 Windows y diagnóstico); la última abierta queda en `SettingsTab`. Todas miden lo que la más alta (con lo que esté
 encendido), así que al cambiar de pestaña el cuadro no cambia de tamaño. El menú del ícono queda en abrir, actualizar, nueva
@@ -239,12 +239,21 @@ turno (los seguidos de la misma herramienta se juntan: «Leyendo ×3»). Mientra
 siempre hay algo animado: si el último paso sigue en curso, late; si ya volvió (leer o buscar duran
 milisegundos), aparece al final «Pensando…» con el asterisco que gira. Un punto viaja hacia el
 último nodo, cada paso nuevo entra creciendo y el ícono de actualizar gira mientras actualiza; en
-ámbar si la sesión le espera. Debajo, el último subagente y su estado. Clic en un carril: el mapa
-de esa sesión, con la cuenta, la sesión, cuántas veces usó cada familia de herramientas en el turno
-(línea animada hacia la herramienta en uso, o de vuelta a la sesión mientras piensa), el subagente
-y los últimos 5 pasos con su hora. Sale del mismo `.jsonl` que la vista Sesiones: cada `tool_use`
+ámbar si la sesión le espera. Debajo, el último subagente y su estado. Clic en un carril: el detalle
+de esa sesión, con su estado, el último pedido, la carpeta, el modelo y las interacciones; el mapa con la cuenta,
+la sesión y cuántas veces usó cada familia de herramientas en el turno (línea animada hacia la herramienta en
+uso, o de vuelta a la sesión mientras piensa) y el subagente; los últimos 5 pasos con su hora, y los botones
+«Nueva sesión aquí…», «Abrir carpeta» y «Copiar ID». Sale del mismo `.jsonl` que el estado de la sesión: cada `tool_use`
 es un paso y su `tool_result` lo cierra; del subagente se toman `agentType` y `totalToolUseCount`
 del resultado. La lógica común está en `Core/Flows.cs`.
+
+## Historial de uso
+
+En la vista Historial: una casilla por día de los últimos 6 meses, de todas las cuentas; el color
+sube con los tokens (entrada + escritura en caché + salida) y con el cursor encima se ve la cifra del día.
+Debajo, las del período: tokens, días activos, racha actual y más larga, el día más activo y el modelo
+favorito. Sale de los `.jsonl` de Claude Code de este equipo; como Claude Code borra los registros de más de 30
+días, la app guarda un resumen diario (solo cifras) en `history.json`.
 
 ## Nueva sesión
 
@@ -347,7 +356,7 @@ Por si la app está cerrada, cada uno crea una tarea del Programador de tareas, 
 abierta, la nueva se cierra enseguida y avisa la otra. Los que pasaron con la app cerrada se avisan al
 abrirla («se le pasó»). La tarea se borra al avisar o cancelar y, si no, sola un día después.
 
-Las consultas dejan un `sessions/<pid>.json` mientras corren; la vista Sesiones las ignora por su
+Las consultas dejan un `sessions/<pid>.json` mientras corren; la vista Actividad las ignora por su
 carpeta. El código está en `Core/Assistant.cs`; las acciones, en `SystemActions.cs`, `ScreenCapture.cs`,
 `ReminderTasks.cs` y `Core/Agenda.cs` (notas, `.ics` y recordatorios, sin interfaz). Son solo de Windows,
 como el chat.
@@ -649,7 +658,7 @@ Lo que no se pudo probar sin una Mac. Para quien la pruebe por primera vez:
 2. El número del ícono coincide con `/usage` de Claude Code. Si sale «Sin credenciales», revisar
    en **Acceso a Llaveros** que exista «Claude Code-credentials» (o «…-credentials-xxxxxxxx» si se
    usa `CLAUDE_CONFIG_DIR`) y responder **Permitir siempre** cuando macOS lo pregunte.
-3. **Sesiones** muestra las sesiones abiertas de Claude Code y su estado.
+3. **Actividad** muestra las sesiones abiertas de Claude Code y su estado.
 4. **Ajustes › Ver un aviso de ejemplo** muestra el aviso arriba a la derecha y suena.
 5. **Ajustes › Configurar…** agrega el hook; al pedir permiso una sesión nueva, sale «Necesita su permiso».
 6. **Iniciar con el sistema** crea `~/Library/LaunchAgents/local.claupet.plist`.

@@ -3,14 +3,17 @@ using System.Drawing.Drawing2D;
 namespace Claupet;
 
 /// <summary>
-/// Vista «Actividad» (antes «Flujos»): un carril por sesión con sus pasos del turno; clic en un carril abre el mapa de
-/// esa sesión. Mientras una sesión trabaja siempre hay algo animado: el paso en curso o «Pensando…»,
-/// y cada paso nuevo entra creciendo. Todo sale del .jsonl que ya se lee: no consulta la API.
+/// Vista «Actividad» (antes «Sesiones» y «Flujos»): un carril por sesión con sus pasos del turno, y las inactivas
+/// plegadas al final; clic en un carril abre el detalle de esa sesión con su mapa. Mientras una sesión trabaja
+/// siempre hay algo animado: el paso en curso o «Pensando…», y cada paso nuevo entra creciendo. Todo sale del
+/// .jsonl que ya se lee: no consulta la API.
 /// </summary>
 sealed partial class UsageForm
 {
     readonly Flows.Arrivals _arrivals = new();
     string? _flowSession;
+    /// <summary>Cuándo se copió el ID de la sesión (el botón dice «Copiado» un momento).</summary>
+    long _copiedAt = -10_000;
     Font? _tiny;
     Font Tiny => _tiny ??= Fonts.Make("Segoe UI Variable Text", 7.75f, "Segoe UI");
 
@@ -21,15 +24,23 @@ sealed partial class UsageForm
 
     LaneColors LanePalette => new(_t.Background, _t.Border, _t.Text, _t.Secondary, _t.Tertiary, _t.Accent, _t.Warn, _t.Danger);
 
-    int ComposeFlows(Graphics g, bool draw, int y)
+    int ComposeActivity(Graphics g, bool draw, int y)
     {
+        _rowBounds.Keys.Where(k => !_sessions.Any(s => "flow:" + s.SessionId == k)).ToList().ForEach(k => _rowBounds.Remove(k));
         if (_flowSession is { } id)
         {
             if (_sessions.FirstOrDefault(s => s.SessionId == id) is { } session) return ComposeFlowDetail(g, draw, session, y);
             _flowSession = null;
         }
 
+        if (_sessions.Count == 0)
+        {
+            if (draw) Write(g, L.T("No hay sesiones abiertas."), _body, _t.Tertiary, new Rectangle(Pad, y, Inner, _body.Height));
+            return y + _body.Height + S(24);
+        }
+
         var lanes = _sessions.Where(s => s.State != SessionState.Idle).ToList();
+        var idle = _sessions.Where(s => s.State == SessionState.Idle).ToList();
         if (lanes.Count == 0)
         {
             if (draw) Write(g, L.T("No hay sesiones activas."), _body, _t.Tertiary, new Rectangle(Pad, y, Inner, _body.Height));
@@ -38,17 +49,36 @@ sealed partial class UsageForm
         foreach (var session in lanes)
             y = ComposeLane(g, draw, session, y) + S(8);
 
+        // Las inactivas, plegadas al final: cada una con su título y desde cuándo no hace nada.
+        if (idle.Count > 0)
+        {
+            var height = _small.Height + S(12);
+            var toggle = new Rectangle(Pad - S(4), y, Inner + S(8), height);
+            AddHit("idle", toggle, HitKind.IdleToggle);
+            if (draw)
+            {
+                if (_hoverKey == "idle") Draw.Fill(g, _t.Hover, toggle, S(8));
+                Write(g, L.T("Inactivas ({0})", idle.Count), _small, _t.Tertiary, new Rectangle(Pad + S(4), y, Inner - S(8), height), TextFormatFlags.VerticalCenter);
+                Write(g, _showIdle ? GlyphChevronUp : GlyphChevronDown, _glyphSmall, _t.Tertiary,
+                    new Rectangle(Pad + Inner - S(20), y, S(16), height), TextFormatFlags.VerticalCenter | TextFormatFlags.Right);
+            }
+            y += height + S(8);
+            if (_showIdle)
+                foreach (var session in idle)
+                    y = ComposeLane(g, draw, session, y) + S(8);
+        }
+
         var flags = TextFormatFlags.NoPadding | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
-        var hint = L.T("Clic en una sesión: su mapa completo. Sale de los archivos de Claude Code; no gasta tokens.");
-        var height = TextRenderer.MeasureText(g, hint, _small, new Size(Inner, 0), flags).Height;
-        if (draw) TextRenderer.DrawText(g, hint, _small, new Rectangle(Pad, y + S(2), Inner, height), _t.Tertiary, flags);
-        return y + height + S(14);
+        var hint = L.T("Clic en una sesión: su detalle y su mapa. Sale de los archivos de Claude Code; no gasta tokens.");
+        var hintHeight = TextRenderer.MeasureText(g, hint, _small, new Size(Inner, 0), flags).Height;
+        if (draw) TextRenderer.DrawText(g, hint, _small, new Rectangle(Pad, y + S(2), Inner, hintHeight), _t.Tertiary, flags);
+        return y + hintHeight + S(14);
     }
 
     int ComposeLane(Graphics g, bool draw, SessionInfo s, int y)
     {
         var key = "flow:" + s.SessionId;
-        var compact = s.State == SessionState.Done;
+        var compact = s.State is SessionState.Done or SessionState.Idle;
         var top = y;
         var x0 = Pad + S(4);
         var width = Inner - S(8);
@@ -107,7 +137,11 @@ sealed partial class UsageForm
                 parts.Add(s.Steps == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Steps));
                 if (s.LastTurn is { } d) parts.Add(Format.Duration(d));
                 return (string.Join(" · ", parts), _t.Tertiary);
+            case SessionState.Idle:
+                parts.Add(L.T("última actividad {0}", Format.Ago(s.TurnEndedAt ?? s.StatusAt)));
+                return (string.Join(" · ", parts), _t.Tertiary);
             default:
+                if (s.TodoTotal > 0) parts.Add(L.T("{0} de {1} tareas", s.TodoDone, s.TodoTotal));
                 if (s.Model is { } model) parts.Add(Format.Model(model) + (s.Effort is { } e ? " " + e : ""));
                 if (s.TurnStartedAt is { } start) parts.Add(Format.Duration(DateTimeOffset.Now - start));
                 return (string.Join(" · ", parts), _t.Tertiary);
@@ -133,7 +167,7 @@ sealed partial class UsageForm
         return y;
     }
 
-    // ── Mapa de una sesión ──────────────────────────────────────────────────────────────────
+    // ── Detalle de una sesión: lo que es, su mapa y qué hacer con ella ──────────────────────
 
     int ComposeFlowDetail(Graphics g, bool draw, SessionInfo s, int y)
     {
@@ -146,10 +180,26 @@ sealed partial class UsageForm
             Draw.Fill(g, _hoverKey == "flow-back" ? _t.Hover : _t.Raised, back, S(8));
             Write(g, GlyphBack, _glyphSmall, _t.Text, back, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             Write(g, s.DisplayTitle, _body, _t.Text, new Rectangle(back.Right + S(10), y - S(2), Inner - S(40), bodyHeight), TextFormatFlags.EndEllipsis);
-            var sub = string.Join(" · ", new[] { Path.GetFileName(s.Cwd.TrimEnd('\\', '/')), Format.ModelLine(s) }.Where(p => !string.IsNullOrEmpty(p)));
-            Write(g, sub, _small, _t.Tertiary, new Rectangle(back.Right + S(10), y + bodyHeight, Inner - S(40), smallHeight), TextFormatFlags.EndEllipsis);
+            var (status, color) = StatusLine(s);
+            Write(g, status, _small, color, new Rectangle(back.Right + S(10), y + bodyHeight, Inner - S(40), smallHeight), TextFormatFlags.EndEllipsis);
         }
         y += Math.Max(S(28), bodyHeight + smallHeight) + S(14);
+
+        // El pedido, la carpeta, el modelo y cuántas interacciones lleva.
+        var labelWidth = S(84);
+        foreach (var (label, value, lines) in Details(s))
+        {
+            var flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis;
+            var measured = TextRenderer.MeasureText(g, value, _small, new Size(Inner - labelWidth, 0), flags).Height;
+            var height = Math.Min(measured, smallHeight * lines);
+            if (draw)
+            {
+                Write(g, label, _small, _t.Tertiary, new Rectangle(Pad, y, labelWidth, smallHeight));
+                TextRenderer.DrawText(g, value, _small, new Rectangle(Pad + labelWidth, y, Inner - labelWidth, height), _t.Secondary, flags);
+            }
+            y += height + S(5);
+        }
+        y += S(14);
 
         // Cuenta → sesión → herramientas; el subagente debajo de la sesión.
         var active = Flows.Active(s);
@@ -286,6 +336,55 @@ sealed partial class UsageForm
             }
             y += smallHeight + S(5);
         }
-        return y + S(10);
+        return ComposeSessionActions(g, draw, s, y + S(10)) + S(14);
+    }
+
+    /// <summary>Los botones del detalle, los mismos del menú del clic derecho.</summary>
+    int ComposeSessionActions(Graphics g, bool draw, SessionInfo s, int y)
+    {
+        var copied = Environment.TickCount64 - _copiedAt < 1500;
+        (string Key, string Label)[] actions =
+        [
+            ("act:new", L.T("Nueva sesión aquí…")),
+            ("act:folder", L.T("Abrir carpeta")),
+            ("act:copy", copied ? L.T("Copiado") : L.T("Copiar ID")),
+        ];
+        var height = S(28);
+        var x = Pad;
+        foreach (var (key, label) in actions)
+        {
+            var width = TextRenderer.MeasureText(g, label, _small, Size.Empty, Line).Width + S(24);
+            if (x + width > Pad + Inner && x > Pad) { x = Pad; y += height + S(6); }
+            var box = new Rectangle(x, y, width, height);
+            AddHit(key, box, HitKind.SessionAction, session: s);
+            if (draw)
+            {
+                Draw.Fill(g, _hoverKey == key ? _t.Hover : _t.Raised, box, S(8));
+                Draw.Outline(g, _t.Border, box, S(8));
+                Write(g, label, _small, _t.Text, box, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            }
+            x += width + S(6);
+        }
+        return y + height;
+    }
+
+    void RunSessionAction(string key, SessionInfo s)
+    {
+        switch (key)
+        {
+            case "act:new":
+                NewSessionRequested?.Invoke(s);
+                break;
+            case "act:folder":
+                OpenFolder(s.Cwd);
+                break;
+            case "act:copy":
+                Clipboard.SetText(s.SessionId);
+                _copiedAt = Environment.TickCount64;
+                Invalidate();
+                // Vuelve a decir «Copiar ID» aunque no haya ninguna animación corriendo.
+                _ = Task.Delay(1600).ContinueWith(_ => { if (IsHandleCreated) BeginInvoke(() => Invalidate()); });
+                break;
+        }
     }
 }

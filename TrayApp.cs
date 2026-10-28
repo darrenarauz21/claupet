@@ -159,8 +159,8 @@ sealed partial class TrayApp : ApplicationContext
             if (_settings.Notifications) usage.ForEach(ShowNotice);
         };
 
-        if (sessionsView) _form.ShowSessions();
-        if (activityView) _form.ShowActivity();
+        // Sesiones y Actividad son una sola vista; --sessions sigue sirviendo.
+        if (sessionsView || activityView) _form.ShowActivity();
 
         _timer.Interval = Math.Max(1, _settings.RefreshMinutes) * 60_000;
         _timer.Tick += async (_, _) => await RefreshAsync();
@@ -250,6 +250,7 @@ sealed partial class TrayApp : ApplicationContext
         try
         {
             var summary = await Task.Run(() => _activity.Scan(accounts.Select(a => a.ConfigDir)));
+            _form.SetActivity(summary);
             _activitySummary = summary;
             MaybeShowRecap(false);
         }

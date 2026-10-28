@@ -25,7 +25,7 @@ session needs you and what each one is up to, without opening a terminal.
 ## What it does
 
 - 📊 **Usage at a glance.** Your 5-hour session and weekly limits for every account, with reset
-  times. The tray icon shows your session percentage.
+  times, and six months of use in a calendar. The tray icon shows your session percentage.
 - 🧭 **Live sessions.** See which Claude Code sessions are working, waiting for you or done, and
   start a new one with the account, folder and model you want.
 - 🎬 **Activity.** Follow each session step by step, live. It all comes from local files: zero

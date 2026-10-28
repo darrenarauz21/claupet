@@ -5,8 +5,8 @@ sealed partial class UsageForm
 {
     const string GlyphSettings = "", GlyphChevronRight = "", GlyphBack = "";
 
-    /// <summary>Las pestañas de arriba, en orden: las tres caben, así que no hay que elegir.</summary>
-    static readonly View[] Tabs = [View.Usage, View.Sessions, View.Activity];
+    /// <summary>Las pestañas de arriba, en orden.</summary>
+    static readonly View[] Tabs = [View.Usage, View.Activity, View.History];
 
     /// <summary>Las pestañas de Ajustes, en orden.</summary>
     public enum SettingsTab { Avisos, Apariencia, Asistente, Isla, Sistema }
@@ -26,8 +26,8 @@ sealed partial class UsageForm
     static string ViewLabel(View view) => view switch
     {
         View.Usage => L.T("Uso"),
-        View.Sessions => L.T("Sesiones"),
         View.Activity => L.T("Actividad"),
+        View.History => L.T("Historial"),
         _ => L.T("Ajustes"),
     };
 

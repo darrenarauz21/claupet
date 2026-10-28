@@ -8,8 +8,8 @@ namespace Claupet;
 /// <summary>Las pestañas de las vistas y la vista «Ajustes» (igual que en Windows).</summary>
 sealed partial class UsageView
 {
-    /// <summary>Las pestañas de arriba, en orden: las tres caben, así que no hay que elegir.</summary>
-    static readonly View[] Tabs = [View.Usage, View.Sessions, View.Activity];
+    /// <summary>Las pestañas de arriba, en orden.</summary>
+    static readonly View[] Tabs = [View.Usage, View.Activity, View.History];
 
     /// <summary>
     /// Lo que muestra «Ajustes»; lo manda TrayController cada vez que cambia algo. Speak y Behavior son
@@ -29,8 +29,8 @@ sealed partial class UsageView
     static string ViewLabel(View view) => view switch
     {
         View.Usage => L.T("Uso"),
-        View.Sessions => L.T("Sesiones"),
         View.Activity => L.T("Actividad"),
+        View.History => L.T("Historial"),
         _ => L.T("Ajustes"),
     };
 

@@ -25,7 +25,8 @@ le necesita y en qué anda cada una, sin abrir una terminal.
 ## Qué hace
 
 - 📊 **Su uso, de un vistazo.** La sesión de 5 horas y la semana de cada cuenta, con la hora en
-  que se reinician. El ícono de la bandeja muestra el porcentaje de su sesión.
+  que se reinician, y seis meses de uso en un calendario. El ícono de la bandeja muestra el
+  porcentaje de su sesión.
 - 🧭 **Sesiones en vivo.** Qué sesiones de Claude Code están trabajando, esperándole o terminadas,
   y una sesión nueva con la cuenta, la carpeta y el modelo que usted elija.
 - 🎬 **Actividad.** Cada sesión paso a paso, en vivo. Todo sale de archivos locales: no gasta

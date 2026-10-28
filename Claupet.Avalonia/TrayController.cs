@@ -123,8 +123,8 @@ sealed class TrayController
             if (_settings.Notifications) usage.ForEach(ShowNotice);
         };
 
-        if (sessionsView) View.ShowSessions();
-        if (activityView) View.ShowActivity();
+        // Sesiones y Actividad son una sola vista; --sessions sigue sirviendo.
+        if (sessionsView || activityView) View.ShowActivity();
 
         _timer.Interval = TimeSpan.FromMinutes(Math.Max(1, _settings.RefreshMinutes));
         _timer.Tick += (_, _) => _ = RefreshAsync();
@@ -185,12 +185,11 @@ sealed class TrayController
         }
     }
 
-    /// <summary>Sigue contando aunque ya no haya mapa de calor, para que el historial no pierda días.</summary>
     async Task CountActivityAsync(List<Account> accounts)
     {
         if (_counting) return;
         _counting = true;
-        try { await Task.Run(() => _activity.Scan(accounts.Select(a => a.ConfigDir))); }
+        try { View.SetActivity(await Task.Run(() => _activity.Scan(accounts.Select(a => a.ConfigDir)))); }
         finally { _counting = false; }
     }
 
