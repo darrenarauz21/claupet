@@ -1,3 +1,5 @@
+using Microsoft.Win32;
+
 namespace Claupet;
 
 sealed partial class TrayApp : ApplicationContext
@@ -325,6 +327,7 @@ sealed partial class TrayApp : ApplicationContext
             Mascot = _pet is { } pet ? pet.Name : Mascots.Label(Mascots.ChoiceOf(s)),
             MascotSize = MascotSizes.Label(s.MascotSize),
             DesktopMascot = s.DesktopMascot,
+            MascotAllDesktops = s.MascotAllDesktops,
             Speak = s.Speak,
             FlowGestures = s.FlowGestures,
             DanceToMusic = s.DanceToMusic,
@@ -611,6 +614,10 @@ sealed partial class TrayApp : ApplicationContext
             case "extinstall": _ = PickPackageAsync(); break;
             case "size": ShowOptions(MascotSizes.Choices, _settings.MascotSize, SetMascotSize); break;
             case "desk": ToggleDesktopMascot(); break;
+            case "alldesks":
+                Toggle(s => s.MascotAllDesktops = !s.MascotAllDesktops);
+                UpdateMascotWindow(); // se rehace: el dueño de la ventana se elige al crearla
+                break;
             case "speak": ToggleSpeak(); break;
             case "flowgest": Toggle(s => s.FlowGestures = !s.FlowGestures); break;
             case "music": Toggle(s => s.DanceToMusic = !s.DanceToMusic); break;
@@ -1942,7 +1949,8 @@ sealed partial class TrayApp : ApplicationContext
     {
         var wanted = _settings.DesktopMascot;
         Music.Watch(wanted && _settings.DanceToMusic); // la música solo se mira si hay mascota que baile
-        if (_mascotWindow is { } current && (!wanted || current.Pet != _pet || (_pet is null && current.Chibi != Mascots.IsChibi)))
+        if (_mascotWindow is { } current && (!wanted || current.Pet != _pet || (_pet is null && current.Chibi != Mascots.IsChibi)
+            || current.AllDesktops != _settings.MascotAllDesktops))
         {
             _bubble.Hide();
             _chatBubble?.Close(dismissed: true);
@@ -1952,7 +1960,9 @@ sealed partial class TrayApp : ApplicationContext
         }
         if (!wanted || _mascotWindow is not null) return;
         Point? saved = _settings.DesktopMascotX is { } x && _settings.DesktopMascotY is { } y ? new Point(x, y) : null;
-        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _form.Theme.Accent, _settings.MascotSize, _pet);
+        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _form.Theme.Accent, _settings.MascotSize, _pet,
+            _settings.MascotAllDesktops);
+        WatchMascotScreens();
         _mascotWindow.LocationChanged += (_, _) =>
         {
             if (_mascotWindow is not { } moved) return;
@@ -1989,6 +1999,67 @@ sealed partial class TrayApp : ApplicationContext
         };
         _mascotWindow.Show();
         _ = ScanSessionsAsync(); // para que empiece haciendo lo que corresponde
+    }
+
+    // ── La mascota después de bloquear, suspender o apagar la pantalla ──────────────────────
+
+    bool _watchingScreens;
+
+    /// <summary>
+    /// Al volver de bloquear o suspender, o al cambiar las pantallas (apagarse un monitor lo desconecta), la mascota
+    /// vuelve a verse: enseguida y otra vez a los 2 y 6 s, cuando los monitores terminan de reconectarse.
+    /// </summary>
+    void WatchMascotScreens()
+    {
+        if (_watchingScreens) return;
+        _watchingScreens = true;
+        SystemEvents.SessionSwitch += OnSessionSwitch;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+    }
+
+    void UnwatchMascotScreens()
+    {
+        if (!_watchingScreens) return;
+        _watchingScreens = false;
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+    }
+
+    void OnSessionSwitch(object? sender, SessionSwitchEventArgs e)
+    {
+        if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.ConsoleConnect or SessionSwitchReason.RemoteConnect)
+            PostUi(RecoverMascotSoon);
+    }
+
+    void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == PowerModes.Resume) PostUi(RecoverMascotSoon);
+    }
+
+    void OnDisplaySettingsChanged(object? sender, EventArgs e) => PostUi(RecoverMascotSoon);
+
+    void RecoverMascotSoon()
+    {
+        RecoverMascot();
+        foreach (var ms in new[] { 2000, 6000 })
+        {
+            var later = new System.Windows.Forms.Timer { Interval = ms };
+            later.Tick += (_, _) =>
+            {
+                later.Dispose();
+                RecoverMascot();
+            };
+            later.Start();
+        }
+    }
+
+    void RecoverMascot()
+    {
+        if (_mascotWindow is not { IsDisposed: false } mascot) return;
+        Point? saved = _settings.DesktopMascotX is { } x && _settings.DesktopMascotY is { } y ? new Point(x, y) : null;
+        mascot.Recover(saved);
     }
 
     /// <summary>El cuadro actual de la animación en el ícono y en el pie de la ventana.</summary>
@@ -2416,6 +2487,7 @@ sealed partial class TrayApp : ApplicationContext
         _sessionTimer.Stop();
         _reminderTimer.Stop();
         _toasts.CloseAll();
+        UnwatchMascotScreens();
         _mascotWindow?.Dispose();
         _approvals?.Dispose();
         _hotkeys?.Dispose();

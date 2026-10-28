@@ -39,15 +39,22 @@ sealed class MascotWindow : Form
     /// <summary>La mascota de un paquete (Ajustes › Apariencia), en vez del chibi o la clásica.</summary>
     public PetSheet? Pet { get; }
 
-    public MascotWindow(ChibiDirector director, Point? location, bool chibi, Func<Color> accent, string size, PetSheet? pet = null)
+    /// <summary>Se ve en todos los escritorios virtuales (si no, solo en el que se creó).</summary>
+    public bool AllDesktops { get; }
+
+    public MascotWindow(ChibiDirector director, Point? location, bool chibi, Func<Color> accent, string size, PetSheet? pet = null, bool allDesktops = true)
     {
         _director = director;
         _accent = accent;
         Pet = pet;
+        AllDesktops = allDesktops;
         Chibi = chibi && pet is null;
         _unit = pet is null ? MascotSizes.Unit(size, chibi, DeviceDpi / 96f) : MascotSizes.PetUnit(size, pet.Height, DeviceDpi / 96f);
         FormBorderStyle = FormBorderStyle.None;
-        ShowInTaskbar = false;
+        // Con ShowInTaskbar en false, WinForms le pone de dueña una ventana escondida y Windows la ata al escritorio
+        // virtual de esa dueña. En todos los escritorios va sin dueña: WS_EX_TOOLWINDOW (CreateParams) la deja igual
+        // fuera de la barra de tareas y de Alt+Tab.
+        ShowInTaskbar = allDesktops;
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
         DoubleBuffered = true;
@@ -101,8 +108,24 @@ sealed class MascotWindow : Form
             // Sin WS_EX_TOPMOST al crearla (lo pone TopMost después): con él, Windows no convierte la
             // posición al DPI de una segunda pantalla con otra escala y la ventana nace fuera de ella.
             cp.ExStyle |= 0x08000000 | 0x80; // WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+            cp.ExStyle &= ~0x40000; // sin WS_EX_APPWINDOW: nunca en la barra de tareas
             return cp;
         }
+    }
+
+    /// <summary>
+    /// Después de bloquear, suspender o apagar la pantalla, Windows puede haberla movido (al desconectarse un monitor)
+    /// o dejado debajo de otras: vuelve a su lugar (o al más cercano que se vea), arriba de todo y repintada.
+    /// </summary>
+    public void Recover(Point? saved)
+    {
+        if (IsDisposed) return;
+        if (!Visible) Show();
+        if (!_dragging) Location = Fit(saved ?? Location);
+        TopMost = false;
+        TopMost = true;
+        _shown = (ChibiMove.Sleep, -1, -1);
+        Invalidate();
     }
 
     /// <summary>La posición más cercana con la ventana entera dentro de la pantalla en que cae: nunca se pierde por un borde.</summary>

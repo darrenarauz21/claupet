@@ -106,7 +106,7 @@ muestra al elegir.
 
 Se guardan en `Palette`, `Animation` (el estilo al actualizar), `Mascot` (la de los avisos),
 `DesktopMascot`, `Speak`, `FlowGestures`, `DanceToMusic`, `NoticeGestures`, `GreetOnAppear`,
-`AngryOnClicks` y `SleepWithoutSessions` del `settings.json` de la app.
+`AngryOnClicks`, `SleepWithoutSessions` y `MascotAllDesktops` del `settings.json` de la app.
 
 ## Chibi
 
@@ -160,7 +160,12 @@ a lo que corresponda (con «Gesto de los avisos» encendido).
 En los avisos asoma desde abajo (de la cabeza al ruedo). En el escritorio vive en una ventana sin
 marco ni fondo, siempre encima, que no quita el foco: se arrastra para moverla, sin salirse de la
 pantalla (la posición queda en `DesktopMascotX` y `DesktopMascotY`), y el clic derecho la abre o la
-oculta. `ChibiDirector` decide qué hace según las sesiones, que la app sigue leyendo mientras la
+oculta. Con **En todos los escritorios** (`MascotAllDesktops`, encendido de entrada) sigue a la vista al cambiar de
+escritorio virtual: en Windows la ventana va sin dueña (WinForms le pone una escondida si no va en la barra de tareas,
+y Windows la ata al escritorio de esa dueña; `WS_EX_TOOLWINDOW` la deja igual fuera de la barra y de Alt+Tab); en
+macOS pide `NSWindow.collectionBehavior` con todos los Espacios. Al volver de bloquear o suspender, o si cambian las
+pantallas (apagarse un monitor lo desconecta y Windows mueve las ventanas), vuelve a su lugar o al más cercano que se
+vea, arriba de todo y repintada: enseguida y otra vez a los 2 y 6 s, mientras los monitores se reconectan. `ChibiDirector` decide qué hace según las sesiones, que la app sigue leyendo mientras la
 mascota esté a la vista aunque las notificaciones estén apagadas. La mascota clásica también puede
 estar en el escritorio, con los mismos movimientos armados con sus dibujos de los avisos
 (`ToastSprite.PaintMove`; los gestos del flujo, en `ToastFlows`, con el objeto al costado o encima, y

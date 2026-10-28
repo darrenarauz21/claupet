@@ -69,6 +69,8 @@ sealed class AppSettings
     /// <summary>Se duerme sin sesiones abiertas; si no, se queda quieta.</summary>
     public bool SleepWithoutSessions { get; set; } = true;
     /// <summary>Dónde quedó la ventana de la mascota al arrastrarla, en pixeles de pantalla; null: junto a los avisos.</summary>
+    /// <summary>La mascota sigue a la vista al cambiar de escritorio virtual (Windows) o de Espacio (macOS).</summary>
+    public bool MascotAllDesktops { get; set; } = true;
     public int? DesktopMascotX { get; set; }
     public int? DesktopMascotY { get; set; }
     /// <summary>Tamaño de la mascota del escritorio (MascotSizes).</summary>

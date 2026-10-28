@@ -10,6 +10,7 @@ sealed record SettingsState
     public string Mascot { get; init; } = "";
     public string MascotSize { get; init; } = "";
     public bool DesktopMascot { get; init; }
+    public bool MascotAllDesktops { get; init; }
     public bool Speak { get; init; }
     public bool FlowGestures { get; init; }
     public bool DanceToMusic { get; init; }
@@ -159,6 +160,8 @@ static class SettingsPages
         if (s.DesktopMascot)
             rows.AddRange(new[]
             {
+                Switch(L.T("En todos los escritorios"), "alldesks", s.MascotAllDesktops),
+                Note(L.T("Sigue a la vista al cambiar de escritorio virtual (en macOS, de Espacio).")),
                 Switch(L.T("Gestos del flujo (lo que hace la sesión)"), "flowgest", s.FlowGestures),
                 Switch(L.T("Bailar con música"), "music", s.DanceToMusic),
                 Switch(L.T("Gesto de los avisos"), "noticegest", s.NoticeGestures),

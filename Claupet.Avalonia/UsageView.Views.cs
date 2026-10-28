@@ -20,7 +20,7 @@ sealed partial class UsageView
 
     /// <summary>Un interruptor por comportamiento de la mascota del escritorio.</summary>
     public sealed record MascotBehavior(bool FlowGestures, bool DanceToMusic, bool NoticeGestures, bool GreetOnAppear,
-        bool AngryOnClicks, bool SleepWithoutSessions);
+        bool AngryOnClicks, bool SleepWithoutSessions, bool AllDesktops);
 
     View _beforeSettings = View.Usage;
     SettingsState _settingsState = new(true, true, "", "", "", false, null, null, false, 0, "");
@@ -88,6 +88,7 @@ sealed partial class UsageView
             y = SwitchRow(dc, L.T("Saludar al aparecer"), "greet", b.GreetOnAppear, y);
             y = SwitchRow(dc, L.T("Enojarse con muchos clics"), "angry", b.AngryOnClicks, y);
             y = SwitchRow(dc, L.T("Dormir sin sesiones"), "sleep", b.SleepWithoutSessions, y);
+            y = SwitchRow(dc, L.T("En todos los escritorios"), "alldesks", b.AllDesktops, y);
         }
         if (s.Speak is { } speak) y = SwitchRow(dc, L.T("Hablar (los avisos en una nubecita)"), "speak", speak, y);
 

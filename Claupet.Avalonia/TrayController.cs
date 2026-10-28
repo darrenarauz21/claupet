@@ -226,7 +226,8 @@ sealed class TrayController
     {
         var s = _settings;
         var pack = Sounds.Packs.FirstOrDefault(p => p.Id == s.SoundPack).Label ?? s.SoundPack;
-        var behavior = new UsageView.MascotBehavior(s.FlowGestures, s.DanceToMusic, s.NoticeGestures, s.GreetOnAppear, s.AngryOnClicks, s.SleepWithoutSessions);
+        var behavior = new UsageView.MascotBehavior(s.FlowGestures, s.DanceToMusic, s.NoticeGestures, s.GreetOnAppear, s.AngryOnClicks, s.SleepWithoutSessions,
+            s.MascotAllDesktops);
         View.SetSettingsState(new UsageView.SettingsState(
                 s.Notifications, s.Sound, pack, Theme.PaletteLabel(s.Palette),
                 Mascots.Label(Mascots.ChoiceOf(s)), s.DesktopMascot, s.DesktopMascot ? s.Speak : null, s.DesktopMascot ? behavior : null,
@@ -254,6 +255,10 @@ sealed class TrayController
                 case "noticegest": Flip(s => s.NoticeGestures = !s.NoticeGestures); break;
                 case "greet": Flip(s => s.GreetOnAppear = !s.GreetOnAppear); break;
                 case "angry": Flip(s => s.AngryOnClicks = !s.AngryOnClicks); break;
+                case "alldesks":
+                    Flip(s => s.MascotAllDesktops = !s.MascotAllDesktops);
+                    UpdateMascotWindow(); // se rehace con el nuevo comportamiento
+                    break;
                 case "sleep":
                     Flip(s => s.SleepWithoutSessions = !s.SleepWithoutSessions);
                     _ = ScanSessionsAsync(); // para que se duerma o se despierte ya
@@ -373,7 +378,7 @@ sealed class TrayController
     {
         var wanted = _settings.DesktopMascot;
         Music.Watch(wanted && _settings.DanceToMusic); // la música solo se mira si hay mascota que baile
-        if (_mascotWindow is { } current && (!wanted || current.Chibi != Mascots.IsChibi))
+        if (_mascotWindow is { } current && (!wanted || current.Chibi != Mascots.IsChibi || current.AllDesktops != _settings.MascotAllDesktops))
         {
             _bubble.Hide();
             current.Close();
@@ -381,7 +386,7 @@ sealed class TrayController
         }
         if (!wanted || _mascotWindow is not null) return;
         PixelPoint? saved = _settings.DesktopMascotX is { } x && _settings.DesktopMascotY is { } y ? new PixelPoint(x, y) : null;
-        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _theme.Accent);
+        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _theme.Accent, _settings.MascotAllDesktops);
         _mascotWindow.PositionChanged += (_, _) =>
         {
             if (_bubble.IsVisible && _mascotWindow is { } moved) _bubble.Follow(moved.ScreenBounds);

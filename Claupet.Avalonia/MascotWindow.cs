@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -22,7 +23,8 @@ sealed class MascotWindow : Window
     readonly ChibiDirector _director;
     readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(40) };
     readonly MascotView _view;
-    readonly PixelPoint? _saved;
+    /// <summary>Su lugar: el guardado o el último adonde se la arrastró (a él vuelve si cambian las pantallas).</summary>
+    PixelPoint? _saved;
     PixelPoint? _pressAt;
     PixelPoint _startPosition;
     bool _dragging;
@@ -30,13 +32,17 @@ sealed class MascotWindow : Window
     /// <summary>El chibi (true) o la clásica, que se pinta con el acento de la paleta.</summary>
     public bool Chibi { get; }
 
+    /// <summary>Se ve en todos los Espacios de macOS (si no, solo en el que se abrió).</summary>
+    public bool AllDesktops { get; }
+
     /// <summary>Dónde está en la pantalla, en pixeles (para la nubecita).</summary>
     public PixelRect ScreenBounds => new(Position, PixelSize.FromSize(Bounds.Size, RenderScaling));
 
-    public MascotWindow(ChibiDirector director, PixelPoint? saved, bool chibi, Func<System.Drawing.Color> accent)
+    public MascotWindow(ChibiDirector director, PixelPoint? saved, bool chibi, Func<System.Drawing.Color> accent, bool allDesktops = true)
     {
         _director = director;
         Chibi = chibi;
+        AllDesktops = allDesktops;
         _saved = saved;
         Title = "Claupet";
         SystemDecorations = SystemDecorations.None;
@@ -66,6 +72,9 @@ sealed class MascotWindow : Window
         Opened += (_, _) =>
         {
             Position = Fit(_saved ?? DefaultPosition());
+            if (AllDesktops) JoinAllSpaces();
+            // Al apagarse o desconectarse un monitor, vuelve a su lugar (o al más cercano que se vea).
+            Screens.Changed += (_, _) => Dispatcher.UIThread.Post(() => Position = Fit(_saved ?? Position));
             _director.Appear(); // saluda al aparecer
             _timer.Start();
         };
@@ -82,6 +91,30 @@ sealed class MascotWindow : Window
         var height = (int)Math.Ceiling(Height * scale);
         return new PixelPoint(Math.Clamp(at.X, area.X, Math.Max(area.X, area.Right - width)),
             Math.Clamp(at.Y, area.Y, Math.Max(area.Y, area.Bottom - height)));
+    }
+
+    /// <summary>
+    /// En macOS, que se vea en todos los Espacios y sobre las apps a pantalla completa (NSWindow.collectionBehavior:
+    /// CanJoinAllSpaces | Stationary | FullScreenAuxiliary). Avalonia da la ventana nativa o su vista.
+    /// </summary>
+    void JoinAllSpaces()
+    {
+        if (!OperatingSystem.IsMacOS() || TryGetPlatformHandle() is not { } handle) return;
+        var window = handle.HandleDescriptor switch
+        {
+            "NSWindow" => handle.Handle,
+            "NSView" => ObjC.Send(handle.Handle, ObjC.Selector("window")),
+            _ => IntPtr.Zero,
+        };
+        if (window != IntPtr.Zero) ObjC.Send(window, ObjC.Selector("setCollectionBehavior:"), (nuint)(1 | 16 | 256));
+    }
+
+    static class ObjC
+    {
+        const string Lib = "/usr/lib/libobjc.A.dylib";
+        [DllImport(Lib, EntryPoint = "sel_registerName")] public static extern IntPtr Selector(string name);
+        [DllImport(Lib, EntryPoint = "objc_msgSend")] public static extern IntPtr Send(IntPtr receiver, IntPtr selector);
+        [DllImport(Lib, EntryPoint = "objc_msgSend")] public static extern void Send(IntPtr receiver, IntPtr selector, nuint value);
     }
 
     /// <summary>Abajo a la derecha, a la izquierda de donde salen los avisos.</summary>
@@ -120,7 +153,11 @@ sealed class MascotWindow : Window
         base.OnPointerReleased(e);
         if (e.InitialPressMouseButton != MouseButton.Left || _pressAt is null) return;
         _pressAt = null;
-        if (_dragging) Moved?.Invoke(Position);
+        if (_dragging)
+        {
+            _saved = Position;
+            Moved?.Invoke(Position);
+        }
         else _director.Poke(); // saluda; si lo siguen molestando, se enoja
     }
 
