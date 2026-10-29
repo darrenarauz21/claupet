@@ -35,6 +35,10 @@ sealed record SettingsState
     public bool Has(PlatformFeatures feature) => (Features & feature) == feature;
     public bool Notifications { get; init; } = true;
     public bool Sound { get; init; } = true;
+    /// <summary>Cómo va la creación de un tema propio («Creando…» o el error); null, nada que decir.</summary>
+    public string? ThemeStatus { get; init; }
+    /// <summary>Esta bandeja crea y borra temas propios (por ahora, la de Avalonia).</summary>
+    public bool CustomThemesHere { get; init; }
     public string SoundPack { get; init; } = "";
     public string Palette { get; init; } = "";
     public string Mascot { get; init; } = "";
@@ -216,9 +220,21 @@ static class SettingsPages
     static SettingsPage LooksPage(SettingsState s) => new("apariencia", L.T("Apariencia"), L.T("El color de la app y la mascota que lo acompaña."), "Apariencia",
     [
         new(RowKind.Choice, L.T("Color"), "palette", s.Palette, Swatch: true),
+        // Los temas propios (CustomThemes): se crean con Claude a partir de un prompt y se borran aquí, solo en la Console
+        // y donde la bandeja lo sepa hacer (CustomThemesHere).
+        .. s.CustomThemesHere
+            ? [new SettingsRow(RowKind.Input, L.T("Crear un tema…"), ThemeCreateKey, Place: RowPlace.Console, Placeholder: L.T("Por ejemplo, «otoñal, con una letra redonda»"))]
+            : Array.Empty<SettingsRow>(),
+        .. s.ThemeStatus is { } status ? [new SettingsRow(RowKind.Note, status, Tone: RowTone.Muted, Place: RowPlace.Console)] : Array.Empty<SettingsRow>(),
+        .. s.CustomThemesHere && CustomThemes.Selected is { } custom
+            ? [new SettingsRow(RowKind.Links, "", Place: RowPlace.Console, Links: [new(L.T("Borrar el tema «{0}»", custom.Name), ThemeDeleteKey)])]
+            : Array.Empty<SettingsRow>(),
         Choice(L.T("Mascota"), "mascot", s.Mascot),
         .. s.Has(PlatformFeatures.MascotSize) ? [Choice(L.T("Tamaño de la mascota"), "size", s.MascotSize)] : Array.Empty<SettingsRow>(),
     ]);
+
+    /// <summary>Las claves de las filas de los temas propios: el cuadro del prompt y el enlace para borrar el elegido.</summary>
+    public const string ThemeCreateKey = "tema-crear", ThemeDeleteKey = "tema-borrar";
 
     static SettingsPage MascotPage(SettingsState s)
     {

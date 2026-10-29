@@ -53,6 +53,7 @@ sealed partial class TrayController : IConsoleApp
             Sound = s.Sound,
             SoundPack = Sounds.Packs.FirstOrDefault(p => p.Id == s.SoundPack).Label ?? Sounds.Packs[0].Label,
             Palette = Theme.PaletteLabel(s.Palette),
+            ThemeStatus = _themeStatus, CustomThemesHere = true,
             Mascot = Mascots.Label(Mascots.ChoiceOf(s)),
             DesktopMascot = s.DesktopMascot,
             MascotSize = MascotSizes.Label(s.MascotSize),
@@ -164,7 +165,8 @@ sealed partial class TrayController : IConsoleApp
         switch (key)
         {
             case "pack": Choose(Sounds.Packs, _settings.SoundPack, id => _ = OnSettingAsync("pack:" + id)); break;
-            case "palette": Choose(Theme.Palettes.Select(p => (p.Id, p.Label)), _settings.Palette, id => _ = OnSettingAsync("palette:" + id)); break;
+            case "palette": Choose(Theme.Choices(), _settings.Palette, id => _ = OnSettingAsync("palette:" + id)); break;
+            case SettingsPages.ThemeDeleteKey: DeleteTheme(); break;
             case "mascot": Choose(Mascots.Choices, Mascots.ChoiceOf(_settings), id => _ = OnSettingAsync("mascot:" + id)); break;
             case "language": Choose(L.Choices, L.Language, id => _ = OnSettingAsync("language:" + id)); break;
             case "answerpreset":

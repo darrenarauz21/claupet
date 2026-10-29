@@ -203,5 +203,23 @@ public sealed class CustomThemesTests
         finally { (CustomThemes.Folder, Assistant.External) = (folder, null); }
     }
 
+    [Fact]
+    public void AparienciaOfreceCrearYBorrarSoloEnLaConsoleYDondeSeSabe()
+    {
+        using var dir = new TempDir();
+        var (folder, palette) = (CustomThemes.Folder, Theme.SelectedPalette);
+        CustomThemes.Folder = dir.Path;
+        try
+        {
+            Theme.SelectedPalette = CustomThemes.Save(CustomThemes.Parse(Beach)!).PaletteId;
+            var rows = SettingsPages.Build(new SettingsState { CustomThemesHere = true }).Single(p => p.Id == "apariencia").Rows;
+            Assert.Equal(RowPlace.Console, rows.Single(r => r.Key == SettingsPages.ThemeCreateKey).Place);
+            Assert.Contains(rows, r => r.Links?.Any(l => l.Key == SettingsPages.ThemeDeleteKey) == true);
+            var elsewhere = SettingsPages.Build(new SettingsState()).Single(p => p.Id == "apariencia").Rows;
+            Assert.DoesNotContain(elsewhere, r => r.Key == SettingsPages.ThemeCreateKey || r.Links is not null);
+        }
+        finally { (CustomThemes.Folder, Theme.SelectedPalette) = (folder, palette); }
+    }
+
     static double Chroma(Color c) => (Math.Max(c.R, Math.Max(c.G, c.B)) - Math.Min(c.R, Math.Min(c.G, c.B))) / 255.0;
 }

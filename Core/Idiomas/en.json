@@ -1354,5 +1354,10 @@
   "Tema propio": "Custom theme",
   "Claude no respondió.": "Claude didn't answer.",
   "La respuesta no traía un tema que se pudiera leer.": "The answer didn't include a theme that could be read.",
-  "No se pudo guardar el tema: {0}": "Couldn't save the theme: {0}"
+  "No se pudo guardar el tema: {0}": "Couldn't save the theme: {0}",
+  "Crear un tema…": "Create a theme…",
+  "Por ejemplo, «otoñal, con una letra redonda»": "For example, “autumn, with a rounder font”",
+  "Borrar el tema «{0}»": "Delete the theme “{0}”",
+  "Creando el tema con Claude…": "Creating the theme with Claude…",
+  "No se pudo crear el tema: {0}": "Couldn't create the theme: {0}"
 }
