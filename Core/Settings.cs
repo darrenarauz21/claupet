@@ -38,6 +38,8 @@ sealed class AppSettings
     /// <summary>El idioma de la app (L.Choices); null: el del sistema.</summary>
     public string? Language { get; set; }
     public List<Account> Accounts { get; set; } = new();
+    /// <summary>Los otros agentes que se siguen además de Claude Code (Codex CLI, Gemini CLI, GitHub Copilot CLI): aparte de las cuentas.</summary>
+    public List<AgentAccount> Agents { get; set; } = new();
     /// <summary>Carpetas quitadas a mano: la detección automática no las vuelve a agregar.</summary>
     public List<string> Ignored { get; set; } = new();
     public string? Selected { get; set; }
@@ -148,6 +150,13 @@ sealed class AppSettings
 
     /// <summary>La mascota del escritorio de un paquete (su id); null: la elegida en Mascot. Los avisos siguen con la de Mascot.</summary>
     public string? CustomPet { get; set; }
+
+    /// <summary>Buscar una versión nueva en las Releases de GitHub una vez al día (Ajustes › Sistema).</summary>
+    public bool CheckUpdates { get; set; } = true;
+    /// <summary>Cuándo se buscó por última vez (null: nunca).</summary>
+    public DateTimeOffset? UpdatesChecked { get; set; }
+    /// <summary>La última versión nueva de la que se avisó: de cada una se avisa una sola vez.</summary>
+    public string? UpdateNotified { get; set; }
 }
 
 /// <summary>

@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -11,6 +12,7 @@ namespace Claupet;
 /// valor lleva su extensión y su ajuste como entropía, para que no se puedan cambiar de lugar. Se guardan
 /// en claves.json, junto a las extensiones, nunca en settings.json.
 /// </summary>
+[SupportedOSPlatform("windows")]
 sealed class DpapiSecretStore : ISecretStore
 {
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };

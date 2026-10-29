@@ -13,7 +13,8 @@ static class Program
     static int Main(string[] args)
     {
         Args = args;
-        L.Use(SettingsStore.Load().Language);
+        // --idioma <es|en>: ese idioma solo en esta ejecución (para probar las traducciones sin tocar los ajustes).
+        L.Use(Array.IndexOf(args, "--idioma") is var li and >= 0 && li + 1 < args.Length ? args[li + 1] : SettingsStore.Load().Language);
 
         // Las extensiones: el anfitrión de una DLL y las herramientas para autores (ExtensionCli).
         if (ExtensionCli.TryRun(args) is { } extensionCode) return extensionCode;
@@ -27,19 +28,8 @@ static class Program
             Console.Write(Diagnostics.Report(settings, new SessionMonitor().Scan(settings.Accounts), 0));
             return 0;
         }
-        // --accion <acción> <valor>: hace esa acción de la mascota, sin pasar por Claude ni pedir permiso, y dice cómo le
-        // fue (como en Windows). Sin ventanas: no hay portapapeles de texto ni nada que esconder al capturar.
-        if (Array.IndexOf(args, "--accion") is var a and >= 0 && a + 2 < args.Length)
-        {
-            SystemActions.Desktop = OperatingSystem.IsMacOS() ? new MacDesktop(null, work => work())
-                : OperatingSystem.IsLinux() ? new LinuxDesktop(null, work => work())
-                : null;
-            var outcome = SystemActions.RunAsync(new AssistantAction(args[a + 1], args[a + 2]),
-                palette => Console.WriteLine($"color de la app: {palette}")).GetAwaiter().GetResult();
-            if (outcome.Problem is { } problem) { Console.WriteLine(problem); return 1; }
-            Console.WriteLine(outcome.Say ?? outcome.Data ?? (outcome.Look is { } look ? $"para mirar: {look}" : "listo"));
-            return 0;
-        }
+        // Los de prueba sin ventanas (--accion, --preguntar, --responder, --decir, --transcribir…): DevCommands.
+        if (DevCommands.TryRun(args) is { } devCode) return devCode;
 
         if (OperatingSystem.IsLinux() && MissingLinuxLibraries() is { Length: > 0 } missing)
         {

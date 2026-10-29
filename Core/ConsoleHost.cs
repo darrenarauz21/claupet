@@ -14,6 +14,8 @@ interface IConsoleApp
     string Palette { get; }
     /// <summary>Hace la acción de una fila; si muestra una lista para elegir, la pasa por ConsoleHost.Offer.</summary>
     void Act(string key);
+    /// <summary>Lo escrito en un cuadro de Ajustes que no es de una extensión; false si esa clave no espera texto.</summary>
+    bool Typed(string key, string value) => false;
     /// <summary>La conversación rápida: la de la isla y la nubecita donde las hay.</summary>
     ChatTarget QuickChat { get; }
     /// <summary>Lo que se ve debajo de «Conversación rápida» mientras está vacía.</summary>
@@ -36,8 +38,9 @@ interface IConsoleApp
 /// La bandeja del lado de Claupet Console, igual en Windows, Linux y macOS: atiende la tubería, le manda las secciones
 /// de Ajustes ya armadas y le pide a la bandeja las acciones de sus filas (las listas se muestran allá; solo la bandeja
 /// guarda). El chat también se atiende aquí: las conversaciones se guardan en el equipo y responde el asistente de la app.
+/// La bandeja que carga extensiones llama a UseExtensions: Ajustes › Extensiones las muestra y las maneja (ExtensionsPanel).
 /// </summary>
-sealed class ConsoleHost(IConsoleApp app) : IDisposable
+sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
 {
     readonly ConsoleServer _server = new();
     readonly ConversationStore _conversations = new(ConversationStore.DefaultFolder);
@@ -50,8 +53,15 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable
     int _token;
     /// <summary>La conversación que muestra la Console (null: está en otra parte o cerrada).</summary>
     string? _chatId;
+    ExtensionsPanel? _extensions;
 
     public bool IsConnected => _server.IsConnected;
+
+    /// <summary>Ajustes › Extensiones de la Console, para la bandeja que tiene un ExtensionManager. Una vez, al arrancar.</summary>
+    public ExtensionsPanel UseExtensions(IExtensionsHost host) => _extensions = new ExtensionsPanel(host, this);
+
+    /// <summary>El panel de las extensiones; null si esta bandeja no las carga.</summary>
+    public ExtensionsPanel? Extensions => _extensions;
 
     public void Start()
     {
@@ -72,7 +82,11 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable
         {
             case ConsoleLink.Action when message.Key is { Length: > 0 } key:
                 _key = key;
-                try { app.Act(key); }
+                try
+                {
+                    if (_extensions is { } extensions && ExtensionsPanel.Handles(key)) extensions.Act(key, message.Value);
+                    else if (message.Value is not { } typed || !app.Typed(key, typed)) app.Act(key);
+                }
                 finally { _key = null; }
                 break;
             case ConsoleLink.Pick when _picks.Remove(message.Token, out var picked):
@@ -125,7 +139,11 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable
     /// Si la acción vino de la Console, la lista se le manda para que la muestre junto a su fila y la respuesta llega
     /// como «elegir». false: la bandeja muestra su menú de siempre.
     /// </summary>
-    public bool Offer(IEnumerable<(string Id, string Label)> options, string selected, Action<string> pick, Action? onClosed)
+    public bool Offer(IEnumerable<(string Id, string Label)> options, string selected, Action<string> pick, Action? onClosed) =>
+        Offer(options.Select(o => new ConsoleOption(o.Id, o.Label)).ToList(), selected, pick, onClosed);
+
+    /// <summary>Lo mismo, con opciones que pueden ir en rojo (desinstalar, revocar).</summary>
+    public bool Offer(IReadOnlyList<ConsoleOption> options, string selected, Action<string> pick, Action? onClosed = null)
     {
         if (_key is null || !_server.IsConnected) return false;
         var token = ++_token;
@@ -136,7 +154,7 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable
             Key = _key,
             Token = token,
             Value = selected,
-            Options = options.Select(o => new ConsoleOption(o.Id, o.Label)).ToList(),
+            Options = options,
         });
         return true;
     }
@@ -145,15 +163,26 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable
     public void PushSettings(SettingsState? state = null)
     {
         if (!_server.IsConnected) return;
+        var pages = SettingsPages.Build(state ?? app.SettingsState());
         _server.Send(new ConsoleMessage
         {
             Type = ConsoleLink.State,
             Language = L.Language,
             Palette = app.Palette,
-            Pages = SettingsPages.Build(state ?? app.SettingsState()),
+            Pages = _extensions is { } extensions ? extensions.Merge(pages) : pages,
         });
         // El modelo y «leer en voz alta» también están en la cabecera del chat.
         PushChat(_chatId);
+    }
+
+    // Lo que el panel de las extensiones le pide a la Console.
+    bool IConsoleSurface.Offer(IReadOnlyList<ConsoleOption> options, string selected, Action<string> pick) => Offer(options, selected, pick);
+    void IConsoleSurface.Push() => PushSettings();
+    void IConsoleSurface.Post(Action action) => app.Post(action);
+
+    void IConsoleSurface.Show(string section)
+    {
+        if (Open(section) is { } problem) ErrorLog.Write(new InvalidOperationException(problem));
     }
 
     /// <summary>Cambió la conversación rápida (la isla respondió, se vació…): se ve en la Console si está abierta.</summary>

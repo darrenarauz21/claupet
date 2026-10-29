@@ -8,6 +8,8 @@ namespace Claupet;
 ///   --extension-pack &lt;carpeta&gt; &lt;salida.claupet&gt; [--clave &lt;clave.pem&gt; --firmante &lt;nombre&gt;]
 ///   --extension-verify &lt;paquete.claupet&gt;         qué es, si sirve y quién lo firmó
 ///   --extension-revocations &lt;clave.pem&gt; &lt;secuencia&gt; &lt;salida.json&gt; [--clave-revocada &lt;keyId&gt;]… [--version-revocada &lt;id&gt;=&lt;versión&gt;]…
+///   --release-sign &lt;clave.pem&gt; &lt;versión&gt; &lt;archivo&gt;…    la firma de cada archivo de una Release (archivo.firma), con la
+///                                                       clave de las Releases (la usa empaquetar.py --clave)
 /// </summary>
 static class ExtensionCli
 {
@@ -22,6 +24,7 @@ static class ExtensionCli
             if (Index(args, "--extension-pack") is { } p && p + 2 < args.Length) return Pack(args[p + 1], args[p + 2], Value(args, "--clave"), Value(args, "--firmante"));
             if (Index(args, "--extension-verify") is { } v && v + 1 < args.Length) return Verify(args[v + 1]);
             if (Index(args, "--extension-revocations") is { } r && r + 3 < args.Length) return Revocations(args, r);
+            if (Index(args, "--release-sign") is { } s && s + 3 < args.Length) return SignRelease(args[s + 1], args[s + 2], args[(s + 3)..]);
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or UnauthorizedAccessException
             or System.Security.Cryptography.CryptographicException or FormatException)
@@ -111,6 +114,21 @@ static class ExtensionCli
         }
         File.WriteAllText(args[at + 3], TrustStore.SignRevocations(signer, sequence, keys, versions));
         Console.WriteLine(L.T("Lista de revocaciones {0}: {1} claves, {2} extensiones.", sequence, keys.Count, versions.Count));
+        return 0;
+    }
+
+    /// <summary>Firma los archivos de una Release: deja «archivo.firma» junto a cada uno (ReleaseSignature).</summary>
+    static int SignRelease(string key, string versionText, string[] files)
+    {
+        var version = SemVersion.Parse(versionText) ?? throw new ArgumentException(L.T("Versión inválida: «{0}».", versionText));
+        using var signer = new ExtensionSigner(File.ReadAllText(key), Password, "Claupet");
+        foreach (var file in files)
+        {
+            var signature = ReleaseSignature.Sign(signer, file, version);
+            File.WriteAllText(file + ReleaseSignature.Suffix, signature.ToJson());
+            Console.WriteLine($"{Path.GetFileName(file)}{ReleaseSignature.Suffix}: {signature.Sha256}");
+        }
+        Console.WriteLine(L.T("Firmado con la clave {0}.", ExtensionKeys.Short(signer.KeyId)));
         return 0;
     }
 }

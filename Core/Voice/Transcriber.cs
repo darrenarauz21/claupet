@@ -39,7 +39,9 @@ static class ModelDownload
 {
     static long Length(string path) => File.Exists(path) ? new FileInfo(path).Length : 0;
 
-    public static async Task FetchAsync(string url, string path, long size, string sha256, IProgress<long> progress, CancellationToken cancel)
+    /// <summary>mismatch: lo que se dice si lo bajado no es lo esperado (si no, que no es el modelo).</summary>
+    public static async Task FetchAsync(string url, string path, long size, string sha256, IProgress<long> progress, CancellationToken cancel,
+        string? mismatch = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var part = path + ".parte";
@@ -61,7 +63,7 @@ static class ModelDownload
         if (Length(part) != size || !await Task.Run(() => Matches(part, sha256, cancel), cancel))
         {
             File.Delete(part);
-            throw new IOException(L.T("Lo descargado no es el modelo esperado; se borró."));
+            throw new IOException(mismatch ?? L.T("Lo descargado no es el modelo esperado; se borró."));
         }
         File.Move(part, path, overwrite: true);
     }

@@ -5,9 +5,9 @@ namespace Claupet;
 
 /// <summary>
 /// Lo que hace en el equipo (captura, calendario, volumen, ventanas…), como en Windows: SystemActions entiende el pedido
-/// y MacDesktop o LinuxDesktop lo hacen. Cada capacidad pide permiso la primera vez, en la isla, la nubecita o un
+/// y WindowsDesktop, MacDesktop o LinuxDesktop lo hacen. Cada capacidad pide permiso la primera vez, en la isla, la nubecita o un
 /// cuadro; reiniciar y apagar se confirman siempre. Los recordatorios avisan a su hora con la app abierta, y si está
-/// cerrada la abre el sistema (launchd o systemd). En Windows esta app todavía no hace acciones: las hace la de siempre.
+/// cerrada la abre el sistema (el Programador de tareas, launchd o systemd).
 /// </summary>
 sealed partial class TrayController
 {
@@ -16,7 +16,8 @@ sealed partial class TrayController
 
     void StartActions()
     {
-        SystemActions.Desktop = OperatingSystem.IsMacOS() ? new MacDesktop(() => _popup.Clipboard, WithoutClaupetAsync)
+        SystemActions.Desktop = OperatingSystem.IsWindows() ? new WindowsDesktop(WindowsUi.Create(WithoutClaupetAsync, canCrop: true))
+            : OperatingSystem.IsMacOS() ? new MacDesktop(() => _popup.Clipboard, WithoutClaupetAsync)
             : OperatingSystem.IsLinux() ? new LinuxDesktop(() => _popup.Clipboard, WithoutClaupetAsync)
             : null;
         Answers.OpenTarget = SystemActions.OpenTarget;

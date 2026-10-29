@@ -160,10 +160,11 @@ sealed partial class UsageView : Control
         var y = _view == View.Settings ? ComposeSettingsHeader(dc, 16) : ComposeHeader(dc, 16);
         y = _view switch
         {
-            View.Usage => ComposeUsage(dc, y),
+            // Debajo de lo de Claude Code, los otros agentes que se siguen (UsageView.Agents.cs).
+            View.Usage => ComposeAgentUsage(dc, ComposeUsage(dc, y)),
             View.History => ComposeHistory(dc, y),
             View.Settings => ComposeSettings(dc, y),
-            _ => ComposeActivity(dc, y),
+            _ => ComposeAgentActivity(dc, ComposeActivity(dc, y)),
         };
         return ComposeFooter(dc, y);
     }

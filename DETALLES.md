@@ -49,6 +49,7 @@ mascota (`[ACCION]`) son del protocolo y van siempre en español. Para otro idio
 | Capturas de pantalla | la carpeta Capturas de pantalla de Windows; la que mira Claude, sola en `…\Claupet\capturas` | — |
 | Credenciales de Claude Code (solo se leen) | `.credentials.json` de cada carpeta | Linux: igual; macOS: el Llavero |
 | Iniciar con el sistema | registro, `HKCU\…\Run` | Linux: `~/.config/autostart/claupet.desktop`; macOS: `~/Library/LaunchAgents/local.claupet.plist` |
+| Versión nueva bajada (hasta instalarla) | `…\Claupet\actualizacion\<versión>` | `…/Claupet/actualizacion/<versión>` |
 
 En macOS, Claude Code guarda las credenciales en el Llavero: «Claude Code-credentials» para
 `~/.claude` y, desde Claude Code 2.1.144, «Claude Code-credentials-» seguido de los 8 primeros
@@ -198,7 +199,7 @@ La línea «Modelo» sale de la última respuesta del `.jsonl`: `message.model`,
 La cabecera muestra 3 vistas: **Uso** (los límites de la cuenta elegida), **Actividad** (las sesiones, cada
 una con su carril) e **Historial** (el mapa de calor de 6 meses). El engranaje del pie abre los **Ajustes rápidos**, en cinco pestañas: Avisos (notificaciones y sonido), Apariencia
 (color, mascota y su tamaño), Asistente (chat, micrófono y leer en voz alta), Isla y Sistema (idioma, inicio con
-Windows y diagnóstico); la última abierta queda en `SettingsTab`. Todas miden lo que la más alta (con lo que esté
+Windows, diagnóstico y la versión nueva, si hay); la última abierta queda en `SettingsTab`. Todas miden lo que la más alta (con lo que esté
 encendido), así que al cambiar de pestaña el cuadro no cambia de tamaño. El menú del ícono queda en abrir, actualizar, nueva
 sesión, ajustes y salir.
 
@@ -222,7 +223,8 @@ nubecita, y las guardadas, agrupadas en Hoy, Ayer, Esta semana y Antes) y la con
 en voz alta, los bloques de código con «Copiar» y de dónde vino cada respuesta; Intro envía y Mayús+Intro hace otra
 línea. Las guardadas van una por archivo en `conversaciones\<id>.json`, junto a los ajustes, y no se escriben hasta
 su primer mensaje; responde el mismo asistente de la isla, con respuestas más completas. En **Ajustes**, las
-secciones (General, Avisos, Apariencia, Mascota, Asistente, Respuestas, Extensiones, Isla, Cuentas y Sistema).
+secciones (General, Avisos, Apariencia, Mascota, Asistente, Respuestas, Extensiones, Isla, Cuentas —las de Claude Code
+con su memoria y los otros agentes— y Sistema).
 Las barras de desplazamiento y los globos de ayuda son los del diseño (`Console/Themes.cs`); las listas para elegir y
 los menús, una tarjeta flotante dentro de la ventana con la elegida marcada y las acciones («Elegir otra carpeta…»)
 separadas abajo, que se maneja también con las flechas, Intro y Esc (`Console/DropList.cs`). Es el mismo `Claupet.exe`
@@ -238,7 +240,7 @@ que solo abre el mismo usuario de Windows (`PipeOptions.CurrentUserOnly`), con u
 | Mensaje | De | Qué lleva |
 |---|---|---|
 | `estado` | bandeja | las secciones ya armadas, el idioma y la paleta; se manda al conectarse y con cada cambio |
-| `accion` | Console | la acción de la fila que se tocó (la misma de los ajustes rápidos) |
+| `accion` | Console | la acción de la fila que se tocó (la misma de los ajustes rápidos); con lo escrito en un cuadro o el archivo elegido |
 | `opciones` | bandeja | la lista que esa acción mostraría como menú, con la elegida y un número |
 | `elegir` | Console | la opción elegida de la lista con ese número; sin valor, se cerró sin elegir |
 | `mostrar` | bandeja | traer la ventana al frente, en una sección o, sin ella, en el chat |
@@ -248,11 +250,34 @@ que solo abre el mismo usuario de Windows (`PipeOptions.CurrentUserOnly`), con u
 | `chat-enviar`, `chat-parar` | Console | mandar un mensaje o detener la respuesta |
 | `chat-borrar`, `chat-limpiar` | Console | borrar una guardada o vaciar la rápida |
 
-Lo que todavía abre una ventana de la bandeja (grabar una tecla, escribir la ciudad, las extensiones, el
-hook) se abre desde Claupet, al frente. Si Claupet no está abierto, la Console lo dice y ofrece abrirlo.
+Lo que todavía abre una ventana de la bandeja (grabar una tecla, escribir la ciudad, el hook) se abre desde
+Claupet, al frente. Si Claupet no está abierto, la Console lo dice y ofrece abrirlo.
 `Claupet.exe --console` abre en el chat (también la entrada «Claupet Console» del menú del ícono) y
 `Claupet.exe --console --seccion=<id>`, en esa sección de Ajustes (`general`, `avisos`, `apariencia`, `mascota`,
-`asistente`, `respuestas`, `isla`, `cuentas` o `sistema`).
+`asistente`, `respuestas`, `extensiones`, `isla`, `cuentas` o `sistema`) o en una página de adentro (`ext:<id>`, el
+detalle de una extensión).
+
+Además de interruptores, listas, datos, notas y enlaces, una fila puede ser un cuadro para escribir (`Input`: se manda
+con Intro o al salir del cuadro, y antes de cualquier otra acción de la página; `Secret` no muestra lo escrito) o llevar
+a otra página (`Page`: la Console va sola, sin pedirle nada a la bandeja). Una página con `Parent` es de adentro de
+esa sección: no va en la lista de la izquierda y arriba tiene «‹ sección» para volver; si deja de existir (se
+desinstaló la extensión), la Console vuelve a la sección. Un enlace con `File` pide primero un archivo con el selector
+del sistema (en el proceso de la Console) y manda su ruta; uno con `Copy` copia ese texto sin pasar por la bandeja.
+
+**Extensiones** (`Core/Extensions/ConsolePanel.cs`). Ajustes › Extensiones las muestra y las maneja todas en la Console,
+igual en cualquier bandeja que tenga un `ExtensionManager`: la bandeja implementa `IExtensionsHost` (el gestor, lo que
+hace después de instalar y la API local) y llama una vez a `ConsoleHost.UseExtensions`; `ConsoleHost` cambia la sección
+de resumen por las páginas de `ExtensionsPanel` y le pasa las acciones que empiezan con `ext-`.
+
+| Página | Qué tiene |
+|---|---|
+| `extensiones` | las instaladas (cada una lleva a su página, con su versión, qué trae, su firma y su estado), «Instalar desde archivo…», los paquetes que no se pueden leer y los comandos repetidos, las ranuras exclusivas (si alguna instalada puede ocupar una) y la API local con sus tokens («Revocar» pide confirmarlo) |
+| `ext:<id>` | encendida o apagada (y por qué se apagó), versión, autor, firma, qué trae, estado, comandos, de qué se entera, licencia, sitio, permisos, sus ajustes (interruptor, lista o cuadro según el tipo; la clave nunca vuelve a la Console: se escribe otra o se borra), su registro, su carpeta de datos y «Desinstalar…» (borrando o guardando sus datos) |
+| `ext-revision` | antes de instalar: versión (o si actualiza, vuelve atrás o reinstala), autor, qué trae, la firma y lo que significa, si corre un programa, los permisos (en una actualización, solo los nuevos), las ranuras y la mascota a usar, e «Instalar»; una firma inválida, revocada o de otra clave solo se explica |
+| `ext-token` | un token nuevo de la API local: para qué programa y qué puede pedir; ya creado, se muestra una vez con «Copiar» |
+
+Soltar un `.claupet` sobre la mascota o la isla, o elegirlo en el asistente de configuración, abre la Console en la
+revisión (la abre si estaba cerrada); nada se instala sin «Instalar». La ventana de extensiones de WinForms ya no existe.
 
 **En Linux y macOS** la Console es la misma (`Claupet --console`, la entrada «Claupet Console» del menú del ícono o
 abrir Claupet otra vez). Lo que no depende del sistema (la tubería, las conversaciones, las listas para elegir) lo hace
@@ -260,8 +285,8 @@ abrir Claupet otra vez). Lo que no depende del sistema (la tubería, las convers
 `Claupet.Avalonia/TrayController.Console.cs` en la app Avalonia): sus ajustes, sus acciones y el asistente del chat.
 Las filas de lo que un sistema todavía no tiene no aparecen (`PlatformFeatures` en `SettingsState`); una sección que
 queda sin nada dice «Todavía no está disponible en este sistema.». En la app Avalonia el chat responde como en
-Respuestas, con las acciones en el equipo en Linux y macOS (en Windows, esta app todavía no las hace: lo dice); con la
-isla, la conversación rápida es la suya (ver Asistente en Linux y macOS).
+Respuestas, con las acciones en el equipo; con la isla, la conversación rápida es la suya (ver Asistente en Linux y
+macOS).
 
 Una sola bandeja y una sola Console por persona, con mutex con nombre (`Core/ConsoleLink.cs`). En Windows van en
 `Local\` (la sesión de Windows). En Linux y macOS, .NET limita `Local\` a la sesión del proceso (cada terminal tiene
@@ -284,8 +309,42 @@ Como cualquier app, Claupet tiene su acceso directo en el menú Inicio (encendid
 el escritorio (Ajustes › General › Accesos directos; `StartMenuShortcut` y `DesktopShortcut`). Abren
 `Claupet.exe --console` con la cabeza del chibi como ícono (`claupet.ico`, junto a los ajustes); si Claupet no
 estaba abierto, la Console lo abre y se conecta cuando está listo. Al arrancar, la bandeja vuelve a crear los
-encendidos si faltan o apuntan a otra carpeta (`Shortcuts.cs`); una copia de prueba (`--preview`) no los toca.
+encendidos si faltan o apuntan a otra carpeta (`Core/Shortcuts.cs`, que usan las dos apps); una copia de prueba
+(`--preview`) no los toca.
 Abrir `Claupet.exe` otra vez, sin argumentos, con Claupet ya abierto, también trae la Console.
+
+## Temas propios
+
+Además de las seis paletas, en Ajustes › Apariencia de la Console se escribe un prompt en **Crear un tema…** («un tema
+de playa con el fondo animado», «algo otoñal con una letra más redonda») y Claude arma un tema para todo Claupet, con
+la cuenta y el modelo de la mascota (si la mascota usa el modelo local, el de la cuenta). Al terminar queda elegido;
+**Borrar el tema** lo quita y vuelve a la terracota. Cada tema es un JSON en `temas\<id>.json`, junto a los ajustes,
+y se elige en la lista **Color** como una paleta más, con el id `tema:<id>`: la bandeja y la Console lo leen del disco
+por ese id (`Core/CustomThemes.cs`). Si el archivo falta o está roto, `Theme.ForDark` e `Ink.For` vuelven a la
+terracota, sin error.
+
+El JSON lleva el id, el nombre, los colores de `Theme` para el modo claro y el oscuro, una familia de letra opcional y
+un fondo animado opcional. El diseño se respeta por código y no por confianza en el modelo:
+
+- Se lee con tolerancia (el primer objeto JSON de la respuesta, aunque venga en un bloque de código o con comas de más); lo que no
+  es un color se queda con el de Claupet.
+- Superficies sobrias: el fondo, Raised, Hover, el borde y la pista, con la luz de su modo y poco color (croma ≤ 0,10).
+- Contraste WCAG contra el fondo y contra Raised: 4,5:1 el texto, 3:1 los secundarios, el acento y los de estado; si
+  no llega, se oscurece (claro) o se aclara (oscuro) hasta que llegue. Peligro, aviso y éxito fuera de su tono (rojo,
+  ámbar, verde) vuelven a los de Claupet.
+- La letra es solo un nombre de familia; si está instalada (`FontManager`), va delante de la cadena de `Ink.Sans` y
+  `Ink.Display`. Mono no cambia.
+- El id se limpia (minúsculas, cifras y guiones; nada de barras, puntos ni nombres reservados) y la ruta siempre
+  queda dentro de `temas\`.
+
+El fondo animado sale de un catálogo cerrado de escenas en pixel art (`playa`, `lluvia`, `nieve`, `estrellas`, `hojas`,
+`burbujas`, `luciernagas`); el modelo elige la escena, sus colores, la densidad (0,1–1) y la velocidad (0,25–2). Se
+dibuja solo en la Console, detrás del contenido y con poca opacidad, a 12 cuadros por segundo, y se pausa con la
+ventana minimizada u oculta (`Console/SceneLayer.cs`). La isla, las burbujas y la mascota solo toman los colores.
+
+Para probar sin ventanas: `Claupet.exe --tema "<prompt>"` crea el tema, lo guarda e imprime el JSON validado (no lo
+elige). Por ahora se crean desde la bandeja Avalonia; la de WinForms usa sus colores si hay uno elegido,
+pero todavía no los ofrece en su lista ni los crea.
 
 ## Actividad
 
@@ -301,6 +360,31 @@ uso, o de vuelta a la sesión mientras piensa) y el subagente; los últimos 5 pa
 «Nueva sesión aquí…», «Abrir carpeta» y «Copiar ID». Sale del mismo `.jsonl` que el estado de la sesión: cada `tool_use`
 es un paso y su `tool_result` lo cierra; del subagente se toman `agentType` y `totalToolUseCount`
 del resultado. La lógica común está en `Core/Flows.cs`.
+
+## Otros agentes y la memoria de las cuentas
+
+Además de las cuentas de Claude Code, la app Avalonia sigue a otros agentes de este equipo, en una lista aparte
+(`Agents` en `settings.json`, `Core/Agents.cs`): se agregan solos si está su carpeta de siempre y en **Ajustes ›
+Cuentas** (Claupet Console) se elige cuáles seguir. Se leen al actualizar, fuera del hilo de la interfaz, solo sus 30
+sesiones más recientes; nada se escribe en sus carpetas, no se usa su cuenta ni se gastan tokens. En **Uso**, debajo de
+la cuenta elegida, cada agente con sus límites (si los escribe) y lo de hoy; en **Actividad**, sus sesiones de las últimas
+24 horas, con la carpeta y el modelo si se saben.
+
+| Agente | Carpeta | Qué se lee |
+|---|---|---|
+| Codex CLI | `$CODEX_HOME` o `~/.codex` | `sessions/AAAA/MM/DD/rollout-*.jsonl`. Los límites, del último evento `event_msg` con `payload.type` `token_count`: `payload.rate_limits.primary` y `.secondary` (`used_percent`, `window_minutes`: 299 es la sesión de 5 h y 10079 la semana; `resets_in_seconds`, contado desde el `timestamp` del evento; si ya pasó, vuelve a 0). La carpeta (`cwd`) y el id de `session_meta` y el modelo de `turn_context`, si están. Los `.jsonl.zst` no se leen |
+| Gemini CLI | `~/.gemini` | `tmp/<proyecto>/chats/session-*.json`: `sessionId`, `projectHash`, `startTime`, `lastUpdated` y `messages` (se cuentan los `user` y `gemini`; el último `model`). La carpeta del proyecto, de `projects.json` si allí está su hash. No escribe límites |
+| GitHub Copilot CLI | `$COPILOT_HOME` o `~/.copilot` | `session-state/<id>/events.jsonl`: su formato no está documentado, así que solo se cuentan sus eventos (líneas JSON) y la hora del archivo |
+
+Los formatos salen de lo que documenta la comunidad y se probaron con archivos armados a mano (`Claupet.Tests/AgentsTests.cs`),
+no con los de un equipo real: lo que no se entiende se salta.
+
+**Memoria de una cuenta de Claude nueva.** Al agregarla (con el + de Uso o «Agregar cuenta…» en la Console), si todavía no
+tiene memoria propia y hay otra cuenta, se elige: **compartida** con la elegida en Uso (su carpeta `projects`, con las
+conversaciones y la memoria de cada proyecto, pasa a ser un enlace a la de la otra: un junction en Windows, que no pide
+administrador, o un enlace simbólico en Linux y macOS; `CLAUDE.md`, skills, agentes, ajustes y credenciales siguen siendo
+propios) o **separada**. Una cuenta con su carpeta `projects` llena no se enlaza, para no perderla. Ajustes › Cuentas dice
+de cada una si su memoria es propia o compartida (`AccountMemory`).
 
 ## Historial de uso
 
@@ -360,7 +444,8 @@ La primera línea de la respuesta puede traer una marca, que no se muestra:
 
 Las acciones son una lista cerrada (`Core/Actions/SystemActions.cs`), para que una frase mal entendida no pueda
 hacer otra cosa; lo demás se encarga a Claude Code. Lo que cambia de un sistema a otro está detrás de `IDesktop`
-(`Core/Actions/Desktop.cs`): en Windows, `WindowsDesktop.cs`; en Linux y macOS, ver Asistente en Linux y macOS. El
+(`Core/Actions/Desktop.cs`): en Windows, `Core/Actions/WindowsDesktop.cs`, que usan las dos apps (cada una pone su
+recorte y su portapapeles: `DesktopUi`); en Linux y macOS, ver Asistente en Linux y macOS. El
 prompt y las reglas sin IA solo ofrecen las acciones que el sistema sabe hacer (`SystemActions.Supports`):
 
 | Acción | Valor | Cómo |
@@ -420,8 +505,8 @@ abrirla («se le pasó»). La tarea se borra al avisar o cancelar y, si no, sola
 
 Las consultas dejan un `sessions/<pid>.json` mientras corren; la vista Actividad las ignora por su
 carpeta. El código está en `Core/Assistant.cs`; las acciones, en `Core/Actions/` (qué se pide, los permisos y los
-mensajes, igual en los tres sistemas), `WindowsDesktop.cs`, `ScreenCapture.cs`, `ReminderTasks.cs` y `Core/Agenda.cs`
-(notas, `.ics` y recordatorios, sin interfaz).
+mensajes, igual en los tres sistemas; en Windows, `WindowsDesktop.cs` y `ReminderTasks.cs`), `ScreenCapture.cs` (el
+recorte y el portapapeles de la app WinForms) y `Core/Agenda.cs` (notas, `.ics` y recordatorios, sin interfaz).
 
 **La isla** (`IslandForm.cs`) es una ventana siempre oscura, con el acento de la paleta. Oculta, una
 franja invisible de 320 × 6 px en el centro del borde de arriba la hace asomar compacta (300 × 36);
@@ -492,7 +577,7 @@ pasar a fonemas. La inferencia está adaptada de su ejemplo en C# (MIT); el mode
 
 Las caritas de texto, como `(^_^)`, no se leen.
 
-**Modelo local** (`LocalModel.cs`, `TrayApp.LocalModel.cs`). Responde en la mascota o la isla sin internet
+**Modelo local** (`Core/LocalModel.cs`; en las bandejas, `TrayApp.LocalModel.cs` y `TrayController.LocalModel.cs`). Responde en la mascota o la isla sin internet
 ni tokens cuando se elige «Local: …» como su modelo (`AssistantModels.Local`), o con «La mascota responde
 con un modelo local» en el asistente de configuración. Recibe el mismo prompt de sistema que Claude, sin
 las herramientas que no tiene, y su respuesta pasa por las mismas reglas (marcas, acciones y permisos),
@@ -647,9 +732,61 @@ permiso que pregunta el sistema no la congela. Si falta un programa, la respuest
 | carpeta | las de siempre en la carpeta de usuario | las de `xdg-user-dirs` («Descargas», «Imágenes»…) |
 
 Mientras se captura, la mascota, las nubecitas y la isla se vuelven transparentes. En Linux con Wayland no hay
-«ventana»: Wayland no deja que una app mueva las de otras. En Windows, esta app todavía no hace acciones (las hace la
-de siempre): se ofrece en el paso 4. `Claupet --accion <acción> <valor>` las prueba sin abrir ventanas, como en
-Windows (sin portapapeles de texto, que necesita la app abierta).
+«ventana»: Wayland no deja que una app mueva las de otras. `Claupet --accion <acción> <valor>` las prueba sin abrir
+ventanas, como en la app WinForms (sin recorte y, en Linux y macOS, sin portapapeles de texto, que necesitan la app
+abierta).
+
+En Windows, esta app hace las mismas acciones que la de WinForms con `Core/Actions/WindowsDesktop.cs`. Lo que en
+WinForms hacía la interfaz va sin ella: la captura con BitBlt en los pixeles reales del monitor (`WinScreen`), el PNG
+con `PngImage.Save` y el portapapeles con la API de Windows (`WinClipboard`, texto e imágenes); el recorte es una
+ventana de Avalonia como la de WinForms (`CropWindow.cs`).
+
+**Teclas** (`Hotkeys.cs`, `TrayController.Hotkeys.cs`), por ahora solo en Windows: los mismos atajos globales que la app
+WinForms (`RegisterHotKey` en una ventana solo de mensajes), la tecla Copilot y la combinación grabada para hablar con
+un gancho de teclado de bajo nivel, y «Grabar…» en una ventanita propia. Sin `System.Windows.Forms.Keys`, las teclas van
+por el nombre que guarda Ajustes («Ctrl+Alt+Space») y una tabla con su código (`VirtualKeys`, sacada de ese enum). Una
+copia con `--preview` no toma las teclas: las tiene la app de siempre. En Linux (X11) y macOS, los atajos globales
+quedan para después; ahí la tecla para hablar es la que se mantiene.
+
+**Modelo local** (`TrayController.LocalModel.cs`), por ahora solo en Windows, porque llama-server se baja compilado
+para Windows: el mismo de la app WinForms (`Core/LocalModel.cs`), con su descarga, su fila en Ajustes › Respuestas, su
+lugar en las listas de modelos de la mascota y la isla, y su fila en el asistente de configuración.
+
+**Lo demás de Windows**: en los tres sistemas, el tamaño de la mascota (pixeles reales enteros por casilla, con la
+escala de la pantalla) y soltarle un archivo encima, con la misma coreografía que en WinForms: lo atrapa, camina, lanza
+la caja a la isla (`BoxFlight.cs`, `TrayController.Drops.cs`) y cuenta lo esencial. Solo en Windows, los accesos
+directos del menú Inicio y del escritorio (`Core/Shortcuts.cs`, sin `System.Drawing`: la cabeza del ícono se pinta a
+mano y se guarda con `PngImage.Save`) y la ubicación de Windows para el clima (`Core/WindowsLocation.cs`).
+
+**Extensiones** (`TrayController.Extensions.cs`), por ahora solo en Windows: el mismo gestor que la app WinForms, con
+Ajustes › Extensiones en Claupet Console (`ExtensionsPanel`), las ranuras, los comandos «/…» del chat de la mascota, los
+eventos de las sesiones, la API local y sus tokens, y las claves cifradas con DPAPI (`Core/Extensions/Secrets.cs`). Un
+paquete `.claupet` soltado sobre la mascota abre la revisión en la Console. Todavía no están la mascota de un paquete
+(queda elegida, pero esta app dibuja la de siempre) ni el audio para las que escuchan (`audio/subscribe` responde que
+aún no está).
+
+## Versiones nuevas
+
+Con **Ajustes › Sistema › Buscar actualizaciones** (`CheckUpdates`, encendido de entrada), una vez al día la app lee
+`https://api.github.com/repos/darrenarauz21/claupet/releases/latest`, sin sesión, y compara su etiqueta (`vX.Y.Z`) con
+la versión que corre (`Core/Updates.cs`). Mira cada hora si toca (`UpdatesChecked`), la primera vez al minuto de abrirse;
+sin conexión no dice nada y lo intenta la hora siguiente. De cada versión nueva avisa una vez (`UpdateNotified`) y la
+fila «Claupet X está disponible» queda en Ajustes › Sistema (también en los rápidos). Una copia de prueba (`--preview`)
+no busca.
+
+| Paso | Qué pasa |
+|---|---|
+| Sin la clave de las Releases (`Updates.ReleaseKey` vacía, como ahora) o sin archivo para este sistema | la fila lleva a la página de la Release; no se instala nada |
+| Con la clave, «Descargar e instalar…» | pregunta (con el tamaño); baja `<archivo>.firma` y comprueba que la firma sea de esa clave, de ese archivo y de esa versión; baja el archivo de este sistema (retomando si se corta) y comprueba su tamaño y su SHA-256; si algo no coincide, lo borra y no instala |
+| Lista | del `.tar.gz` de Linux saca `Claupet`; del `.zip` de macOS, `Claupet.app`; el `.exe` de Windows va tal cual. «Reiniciar ahora» o salir de la app la cambia |
+| Cambiarla | la que corre pasa a `<nombre>.anterior` y la nueva toma su lugar (Windows, Linux y macOS dejan renombrar lo que corre); si falla, vuelve la de antes. En macOS se cambia el `.app` entero y se le quita la cuarentena y se firma para el equipo (`codesign --sign -`), como `preparar-mac.sh`. Al abrir la nueva se borran la anterior y lo bajado |
+
+La firma de las Releases es la de los paquetes de extensiones (ES256, `ExtensionSigner`/`ExtensionKeys`) sobre el
+nombre del archivo, la versión, el tamaño y el SHA-256 (`ReleaseSignature`): una firma vieja no sirve para otra versión.
+La clave se crea con `Claupet --extension-keygen <clave.pem>` y su privada nunca va en el repositorio; la pública (el
+`.pub.pem` sin las líneas BEGIN y END) va en `Updates.ReleaseKey`. `empaquetar.py --clave <clave.pem>` firma cada
+paquete (`Claupet --release-sign <clave.pem> <versión> <archivo>…`, que deja `<archivo>.firma`): las firmas se suben a la
+Release junto a los paquetes.
 
 ## Avisos
 
@@ -695,18 +832,21 @@ Requiere el SDK de .NET 8.
 dotnet build Claupet.csproj -c Release                   # Windows (WinForms)
 dotnet build Claupet.Avalonia -c Release                # Linux y macOS (corre también en Windows)
 python herramientas/empaquetar.py                       # los paquetes de los tres sistemas en paquetes/
+python herramientas/empaquetar.py --clave <clave.pem>   # y la firma de cada uno (<paquete>.firma), ver Versiones nuevas
 ```
 
 `empaquetar.py` (solo biblioteca estándar) genera en `paquetes/` `Claupet-windows-x64.exe`,
 `Claupet-linux-x64.tar.gz` y `Claupet-macos-{arm64,x64}.zip`, con los permisos de ejecución
 y el ícono de cada sistema. Todos son autocontenidos: no piden instalar .NET. Los nombres no llevan
 versión porque el README enlaza a `releases/latest/download/<archivo>`: en cada versión se crea una
-Release en GitHub (etiqueta `vX.Y.Z`) y se adjuntan esos cuatro archivos con el mismo nombre.
+Release en GitHub (etiqueta `vX.Y.Z`) y se adjuntan esos cuatro archivos con el mismo nombre (y, con `--clave`, sus
+cuatro `.firma`, que la app necesita para instalarse sola).
 En Linux la app lleva su propia ICU (no todas las distribuciones la traen). En macOS no se puede
 firmar desde Windows: `preparar-mac.sh` la firma solo para ese equipo (`codesign --sign -`) y le
 quita la cuarentena.
 
-Opciones de línea de comandos (las dos apps):
+Opciones de línea de comandos (las dos apps; en la de Avalonia, los modos de prueba sin ventanas están en
+`DevCommands.cs`, y `--modelo-local`, por ahora, solo en Windows):
 
 - `--show`: abre la ventana al arrancar; `--preview`: igual, aunque haya otra instancia.
 - `--sessions`, `--activity`: abre en esa vista. `--setup`: con `--preview`, muestra el asistente.
@@ -767,9 +907,12 @@ registradas y vivas, y el hook. Lo habitual:
 - Linux: Avalonia 11 necesita `libICE`, `libSM` y `fontconfig` (vienen en los escritorios
   habituales). En GNOME, el ícono de la bandeja necesita la extensión AppIndicator.
 - Windows 11 deja los íconos nuevos en el desbordamiento (^).
-- Los atajos (el del chat y la tecla Copilot), las extensiones y el modelo local son solo de Windows por ahora. En
-  Linux y macOS ya están Claupet Console, el chat con la mascota, la isla, la voz y las acciones en el equipo; lo
-  demás, en las etapas siguientes.
+- Las extensiones y el modelo local son solo de Windows por ahora, y los atajos (el del chat y la tecla Copilot) aún no
+  están en Linux ni en macOS (en la app Avalonia en Windows ya están el modelo local, los atajos y las extensiones, sin
+  la mascota de un paquete ni el audio para las que escuchan). Ahí ya están Claupet
+  Console, el chat con la mascota, la isla, la voz y las acciones en el equipo; lo demás, en las etapas siguientes.
+- Los otros agentes (Codex CLI, Gemini CLI, GitHub Copilot CLI) y la elección de la memoria al agregar una cuenta están
+  solo en la app Avalonia; la de Windows (WinForms) no los muestra. Sus formatos no se comprobaron con archivos reales.
 - Las acciones de Linux se probaron con `--accion` en WSL (Ubuntu, sin escritorio): estado, rechazos y avisos de
   programas que faltan. Con un escritorio real (GNOME, Plasma) y en macOS, sin probar todavía.
 - En Linux con Wayland, la isla y la tecla para hablar solo ven el cursor y el teclado mientras están sobre una app

@@ -11,6 +11,7 @@ namespace Claupet;
 /// avisa la que estaba. Con el equipo apagado a esa hora, corre al encenderlo («StartWhenAvailable»). La
 /// tarea se borra al avisar o cancelar el recordatorio y, si no, sola un día después.
 /// </summary>
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 static class ReminderTasks
 {
     const string FolderName = "Claupet";
@@ -19,7 +20,7 @@ static class ReminderTasks
 
     public static void Create(Reminder reminder)
     {
-        var exe = Environment.ProcessPath ?? Application.ExecutablePath;
+        var exe = Environment.ProcessPath ?? "";
         var at = reminder.At.ToString("yyyy-MM-dd'T'HH:mm:ss");
         var end = reminder.At.AddDays(1).ToString("yyyy-MM-dd'T'HH:mm:ss");
         var xml = $"""

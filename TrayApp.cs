@@ -82,6 +82,7 @@ sealed partial class TrayApp : ApplicationContext
         _settings.Selected ??= _settings.Accounts.FirstOrDefault()?.ConfigDir;
         Sounds.EnsureDefaults();
         SetupExtensions();
+        SetupUpdates(start: !preview);
         // La ventana se creó con la paleta por defecto: toma la elegida.
         Theme.SelectedPalette = _settings.Palette;
         _form.ApplyTheme();
@@ -396,6 +397,9 @@ sealed partial class TrayApp : ApplicationContext
             TopicEngines = AnswerTopics.All.Select(t => new TopicState(t.Id, L.T(t.Label),
                 t.Fixed ? L.T("Siempre la nube") : EngineLabel(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
             Grants = Capabilities.Available.Select(c => new GrantState(c.Id, c.Label, Capabilities.Allowed(s, c.Id))).ToList(),
+            CheckUpdates = s.CheckUpdates,
+            UpdateStatus = _updates?.Row().Status ?? "",
+            UpdateAction = _updates?.Row().Action ?? "",
         };
     }
 
@@ -610,7 +614,6 @@ sealed partial class TrayApp : ApplicationContext
                 else ShowChoiceMenu(_mascotMenu, Mascots.ChoiceOf(_settings));
                 break;
             case "extensions": ShowExtensions(); break;
-            case "extinstall": _ = PickPackageAsync(); break;
             case "size": ShowOptions(MascotSizes.Choices, _settings.MascotSize, SetMascotSize); break;
             case "desk": ToggleDesktopMascot(); break;
             case "alldesks":
@@ -630,7 +633,7 @@ sealed partial class TrayApp : ApplicationContext
             case "chat": Toggle(s => s.Chat = !s.Chat); break;
             case "mmodel":
                 // Con un asistente de una extensión, el modelo se elige en sus ajustes.
-                if (_extensions.ProviderFor(ExtensionSlots.Assistant) is not null) ShowExtensions();
+                if (_extensions.ProviderFor(ExtensionSlots.Assistant) is { } assistant) ShowExtensions(assistant.Id);
                 else ShowOptions(MascotModelChoices(), _settings.MascotModel, m =>
                 {
                     Change(s => s.MascotModel = m);
@@ -673,7 +676,7 @@ sealed partial class TrayApp : ApplicationContext
                     _ = DownloadSpeechAsync(); // se descarga una vez
                 break;
             case "readvoice":
-                if (_extensions.ProviderFor(ExtensionSlots.TextToSpeech) is not null) ShowExtensions(); // la voz se elige en sus ajustes
+                if (_extensions.ProviderFor(ExtensionSlots.TextToSpeech) is { } speaker) ShowExtensions(speaker.Id); // la voz se elige en sus ajustes
                 else ShowOptions(VoiceChoices(), _settings.ReadAloudVoice, v =>
                 {
                     Change(s => s.ReadAloudVoice = v);
@@ -710,7 +713,7 @@ sealed partial class TrayApp : ApplicationContext
             case "local": LocalModelAction(); break;
             case "island": Toggle(s => s.Island = !s.Island); break;
             case "imodel":
-                if (_extensions.ProviderFor(ExtensionSlots.Assistant) is not null) ShowExtensions();
+                if (_extensions.ProviderFor(ExtensionSlots.Assistant) is { } islandAssistant) ShowExtensions(islandAssistant.Id);
                 else ShowOptions(IslandModelChoices(), _settings.IslandModel ?? "", m =>
                 {
                     Change(s => s.IslandModel = m.Length == 0 ? null : m);
@@ -738,6 +741,8 @@ sealed partial class TrayApp : ApplicationContext
             case "add": AddAccount(); break;
             case "setup": ShowSetup(); break;
             case "diag": CopyDiagnostics(); break;
+            case "updates": ToggleUpdates(); break;
+            case "update": OnUpdate(); break;
             case "unsetup":
                 _form.HoldOpen = true;
                 try { RemoveSetup(); }
@@ -2306,7 +2311,7 @@ sealed partial class TrayApp : ApplicationContext
         {
             Models = new(VoiceModel.Ready, _extensions.ProviderFor(ExtensionSlots.SpeechToText)?.Manifest.Name.Text,
                 ClaupetVoiceModel.Ready, NeedsSupertonic(_settings.ReadAloudVoice), _extensions.ProviderFor(ExtensionSlots.TextToSpeech)?.Manifest.Name.Text),
-            InstallPackage = InstallPackageAsync,
+            InstallPackage = (path, _) => InstallPackageAsync(path),
         };
         var accepted = setup.ShowDialog() == DialogResult.OK;
         _settings.SetupDone = true; // «Ahora no» tampoco vuelve a preguntar, salvo que la app cambie de lugar
@@ -2446,6 +2451,9 @@ sealed partial class TrayApp : ApplicationContext
         _localDownload?.Cancel();
         _localServer.Dispose();
         _consoleHost?.Dispose();
+        // Una versión nueva ya comprobada toma el lugar de esta: la próxima vez abre la nueva.
+        _updates?.Apply(ExePath);
+        _updates?.Dispose();
         _voice?.Dispose();
         _readAloud?.Dispose();
         _island?.Dispose();
@@ -2455,7 +2463,6 @@ sealed partial class TrayApp : ApplicationContext
         foreach (var icon in _refreshIcons.Values) icon.Dispose();
         _tray.Visible = false;
         _tray.Dispose();
-        _extensionsForm?.Dispose();
         _form.Dispose();
         _icon?.Dispose();
         // Las extensiones se cierran en orden (shutdown, exit) y, si tardan, el Job las termina al salir.
