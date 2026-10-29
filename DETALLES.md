@@ -7,7 +7,7 @@ se compila y cuáles son los límites conocidos.
 
 ```text
 Core/                    núcleo común, sin interfaz: uso, sesiones, actividad, avisos, sonidos,
-                         hook, credenciales, inicio con el sistema y diagnóstico
+                         hook, credenciales, inicio con el sistema, diagnóstico y la voz (Voice/)
 *.cs + Claupet.csproj            app de Windows (WinForms)
 Console/                 Claupet Console (Avalonia 11), la ventana grande: el mismo Claupet.exe con --console
 Claupet.Avalonia/        app de Linux y macOS (Avalonia 11); también corre en Windows para probar
@@ -210,6 +210,10 @@ y la carpeta del asistente, los permisos, las teclas, el resto de la isla, el ho
 secciones sin pestaña (`Tab` nulo: Respuestas, Extensiones y Cuentas) solo están en la Console. Al pie de los
 rápidos, la tarjeta **Todos los ajustes › Abrir** abre la Console.
 
+La app Avalonia arma sus rápidos igual (`UsageView.Views.cs`), con el estado que le da a la Console
+(`IConsoleApp.SettingsState`, sin lo que ese sistema no tiene). Cada fila hace lo mismo que en la Console
+(`IConsoleApp.Act`); solo cambia dónde sale la lista para elegir: junto al cursor, en el popup (`OnQuickSetting`).
+
 ## Claupet Console
 
 La ventana grande (Windows por ahora). A la izquierda, un riel con Chat, Editor y Ajustes (el editor llega en una
@@ -256,7 +260,8 @@ abrir Claupet otra vez). Lo que no depende del sistema (la tubería, las convers
 `Claupet.Avalonia/TrayController.Console.cs` en la app Avalonia): sus ajustes, sus acciones y el asistente del chat.
 Las filas de lo que un sistema todavía no tiene no aparecen (`PlatformFeatures` en `SettingsState`); una sección que
 queda sin nada dice «Todavía no está disponible en este sistema.». En la app Avalonia el chat responde como en
-Respuestas, sin la isla y sin acciones en el equipo (si se le pide una, lo dice).
+Respuestas, sin acciones en el equipo (si se le pide una, lo dice); con la isla, la conversación rápida es la suya
+(ver Asistente en Linux y macOS).
 
 Una sola bandeja y una sola Console por persona, con mutex con nombre (`Core/ConsoleLink.cs`). En Windows van en
 `Local\` (la sesión de Windows). En Linux y macOS, .NET limita `Local\` a la sesión del proceso (cada terminal tiene
@@ -458,7 +463,7 @@ a su lugar. Sin la isla, no camina: piensa con la caja en las manos. Se apaga co
 
 ![La isla escuchando](docs/capturas/isla-escucha.png)
 
-**Voz** (`Voice.cs`). El micrófono se graba a 16 kHz y se pasa a texto en el equipo con
+**Voz** (`Voice.cs`; Whisper y la descarga, en `Core/Voice/Transcriber.cs`). El micrófono se graba a 16 kHz y se pasa a texto en el equipo con
 [Whisper.net](https://github.com/sandrohanea/whisper.net) 1.9.1 y el modelo `ggml-small`
 multilingüe (488 MB, de `huggingface.co/ggerganov/whisper.cpp`). Se descarga una vez, al encender el
 micrófono; si se corta, se retoma, y solo se usa si su SHA-256 coincide. La ventana del codificador
@@ -467,7 +472,7 @@ se ajusta al largo de lo dicho (`WithAudioContextSize`) en vez de los 30 s de si
 se habla, cada 0,7 s de audio nuevo se muestra lo entendido hasta ahí. El modelo cargado ocupa unos
 850 MB de memoria y se suelta a los 3 minutos sin usarlo.
 
-**La voz de Claupet** (`Supertonic.cs`, `ClaupetVoice.cs`). Con «Leer las respuestas en voz alta» (no necesita el
+**La voz de Claupet** (`Core/Voice/Supertonic.cs`, `Core/Voice/ClaupetVoice.cs`). Con «Leer las respuestas en voz alta» (no necesita el
 micrófono: también lee lo que responde a un mensaje escrito), las
 lee [Supertonic 3](https://github.com/supertone-inc/supertonic) en el equipo, con ONNX Runtime 1.20.1
 en la CPU: la voz femenina (F4) o la masculina (M1), en `ReadAloudVoice`. El texto entra tal cual, sin
@@ -580,6 +585,42 @@ hablar grabada la toma la app como la Copilot: un toque escucha sin mantenerla.
 
 ![Ajustes › Asistente, con la sección Teclas](docs/capturas/ajustes-teclas.png)
 ![Grabar una tecla](docs/capturas/grabar-tecla.png)
+
+## Asistente en Linux y macOS
+
+La app Avalonia (`Claupet.Avalonia/`) trae el asistente por partes, con lo mismo que en Windows salvo lo que dice
+cada una. Lo que ya tiene está en `Features` (`TrayController.Console.cs`): sus filas aparecen en Claupet Console y
+en el asistente de configuración; lo demás sigue bajo «Próximamente».
+
+**Chat con la mascota** (`ChatBubbleWindow.cs`, `TrayController.Chat.cs`). La nubecita, con el selector de modelo,
+la respuesta mientras llega y las tareas para Claude Code. Es la conversación rápida de Claupet Console y la del chat
+de la isla. Las acciones en el equipo todavía no: si se le pide una, lo dice.
+
+**Isla** (`IslandWindow.cs`, `IslandWindow.Pages.cs`, `TrayController.Island.cs`). Las mismas páginas (sesiones,
+chat, análisis de un archivo, permisos, preguntas, cambios y resumen de la semana), en una ventana transparente que
+siempre está encima y no toma el foco. Para asomar al acercar el cursor al borde y plegarse con un clic fuera, mira el
+cursor de todo el escritorio (`GlobalPointer.cs`): Windows lo da directo; en Linux lo pregunta a X11 y en macOS a
+`NSEvent`. Los permisos llegan como en Windows: el pipe con nombre de `Core/Approvals.cs` es, en Linux y macOS, un
+socket de Unix que .NET crea solo. Una copia de prueba (`--preview`) no responde los permisos: los sigue
+respondiendo la app de siempre.
+
+**Asistente de configuración** (`SetupWindow.cs`). Los mismos cinco pasos que en Windows. «Aplicar» solo está en el
+último, no es el botón por defecto y no responde a Enter.
+
+**Voz** (`Audio.cs`, `Voice.cs`, `GlobalKeys.cs`, `TrayController.Voice.cs`). Whisper, la voz de Claupet y sus
+descargas son las de Windows (`Core/Voice/`, que compilan las dos apps); cambian el audio y la tecla:
+
+| Qué | Cómo |
+|---|---|
+| Micrófono y parlantes | [PortAudio](https://www.portaudio.com/) por [PortAudioSharp2](https://github.com/csukuangfj/PortAudioSharp2) 1.0.6, que trae su biblioteca para Windows, Linux (x64 y arm64) y macOS (x64 y arm64). El dispositivo de siempre, en mono; si no acepta 16 kHz (el micrófono) o 44,1 kHz (la voz), se abre a su frecuencia y se convierte (`Core/Voice/PcmResampler.cs`, el de las extensiones que escuchan) |
+| Tecla para hablar | sin gancho de teclado: se mira el teclado cada 30 ms (`GlobalKeys`). Windows con `GetAsyncKeyState`; Linux con `XQueryKeymap` de X11 (con Wayland, solo mientras el foco está en una app de X11); macOS con `CGEventSourceKeyState`, que puede pedir el permiso de **Monitoreo de entrada**. Solo mira: la tecla sigue llegando a la app que tiene el foco |
+| Teclas | Ctrl, Alt o Mayús derechos, que se mantienen (o dos toques), como en Windows. Grabar otra combinación todavía no: una grabada en Windows vuelve a Ctrl derecho. Sin forma de mirar el teclado, se habla con el botón del micrófono de la isla |
+| Sin la voz de Claupet | la del sistema: la de Windows (System.Speech), `say` en macOS y, en Linux, `spd-say` (speech-dispatcher) o `espeak-ng`, si están instalados; si no, no lee |
+| Permiso en macOS | `Info.plist` lleva `NSMicrophoneUsageDescription`: macOS lo pregunta la primera vez que se abre el micrófono |
+| Copia de prueba | con `--preview` en Windows no mira la tecla (la mira la app de siempre, con los mismos ajustes): se habla con el botón del micrófono |
+
+Para macOS, `empaquetar.py` deja fuera del `.app` las bibliotecas de Whisper y de ONNX Runtime para otros sistemas
+(unos 24 MB), que los paquetes copian siempre.
 
 ## Avisos
 
@@ -697,8 +738,12 @@ registradas y vivas, y el hook. Lo habitual:
 - Linux: Avalonia 11 necesita `libICE`, `libSM` y `fontconfig` (vienen en los escritorios
   habituales). En GNOME, el ícono de la bandeja necesita la extensión AppIndicator.
 - Windows 11 deja los íconos nuevos en el desbordamiento (^).
-- La isla, la voz, las teclas, el chat con la mascota y las acciones en el equipo son solo de Windows por
-  ahora. En Linux y macOS ya está Claupet Console, con su chat; lo demás, en las etapas siguientes.
+- Las acciones en el equipo, los atajos (el del chat y la tecla Copilot), las extensiones y el modelo local son
+  solo de Windows por ahora. En Linux y macOS ya están Claupet Console, el chat con la mascota, la isla y la voz;
+  lo demás, en las etapas siguientes.
+- En Linux con Wayland, la isla y la tecla para hablar solo ven el cursor y el teclado mientras están sobre una app
+  de X11 (X11 no ve las demás): puede que la isla no asome al acercar el cursor y que la tecla no responda. Se sigue
+  hablando con el botón del micrófono de la isla. Sin probar todavía en un escritorio Linux.
 - Con ruido de fondo, Whisper a veces «oye» frases que nadie dijo; las conocidas («subtítulos
   realizados por…») se descartan.
 - La tecla Copilot se probó simulándola (Win+Mayús+F23); en algunos equipos, como los Surface, puede
@@ -723,3 +768,9 @@ Lo que no se pudo probar sin una Mac. Para quien la pruebe por primera vez:
 5. **Ajustes › Configurar…** agrega el hook; al pedir permiso una sesión nueva, sale «Necesita su permiso».
 6. **Iniciar con el sistema** crea `~/Library/LaunchAgents/local.claupet.plist`.
 7. **Ajustes › Copiar diagnóstico**: pegar el resultado si algo falla.
+8. Con la isla encendida, al acercar el cursor al borde de arriba asoma, y un clic fuera la pliega (la posición
+   pasa de puntos a pixeles con la escala de la pantalla principal: con dos pantallas, revisar las dos).
+9. Con el micrófono encendido, mantener Ctrl derecho escucha. macOS pregunta por el micrófono la primera vez; si
+   la tecla no responde, dar a Claupet el permiso de **Monitoreo de entrada** en Privacidad y seguridad.
+10. Con «Leer las respuestas en voz alta» y la voz de Claupet descargada, la respuesta suena; con «La del
+    sistema», la lee `say`.

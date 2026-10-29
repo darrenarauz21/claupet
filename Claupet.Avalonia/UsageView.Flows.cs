@@ -18,47 +18,11 @@ sealed partial class UsageView
     /// <summary>Cuándo se copió el ID de la sesión (el botón dice «Copiado» un momento).</summary>
     long _copiedAt = -10_000;
 
-    static Glyph KindGlyph(ToolKind kind) => kind switch
-    {
-        ToolKind.Read => Glyph.Read,
-        ToolKind.Search => Glyph.Search,
-        ToolKind.Edit => Glyph.Edit,
-        ToolKind.Run => Glyph.Run,
-        ToolKind.Agent => Glyph.Agent,
-        ToolKind.Web => Glyph.Web,
-        ToolKind.Ask => Glyph.Ask,
-        _ => Glyph.Other,
-    };
+    static double EaseOut(double p) => LaneNodes.EaseOut(p);
 
-    static double EaseOut(double p) => 1 - (1 - p) * (1 - p);
+    static double Wave(int periodMs) => LaneNodes.Wave(periodMs);
 
-    static double Wave(int periodMs) => Environment.TickCount64 % periodMs / (double)periodMs;
-
-    /// <summary>Halo que se expande y se desvanece, en bucle.</summary>
-    static void DrawHalo(DrawingContext dc, Rect box, SD.Color color, double spread)
-    {
-        var wave = Wave(1400);
-        var grow = spread * wave;
-        dc.DrawEllipse(Gfx.B(SD.Color.FromArgb((int)(110 * (1 - wave)), color)), null, box.Inflate(grow));
-    }
-
-    /// <summary>Nodo «Pensando»: crece y suelta una onda con cada golpe del latido; tres puntos saltan dentro.</summary>
-    void DrawThinking(DrawingContext dc, Point center, double circle)
-    {
-        var tick = Environment.TickCount64;
-        var beat = Flows.Heartbeat(tick);
-        var radius = circle / 2 * (1 + 0.16 * beat);
-        dc.DrawEllipse(Gfx.B(SD.Color.FromArgb((int)(120 * beat), _t.Accent)), null, center, radius + 10 * beat, radius + 10 * beat);
-        dc.DrawEllipse(Gfx.B(_t.Accent), null, center, radius, radius);
-        DrawDots(dc, center, _t.Background, tick);
-    }
-
-    /// <summary>Tres puntos que saltan uno detrás del otro, centrados en el punto dado.</summary>
-    static void DrawDots(DrawingContext dc, Point center, SD.Color color, long tick)
-    {
-        for (var i = 0; i < 3; i++)
-            dc.DrawEllipse(Gfx.B(color), null, new Point(center.X + (i - 1) * 5.5, center.Y - 3.5 * Flows.DotBounce(tick, i)), 1.8, 1.8);
-    }
+    LaneColors LaneColors => new(_t.Background, _t.Border, _t.Text, _t.Secondary, _t.Tertiary, _t.Accent, _t.Warn, _t.Danger);
 
     double ComposeActivity(DrawingContext? dc, double y)
     {
@@ -182,82 +146,8 @@ sealed partial class UsageView
 
     double ComposeLaneNodes(DrawingContext? dc, SessionInfo s, double x0, double width, double y)
     {
-        var groups = Flows.Groups(s.Flow);
-        var thinking = Flows.Thinking(s);
-        var shown = groups.TakeLast(thinking ? 2 : 3).ToList();
-        var hidden = groups.Count - shown.Count;
-        var columns = 1 + (hidden > 0 ? 1 : 0) + shown.Count + (thinking ? 1 : 0);
-        var column = width / Math.Max(columns, 4);
-        const double circle = 26;
+        y = LaneNodes.Compose(dc, s, x0, width, y, LaneColors, _arrivals);
         var tiny = Gfx.Tiny.LineHeight;
-        var cy = y + circle / 2;
-        var centers = Enumerable.Range(0, columns).Select(i => x0 + i * column + column / 2).ToList();
-        var active = Flows.Active(s);
-
-        var arrival = new double[columns];
-        Array.Fill(arrival, 1);
-        var first = 1 + (hidden > 0 ? 1 : 0);
-        for (var i = 0; i < shown.Count; i++) arrival[first + i] = EaseOut(_arrivals.Progress(shown[i].Last.Id));
-
-        if (dc is not null)
-        {
-            for (var i = 1; i < columns; i++)
-            {
-                var from = centers[i - 1] + circle / 2 + 3;
-                var to = centers[i] - circle / 2 - 3;
-                var live = i == columns - 1 && s.State is SessionState.Working or SessionState.Waiting;
-                dc.DrawLine(Gfx.P(live ? Gfx.Blend(_t.Border, _t.Accent, 0.5) : _t.Border, 2), new Point(from, cy), new Point(from + (to - from) * arrival[i], cy));
-                if (live && s.State == SessionState.Working && to > from)
-                    dc.DrawEllipse(Gfx.B(_t.Accent), null, new Point(from + 3 + (to - from - 6) * Wave(1100), cy), 3, 3);
-            }
-        }
-
-        var index = 0;
-        void Node(Glyph? glyph, string? chip, string label, string? detail, SD.Color fill, SD.Color iconColor, SD.Color? halo, bool outline, double grow = 1)
-        {
-            var cx = centers[index++];
-            if (dc is null) return;
-            var size = circle * (0.45 + 0.55 * grow);
-            var box = new Rect(cx - size / 2, y + (circle - size) / 2, size, size);
-            if (halo is { } h) DrawHalo(dc, box, h, 9);
-            dc.DrawEllipse(Gfx.B(fill), outline ? Gfx.P(_t.Border) : null, box);
-            if (grow > 0.7)
-            {
-                if (glyph is { } g) Gfx.Icon(dc, g, iconColor, box, 13);
-                else if (chip is not null) Gfx.Write(dc, chip, Gfx.Small, iconColor, box, TextAlignment.Center, center: true);
-            }
-            var labelBox = new Rect(cx - column / 2, y + circle + 4, column, tiny);
-            Gfx.Write(dc, label, Gfx.Tiny, Gfx.Blend(_t.Background, halo is null ? _t.Tertiary : _t.Text, grow), labelBox, TextAlignment.Center);
-            if (detail is not null)
-                Gfx.Write(dc, detail, Gfx.Tiny, Gfx.Blend(_t.Background, _t.Tertiary, grow), new Rect(labelBox.X, labelBox.Bottom, column, tiny), TextAlignment.Center);
-        }
-
-        Node(Glyph.Message, null, L.T("Pedido"), null, _t.Background, _t.Secondary, null, outline: true);
-        if (hidden > 0) Node(null, "+" + hidden, L.T("antes"), null, _t.Background, _t.Secondary, null, outline: true);
-        foreach (var group in shown)
-        {
-            var isLast = group == shown[^1];
-            var running = isLast && active is not null && group.Last == active && !thinking;
-            var waiting = isLast && s.State == SessionState.Waiting;
-            var failed = isLast && s.State == SessionState.Failed;
-            var accent = waiting ? _t.Warn : failed ? _t.Danger : _t.Accent;
-            var lit = running || waiting || failed;
-            var label = group.Count > 1 ? $"{group.Verb} ×{group.Count}" : group.Verb;
-            Node(KindGlyph(group.Kind), null, label, lit || (isLast && thinking) ? group.Detail : null,
-                lit ? accent : _t.Background, lit ? _t.Background : _t.Secondary,
-                running || waiting ? accent : null, outline: !lit, grow: arrival[index]);
-        }
-        if (thinking)
-        {
-            // El modelo está generando el siguiente paso: el nodo late y tres puntos saltan dentro.
-            var cx = centers[index++];
-            if (dc is not null)
-            {
-                DrawThinking(dc, new Point(cx, cy), circle);
-                Gfx.Write(dc, L.T("Pensando…"), Gfx.Tiny, _t.Text, new Rect(cx - column / 2, y + circle + 4, column, tiny), TextAlignment.Center);
-            }
-        }
-        y += circle + 4 + 2 * tiny;
 
         if (s.Flow.LastOrDefault(f => f.Kind == ToolKind.Agent) is { } agent)
         {
@@ -368,7 +258,7 @@ sealed partial class UsageView
             Gfx.Write(dc, L.T("Sesión"), Gfx.Small, _t.Text, new Rect(inner.X, inner.Y, inner.Width, small));
             Gfx.Write(dc, status, Gfx.Tiny, color, new Rect(inner.X, inner.Y + small + 1, inner.Width, tiny));
             if (thinking)
-                DrawDots(dc, new Point(inner.X + Gfx.Measure(status, Gfx.Tiny).Width + 9, inner.Y + small + 1 + tiny * 0.62), color, Environment.TickCount64);
+                LaneNodes.DrawDots(dc, new Point(inner.X + Gfx.Measure(status, Gfx.Tiny).Width + 9, inner.Y + small + 1 + tiny * 0.62), color, Environment.TickCount64);
             Gfx.Write(dc, s.Flow.Count == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Flow.Count), Gfx.Tiny, _t.Tertiary, new Rect(inner.X, inner.Y + small + tiny + 2, inner.Width, tiny));
 
             for (var i = 0; i < Flows.MapKinds.Length; i++)

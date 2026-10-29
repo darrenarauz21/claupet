@@ -19,7 +19,7 @@ sealed class ChatBubble : Form
     static readonly Color Accent = Color.FromArgb(0xC2, 0x5E, 0x3E);
     static readonly Color Mic = Color.FromArgb(0xD9, 0x4B, 0x3F);
     /// <summary>Lo que tarda en subir y bajar cada barrita del nivel (como en el diseño de la voz), en ms; también en la isla.</summary>
-    public static readonly int[] BarPeriods = [550, 700, 620, 800, 500, 660];
+    public static int[] BarPeriods => Flows.BarPeriods;
     const TextFormatFlags Wrap = TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
     const TextFormatFlags OneLine = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
     const int AnswerLifetime = 14000;

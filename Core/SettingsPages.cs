@@ -20,7 +20,9 @@ enum PlatformFeatures
     LocalModel = 128,
     MascotSize = 256,
     Shortcuts = 512,
-    All = MascotChat | Actions | Mic | ReadAloud | Hotkeys | Island | Extensions | LocalModel | MascotSize | Shortcuts,
+    /// <summary>Soltar archivos sobre la mascota: los analiza o los encarga.</summary>
+    FileDrops = 1024,
+    All = MascotChat | Actions | Mic | ReadAloud | Hotkeys | Island | Extensions | LocalModel | MascotSize | Shortcuts | FileDrops,
 }
 
 /// <summary>Lo que muestra «Ajustes»; lo manda TrayApp cada vez que cambia algo. Los textos son los valores ya listos para mostrar.</summary>
@@ -221,8 +223,8 @@ static class SettingsPages
             {
                 Choice(L.T("Cuenta que responde"), "account", s.AssistantAccount),
                 Choice(L.T("Carpeta de las tareas"), "folder", s.TaskFolder),
-                Switch(L.T("Analizar los archivos que le suelte"), "drops", s.AnalyzeDrops),
             }.Select(Full));
+            if (s.Has(PlatformFeatures.FileDrops)) rows.Add(Full(Switch(L.T("Analizar los archivos que le suelte"), "drops", s.AnalyzeDrops)));
         }
         // Lo que hace en el equipo (captura, calendario, ventanas…) se pide desde el chat o la isla: un interruptor por capacidad.
         if ((s.Chat || s.Island) && s.Has(PlatformFeatures.Actions))

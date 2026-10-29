@@ -13,5 +13,6 @@
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>Claupet listens only while you talk to it, and turns it into text on this Mac. / Claupet escucha solo mientras usted le habla, y lo pasa a texto en este Mac.</string>
 </dict>
 </plist>

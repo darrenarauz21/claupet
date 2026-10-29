@@ -189,6 +189,21 @@ public class ResamplerTests
         Assert.InRange(output.Length, 15990, 16000);
         Assert.All(output, s => Assert.Equal(0, s));
     }
+
+    [Fact]
+    public void De_44_1_kHz_a_48_kHz_para_el_parlante_por_partes()
+    {
+        // La voz de Claupet (44,1 kHz) en un parlante que solo acepta 48 kHz: el mismo tono, en uno o de a trozos.
+        var sine = Enumerable.Range(0, 44100).Select(i => 0.5f * MathF.Sin(2 * MathF.PI * 440 * i / 44100)).ToArray();
+        var whole = new PcmResampler(44100, 48000).PushFloat(sine);
+        var parts = new PcmResampler(44100, 48000);
+        var pieces = new List<float>();
+        for (var at = 0; at < sine.Length; at += 441) pieces.AddRange(parts.PushFloat(sine.AsSpan(at, 441)));
+        Assert.InRange(whole.Length, 47990, 48000);
+        Assert.Equal(whole.Length, pieces.Count);
+        for (var i = 0; i < whole.Length; i++) Assert.Equal(whole[i], pieces[i], 1e-5f); // la posición se redondea distinto
+        for (var i = 0; i < whole.Length; i++) Assert.Equal(0.5f * MathF.Sin(2 * MathF.PI * 440 * i / 48000), whole[i], 0.01f);
+    }
 }
 
 public class SecretStoreTests

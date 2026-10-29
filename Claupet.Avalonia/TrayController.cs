@@ -10,7 +10,7 @@ namespace Claupet;
 
 /// <summary>
 /// El ícono de la bandeja (barra de menús en macOS) y todo lo que coordina: consultas, sesiones,
-/// actividad, avisos, sonidos, configuración y Claupet Console. Es la misma lógica que TrayApp en Windows.
+/// actividad, avisos, sonidos, configuración, el chat con la mascota, la isla y Claupet Console. Es la misma lógica que TrayApp en Windows.
 /// </summary>
 sealed partial class TrayController
 {
@@ -96,7 +96,13 @@ sealed partial class TrayController
             SettingsStore.Save(_settings);
             UpdateTray();
         };
-        View.SettingRequested += action => _ = OnSettingAsync(action);
+        View.SettingRequested += OnQuickSetting;
+        if (Enum.TryParse<UsageView.SettingsTab>(_settings.SettingsTab, out var tab)) View.SetSettingsTab(tab);
+        View.SettingsTabChanged += t =>
+        {
+            _settings.SettingsTab = t.ToString();
+            SettingsStore.Save(_settings);
+        };
         View.NewSessionRequested += session => _ = NewSessionAsync(session);
         StartConsole();
         PushSettings();
@@ -138,6 +144,8 @@ sealed partial class TrayController
             if (showOnStart) ShowForm();
             if (demo) ShowSamples();
             UpdateMascotWindow();
+            UpdateIsland();
+            UpdateVoice();
             if (autoSetup && NeedsSetup()) await ShowSetupAsync();
             await RefreshAsync();
         });
@@ -191,13 +199,19 @@ sealed partial class TrayController
     {
         if (_counting) return;
         _counting = true;
-        try { View.SetActivity(await Task.Run(() => _activity.Scan(accounts.Select(a => a.ConfigDir)))); }
+        try
+        {
+            var summary = await Task.Run(() => _activity.Scan(accounts.Select(a => a.ConfigDir)));
+            View.SetActivity(summary);
+            _activitySummary = summary;
+            MaybeShowRecap(false);
+        }
         finally { _counting = false; }
     }
 
     async Task ScanSessionsAsync()
     {
-        if (_scanning || (!_popup.IsVisible && !_settings.Notifications && _mascotWindow is null)) return;
+        if (_scanning || (!_popup.IsVisible && !_settings.Notifications && _mascotWindow is null && _island is null)) return;
         _scanning = true;
         try
         {
@@ -206,6 +220,7 @@ sealed partial class TrayController
             View.SetSessions(sessions);
             _director.SetSessions(sessions);
             _lastSessions = sessions;
+            IslandSessions(sessions);
             if (_settings.Notifications)
             {
                 _detector.Sessions(sessions).ForEach(ShowNotice);
@@ -220,22 +235,25 @@ sealed partial class TrayController
         _toasts.Show(notice, _theme);
         _director.Notice(notice.Kind);
         if (_mascotWindow is { } mascot && _settings.Speak) _bubble.Say(notice, mascot.Chibi, mascot.ScreenBounds);
-        if (_settings.Sound) _sounds.Play(notice.Kind, _settings.SoundPack);
+        if (_settings.Sound && _island?.Muted != true) _sounds.Play(notice.Kind, _settings.SoundPack);
     }
 
     /// <summary>Lo que la vista Ajustes muestra: se manda de nuevo cada vez que algo cambia.</summary>
     void PushSettings()
     {
-        var s = _settings;
-        var pack = Sounds.Packs.FirstOrDefault(p => p.Id == s.SoundPack).Label ?? s.SoundPack;
-        var behavior = new UsageView.MascotBehavior(s.FlowGestures, s.DanceToMusic, s.NoticeGestures, s.GreetOnAppear, s.AngryOnClicks, s.SleepWithoutSessions,
-            s.MascotAllDesktops);
-        View.SetSettingsState(new UsageView.SettingsState(
-                s.Notifications, s.Sound, pack, Theme.PaletteLabel(s.Palette),
-                Mascots.Label(Mascots.ChoiceOf(s)), s.DesktopMascot, s.DesktopMascot ? s.Speak : null, s.DesktopMascot ? behavior : null,
-                StartupRegistration.IsEnabled, s.Accounts.Count, L.Label),
-            _settings.SoundPack, _settings.Palette, Mascots.ChoiceOf(_settings));
+        View.SetSettingsState(((IConsoleApp)this).SettingsState()); // el mismo estado que Claupet Console
         _consoleHost?.PushSettings(); // Claupet Console, si está abierta
+    }
+
+    /// <summary>
+    /// Una fila de «Ajustes rápidos»: hace lo mismo que en Claupet Console, pero las listas salen junto al cursor, en el
+    /// popup (Choose las manda a _menu mientras tanto).
+    /// </summary>
+    void OnQuickSetting(string key)
+    {
+        _menu = (options, selected, pick) => View.ShowOptions(key, options, selected, pick);
+        try { ((IConsoleApp)this).Act(key); }
+        finally { _menu = null; }
     }
 
     async Task OnSettingAsync(string action)
@@ -253,6 +271,24 @@ sealed partial class TrayController
                 case "startup": ToggleStartup(); break;
                 case "desk": ToggleDesktopMascot(); break;
                 case "speak": ToggleSpeak(); break;
+                case "chat": ToggleChat(); break;
+                case "island": FlipIsland(s => s.Island = !s.Island); break;
+                case "hover": FlipIsland(s => s.IslandHover = !s.IslandHover); break;
+                case "busy": FlipIsland(s => s.IslandWhileBusy = !s.IslandWhileBusy); break;
+                case "recap": Flip(s => s.WeeklyRecap = !s.WeeklyRecap); break;
+                case "recapnow": MaybeShowRecap(true); break;
+                case "approvals": await SetupApprovalsAsync(); break;
+                case "console": await OpenConsoleAsync("general"); break;
+                case "mic": ToggleMic(); break;
+                case "readaloud": ToggleReadAloud(); break;
+                case "voice":
+                    if (_modelDownload is { } download) download.Cancel();
+                    else _ = DownloadVoiceModelAsync();
+                    break;
+                case "speech":
+                    if (_speechDownload is { } speech) speech.Cancel();
+                    else _ = DownloadSpeechAsync();
+                    break;
                 case "flowgest": Flip(s => s.FlowGestures = !s.FlowGestures); break;
                 case "music": Flip(s => s.DanceToMusic = !s.DanceToMusic); break;
                 case "noticegest": Flip(s => s.NoticeGestures = !s.NoticeGestures); break;
@@ -348,6 +384,7 @@ sealed partial class TrayController
         _refreshIcons.Clear();
         ShowRefreshFrame();
         UpdateMascotWindow();
+        _island?.SetMascot(Mascots.IsChibi);
         _ = RefreshAsync(); // muestra de la animación elegida, como la del estilo de sonido
     }
 
@@ -384,6 +421,7 @@ sealed partial class TrayController
         if (_mascotWindow is { } current && (!wanted || current.Chibi != Mascots.IsChibi || current.AllDesktops != _settings.MascotAllDesktops))
         {
             _bubble.Hide();
+            _chatBubble?.Dismiss(notify: true);
             current.Close();
             _mascotWindow = null;
         }
@@ -392,8 +430,11 @@ sealed partial class TrayController
         _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _theme.Accent, _settings.MascotAllDesktops);
         _mascotWindow.PositionChanged += (_, _) =>
         {
-            if (_bubble.IsVisible && _mascotWindow is { } moved) _bubble.Follow(moved.ScreenBounds);
+            if (_mascotWindow is not { } moved) return;
+            if (_bubble.IsVisible) _bubble.Follow(moved.ScreenBounds);
+            if (_chatBubble?.IsVisible == true) _chatBubble.Follow(moved.ScreenBounds);
         };
+        _mascotWindow.Poked += OnMascotPoked;
         _mascotWindow.OpenRequested += ShowForm;
         _mascotWindow.HideRequested += () => { ToggleDesktopMascot(); PushSettings(); };
         _mascotWindow.Moved += at =>
@@ -410,6 +451,7 @@ sealed partial class TrayController
     {
         _theme = Theme.ForDark(_app.ActualThemeVariant == ThemeVariant.Dark);
         _popup.ApplyTheme(_theme);
+        _island?.SetAccent(Theme.ForDark(true).Accent); // la isla es siempre oscura, con el acento de la paleta
         _refreshIcons.Clear(); // se vuelven a dibujar con el acento nuevo
         ShowRefreshFrame();
         UpdateTray();
@@ -485,6 +527,7 @@ sealed partial class TrayController
     void Render()
     {
         UpdateTray();
+        PushIslandUsage();
         PushSettings(); // la cantidad de cuentas puede haber cambiado
         View.Render(_settings.Accounts, _settings.Selected, _snapshots, _profiles, _local, _updated);
     }
@@ -612,30 +655,76 @@ sealed partial class TrayController
     bool NeedsSetup() =>
         !_settings.SetupDone || SetupDirs().Any(d => HookInstaller.Status(d, ExePath) == HookInstaller.State.Outdated);
 
+    /// <summary>El asistente por pasos; lo elegido se aplica al pulsar «Aplicar», como en Windows.</summary>
     async Task ShowSetupAsync()
     {
         _popup.HidePopup();
-        var setup = new SetupWindow(_settings, ExePath, _theme, SetupDirs());
+        var language = L.Language; // el asistente puede cambiarlo mientras está abierto
+        var setup = new SetupWindow(_settings, ExePath, _theme, SetupDirs(), Features);
         setup.Show();
         setup.Activate();
         var accepted = await setup.Result;
-        _settings.SetupDone = true;
+        _settings.SetupDone = true; // «Ahora no» tampoco vuelve a preguntar, salvo que la app cambie de lugar
         SettingsStore.Save(_settings);
         if (!accepted) return;
 
         var lines = setup.ApplyHooks(ExePath);
+        var windows = OperatingSystem.IsWindows();
         try
         {
             StartupRegistration.Set(setup.StartWithSystem);
-            lines.Add(setup.StartWithSystem ? L.T("Iniciará con el sistema.") : L.T("No iniciará con el sistema."));
+            lines.Add(setup.StartWithSystem
+                ? windows ? L.T("Iniciará con Windows.") : L.T("Iniciará con el sistema.")
+                : windows ? L.T("No iniciará con Windows.") : L.T("No iniciará con el sistema."));
         }
-        catch (Exception ex) { lines.Add(L.T("Iniciar con el sistema: no se pudo cambiar ({0}).", ex.Message)); }
-        PushSettings();
+        catch (Exception ex)
+        {
+            lines.Add(windows ? L.T("Inicio con Windows: no se pudo cambiar ({0}).", ex.Message) : L.T("Iniciar con el sistema: no se pudo cambiar ({0}).", ex.Message));
+        }
         if (setup.NotificationsOn != _settings.Notifications) ToggleNotifications();
         lines.Add(_settings.Notifications ? L.T("Notificaciones encendidas.") : L.T("Notificaciones apagadas."));
+
+        // El compañero: la mascota primero, porque el chibi sale al escritorio solo.
+        if (setup.Mascot is { } mascot && mascot != Mascots.ChoiceOf(_settings)) SetMascot(mascot);
+        if (setup.DesktopMascot != _settings.DesktopMascot) ToggleDesktopMascot();
+        if (setup.Chat != _settings.Chat) ToggleChat();
+        if (setup.Island != _settings.Island) FlipIsland(s => s.Island = setup.Island);
+
+        // Modelos y voz: como encenderlos en Ajustes, que baja lo que falte.
+        var relaunch = setup.Language != language;
+        var voiceMissing = setup.Mic && !VoiceModel.Ready;
+        var speechMissing = setup.ReadAloud && NeedsSupertonic(_settings.ReadAloudVoice) && !ClaupetVoiceModel.Ready;
+        _settings.Mic = setup.Mic;
+        _settings.ReadAloud = setup.ReadAloud;
+        SettingsStore.Save(_settings);
+        UpdateVoice();
+        if (!_settings.ReadAloud) _readAloud?.Stop();
+        if (relaunch && (voiceMissing || speechMissing))
+            lines.Add(L.T("Al reiniciar, descargue los modelos en Ajustes › Asistente."));
+        else
+        {
+            if (voiceMissing)
+            {
+                _ = DownloadVoiceModelAsync();
+                lines.Add(L.T("El modelo de voz se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+            }
+            if (speechMissing)
+            {
+                _ = DownloadSpeechAsync();
+                lines.Add(L.T("La voz de Claupet se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+            }
+        }
+        PushSettings();
+
         if (setup.HooksChanged > 0)
             lines.Add(L.T("Los avisos de permisos funcionan en las sesiones de Claude Code que se abran desde ahora."));
+        if (relaunch) lines.Add(L.T("Claupet se reinicia para cambiar el idioma."));
         await Dialogs.Info(string.Join(Environment.NewLine, lines), _theme);
+        if (!relaunch) return;
+        // El asistente ya usa el idioma nuevo (L.Language): se guarda y se reinicia sin pasar por SetLanguage.
+        _settings.Language = setup.Language;
+        SettingsStore.Save(_settings);
+        Restart();
     }
 
     async Task RemoveSetupAsync()
@@ -664,7 +753,12 @@ sealed partial class TrayController
         if (language == L.Language) return;
         _settings.Language = language;
         SettingsStore.Save(_settings);
-        // Abre otra instancia, que espera a que esta termine de cerrarse (--reiniciar), y se cierra.
+        Restart();
+    }
+
+    /// <summary>Abre otra instancia, que espera a que esta termine de cerrarse (--reiniciar), y se cierra.</summary>
+    void Restart()
+    {
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ExePath) { ArgumentList = { "--reiniciar" }, UseShellExecute = false })?.Dispose(); }
         catch (Exception ex)
         {
@@ -681,6 +775,14 @@ sealed partial class TrayController
         _toasts.CloseAll();
         _mascotWindow?.Close();
         _bubble.Close();
+        _asking?.Cancel();
+        _chatBubble?.Close();
+        _quickAsking?.Cancel();
+        _analyzing?.Cancel();
+        _approvals?.Dispose();
+        _island?.DropApproval();
+        _island?.Close();
+        StopVoice();
         _sounds.Dispose();
         _refresh.Dispose();
         _consoleHost?.Dispose();

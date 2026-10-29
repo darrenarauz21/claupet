@@ -52,6 +52,9 @@ static class Flows
         return Bump(t, 0, 0.4);
     }
 
+    /// <summary>Lo que tarda en subir y bajar cada barrita del nivel de la voz (como en el diseño de la voz), en ms.</summary>
+    public static readonly int[] BarPeriods = [550, 700, 620, 800, 500, 660];
+
     public static string KindLabel(ToolKind kind) => kind switch
     {
         ToolKind.Read => "Leer",

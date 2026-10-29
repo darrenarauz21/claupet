@@ -5,12 +5,12 @@ namespace Claupet;
 /// <summary>
 /// Claupet Console del lado de esta bandeja (Linux y macOS, y Windows para probar). Lo que es igual en todos los
 /// sistemas lo hace ConsoleHost; aquí van los ajustes que esta app ya tiene (lo demás no aparece: PlatformFeatures), sus
-/// acciones y el chat, que responde el mismo asistente de Respuestas (sin la isla, que todavía no está aquí).
+/// acciones y el chat, que responde el mismo asistente de Respuestas. Con la isla, la conversación rápida es la suya.
 /// </summary>
 sealed partial class TrayController : IConsoleApp
 {
     /// <summary>Lo que esta app ya sabe hacer; al traer algo de Windows, se agrega aquí y aparecen sus filas.</summary>
-    const PlatformFeatures Features = PlatformFeatures.None;
+    const PlatformFeatures Features = PlatformFeatures.MascotChat | PlatformFeatures.Island | PlatformFeatures.Mic | PlatformFeatures.ReadAloud;
 
     ConsoleHost? _consoleHost;
     ConsoleHost ConsoleHost => _consoleHost ??= new ConsoleHost(this);
@@ -18,7 +18,10 @@ sealed partial class TrayController : IConsoleApp
     ChatTarget? _quickChat;
     CancellationTokenSource? _quickAsking;
 
-    ChatTarget QuickTarget => _quickChat ??= new ChatTarget(_quick, AssistantVoice.Console, island: false, asking => ConsoleHost.QuickChanged(asking));
+    ChatTarget QuickTarget => _quickChat ??= new ChatTarget(_quick, AssistantVoice.Console, island: false, asking => ShowQuick(QuickTarget, asking));
+
+    /// <summary>La conversación rápida de la Console: con la isla encendida, la de la isla (como en Windows).</summary>
+    ChatTarget QuickChat => _settings.Island ? IslandChat : QuickTarget;
 
     void StartConsole() => ConsoleHost.Start();
 
@@ -50,7 +53,24 @@ sealed partial class TrayController : IConsoleApp
             GreetOnAppear = s.GreetOnAppear,
             AngryOnClicks = s.AngryOnClicks,
             SleepWithoutSessions = s.SleepWithoutSessions,
+            Chat = s.Chat,
+            MascotModel = AssistantModels.Label(MascotModel),
+            AssistantAccount = AssistantAccounts.Label(s),
+            TaskFolder = TaskFolders.Label(s),
+            Mic = s.Mic,
+            MicKey = TalkKeyLabel,
+            VoiceStatus = VoiceStatusText().Status,
+            VoiceAction = VoiceStatusText().Action,
+            ReadAloud = s.ReadAloud,
+            ReadAloudVoice = VoiceLabel(s.ReadAloudVoice),
+            SpeechStatus = SpeechStatusText().Status,
+            SpeechAction = SpeechStatusText().Action,
             IslandModel = AssistantModels.Label(s.IslandModel),
+            Island = s.Island,
+            IslandHover = s.IslandHover,
+            IslandWhileBusy = s.IslandWhileBusy,
+            WeeklyRecap = s.WeeklyRecap,
+            Approvals = ApprovalsText(),
             StartWithWindows = StartupRegistration.IsEnabled,
             Accounts = s.Accounts.Count,
             Language = L.Label,
@@ -128,26 +148,50 @@ sealed partial class TrayController : IConsoleApp
                 PushSettings();
                 break;
             case "city": _ = AskCityAsync(); break;
+            case "mmodel":
+                Choose(AssistantModels.Choices, MascotModel, m =>
+                {
+                    _settings.MascotModel = m;
+                    SettingsStore.Save(_settings);
+                    _chatBubble?.SetModel(m);
+                });
+                break;
+            case "account":
+                Choose(AssistantAccounts.Choices(_settings), _settings.AssistantAccount ?? "", a =>
+                {
+                    _settings.AssistantAccount = a.Length == 0 ? null : a;
+                    SettingsStore.Save(_settings);
+                });
+                break;
+            case "folder": Choose(TaskFolders.Choices(_settings, _lastSessions), _settings.TaskFolder ?? "", f => _ = PickTaskFolderAsync(f)); break;
             case "imodel":
                 Choose(AssistantModels.IslandChoices, _settings.IslandModel ?? "", m =>
                 {
                     _settings.IslandModel = m.Length == 0 ? null : m;
                     SettingsStore.Save(_settings);
+                    PushIslandModel();
                 });
                 break;
-            case "readaloud": break; // todavía no hay voz en esta app
+            // Aquí no se graban combinaciones: solo las teclas que se mantienen.
+            case "mickey": Choose(MicKeys.Choices, MicKeys.IsHold(_settings.MicKey) ? _settings.MicKey : MicKeys.Choices[0].Id, SetMicKey); break;
+            case "readvoice": Choose(VoiceChoices(), _settings.ReadAloudVoice, SetReadAloudVoice); break;
             default: _ = OnSettingAsync(key); break;
         }
     }
 
-    /// <summary>Una lista para elegir: en la Console, junto a su fila; elegida, se guarda y se avisa a todos.</summary>
+    /// <summary>Dónde sale la lista de una fila: null, en la Console; si no, en el popup (OnQuickSetting).</summary>
+    Action<IEnumerable<(string Id, string Label)>, string, Action<string>>? _menu;
+
+    /// <summary>Una lista para elegir: en la Console, junto a su fila (o en el popup); elegida, se guarda y se avisa a todos.</summary>
     void Choose(IEnumerable<(string Id, string Label)> options, string selected, Action<string> pick)
     {
-        ConsoleHost.Offer(options, selected, id =>
+        void Picked(string id)
         {
             pick(id);
             PushSettings();
-        }, null);
+        }
+        if (_menu is { } menu) menu(options, selected, Picked);
+        else ConsoleHost.Offer(options, selected, Picked, null);
     }
 
     async Task AskCityAsync()
@@ -162,15 +206,20 @@ sealed partial class TrayController : IConsoleApp
 
     // ── Chat ────────────────────────────────────────────────────────────────────────────────
 
-    ChatTarget IConsoleApp.QuickChat => QuickTarget;
-    string IConsoleApp.QuickHint => L.T("Se olvida a los 10 minutos sin escribir");
-    string IConsoleApp.QuickAbout => L.T("Para preguntas sueltas; se olvida a los 10 minutos sin escribir.");
+    ChatTarget IConsoleApp.QuickChat => QuickChat;
+    // Con la isla, es la misma conversación de la isla (y de la nubecita); sin ella, con el chat de la mascota, la de la nubecita.
+    string IConsoleApp.QuickHint => _settings.Island ? L.T("La de la isla") : _settings.Chat ? L.T("La de la nubecita") : L.T("Se olvida a los 10 minutos sin escribir");
+    string IConsoleApp.QuickAbout => _settings.Island
+        ? L.T("Es la misma conversación de la isla y de la nubecita; se olvida a los 10 minutos sin escribir.")
+        : _settings.Chat
+        ? L.T("Es la misma conversación de la nubecita; se olvida a los 10 minutos sin escribir.")
+        : L.T("Para preguntas sueltas; se olvida a los 10 minutos sin escribir.");
 
     void IConsoleApp.AskQuick(string text)
     {
         _quickAsking?.Cancel();
         _quickAsking = new CancellationTokenSource();
-        _ = AskChatAsync(QuickTarget, text, _quickAsking.Token);
+        _ = AskChatAsync(QuickChat, text, _quickAsking.Token);
     }
 
     void IConsoleApp.StopQuick() => _quickAsking?.Cancel();
@@ -179,14 +228,15 @@ sealed partial class TrayController : IConsoleApp
     {
         _quickAsking?.Cancel();
         _quick.Clear();
-        QuickTarget.Show(false);
+        QuickChat.Show(false);
     }
 
     Task IConsoleApp.AskAsync(ChatTarget chat, string text, CancellationToken cancel) => AskChatAsync(chat, text, cancel);
 
     /// <summary>
     /// Le pregunta al asistente (sin IA, el modelo local o la nube, según Respuestas) con el modelo de las conversaciones.
-    /// Lo que va llegando se ve en la Console. Las acciones en el equipo todavía no están en esta app: se dice.
+    /// Lo que va llegando se ve en la Console (y en la isla). Una tarea se ofrece abrir; las acciones en el equipo todavía no
+    /// están en esta app: se dice.
     /// </summary>
     async Task AskChatAsync(ChatTarget chat, string text, CancellationToken cancel)
     {
@@ -194,9 +244,11 @@ sealed partial class TrayController : IConsoleApp
         chat.Log.Add(new ChatTurn(true, text));
         chat.Streaming = "";
         chat.Show(true);
+        // Con la voz encendida, la respuesta no se muestra mientras llega: sale cuando empieza a sonar.
+        var speaking = _settings.ReadAloud;
         void Stream(string piece)
         {
-            if (cancel.IsCancellationRequested) return;
+            if (cancel.IsCancellationRequested || speaking) return;
             Dispatcher.UIThread.Post(() =>
             {
                 chat.Streaming = (chat.Streaming ?? "") + piece;
@@ -208,9 +260,11 @@ sealed partial class TrayController : IConsoleApp
             Prompt = text,
             Voice = chat.Voice,
             Model = _settings.IslandModel,
-            ConfigDir = _settings.AssistantAccount ?? _settings.Selected,
+            ConfigDir = AssistantAccounts.ConfigDir(_settings),
+            Context = AssistantContext(),
             History = history,
             Chibi = Mascots.IsChibi,
+            Expressive = Expressive,
         };
         AssistantResult result;
         try { result = await Answers.AskAsync(request, _settings, Stream, cancel: cancel); }
@@ -231,12 +285,17 @@ sealed partial class TrayController : IConsoleApp
                 : result.Task is not null ? result.Text.Length > 0 ? result.Text : L.T("Eso es una tarea para Claude Code.")
                 : result.Action is not null ? L.T("Eso todavía no lo puedo hacer en este sistema. (・_・;)")
                 : result.Text;
-            chat.Log.Add(new ChatTurn(false, reply, _settings.ShowWhoAnswered ? result.By?.Label : null));
-            chat.Show(false);
+            ReadAloudIfOn(result, reply, () =>
+            {
+                if (cancel.IsCancellationRequested) return;
+                chat.Log.Add(new ChatTurn(false, reply, _settings.ShowWhoAnswered ? result.By?.Label : null));
+                chat.Show(false);
+                if (result is { Failed: false, Task: { } task }) _ = OfferTaskAsync(task);
+            });
         });
     }
 
     string IConsoleApp.ChatModel => AssistantModels.Label(_settings.IslandModel);
-    bool IConsoleApp.ReadAloud => false;
+    bool IConsoleApp.ReadAloud => _settings.ReadAloud;
     void IConsoleApp.Post(Action action) => Dispatcher.UIThread.Post(action);
 }

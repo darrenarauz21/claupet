@@ -409,16 +409,9 @@ sealed partial class TrayApp : ApplicationContext
     /// <summary>Una voz que necesita el modelo de Supertonic: la de Claupet o la de un paquete.</summary>
     static bool NeedsSupertonic(string voice) => ClaupetVoices.IsClaupet(voice) || voice.StartsWith(ExtensionManager.PackPrefix, StringComparison.Ordinal);
 
-    string AssistantAccountLabel() =>
-        _settings.AssistantAccount is { } dir && _settings.Accounts.FirstOrDefault(a => Account.SamePath(a.ConfigDir, dir)) is { } account
-            ? account.Label : L.T("La elegida en Uso");
+    string AssistantAccountLabel() => AssistantAccounts.Label(_settings);
 
-    string TaskFolderLabel()
-    {
-        var folder = TaskFolderPath;
-        return folder == AssistantFolder ? L.T("La de Claupet")
-            : Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : folder;
-    }
+    string TaskFolderLabel() => TaskFolders.Label(_settings);
 
     /// <summary>La fila del modelo de voz en Ajustes: qué dice y qué enlace lleva.</summary>
     (string Status, string Action) VoiceStatusText() =>
@@ -1351,7 +1344,7 @@ sealed partial class TrayApp : ApplicationContext
     }
 
     /// <summary>El nombre de la carpeta donde se abriría una tarea, para la nubecita.</summary>
-    static string FolderLabel(string? folder) => folder is null ? L.T("una carpeta") : Path.GetFileName(folder.TrimEnd('\\', '/'));
+    static string FolderLabel(string? folder) => TaskFolders.Name(folder);
 
     /// <summary>Una tarea pedida en la isla (o un archivo que hay que encargar): la mascota la ofrece en su nubecita; sin mascota, se pregunta aquí.</summary>
     void OfferTask(TaskProposal task)
@@ -1601,23 +1594,12 @@ sealed partial class TrayApp : ApplicationContext
     }
 
     /// <summary>La cuenta que responde: la elegida en Ajustes o, si no, la de Uso.</summary>
-    string? AssistantConfigDir => _settings.AssistantAccount ?? _settings.Selected;
-
-    /// <summary>
-    /// La carpeta propia del asistente para las tareas que abre en Claude Code: ~\Claupet\Tareas. No va en Documentos
-    /// porque suele estar en OneDrive, que sincronizaría todo lo que generen las tareas.
-    /// </summary>
-    static string AssistantFolder => Path.Combine(Account.Home, "Claupet", "Tareas");
+    string? AssistantConfigDir => AssistantAccounts.ConfigDir(_settings);
 
     /// <summary>Dónde se abren las tareas: la carpeta elegida o, si no hay (o ya no existe), la del asistente.</summary>
-    string TaskFolderPath => _settings.TaskFolder is { Length: > 0 } chosen && Directory.Exists(chosen) ? chosen : AssistantFolder;
+    string TaskFolderPath => TaskFolders.For(_settings);
 
-    /// <summary>La carpeta del asistente se crea recién al abrir una tarea en ella (no al mostrar los ajustes).</summary>
-    static void Prepare(string folder)
-    {
-        try { Directory.CreateDirectory(folder); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ErrorLog.Write(ex); }
-    }
+    static void Prepare(string folder) => TaskFolders.Prepare(folder);
 
     /// <summary>El campo para escribirle, en la nubecita, con la mascota escuchando.</summary>
     void OpenChat()
@@ -1788,35 +1770,8 @@ sealed partial class TrayApp : ApplicationContext
         }
     }
 
-    /// <summary>
-    /// Lo que la mascota sabe del momento, para responder sobre el uso y las sesiones: la hora, el uso
-    /// de cada cuenta y las sesiones abiertas (título, cuenta, carpeta y estado). Sin correos ni tokens.
-    /// </summary>
-    string AssistantContext()
-    {
-        var text = new System.Text.StringBuilder(); // la fecha y la hora van en el prompt de sistema
-        foreach (var account in _settings.Accounts)
-        {
-            if (!_snapshots.TryGetValue(account.ConfigDir, out var snap) || snap.Limits.Count == 0) continue;
-            _profiles.TryGetValue(account.ConfigDir, out var profile);
-            var limits = snap.Limits.Select(l => $"{l.Label} al {l.Percent:0} %" + (Format.Reset(l.ResetsAt) is { Length: > 0 } r ? $" ({r.ToLowerInvariant()})" : ""));
-            text.AppendLine($"Cuenta «{account.Label}»{(profile?.Plan is { Length: > 0 } plan ? $" (plan {plan})" : "")}: {string.Join("; ", limits)}.");
-        }
-        var sessions = (_lastSessions ?? []).Where(s => s.State != SessionState.Idle).Take(8).ToList();
-        if (sessions.Count == 0) text.AppendLine("No hay sesiones de Claude Code activas.");
-        foreach (var s in sessions)
-        {
-            var state = s.State switch
-            {
-                SessionState.Working => "trabajando" + (s.Action is { } a ? $" ({a})" : "") + (s.TodoTotal > 0 ? $", {s.TodoDone} de {s.TodoTotal} tareas" : ""),
-                SessionState.Waiting => s.AwaitingAnswer ? "esperando su respuesta" : "esperando su permiso",
-                SessionState.Failed => "falló: " + (s.ErrorText ?? "error de la API"),
-                _ => "terminó " + Format.Ago(s.TurnEndedAt ?? s.StatusAt),
-            };
-            text.AppendLine($"Sesión «{s.DisplayTitle}» ({s.Account.Label}, carpeta {Path.GetFileName(s.Cwd.TrimEnd('\\', '/'))}): {state}.");
-        }
-        return text.ToString().TrimEnd();
-    }
+    /// <summary>Lo que la mascota sabe del momento (el uso y las sesiones abiertas), para responder sobre eso.</summary>
+    string AssistantContext() => MascotContext.Build(_settings, _snapshots, _profiles, _lastSessions);
 
     void SetMascotSize(string size)
     {
@@ -1826,24 +1781,13 @@ sealed partial class TrayApp : ApplicationContext
         mascot.SetSize(mascot.Pet is { } pet ? MascotSizes.PetUnit(size, pet.Height, scale) : MascotSizes.Unit(size, mascot.Chibi, scale));
     }
 
-    IEnumerable<(string Id, string Label)> AssistantAccountChoices() =>
-        _settings.Accounts.Select(a => (a.ConfigDir, a.Label)).Prepend(("", L.T("La elegida en Uso")));
+    IEnumerable<(string Id, string Label)> AssistantAccountChoices() => AssistantAccounts.Choices(_settings);
 
-    /// <summary>La del asistente primero; después la elegida, las de las sesiones abiertas y la última de «Nueva sesión»; y elegir otra.</summary>
-    IEnumerable<(string Id, string Label)> TaskFolderChoices()
-    {
-        var folders = (_lastSessions ?? []).Select(s => s.Cwd)
-            .Prepend(_settings.Launch.Folder ?? "").Prepend(_settings.TaskFolder ?? "")
-            .Where(f => f.Length > 0 && Directory.Exists(f) && !Account.SamePath(f, AssistantFolder))
-            .Distinct(StringComparer.OrdinalIgnoreCase).Take(8);
-        return folders.Select(f => (f, f.Replace(Account.Home, "~")))
-            .Prepend(("", L.T("La de Claupet ({0})", AssistantFolder.Replace(Account.Home, "~"))))
-            .Append(("…", L.T("Elegir otra carpeta…")));
-    }
+    IEnumerable<(string Id, string Label)> TaskFolderChoices() => TaskFolders.Choices(_settings, _lastSessions);
 
     void PickTaskFolder(string folder)
     {
-        if (folder == "…")
+        if (folder == TaskFolders.Other)
         {
             _form.HoldOpen = true;
             try

@@ -27,7 +27,7 @@ sealed partial class UsageView : Control
 
     /// <summary>Activity son las sesiones, cada una con su carril (antes «Sesiones» y «Flujos»); History, el mapa de calor.</summary>
     enum View { Usage, Activity, History, Settings }
-    enum HitKind { Refresh, Account, Add, View, IdleToggle, Day, Gear, CloseSettings, Setting, FlowSession, FlowBack, SessionAction }
+    enum HitKind { Refresh, Account, Add, View, IdleToggle, Day, Gear, CloseSettings, Setting, SettingsTab, FlowSession, FlowBack, SessionAction }
     sealed record Hit(string Key, Rect Bounds, HitKind Kind, Account? Account = null, SessionInfo? Session = null, View View = View.Usage, DateOnly Day = default);
 
     /// <summary>Semanas completas del cuadro del historial, más la actual.</summary>
@@ -580,8 +580,8 @@ sealed partial class UsageView : Control
                 else ShowSettings();
                 break;
             case HitKind.CloseSettings: OpenView(_beforeSettings); break;
-            case HitKind.Setting when hit.Key is "set:pack" or "set:palette" or "set:mascot" or "set:language": ShowChoiceMenu(hit.Key[4..]); break;
             case HitKind.Setting: SettingRequested?.Invoke(hit.Key[4..]); break;
+            case HitKind.SettingsTab: SelectSettingsTab(Enum.Parse<SettingsTab>(hit.Key["stab:".Length..])); break;
             case HitKind.FlowSession when hit.Session is { } flow: _flowSession = flow.SessionId; Relayout(); break;
             case HitKind.FlowBack: _flowSession = null; Relayout(); break;
             case HitKind.SessionAction when hit.Session is { } session: RunSessionAction(hit.Key, session); break;

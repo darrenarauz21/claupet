@@ -17,6 +17,8 @@ sealed class MascotWindow : Window
 
     public event Action? OpenRequested;
     public event Action? HideRequested;
+    /// <summary>Un clic encima (después del saludo o el enojo que corresponda).</summary>
+    public event Action? Poked;
     /// <summary>Se soltó en otro lugar (esquina de arriba a la izquierda, en pixeles de pantalla).</summary>
     public event Action<PixelPoint>? Moved;
 
@@ -158,7 +160,11 @@ sealed class MascotWindow : Window
             _saved = Position;
             Moved?.Invoke(Position);
         }
-        else _director.Poke(); // saluda; si lo siguen molestando, se enoja
+        else
+        {
+            _director.Poke(); // saluda; si lo siguen molestando, se enoja
+            Poked?.Invoke();
+        }
     }
 
     sealed class MascotView(ChibiDirector director, bool chibi, double unit, Func<System.Drawing.Color> accent) : Control

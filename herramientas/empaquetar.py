@@ -125,6 +125,15 @@ def linux():
     print(f"  listo: paquetes/{name}.tar.gz")
 
 
+def foreign(rel):
+    """Lo de otros sistemas que la voz deja en la publicación de macOS: Whisper copia las bibliotecas de todos
+    (runtimes/<sistema>/) y ONNX Runtime, las suyas de Windows."""
+    parts = rel.split("/")
+    if parts[0] == "runtimes" and len(parts) > 2 and not parts[1].startswith(("macos", "osx")):
+        return True
+    return rel in ("onnxruntime.dll", "onnxruntime_providers_shared.dll")
+
+
 def mac(rid):
     staging = os.path.join(WORK, rid)
     shutil.rmtree(staging, ignore_errors=True)
@@ -139,6 +148,8 @@ def mac(rid):
             for file in files:
                 full = os.path.join(folder, file)
                 rel = os.path.relpath(full, staging).replace("\\", "/")
+                if foreign(rel):
+                    continue
                 with open(full, "rb") as h:
                     data = h.read()
                 executable = file in ("Claupet", "createdump") or data[:4] in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")

@@ -71,10 +71,46 @@ public sealed class SettingsPagesTests
     }
 
     [Fact]
+    public void ConSoloElChatAparecenSusFilasYNoLasDeArchivos()
+    {
+        // La app Avalonia, con el chat de la mascota pero sin soltar archivos ni acciones todavía.
+        var keys = SettingsPages.Build(Full with { Features = PlatformFeatures.MascotChat })
+            .SelectMany(p => p.Rows).Select(r => r.Key).ToHashSet();
+        foreach (var key in new[] { "chat", "mmodel", "account", "folder" })
+            Assert.Contains(key, keys);
+        Assert.DoesNotContain("drops", keys);
+        Assert.DoesNotContain(keys, k => k.StartsWith("grant:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ConLaIslaAparecenSusFilasSinLasDeVozNiAtajos()
+    {
+        // La app Avalonia con el chat y la isla, todavía sin voz, atajos ni acciones.
+        var pages = SettingsPages.Build(Full with { Features = PlatformFeatures.MascotChat | PlatformFeatures.Island });
+        var keys = pages.SelectMany(p => p.Rows).Select(r => r.Key).ToHashSet();
+        foreach (var key in new[] { "island", "imodel", "hover", "busy", "approvals", "recap", "recapnow" })
+            Assert.Contains(key, keys);
+        foreach (var key in new[] { "mic", "readaloud", "shortcuts" })
+            Assert.DoesNotContain(key, keys);
+    }
+
+    [Fact]
+    public void ConLaVozAparecenSusFilasSinLasDeAtajos()
+    {
+        // La app Avalonia con el chat, la isla y la voz, todavía sin atajos ni acciones.
+        var keys = SettingsPages.Build(Full with { Features = PlatformFeatures.MascotChat | PlatformFeatures.Island | PlatformFeatures.Mic | PlatformFeatures.ReadAloud })
+            .SelectMany(p => p.Rows).Select(r => r.Key).ToHashSet();
+        foreach (var key in new[] { "mic", "mickey", "voice", "readaloud", "readvoice", "speech" })
+            Assert.Contains(key, keys);
+        foreach (var key in new[] { "chatkey", "copilot", "shortcuts" })
+            Assert.DoesNotContain(key, keys);
+    }
+
+    [Fact]
     public void ConTodoComoEnWindowsNoFaltaNada()
     {
         var keys = SettingsPages.Build(Full).SelectMany(p => p.Rows).Select(r => r.Key).ToHashSet();
-        foreach (var key in new[] { "chat", "mic", "readaloud", "island", "extensions", "localmodel", "size", "startmenu" })
+        foreach (var key in new[] { "chat", "drops", "mic", "readaloud", "island", "extensions", "localmodel", "size", "startmenu" })
             Assert.Contains(key, keys);
     }
 
