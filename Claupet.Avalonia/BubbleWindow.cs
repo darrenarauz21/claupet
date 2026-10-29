@@ -35,6 +35,7 @@ sealed class BubbleWindow : Window
         Background = Brushes.Transparent;
         TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
         Content = _view;
+        WinStyles.Float(this);
         Cursor = new Cursor(StandardCursorType.Hand);
         _timer.Tick += (_, _) => { _timer.Stop(); Hide(); };
     }

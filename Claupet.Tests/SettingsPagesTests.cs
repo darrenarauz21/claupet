@@ -164,8 +164,8 @@ public sealed class SettingsPagesTests
     public void LosMutexSonDeLaSesionDeWindows()
     {
         // En Windows siguen en «Local\» (la sesión de Windows); en Linux y macOS van en «Global\» con el usuario.
-        string[] names = [ConsoleLink.TrayMutex, ConsoleLink.AvaloniaTrayMutex, ConsoleLink.ConsoleMutex];
-        Assert.Equal([@"Local\Claupet", @"Local\Claupet-avalonia", @"Local\Claupet-console"], names);
+        string[] names = [ConsoleLink.TrayMutex, ConsoleLink.ConsoleMutex];
+        Assert.Equal([@"Local\Claupet", @"Local\Claupet-console"], names);
     }
 
     [Theory]

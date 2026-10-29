@@ -9,7 +9,7 @@ namespace Claupet;
 /// Las extensiones en la app Avalonia, como en la de WinForms (TrayApp.Extensions.cs): el gestor, lo que Claupet les
 /// ofrece (IExtensionHostApi), los eventos que escuchan las habilidades, los comandos «/…» del chat y la API local. Se
 /// ven y se manejan en Claupet Console (Ajustes › Extensiones, ExtensionsPanel). Por ahora, solo en Windows (las claves
-/// van cifradas con DPAPI) y sin la mascota de un paquete ni el audio para las que escuchan.
+/// van cifradas con DPAPI).
 /// </summary>
 sealed partial class TrayController : IExtensionsHost
 {
@@ -22,7 +22,9 @@ sealed partial class TrayController : IExtensionsHost
     static bool RunsExtensions => !Program.Args.Contains("--preview");
 
     ExtensionManager? _extensions;
+    PetSheet? _pet;
     LocalApiServer? _localApi;
+    readonly SharedAudio _audio = new();
     string? _localApiError;
     readonly Dictionary<string, (SessionState State, string? Action)> _seenSessions = new();
 
@@ -50,7 +52,12 @@ sealed partial class TrayController : IExtensionsHost
         ReadAloud.External = () => ExtensionProviders.TextToSpeech(extensions);
         ReadAloud.PackVoice = (voice, cancel) => extensions.VoiceFileAsync(voice, cancel);
         Sounds.PackFile = (pack, name) => extensions.SoundFile(pack, name);
+        _quick.Added += turn => _ = BroadcastAsync("chat", new JsonObject { ["from"] = turn.FromPerson ? "person" : "claupet", ["text"] = turn.Text });
     }
+
+    /// <summary>Alguna habilidad escucha las sesiones: se leen aunque no haya nada a la vista.</summary>
+    bool ExtensionsWatchSessions =>
+        _extensions?.Skills.Any(s => s.Manifest.Events.Contains("session") || s.Manifest.Events.Contains("toolUse")) == true;
 
     /// <summary>Al abrir la app: verifica los paquetes de datos, la API local y las habilidades que escuchan eventos.</summary>
     async Task StartExtensionsAsync()
@@ -59,6 +66,7 @@ sealed partial class TrayController : IExtensionsHost
         try
         {
             await extensions.VerifyPacksAsync();
+            if (_settings.CustomPet is not null) await LoadPetAsync();
             if (!RunsExtensions) return;
             UpdateLocalApi();
             await extensions.StartListenersAsync();
@@ -78,9 +86,68 @@ sealed partial class TrayController : IExtensionsHost
     void OnExtensionsChanged()
     {
         PushSettings();
-        if (_extensions is { } extensions) _ = extensions.VerifyPacksAsync();
+        if (_extensions is not { } extensions) return;
+        _ = extensions.VerifyPacksAsync();
+        // La mascota de un paquete que se apagó o se quitó: vuelve la de siempre.
+        var petId = _settings.CustomPet is { } id && extensions.Pets().Any(p => p.Id == id) ? id : null;
+        if (petId is null && _pet is not null)
+        {
+            _pet = null;
+            UpdateMascotWindow();
+        }
+        else if (petId is not null && _pet is null) _ = LoadPetAsync();
         UpdateVoice();
     }
+
+    async Task LoadPetAsync()
+    {
+        if (_extensions is not { } extensions) return;
+        var pet = _settings.CustomPet is { } id ? await extensions.PetAsync(id) : null;
+        if (pet is null && _settings.CustomPet is not null && !extensions.Pets().Any(p => p.Id == _settings.CustomPet)) _settings.CustomPet = null;
+        _pet = pet;
+        UpdateMascotWindow();
+        PushSettings();
+    }
+
+    /// <summary>Las mascotas de la app y, detrás, las de los paquetes instalados.</summary>
+    IEnumerable<(string Id, string Label)> MascotChoices() => _extensions is { } extensions
+        ? Mascots.Choices.Concat(extensions.Pets().Select(p => (ExtensionManager.PackPrefix + p.Id, p.Label)))
+        : Mascots.Choices;
+
+    string MascotChoice => _settings.CustomPet is { } pet ? ExtensionManager.PackPrefix + pet : Mascots.ChoiceOf(_settings);
+
+    /// <summary>Lo elegido en «Mascota»: la de un paquete (sale al escritorio) o una de la app, que quita la del paquete.</summary>
+    void PickMascot(string choice)
+    {
+        if (choice.StartsWith(ExtensionManager.PackPrefix, StringComparison.Ordinal))
+        {
+            _settings.CustomPet = choice[ExtensionManager.PackPrefix.Length..];
+            _settings.DesktopMascot = true;
+            SettingsStore.Save(_settings);
+            _ = LoadPetAsync();
+            return;
+        }
+        if (_settings.CustomPet is not null)
+        {
+            _settings.CustomPet = null;
+            _pet = null;
+        }
+        SetMascot(choice);
+    }
+
+    /// <summary>La extensión que ocupa una ranura exclusiva, dicha para Ajustes; null: el integrado.</summary>
+    string? ExternalLabel(string slot) => _extensions?.ProviderFor(slot) is { } ext ? L.T("{0} (extensión)", ext.Manifest.Name.Text) : null;
+
+    /// <summary>Si una extensión ocupa la ranura, abre su página en Claupet Console (lo suyo se elige allí) y devuelve true.</summary>
+    bool ExternalIn(string slot)
+    {
+        if (_extensions?.ProviderFor(slot) is not { } ext) return false;
+        _ = OpenConsoleAsync(ExtensionsPanel.DetailPage(ext.Id));
+        return true;
+    }
+
+    /// <summary>Los estilos de sonido de la app y, detrás, los de los paquetes.</summary>
+    IEnumerable<(string Id, string Label)> SoundPackChoices() => Sounds.Packs.Concat(_extensions?.SoundPacks() ?? []);
 
     /// <summary>El resumen de Ajustes › Extensiones.</summary>
     string ExtensionsSummary() => _extensions is not { } extensions ? ""
@@ -173,12 +240,11 @@ sealed partial class TrayController : IExtensionsHost
         await Extensions.VerifyPacksAsync();
         await OnUiAsync(async () =>
         {
-            // La mascota de un paquete queda elegida (la dibuja la app de WinForms); esta app todavía no la dibuja.
             if (useAsPet)
             {
                 _settings.CustomPet = installed.Id;
                 SettingsStore.Save(_settings);
-                ShowExtensionNotice(installed.Manifest.Name.Text, L.T("Su mascota todavía no se ve en esta app."));
+                await LoadPetAsync();
             }
             if (installed.Manifest.Events.Count > 0)
                 try { await Extensions.ChannelAsync(installed.Id); }
@@ -263,6 +329,7 @@ sealed partial class TrayController : IExtensionsHost
             }
             catch (Exception ex) { ErrorLog.Write(ex); }
         }).Wait(3000);
+        _audio.Dispose();
     }
 
     // ── Lo que Claupet les ofrece ──────────────────────────────────────────────────────────
@@ -348,7 +415,16 @@ sealed partial class TrayController : IExtensionsHost
             return true;
         });
 
-        public IDisposable SubscribeAudio(string extensionId, string source, Action<short[]> chunk) =>
-            throw new JsonRpcException(JsonRpcException.InternalError, L.T("Escuchar el audio todavía no está en esta app."));
+        public IDisposable SubscribeAudio(string extensionId, string source, Action<short[]> chunk)
+        {
+            IDisposable subscription;
+            try { subscription = app._audio.Subscribe(source, chunk); }
+            catch (InvalidOperationException ex) { throw new JsonRpcException(JsonRpcException.InternalError, ex.Message); }
+            // Escuchar no pasa desapercibido: se avisa quién y qué.
+            var name = NameOf(extensionId);
+            Dispatcher.UIThread.Post(() => app.ShowExtensionNotice(name, source == SharedAudio.SystemSource
+                ? L.T("Está escuchando lo que suena en el equipo.") : L.T("Está escuchando el micrófono.")));
+            return subscription;
+        }
     }
 }

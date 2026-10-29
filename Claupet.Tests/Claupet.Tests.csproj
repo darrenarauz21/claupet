@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Claupet.csproj" />
+    <ProjectReference Include="..\Claupet.Avalonia\Claupet.Avalonia.csproj" />
     <Using Include="Xunit" />
   </ItemGroup>
 

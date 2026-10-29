@@ -233,7 +233,7 @@ sealed partial class TrayController
 
     async Task ScanSessionsAsync()
     {
-        if (_scanning || (!_popup.IsVisible && !_settings.Notifications && _mascotWindow is null && _island is null)) return;
+        if (_scanning || (!_popup.IsVisible && !_settings.Notifications && _mascotWindow is null && _island is null && !ExtensionsWatchSessions)) return;
         _scanning = true;
         try
         {
@@ -257,8 +257,13 @@ sealed partial class TrayController
     {
         _toasts.Show(notice, _theme);
         _director.Notice(notice.Kind);
-        if (_mascotWindow is { } mascot && _settings.Speak) _bubble.Say(notice, mascot.Chibi, mascot.ScreenBounds);
+        // Con el chat abierto, la nubecita no lo repite encima.
+        if (_mascotWindow is { } mascot && _settings.Speak && _chatBubble?.IsVisible != true) _bubble.Say(notice, mascot.Chibi, mascot.ScreenBounds);
         if (_settings.Sound && _island?.Muted != true) _sounds.Play(notice.Kind, _settings.SoundPack);
+        _ = BroadcastAsync("notice", new System.Text.Json.Nodes.JsonObject
+        {
+            ["kind"] = notice.Kind.ToString().ToLowerInvariant(), ["title"] = notice.Title, ["text"] = notice.Subtitle, ["session"] = notice.SessionId,
+        });
     }
 
     /// <summary>Lo que la vista Ajustes muestra: se manda de nuevo cada vez que algo cambia.</summary>
@@ -283,7 +288,7 @@ sealed partial class TrayController
     {
         if (action.StartsWith("pack:", StringComparison.Ordinal)) SetSoundPack(action[5..]);
         else if (action.StartsWith("palette:", StringComparison.Ordinal)) SetPalette(action[8..]);
-        else if (action.StartsWith("mascot:", StringComparison.Ordinal)) SetMascot(action[7..]);
+        else if (action.StartsWith("mascot:", StringComparison.Ordinal)) PickMascot(action[7..]);
         else if (action.StartsWith("language:", StringComparison.Ordinal)) { SetLanguage(action[9..]); return; }
         else
         {
@@ -473,7 +478,8 @@ sealed partial class TrayController
     {
         var wanted = _settings.DesktopMascot;
         Music.Watch(wanted && _settings.DanceToMusic); // la música solo se mira si hay mascota que baile
-        if (_mascotWindow is { } current && (!wanted || current.Chibi != Mascots.IsChibi || current.AllDesktops != _settings.MascotAllDesktops))
+        if (_mascotWindow is { } current && (!wanted || current.Pet != _pet || (_pet is null && current.Chibi != Mascots.IsChibi)
+            || current.AllDesktops != _settings.MascotAllDesktops))
         {
             _bubble.Hide();
             _chatBubble?.Dismiss(notify: true);
@@ -482,7 +488,8 @@ sealed partial class TrayController
         }
         if (!wanted || _mascotWindow is not null) return;
         PixelPoint? saved = _settings.DesktopMascotX is { } x && _settings.DesktopMascotY is { } y ? new PixelPoint(x, y) : null;
-        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _theme.Accent, _settings.MascotAllDesktops, _settings.MascotSize);
+        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _theme.Accent, _settings.MascotAllDesktops, _settings.MascotSize, _pet);
+        WatchMascotScreens();
         _mascotWindow.PositionChanged += (_, _) =>
         {
             if (_mascotWindow is not { } moved) return;
@@ -722,7 +729,12 @@ sealed partial class TrayController
     {
         _popup.HidePopup();
         var language = L.Language; // el asistente puede cambiarlo mientras está abierto
-        var setup = new SetupWindow(_settings, ExePath, _theme, SetupDirs(), Features);
+        var setup = new SetupWindow(_settings, ExePath, _theme, SetupDirs(), Features)
+        {
+            InstallPackage = HasExtensions ? InstallPackageAsync : null,
+            SpeechToTextExtension = _extensions?.ProviderFor(ExtensionSlots.SpeechToText)?.Manifest.Name.Text,
+            TextToSpeechExtension = _extensions?.ProviderFor(ExtensionSlots.TextToSpeech)?.Manifest.Name.Text,
+        };
         setup.Show();
         setup.Activate();
         var accepted = await setup.Result;
@@ -862,7 +874,9 @@ sealed partial class TrayController
         _island?.Close();
         StopKeys();
         StopExtensions();
+        UnwatchMascotScreens();
         StopVoice();
+        _localDownload?.Cancel();
         _localServer.Dispose();
         _sounds.Dispose();
         _refresh.Dispose();

@@ -46,10 +46,8 @@ static class ConsoleLink
     /// <summary>Claupet.exe --console: Claupet Console, en su propio proceso.</summary>
     public const string Flag = "--console";
 
-    /// <summary>
-    /// Los mutex que toma la bandeja (la de Windows y la de la app Avalonia): con uno tomado, Claupet ya está abierto.
-    /// </summary>
-    public static readonly string TrayMutex = MutexName("Claupet"), AvaloniaTrayMutex = MutexName("Claupet-avalonia");
+    /// <summary>El que toma la bandeja: tomado, Claupet ya está abierto (también la de WinForms de antes de la 2.4).</summary>
+    public static readonly string TrayMutex = MutexName("Claupet");
 
     /// <summary>El de Claupet Console: una sola ventana.</summary>
     public static readonly string ConsoleMutex = MutexName("Claupet-console");
@@ -62,16 +60,12 @@ static class ConsoleLink
     static string MutexName(string name) =>
         OperatingSystem.IsWindows() ? @"Local\" + name : @"Global\" + name + "." + Environment.UserName;
 
-    /// <summary>Si alguna de las dos bandejas está abierta.</summary>
+    /// <summary>Si la bandeja está abierta.</summary>
     public static bool TrayRunning()
     {
-        foreach (var name in new[] { TrayMutex, AvaloniaTrayMutex })
-            if (Mutex.TryOpenExisting(name, out var running))
-            {
-                running.Dispose();
-                return true;
-            }
-        return false;
+        if (!Mutex.TryOpenExisting(TrayMutex, out var running)) return false;
+        running.Dispose();
+        return true;
     }
 
     /// <summary>Una tubería por usuario: con otra sesión abierta en el equipo, cada una tiene la suya.</summary>

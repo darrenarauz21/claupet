@@ -24,6 +24,21 @@ sealed partial class TrayController
 
     string? WhoAnswered(AssistantResult result) => _settings.ShowWhoAnswered ? result.By?.Label : null;
 
+    /// <summary>El uso de Claude dicho sin IA: cada límite con su porcentaje y cuándo se reinicia (null si aún no se sabe).</summary>
+    string? UsageAnswer()
+    {
+        var parts = new List<string>();
+        var known = _settings.Accounts.Where(a => _snapshots.TryGetValue(a.ConfigDir, out var s) && s.Limits.Count > 0).ToList();
+        foreach (var account in known)
+        {
+            var snap = _snapshots[account.ConfigDir];
+            var limits = string.Join(", ", snap.Limits.Select(l => L.T("{0} al {1:0} %", l.Label, l.Percent)
+                + (Format.Reset(l.ResetsAt) is { Length: > 0 } r ? $" ({r.ToLowerInvariant()})" : "")));
+            parts.Add(known.Count == 1 ? limits + "." : L.T("«{0}»: {1}.", account.Label, limits));
+        }
+        return parts.Count == 0 ? null : string.Join(" ", parts) + " (^_^)";
+    }
+
     /// <summary>El clic del saludo abre el chat (el primero; los demás son para enojarla).</summary>
     void OnMascotPoked()
     {
@@ -102,8 +117,12 @@ sealed partial class TrayController
             if (reply.Length == 0) reply = L.T("Listo. (^_^)");
             _quick.Add(new ChatTurn(false, reply));
             QuickUpdated();
-            bubble.Finish(reply, island: false);
-            _director.SetMood(null);
+            ReadAloudIfOn(reply, () =>
+            {
+                if (cancel.IsCancellationRequested) return;
+                bubble.Finish(reply, island: false);
+                _director.SetMood(null);
+            });
             return;
         }
         AssistantResult result;

@@ -108,6 +108,7 @@ sealed class ToastWindow : Window
         Topmost = true;
         Width = ToastWidth;
         Height = ToastHeight;
+        WinStyles.Float(this);
         Background = Gfx.B(theme.Raised);
         _view = new ToastView(notice, theme);
         Content = new Border { BorderThickness = new Thickness(1), BorderBrush = Gfx.B(theme.Border), Child = _view };
@@ -277,6 +278,9 @@ sealed class ToastStack
     public event Action? Shown;
 
     readonly List<ToastWindow> _toasts = new();
+
+    /// <summary>Los avisos abiertos (para esconderlos mientras se captura la pantalla).</summary>
+    public IReadOnlyList<Window> Windows => _toasts;
 
     public void Show(Notice notice, Theme theme)
     {

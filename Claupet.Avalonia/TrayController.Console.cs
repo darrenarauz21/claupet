@@ -52,10 +52,10 @@ sealed partial class TrayController : IConsoleApp
             Features = Features,
             Notifications = s.Notifications,
             Sound = s.Sound,
-            SoundPack = Sounds.Packs.FirstOrDefault(p => p.Id == s.SoundPack).Label ?? Sounds.Packs[0].Label,
+            SoundPack = SoundPackChoices().FirstOrDefault(p => p.Id == s.SoundPack).Label ?? Sounds.Packs[0].Label,
             Palette = Theme.PaletteLabel(s.Palette),
             ThemeStatus = _themeStatus, CustomThemesHere = true,
-            Mascot = Mascots.Label(Mascots.ChoiceOf(s)),
+            Mascot = _pet is { } pet ? pet.Name : Mascots.Label(Mascots.ChoiceOf(s)),
             DesktopMascot = s.DesktopMascot,
             MascotSize = MascotSizes.Label(s.MascotSize),
             MascotAllDesktops = s.MascotAllDesktops,
@@ -67,7 +67,7 @@ sealed partial class TrayController : IConsoleApp
             AngryOnClicks = s.AngryOnClicks,
             SleepWithoutSessions = s.SleepWithoutSessions,
             Chat = s.Chat,
-            MascotModel = ModelLabel(MascotModel),
+            MascotModel = ExternalLabel(ExtensionSlots.Assistant) ?? ModelLabel(MascotModel),
             AssistantAccount = AssistantAccounts.Label(s),
             TaskFolder = TaskFolders.Label(s),
             AnalyzeDrops = s.AnalyzeDrops,
@@ -78,10 +78,10 @@ sealed partial class TrayController : IConsoleApp
             VoiceStatus = VoiceStatusText().Status,
             VoiceAction = VoiceStatusText().Action,
             ReadAloud = s.ReadAloud,
-            ReadAloudVoice = VoiceLabel(s.ReadAloudVoice),
+            ReadAloudVoice = ExternalLabel(ExtensionSlots.TextToSpeech) ?? VoiceLabel(s.ReadAloudVoice),
             SpeechStatus = SpeechStatusText().Status,
             SpeechAction = SpeechStatusText().Action,
-            IslandModel = ModelLabel(s.IslandModel),
+            IslandModel = ExternalLabel(ExtensionSlots.Assistant) ?? ModelLabel(s.IslandModel),
             LocalModel = L.T("{0} · unos {1} de RAM", LocalChoice.Name, LocalChoice.Ram),
             LocalStatus = LocalStatusText().Status,
             LocalAction = LocalStatusText().Action,
@@ -161,21 +161,23 @@ sealed partial class TrayController : IConsoleApp
                 if (engine == topic.Default) _settings.AnswerEngines.Remove(topic.Id);
                 else _settings.AnswerEngines[topic.Id] = engine;
                 SettingsStore.Save(_settings);
+                if (engine == Engine.Local) ModelPicked(AssistantModels.Local); // si falta, se descarga
             });
             return;
         }
         switch (key)
         {
-            case "pack": Choose(Sounds.Packs, _settings.SoundPack, id => _ = OnSettingAsync("pack:" + id)); break;
+            case "pack": Choose(SoundPackChoices(), _settings.SoundPack, id => _ = OnSettingAsync("pack:" + id)); break;
             case "palette": Choose(Theme.Choices(), _settings.Palette, id => _ = OnSettingAsync("palette:" + id)); break;
             case SettingsPages.ThemeDeleteKey: DeleteTheme(); break;
-            case "mascot": Choose(Mascots.Choices, Mascots.ChoiceOf(_settings), id => _ = OnSettingAsync("mascot:" + id)); break;
+            case "mascot": Choose(MascotChoices(), MascotChoice, id => _ = OnSettingAsync("mascot:" + id)); break;
             case "language": Choose(L.Choices, L.Language, id => _ = OnSettingAsync("language:" + id)); break;
             case "answerpreset":
                 Choose(AnswerPresets.Choices(), AnswerPresets.Current(_settings), v =>
                 {
                     AnswerPresets.Apply(_settings, v);
                     SettingsStore.Save(_settings);
+                    if (AnswerPresets.UsesLocal(v)) ModelPicked(AssistantModels.Local); // si falta, se descarga
                 });
                 break;
             case "fallback":
@@ -192,6 +194,8 @@ sealed partial class TrayController : IConsoleApp
                 break;
             case "city": PickCity(); break;
             case "mmodel":
+                // Con el asistente de una extensión, el modelo se elige en sus ajustes.
+                if (ExternalIn(ExtensionSlots.Assistant)) break;
                 Choose(MascotModelChoices(), MascotModel, m =>
                 {
                     _settings.MascotModel = m;
@@ -209,6 +213,7 @@ sealed partial class TrayController : IConsoleApp
                 break;
             case "folder": Choose(TaskFolders.Choices(_settings, _lastSessions), _settings.TaskFolder ?? "", f => _ = PickTaskFolderAsync(f)); break;
             case "imodel":
+                if (ExternalIn(ExtensionSlots.Assistant)) break;
                 Choose(IslandModelChoices(), _settings.IslandModel ?? "", m =>
                 {
                     _settings.IslandModel = m.Length == 0 ? null : m;
@@ -246,7 +251,9 @@ sealed partial class TrayController : IConsoleApp
                         });
                     });
                 break;
-            case "readvoice": Choose(VoiceChoices(), _settings.ReadAloudVoice, SetReadAloudVoice); break;
+            case "readvoice":
+                if (!ExternalIn(ExtensionSlots.TextToSpeech)) Choose(VoiceChoices(), _settings.ReadAloudVoice, SetReadAloudVoice);
+                break;
             default: _ = OnSettingAsync(key); break;
         }
     }
@@ -364,6 +371,28 @@ sealed partial class TrayController : IConsoleApp
                 chat.Streaming = (chat.Streaming ?? "") + piece;
                 chat.Show(true);
             });
+        }
+        // «/comando …»: lo atiende la habilidad de una extensión, no el asistente.
+        if (SkillCommand(text) is { } command)
+        {
+            var answer = await RunSkillCommandAsync(command, Stream, cancel);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                chat.Streaming = null;
+                if (cancel.IsCancellationRequested)
+                {
+                    chat.Show(false);
+                    return;
+                }
+                if (answer.Length == 0) answer = L.T("Listo. (^_^)");
+                ReadAloudIfOn(answer, () =>
+                {
+                    if (cancel.IsCancellationRequested) return;
+                    chat.Log.Add(new ChatTurn(false, answer));
+                    chat.Show(false);
+                });
+            });
+            return;
         }
         var request = new AssistantRequest
         {

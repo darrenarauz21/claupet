@@ -29,6 +29,7 @@ sealed partial class TrayController
                 else ChatBubbleFor().Say(mascot.ScreenBounds, L.T("Las extensiones todavía no están en esta app. (._.)"));
                 return;
             }
+            _ = BroadcastAsync("drop", new System.Text.Json.Nodes.JsonObject { ["file"] = files[0], ["where"] = "pet" });
             _ = CarryAsync(files[0]);
         };
     }

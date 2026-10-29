@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using SD = System.Drawing;
 
@@ -61,6 +62,13 @@ sealed class SetupWindow : Window
     public Task<bool> Result => _done.Task;
     /// <summary>Cuántos hooks agregó o actualizó ApplyHooks.</summary>
     public int HooksChanged { get; private set; }
+
+    /// <summary>Instala un paquete .claupet (lo revisa Claupet Console); null donde no hay extensiones.</summary>
+    public Func<string, Task>? InstallPackage { get; init; }
+
+    /// <summary>La extensión que pasa la voz a texto y la que lee en voz alta, si las hay (las dice en vez de los modelos).</summary>
+    public string? SpeechToTextExtension { get; init; }
+    public string? TextToSpeechExtension { get; init; }
 
     public SetupWindow(AppSettings settings, string exePath, Theme theme, IEnumerable<string> configDirs, PlatformFeatures features)
     {
@@ -371,7 +379,8 @@ sealed class SetupWindow : Window
             ? L.T("La voz, el modelo local y las extensiones todavía no están en este sistema: llegan en una etapa siguiente.")
             : L.T("Los modelos corren en su equipo: se descargan una vez, en segundo plano, y luego funcionan sin internet."));
         if (Has(PlatformFeatures.Mic))
-            Add(new SwitchRow(_t, L.T("Hablarle con el micrófono"), VoiceModel.Ready ? L.T("El modelo de voz ya está en este equipo.")
+            Add(new SwitchRow(_t, L.T("Hablarle con el micrófono"), SpeechToTextExtension is { } stt ? L.T("Lo entiende la extensión {0}.", stt)
+                : VoiceModel.Ready ? L.T("El modelo de voz ya está en este equipo.")
                 : L.T("Descarga el modelo de voz Whisper ({0} MB).", (VoiceModel.Size + 500_000) / 1_000_000), Mic, true, v =>
             {
                 Mic = v;
@@ -379,11 +388,19 @@ sealed class SetupWindow : Window
             }));
         if (Has(PlatformFeatures.ReadAloud))
             Add(new SwitchRow(_t, L.T("Leer las respuestas en voz alta"),
-                !ClaupetVoices.IsClaupet(_readVoice) ? L.T("Con la voz elegida en Ajustes › Asistente.")
+                TextToSpeechExtension is { } tts ? L.T("Con la voz de la extensión {0}.", tts)
+                : !ClaupetVoices.IsClaupet(_readVoice) ? L.T("Con la voz elegida en Ajustes › Asistente.")
                 : ClaupetVoiceModel.Ready ? L.T("La voz de Claupet ya está en este equipo.")
                 : OperatingSystem.IsWindows() ? L.T("Descarga la voz de Claupet ({0} MB); mientras, lee la de Windows.", (ClaupetVoiceModel.Size + 500_000) / 1_000_000)
                 : L.T("Descarga la voz de Claupet ({0} MB); mientras, lee la del sistema.", (ClaupetVoiceModel.Size + 500_000) / 1_000_000),
                 ReadAloud, true, v => ReadAloud = v));
+        if (Has(PlatformFeatures.Extensions) && InstallPackage is { } install)
+        {
+            var (button, text) = Pill(PillKind.Quiet, () => _ = PickPackageAsync(install));
+            SetText(button, text, L.T("Instalar…"));
+            Add(Field(L.T("Extensiones"), button));
+            Add(Label(L.T("Voces, modelos de voz y asistentes de terceros en paquetes firmados."), 11.7, _t.Tertiary, margin: new Thickness(0, -2, 0, 8)));
+        }
         if (Has(PlatformFeatures.LocalModel))
         {
             // El modelo local: la mascota responde con él, sin internet ni tokens; la isla sigue con Claude.
@@ -562,6 +579,19 @@ sealed class SetupWindow : Window
             pill.BorderThickness = new Thickness(1);
         }
         return (pill, text);
+    }
+
+    /// <summary>Elige un paquete .claupet con el selector del sistema y lo manda a revisar.</summary>
+    async Task PickPackageAsync(Func<string, Task> install)
+    {
+        if (!StorageProvider.CanOpen) return;
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = L.T("Instalar una extensión"),
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType(L.T("Paquetes de Claupet")) { Patterns = ["*.claupet"] }],
+        });
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) await install(path);
     }
 
     static void SetText(Border pill, TextBlock text, string value)

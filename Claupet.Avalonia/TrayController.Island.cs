@@ -69,7 +69,13 @@ sealed partial class TrayController
                 IslandChat.Show(false);
             };
             island.Asked += AskIsland;
-            island.FilesDropped += files => _ = AnalyzeAsync(files[0]);
+            island.FilesDropped += files =>
+            {
+                // Un paquete de Claupet no se analiza: se revisa en Claupet Console antes de instalarlo.
+                if (HasExtensions && IsPackage(files[0])) { _ = InstallPackageAsync(files[0]); return; }
+                _ = BroadcastAsync("drop", new System.Text.Json.Nodes.JsonObject { ["file"] = files[0], ["where"] = "island" });
+                _ = AnalyzeAsync(files[0]);
+            };
             island.CancelClicked += () =>
             {
                 _quickAsking?.Cancel();
