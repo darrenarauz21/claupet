@@ -69,6 +69,8 @@ sealed class AppSettings
     /// <summary>Se duerme sin sesiones abiertas; si no, se queda quieta.</summary>
     public bool SleepWithoutSessions { get; set; } = true;
     /// <summary>Dónde quedó la ventana de la mascota al arrastrarla, en pixeles de pantalla; null: junto a los avisos.</summary>
+    /// <summary>La mascota sigue a la vista al cambiar de escritorio virtual (Windows) o de Espacio (macOS).</summary>
+    public bool MascotAllDesktops { get; set; } = true;
     public int? DesktopMascotX { get; set; }
     public int? DesktopMascotY { get; set; }
     /// <summary>Tamaño de la mascota del escritorio (MascotSizes).</summary>
@@ -82,6 +84,25 @@ sealed class AppSettings
     public string MascotModel { get; set; } = "haiku";
     /// <summary>Modelo de la isla; null: el de sus sesiones (Claude Code usa el predeterminado de la cuenta).</summary>
     public string? IslandModel { get; set; }
+    /// <summary>
+    /// El modelo local (LocalModel.Choices): el que se descarga y responde cuando la mascota o la isla tienen
+    /// «local» como modelo. null: ninguno elegido todavía.
+    /// </summary>
+    public string? LocalModel { get; set; }
+    /// <summary>Minutos sin uso tras los que el modelo local suelta la memoria.</summary>
+    public int LocalIdleMinutes { get; set; } = 5;
+
+    /// <summary>Ajustes › Respuestas: quién responde primero cada tipo de pregunta (AnswerTopics); el que falta, el de siempre.</summary>
+    public Dictionary<string, Engine> AnswerEngines { get; set; } = new();
+    /// <summary>«personalizado» si se eligió a mano en Respuestas; si no (null), el modo es el que coincide (AnswerPresets).</summary>
+    public string? AnswerPreset { get; set; }
+    /// <summary>Si el primero no entiende, hasta dónde pasa: la nube, el modelo local o (None) a nadie.</summary>
+    public Engine AnswerFallback { get; set; } = Engine.Cloud;
+    /// <summary>Debajo de cada respuesta, quién respondió («Sin IA · al instante»).</summary>
+    public bool ShowWhoAnswered { get; set; } = true;
+    /// <summary>Mi ciudad, para el clima: «ip», «windows» (la ubicación de Windows) o «ciudad» (WeatherCity).</summary>
+    public string WeatherPlace { get; set; } = WeatherService.ByIp;
+    public string? WeatherCity { get; set; }
     /// <summary>Cuenta que responde el chat (su carpeta de configuración); null: la elegida en Uso.</summary>
     public string? AssistantAccount { get; set; }
     /// <summary>Carpeta donde se abren las tareas que se le piden a la mascota; null: la última de «Nueva sesión».</summary>
@@ -115,18 +136,18 @@ sealed class AppSettings
     public DateOnly? RecapShown { get; set; }
     /// <summary>El asistente de configuración ya se mostró una vez.</summary>
     public bool SetupDone { get; set; }
+    /// <summary>El acceso directo «Claupet» del menú Inicio, que abre Claupet Console (en Windows).</summary>
+    public bool StartMenuShortcut { get; set; } = true;
+    /// <summary>El mismo acceso directo en el escritorio.</summary>
+    public bool DesktopShortcut { get; set; }
     /// <summary>Lo último elegido en «Nueva sesión».</summary>
     public LaunchOptions Launch { get; set; } = new();
-    /// <summary>Las 3 vistas fijas como pestañas, en orden. Las demás se abren desde el selector.</summary>
-    public List<string> PinnedViews { get; set; } = [.. DefaultPinned];
 
     /// <summary>Las extensiones: encendidas, sus permisos y ajustes, y quién ocupa cada ranura exclusiva.</summary>
     public ExtensionSettings Extensions { get; set; } = new();
 
     /// <summary>La mascota del escritorio de un paquete (su id); null: la elegida en Mascot. Los avisos siguen con la de Mascot.</summary>
     public string? CustomPet { get; set; }
-
-    public static readonly string[] DefaultPinned = ["Usage", "Sessions", "Activity"];
 }
 
 /// <summary>

@@ -16,7 +16,7 @@ sealed record UiFont(Typeface Typeface, double Size)
     public double LineHeight => _lineHeight ??= Gfx.Measure("Ág", this).Height;
 }
 
-enum Glyph { Refresh, Add, Check, Close, Bell, BellOff, ChevronDown, ChevronUp, Settings, Back, Message, Read, Search, Edit, Run, Agent, Web, Ask, Other }
+enum Glyph { Refresh, Add, Check, Close, Bell, BellOff, ChevronDown, ChevronUp, Settings, Back, Message, Read, Search, Edit, Run, Agent, Web, Ask, Other, Send, Stop, Mic, Volume, Mute }
 
 /// <summary>Fuentes, colores, texto, íconos vectoriales y pixeles para la interfaz de Avalonia.</summary>
 static class Gfx
@@ -30,6 +30,7 @@ static class Gfx
     public static readonly UiFont Body = new(new Typeface(Sans), 13);
     public static readonly UiFont BodyStrong = new(new Typeface(Sans, FontStyle.Normal, FontWeight.SemiBold), 13);
     public static readonly UiFont Small = new(new Typeface(Sans), 11.7);
+    public static readonly UiFont SmallStrong = new(new Typeface(Sans, FontStyle.Normal, FontWeight.SemiBold), 11.7);
     public static readonly UiFont Tiny = new(new Typeface(Sans), 10.3);
     public static readonly UiFont ToastTitle = new(new Typeface(Sans, FontStyle.Normal, FontWeight.SemiBold), 13.3);
     public static readonly UiFont ToastBody = new(new Typeface(Sans), 12);
@@ -115,27 +116,12 @@ static class Gfx
         [Glyph.Web] = Geometry.Parse("M14,8 A6,6 0 1 1 2,8 A6,6 0 1 1 14,8 M2,8 L14,8 M8,2 A9,9 0 0 1 8,14 A9,9 0 0 1 8,2"),
         [Glyph.Ask] = Geometry.Parse("M14,8 A6,6 0 1 1 2,8 A6,6 0 1 1 14,8 M6.3,6.2 A1.8,1.8 0 1 1 8.8,7.8 Q8,8.3 8,9.4 M8,11.4 L8,11.6"),
         [Glyph.Other] = Geometry.Parse("M4,8 L4.01,8 M8,8 L8.01,8 M12,8 L12.01,8"),
+        [Glyph.Send] = Geometry.Parse("M8,13 L8,3.5 M4,7.5 L8,3.5 L12,7.5"),
+        [Glyph.Stop] = Geometry.Parse("M5,5 L11,5 L11,11 L5,11 Z"),
+        [Glyph.Mic] = Geometry.Parse("M8,2 A2,2 0 0 1 10,4 L10,7.5 A2,2 0 0 1 6,7.5 L6,4 A2,2 0 0 1 8,2 Z M4.5,7.5 A3.5,3.5 0 0 0 11.5,7.5 M8,11 L8,13.5"),
+        [Glyph.Volume] = Geometry.Parse("M2.5,6 L5,6 L8.5,3 L8.5,13 L5,10 L2.5,10 Z M10.5,6 A2.8,2.8 0 0 1 10.5,10 M12,4 A5.5,5.5 0 0 1 12,12"),
+        [Glyph.Mute] = Geometry.Parse("M2.5,6 L5,6 L8.5,3 L8.5,13 L5,10 L2.5,10 Z M10.5,6 L14,9.5 M14,6 L10.5,9.5"),
     };
-
-    // La tachuela, en una caja de 24 × 24: cuerpo cerrado (para rellenarlo) y aguja aparte.
-    static readonly Geometry PinBody = Geometry.Parse(
-        "M8.5,2.5 L15.5,2.5 L15.5,5.5 L14.8,5.5 L16,12.5 L18.5,13.5 L18.5,16 L5.5,16 L5.5,13.5 L8,12.5 L9.2,5.5 L8.5,5.5 Z");
-    static readonly Geometry PinNeedle = Geometry.Parse("M12,16 L12,22");
-
-    /// <summary>Tachuela inclinada 30°; rellena cuando la vista está fija.</summary>
-    public static void Pin(DrawingContext? dc, SD.Color color, Rect box, bool filled)
-    {
-        if (dc is null) return;
-        var scale = box.Width / 24;
-        var transform = Matrix.CreateTranslation(-12, -12) * Matrix.CreateRotation(Math.PI / 6)
-            * Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(box.Center.X, box.Center.Y);
-        using (dc.PushTransform(transform))
-        {
-            var pen = P(color, 2);
-            dc.DrawGeometry(filled ? B(color) : null, pen, PinBody);
-            dc.DrawGeometry(null, pen, PinNeedle);
-        }
-    }
 
     public static void Icon(DrawingContext? dc, Glyph glyph, SD.Color color, Rect box, double size = 16)
     {

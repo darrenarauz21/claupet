@@ -1,69 +1,47 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Threading;
 using SD = System.Drawing;
 
 namespace Claupet;
 
 /// <summary>
-/// Vista «Flujos» (igual que en Windows): un carril por sesión con sus pasos del turno; clic en un
-/// carril abre el mapa de esa sesión. Mientras una sesión trabaja siempre hay algo animado.
+/// Vista «Actividad», antes «Sesiones» y «Flujos» (igual que en Windows): un carril por sesión con sus pasos del turno,
+/// y las inactivas plegadas al final; clic en un carril abre el detalle de esa sesión con su mapa. Mientras una sesión
+/// trabaja siempre hay algo animado.
 /// </summary>
 sealed partial class UsageView
 {
     readonly Flows.Arrivals _arrivals = new();
     string? _flowSession;
+    /// <summary>Cuándo se copió el ID de la sesión (el botón dice «Copiado» un momento).</summary>
+    long _copiedAt = -10_000;
 
-    static Glyph KindGlyph(ToolKind kind) => kind switch
+    static double EaseOut(double p) => LaneNodes.EaseOut(p);
+
+    static double Wave(int periodMs) => LaneNodes.Wave(periodMs);
+
+    LaneColors LaneColors => new(_t.Background, _t.Border, _t.Text, _t.Secondary, _t.Tertiary, _t.Accent, _t.Warn, _t.Danger);
+
+    double ComposeActivity(DrawingContext? dc, double y)
     {
-        ToolKind.Read => Glyph.Read,
-        ToolKind.Search => Glyph.Search,
-        ToolKind.Edit => Glyph.Edit,
-        ToolKind.Run => Glyph.Run,
-        ToolKind.Agent => Glyph.Agent,
-        ToolKind.Web => Glyph.Web,
-        ToolKind.Ask => Glyph.Ask,
-        _ => Glyph.Other,
-    };
-
-    static double EaseOut(double p) => 1 - (1 - p) * (1 - p);
-
-    static double Wave(int periodMs) => Environment.TickCount64 % periodMs / (double)periodMs;
-
-    /// <summary>Halo que se expande y se desvanece, en bucle.</summary>
-    static void DrawHalo(DrawingContext dc, Rect box, SD.Color color, double spread)
-    {
-        var wave = Wave(1400);
-        var grow = spread * wave;
-        dc.DrawEllipse(Gfx.B(SD.Color.FromArgb((int)(110 * (1 - wave)), color)), null, box.Inflate(grow));
-    }
-
-    /// <summary>Nodo «Pensando»: crece y suelta una onda con cada golpe del latido; tres puntos saltan dentro.</summary>
-    void DrawThinking(DrawingContext dc, Point center, double circle)
-    {
-        var tick = Environment.TickCount64;
-        var beat = Flows.Heartbeat(tick);
-        var radius = circle / 2 * (1 + 0.16 * beat);
-        dc.DrawEllipse(Gfx.B(SD.Color.FromArgb((int)(120 * beat), _t.Accent)), null, center, radius + 10 * beat, radius + 10 * beat);
-        dc.DrawEllipse(Gfx.B(_t.Accent), null, center, radius, radius);
-        DrawDots(dc, center, _t.Background, tick);
-    }
-
-    /// <summary>Tres puntos que saltan uno detrás del otro, centrados en el punto dado.</summary>
-    static void DrawDots(DrawingContext dc, Point center, SD.Color color, long tick)
-    {
-        for (var i = 0; i < 3; i++)
-            dc.DrawEllipse(Gfx.B(color), null, new Point(center.X + (i - 1) * 5.5, center.Y - 3.5 * Flows.DotBounce(tick, i)), 1.8, 1.8);
-    }
-
-    double ComposeFlows(DrawingContext? dc, double y)
-    {
+        foreach (var key in _rowBounds.Keys.Where(k => !_sessions.Any(s => "flow:" + s.SessionId == k)).ToList())
+            _rowBounds.Remove(key);
         if (_flowSession is { } id)
         {
             if (_sessions.FirstOrDefault(s => s.SessionId == id) is { } session) return ComposeFlowDetail(dc, session, y);
             _flowSession = null;
         }
 
+        if (_sessions.Count == 0)
+        {
+            Gfx.Write(dc, L.T("No hay sesiones abiertas."), Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, Gfx.Body.LineHeight));
+            return y + Gfx.Body.LineHeight + 24;
+        }
+
         var lanes = _sessions.Where(s => s.State != SessionState.Idle).ToList();
+        var idle = _sessions.Where(s => s.State == SessionState.Idle).ToList();
         if (lanes.Count == 0)
         {
             Gfx.Write(dc, L.T("No hay sesiones activas."), Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, Gfx.Body.LineHeight));
@@ -72,7 +50,23 @@ sealed partial class UsageView
         foreach (var session in lanes)
             y = ComposeLane(dc, session, y) + 8;
 
-        var hint = L.T("Clic en una sesión: su mapa completo. Sale de los archivos de Claude Code; no gasta tokens.");
+        // Las inactivas, plegadas al final: cada una con su título y desde cuándo no hace nada.
+        if (idle.Count > 0)
+        {
+            var toggleHeight = Gfx.Small.LineHeight + 12;
+            var toggle = new Rect(Pad - 4, y, Inner + 8, toggleHeight);
+            AddHit("idle", toggle, HitKind.IdleToggle);
+            if (dc is not null)
+            {
+                if (_hoverKey == "idle") Gfx.Fill(dc, _t.Hover, toggle, 8);
+                Gfx.Write(dc, L.T("Inactivas ({0})", idle.Count), Gfx.Small, _t.Tertiary, new Rect(Pad + 4, y, Inner - 8, toggleHeight), center: true);
+                Gfx.Icon(dc, _showIdle ? Glyph.ChevronUp : Glyph.ChevronDown, _t.Tertiary, new Rect(Pad + Inner - 20, y, 16, toggleHeight), 13);
+            }
+            y += toggleHeight + 8;
+            if (_showIdle) foreach (var session in idle) y = ComposeLane(dc, session, y) + 8;
+        }
+
+        var hint = L.T("Clic en una sesión: su detalle y su mapa. Sale de los archivos de Claude Code; no gasta tokens.");
         var height = Gfx.MeasureWrapped(hint, Gfx.Small, Inner, 3);
         Gfx.Write(dc, hint, Gfx.Small, _t.Tertiary, new Rect(Pad, y + 2, Inner, height), maxLines: 3);
         return y + height + 14;
@@ -81,7 +75,7 @@ sealed partial class UsageView
     double ComposeLane(DrawingContext? dc, SessionInfo s, double y)
     {
         var key = "flow:" + s.SessionId;
-        var compact = s.State == SessionState.Done;
+        var compact = s.State is SessionState.Done or SessionState.Idle;
         var top = y;
         var x0 = Pad + 4;
         var width = Inner - 8;
@@ -139,7 +133,11 @@ sealed partial class UsageView
                 parts.Add(s.Steps == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Steps));
                 if (s.LastTurn is { } d) parts.Add(Format.Duration(d));
                 return (string.Join(" · ", parts), _t.Tertiary);
+            case SessionState.Idle:
+                parts.Add(L.T("última actividad {0}", Format.Ago(s.TurnEndedAt ?? s.StatusAt)));
+                return (string.Join(" · ", parts), _t.Tertiary);
             default:
+                if (s.TodoTotal > 0) parts.Add(L.T("{0} de {1} tareas", s.TodoDone, s.TodoTotal));
                 if (s.Model is { } model) parts.Add(Format.Model(model) + (s.Effort is { } e ? " " + e : ""));
                 if (s.TurnStartedAt is { } start) parts.Add(Format.Duration(DateTimeOffset.Now - start));
                 return (string.Join(" · ", parts), _t.Tertiary);
@@ -148,82 +146,8 @@ sealed partial class UsageView
 
     double ComposeLaneNodes(DrawingContext? dc, SessionInfo s, double x0, double width, double y)
     {
-        var groups = Flows.Groups(s.Flow);
-        var thinking = Flows.Thinking(s);
-        var shown = groups.TakeLast(thinking ? 2 : 3).ToList();
-        var hidden = groups.Count - shown.Count;
-        var columns = 1 + (hidden > 0 ? 1 : 0) + shown.Count + (thinking ? 1 : 0);
-        var column = width / Math.Max(columns, 4);
-        const double circle = 26;
+        y = LaneNodes.Compose(dc, s, x0, width, y, LaneColors, _arrivals);
         var tiny = Gfx.Tiny.LineHeight;
-        var cy = y + circle / 2;
-        var centers = Enumerable.Range(0, columns).Select(i => x0 + i * column + column / 2).ToList();
-        var active = Flows.Active(s);
-
-        var arrival = new double[columns];
-        Array.Fill(arrival, 1);
-        var first = 1 + (hidden > 0 ? 1 : 0);
-        for (var i = 0; i < shown.Count; i++) arrival[first + i] = EaseOut(_arrivals.Progress(shown[i].Last.Id));
-
-        if (dc is not null)
-        {
-            for (var i = 1; i < columns; i++)
-            {
-                var from = centers[i - 1] + circle / 2 + 3;
-                var to = centers[i] - circle / 2 - 3;
-                var live = i == columns - 1 && s.State is SessionState.Working or SessionState.Waiting;
-                dc.DrawLine(Gfx.P(live ? Gfx.Blend(_t.Border, _t.Accent, 0.5) : _t.Border, 2), new Point(from, cy), new Point(from + (to - from) * arrival[i], cy));
-                if (live && s.State == SessionState.Working && to > from)
-                    dc.DrawEllipse(Gfx.B(_t.Accent), null, new Point(from + 3 + (to - from - 6) * Wave(1100), cy), 3, 3);
-            }
-        }
-
-        var index = 0;
-        void Node(Glyph? glyph, string? chip, string label, string? detail, SD.Color fill, SD.Color iconColor, SD.Color? halo, bool outline, double grow = 1)
-        {
-            var cx = centers[index++];
-            if (dc is null) return;
-            var size = circle * (0.45 + 0.55 * grow);
-            var box = new Rect(cx - size / 2, y + (circle - size) / 2, size, size);
-            if (halo is { } h) DrawHalo(dc, box, h, 9);
-            dc.DrawEllipse(Gfx.B(fill), outline ? Gfx.P(_t.Border) : null, box);
-            if (grow > 0.7)
-            {
-                if (glyph is { } g) Gfx.Icon(dc, g, iconColor, box, 13);
-                else if (chip is not null) Gfx.Write(dc, chip, Gfx.Small, iconColor, box, TextAlignment.Center, center: true);
-            }
-            var labelBox = new Rect(cx - column / 2, y + circle + 4, column, tiny);
-            Gfx.Write(dc, label, Gfx.Tiny, Gfx.Blend(_t.Background, halo is null ? _t.Tertiary : _t.Text, grow), labelBox, TextAlignment.Center);
-            if (detail is not null)
-                Gfx.Write(dc, detail, Gfx.Tiny, Gfx.Blend(_t.Background, _t.Tertiary, grow), new Rect(labelBox.X, labelBox.Bottom, column, tiny), TextAlignment.Center);
-        }
-
-        Node(Glyph.Message, null, L.T("Pedido"), null, _t.Background, _t.Secondary, null, outline: true);
-        if (hidden > 0) Node(null, "+" + hidden, L.T("antes"), null, _t.Background, _t.Secondary, null, outline: true);
-        foreach (var group in shown)
-        {
-            var isLast = group == shown[^1];
-            var running = isLast && active is not null && group.Last == active && !thinking;
-            var waiting = isLast && s.State == SessionState.Waiting;
-            var failed = isLast && s.State == SessionState.Failed;
-            var accent = waiting ? _t.Warn : failed ? _t.Danger : _t.Accent;
-            var lit = running || waiting || failed;
-            var label = group.Count > 1 ? $"{group.Verb} ×{group.Count}" : group.Verb;
-            Node(KindGlyph(group.Kind), null, label, lit || (isLast && thinking) ? group.Detail : null,
-                lit ? accent : _t.Background, lit ? _t.Background : _t.Secondary,
-                running || waiting ? accent : null, outline: !lit, grow: arrival[index]);
-        }
-        if (thinking)
-        {
-            // El modelo está generando el siguiente paso: el nodo late y tres puntos saltan dentro.
-            var cx = centers[index++];
-            if (dc is not null)
-            {
-                DrawThinking(dc, new Point(cx, cy), circle);
-                Gfx.Write(dc, L.T("Pensando…"), Gfx.Tiny, _t.Text, new Rect(cx - column / 2, y + circle + 4, column, tiny), TextAlignment.Center);
-            }
-        }
-        y += circle + 4 + 2 * tiny;
 
         if (s.Flow.LastOrDefault(f => f.Kind == ToolKind.Agent) is { } agent)
         {
@@ -237,7 +161,7 @@ sealed partial class UsageView
         return y;
     }
 
-    // ── Mapa de una sesión ──────────────────────────────────────────────────────────────────
+    // ── Detalle de una sesión: lo que es, su mapa y qué hacer con ella ──────────────────────
 
     double ComposeFlowDetail(DrawingContext? dc, SessionInfo s, double y)
     {
@@ -251,10 +175,21 @@ sealed partial class UsageView
             Gfx.Fill(dc, _hoverKey == "flow-back" ? _t.Hover : _t.Raised, back, 8);
             Gfx.Icon(dc, Glyph.Back, _t.Text, back, 14);
             Gfx.Write(dc, s.DisplayTitle, Gfx.Body, _t.Text, new Rect(back.Right + 10, y - 2, Inner - 40, body));
-            var sub = string.Join(" · ", new[] { Path.GetFileName(s.Cwd.TrimEnd('\\', '/')), Format.ModelLine(s) }.Where(p => !string.IsNullOrEmpty(p)));
-            Gfx.Write(dc, sub, Gfx.Small, _t.Tertiary, new Rect(back.Right + 10, y + body, Inner - 40, small));
+            var (status, color) = StatusLine(s);
+            Gfx.Write(dc, status, Gfx.Small, color, new Rect(back.Right + 10, y + body, Inner - 40, small));
         }
         y += Math.Max(28, body + small) + 14;
+
+        // El pedido, la carpeta, el modelo y cuántas interacciones lleva.
+        const double labelWidth = 84;
+        foreach (var (label, value, lines) in Details(s))
+        {
+            var height = Gfx.MeasureWrapped(value, Gfx.Small, Inner - labelWidth, lines);
+            Gfx.Write(dc, label, Gfx.Small, _t.Tertiary, new Rect(Pad, y, labelWidth, small));
+            Gfx.Write(dc, value, Gfx.Small, _t.Secondary, new Rect(Pad + labelWidth, y, Inner - labelWidth, height), maxLines: lines);
+            y += height + 5;
+        }
+        y += 14;
 
         var active = Flows.Active(s);
         var thinking = Flows.Thinking(s);
@@ -323,7 +258,7 @@ sealed partial class UsageView
             Gfx.Write(dc, L.T("Sesión"), Gfx.Small, _t.Text, new Rect(inner.X, inner.Y, inner.Width, small));
             Gfx.Write(dc, status, Gfx.Tiny, color, new Rect(inner.X, inner.Y + small + 1, inner.Width, tiny));
             if (thinking)
-                DrawDots(dc, new Point(inner.X + Gfx.Measure(status, Gfx.Tiny).Width + 9, inner.Y + small + 1 + tiny * 0.62), color, Environment.TickCount64);
+                LaneNodes.DrawDots(dc, new Point(inner.X + Gfx.Measure(status, Gfx.Tiny).Width + 9, inner.Y + small + 1 + tiny * 0.62), color, Environment.TickCount64);
             Gfx.Write(dc, s.Flow.Count == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Flow.Count), Gfx.Tiny, _t.Tertiary, new Rect(inner.X, inner.Y + small + tiny + 2, inner.Width, tiny));
 
             for (var i = 0; i < Flows.MapKinds.Length; i++)
@@ -380,6 +315,55 @@ sealed partial class UsageView
             }
             y += small + 5;
         }
-        return y + 10;
+        return ComposeSessionActions(dc, s, y + 10) + 14;
+    }
+
+    /// <summary>Los botones del detalle, los mismos del menú del clic derecho.</summary>
+    double ComposeSessionActions(DrawingContext? dc, SessionInfo s, double y)
+    {
+        var copied = Environment.TickCount64 - _copiedAt < 1500;
+        (string Key, string Label)[] actions =
+        [
+            ("act:new", L.T("Nueva sesión aquí…")),
+            ("act:folder", L.T("Abrir carpeta")),
+            ("act:copy", copied ? L.T("Copiado") : L.T("Copiar ID")),
+        ];
+        const double height = 28;
+        var x = Pad;
+        foreach (var (key, label) in actions)
+        {
+            var width = Gfx.Measure(label, Gfx.Small).Width + 24;
+            if (x + width > Pad + Inner && x > Pad) { x = Pad; y += height + 6; }
+            var box = new Rect(x, y, width, height);
+            AddHit(key, box, HitKind.SessionAction, session: s);
+            if (dc is not null)
+            {
+                Gfx.Fill(dc, _hoverKey == key ? _t.Hover : _t.Raised, box, 8);
+                Gfx.Outline(dc, _t.Border, box, 8);
+                Gfx.Write(dc, label, Gfx.Small, _t.Text, box, TextAlignment.Center, center: true);
+            }
+            x += width + 6;
+        }
+        return y + height;
+    }
+
+    void RunSessionAction(string key, SessionInfo s)
+    {
+        switch (key)
+        {
+            case "act:new":
+                NewSessionRequested?.Invoke(s);
+                break;
+            case "act:folder":
+                Gfx.OpenFolder(s.Cwd);
+                break;
+            case "act:copy":
+                _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(s.SessionId);
+                _copiedAt = Environment.TickCount64;
+                InvalidateVisual();
+                // Vuelve a decir «Copiar ID» aunque no haya ninguna animación corriendo.
+                DispatcherTimer.RunOnce(InvalidateVisual, TimeSpan.FromMilliseconds(1600));
+                break;
+        }
     }
 }

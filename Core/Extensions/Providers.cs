@@ -284,16 +284,28 @@ sealed class OpenAiChat(ExtensionManager manager, InstalledExtension ext) : IAss
         var uri = ExtensionProviders.Endpoint(manager, ext, "/chat/completions");
         var model = ExtensionProviders.Model(manager, ext, request.Model)
             ?? throw new ExtensionUnavailableException(L.T("«{0}» no dice qué modelo usar: elíjalo en sus ajustes.", Name));
+        using var http = SystemProxy.Client(TimeSpan.FromMinutes(5));
+        return await SendAsync(http, uri, model, request, message => ExtensionProviders.Authorize(message, manager, ext), Name,
+            response => ExtensionProviders.ErrorOf(response, ext), onText, cancel);
+    }
+
+    /// <summary>
+    /// La conversación por /chat/completions con stream (SSE), por partes. La usan las extensiones y el
+    /// modelo local de Claupet (llama-server), cada uno con su cliente, su clave y su forma de decir el error.
+    /// </summary>
+    public static async Task<BrainReply> SendAsync(HttpClient http, Uri uri, string model, BrainRequest request,
+        Action<HttpRequestMessage> authorize, string name, Func<HttpResponseMessage, Task<string>> errorOf,
+        Action<string>? onText, CancellationToken cancel)
+    {
         var messages = new JsonArray { new JsonObject { ["role"] = "system", ["content"] = request.System } };
         foreach (var m in request.Messages) messages.Add(new JsonObject { ["role"] = m.Role, ["content"] = m.Text });
-        using var http = SystemProxy.Client(TimeSpan.FromMinutes(5));
         using var message = new HttpRequestMessage(HttpMethod.Post, uri)
         {
             Content = new StringContent(new JsonObject { ["model"] = model, ["messages"] = messages, ["stream"] = true }.ToJsonString(), Encoding.UTF8, "application/json"),
         };
-        ExtensionProviders.Authorize(message, manager, ext);
+        authorize(message);
         using var response = await http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancel);
-        if (!response.IsSuccessStatusCode) throw new ExtensionUnavailableException(await ExtensionProviders.ErrorOf(response, ext));
+        if (!response.IsSuccessStatusCode) throw new ExtensionUnavailableException(await errorOf(response));
 
         var text = new StringBuilder();
         string? answeredBy = null;
@@ -317,7 +329,7 @@ sealed class OpenAiChat(ExtensionManager manager, InstalledExtension ext) : IAss
                 using var doc = JsonDocument.Parse(data);
                 answeredBy ??= Json.Str(doc.RootElement, "model");
                 if (doc.RootElement.TryGetProperty("error", out var error))
-                    throw new ExtensionUnavailableException(L.T("«{0}» no respondió: {1}.", Name, Json.Str(error, "message") ?? error.GetRawText()));
+                    throw new ExtensionUnavailableException(L.T("«{0}» no respondió: {1}.", name, Json.Str(error, "message") ?? error.GetRawText()));
                 var piece = Content(doc.RootElement, "delta");
                 if (piece.Length == 0) continue;
                 text.Append(piece);

@@ -4,7 +4,7 @@ namespace Claupet;
 /// Lo que Claupet hace en el equipo además de lo de siempre (fondo, tema, color, volumen, música y abrir):
 /// cada capacidad pide permiso la primera vez que se usa. «Permitir siempre» la deja en Permissions del
 /// settings.json de la app; en Ajustes › Asistente › Permisos se da o se quita. Los Id van en settings.json
-/// y no cambian con el idioma. Por ahora solo en Windows, como el chat.
+/// y no cambian con el idioma. Cada sistema muestra solo las de las acciones que sabe hacer (Available).
 /// </summary>
 static class Capabilities
 {
@@ -18,7 +18,7 @@ static class Capabilities
         (Capture, L.T("Capturar la pantalla"), L.T("capture la pantalla")),
         (Calendar, L.T("Agendar en el calendario"), L.T("agende en su calendario")),
         (Notes, L.T("Guardar y leer sus notas"), L.T("guarde y lea sus notas")),
-        (Reminders, L.T("Recordarle cosas"), L.T("le recuerde cosas (con una tarea programada de Windows)")),
+        (Reminders, L.T("Recordarle cosas"), OperatingSystem.IsWindows() ? L.T("le recuerde cosas (con una tarea programada de Windows)") : L.T("le recuerde cosas")),
         (Windows, L.T("Cerrar, minimizar y traer ventanas"), L.T("cierre, minimice y traiga ventanas")),
         (Computer, L.T("Bloquear, suspender, reiniciar o apagar"), L.T("bloquee, suspenda, reinicie o apague el equipo")),
         (Brightness, L.T("Cambiar el brillo"), L.T("cambie el brillo de la pantalla")),
@@ -26,6 +26,10 @@ static class Capabilities
         (Clipboard, L.T("Usar el portapapeles"), L.T("lea y use el portapapeles")),
         (Folders, L.T("Abrir sus carpetas"), L.T("abra sus carpetas")),
     ];
+
+    /// <summary>Las de las acciones que este sistema sabe hacer (SystemActions.Desktop).</summary>
+    public static IEnumerable<(string Id, string Label, string Ask)> Available =>
+        All.Where(c => SystemActions.All.Any(kind => SystemActions.CapabilityOf(new AssistantAction(kind, "")) == c.Id && SystemActions.Supports(kind)));
 
     public static string Label(string id) => All.FirstOrDefault(c => c.Id == id).Label ?? id;
 

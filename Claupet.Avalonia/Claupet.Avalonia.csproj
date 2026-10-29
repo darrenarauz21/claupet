@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Claupet para Linux y macOS (también corre en Windows, para probar). Comparte Core/ con la
-       app de Windows (WinForms); solo la interfaz es propia. -->
+  <!-- Claupet para Linux y macOS (también corre en Windows, para probar). Comparte Core/ y Claupet Console
+       (Console/) con la app de Windows (WinForms); el resto de la interfaz es propia, hasta que todo sea Avalonia. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
@@ -19,6 +19,8 @@
 
   <ItemGroup>
     <Compile Include="..\Core\**\*.cs" Link="Core\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Claupet Console es la misma en los tres sistemas. -->
+    <Compile Include="..\Console\**\*.cs" Link="Console\%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Las traducciones (L.T), dentro del ejecutable. -->
     <EmbeddedResource Include="..\Core\Idiomas\*.json" LogicalName="idiomas/%(Filename)%(Extension)" />
   </ItemGroup>
@@ -34,6 +36,14 @@
     <PackageReference Include="Avalonia" Version="11.3.22" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.3.0" />
+    <!-- La voz: Whisper (voz a texto), Supertonic con ONNX Runtime (texto a voz) y PortAudio (el micrófono y los
+         parlantes), con sus bibliotecas nativas para Windows, Linux y macOS. System.Speech solo sirve en Windows. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+    <PackageReference Include="PortAudioSharp2" Version="1.0.6" />
+    <PackageReference Include="System.Speech" Version="8.0.0" />
+    <PackageReference Include="Whisper.net" Version="1.9.1" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
   </ItemGroup>
 
 </Project>

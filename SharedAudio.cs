@@ -112,54 +112,6 @@ sealed class SharedAudio : IDisposable
 }
 
 /// <summary>
-/// Pasa audio mono de cualquier frecuencia a 16 kHz en 16 bits, por partes: un promedio móvil del ancho
-/// de la reducción (contra el aliasing) y después interpolación lineal. Guarda lo justo entre partes.
-/// </summary>
-sealed class PcmResampler
-{
-    readonly double _step;
-    readonly int _width;
-    readonly float[] _window;
-    readonly List<float> _pending = new();
-    double _position;
-    float _sum;
-    int _filled, _at;
-
-    public PcmResampler(int from, int to = 16000)
-    {
-        if (from <= 0 || to <= 0) throw new ArgumentOutOfRangeException(nameof(from));
-        _step = from / (double)to;
-        _width = Math.Max(1, (int)Math.Round(_step));
-        _window = new float[_width];
-    }
-
-    public short[] Push(ReadOnlySpan<float> mono)
-    {
-        foreach (var sample in mono)
-        {
-            _sum += sample - _window[_at];
-            _window[_at] = sample;
-            _at = (_at + 1) % _width;
-            if (_filled < _width) _filled++;
-            _pending.Add(_sum / _filled);
-        }
-        var output = new List<short>((int)(mono.Length / _step) + 2);
-        while (_position + 1 < _pending.Count)
-        {
-            var i = (int)_position;
-            var f = (float)(_position - i);
-            var value = _pending[i] * (1 - f) + _pending[i + 1] * f;
-            output.Add((short)Math.Clamp(value * 32767f, -32768f, 32767f));
-            _position += _step;
-        }
-        var drop = Math.Min((int)_position, _pending.Count);
-        _pending.RemoveRange(0, drop);
-        _position -= drop;
-        return output.ToArray();
-    }
-}
-
-/// <summary>
 /// Lo que suena en el equipo (la salida predeterminada), con WASAPI en modo loopback: en un hilo propio
 /// (MTA), en el formato de mezcla de Windows, pasado a mono y a 16 kHz. Cuando no suena nada, Windows no
 /// entrega audio: se completa con silencio para que el tiempo no se corra.

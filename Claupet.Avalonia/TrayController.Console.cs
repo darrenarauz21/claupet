@@ -1,0 +1,322 @@
+using Avalonia.Threading;
+
+namespace Claupet;
+
+/// <summary>
+/// Claupet Console del lado de esta bandeja (Linux y macOS, y Windows para probar). Lo que es igual en todos los
+/// sistemas lo hace ConsoleHost; aquí van los ajustes que esta app ya tiene (lo demás no aparece: PlatformFeatures), sus
+/// acciones y el chat, que responde el mismo asistente de Respuestas. Con la isla, la conversación rápida es la suya.
+/// </summary>
+sealed partial class TrayController : IConsoleApp
+{
+    /// <summary>
+    /// Lo que esta app ya sabe hacer; al traer algo de Windows, se agrega aquí y aparecen sus filas. Las acciones en el
+    /// equipo, donde hay un escritorio que las haga (macOS y Linux).
+    /// </summary>
+    static PlatformFeatures Features => PlatformFeatures.MascotChat | PlatformFeatures.Island | PlatformFeatures.Mic | PlatformFeatures.ReadAloud
+        | (SystemActions.Desktop is null ? PlatformFeatures.None : PlatformFeatures.Actions);
+
+    ConsoleHost? _consoleHost;
+    ConsoleHost ConsoleHost => _consoleHost ??= new ConsoleHost(this);
+    readonly ChatThread _quick = new();
+    ChatTarget? _quickChat;
+    CancellationTokenSource? _quickAsking;
+
+    ChatTarget QuickTarget => _quickChat ??= new ChatTarget(_quick, AssistantVoice.Console, island: false, asking => ShowQuick(QuickTarget, asking));
+
+    /// <summary>La conversación rápida de la Console: con la isla encendida, la de la isla (como en Windows).</summary>
+    ChatTarget QuickChat => _settings.Island ? IslandChat : QuickTarget;
+
+    void StartConsole() => ConsoleHost.Start();
+
+    async Task OpenConsoleAsync(string? section = null)
+    {
+        if (ConsoleHost.Open(section) is { } problem) await Dialogs.Info(L.T("No se pudo abrir Claupet Console: {0}", problem), _theme);
+    }
+
+    // ── Ajustes ─────────────────────────────────────────────────────────────────────────────
+
+    SettingsState IConsoleApp.SettingsState()
+    {
+        var s = _settings;
+        var preset = AnswerPresets.Current(s);
+        return new SettingsState
+        {
+            Features = Features,
+            Notifications = s.Notifications,
+            Sound = s.Sound,
+            SoundPack = Sounds.Packs.FirstOrDefault(p => p.Id == s.SoundPack).Label ?? Sounds.Packs[0].Label,
+            Palette = Theme.PaletteLabel(s.Palette),
+            Mascot = Mascots.Label(Mascots.ChoiceOf(s)),
+            DesktopMascot = s.DesktopMascot,
+            MascotAllDesktops = s.MascotAllDesktops,
+            Speak = s.Speak,
+            FlowGestures = s.FlowGestures,
+            DanceToMusic = s.DanceToMusic,
+            NoticeGestures = s.NoticeGestures,
+            GreetOnAppear = s.GreetOnAppear,
+            AngryOnClicks = s.AngryOnClicks,
+            SleepWithoutSessions = s.SleepWithoutSessions,
+            Chat = s.Chat,
+            MascotModel = AssistantModels.Label(MascotModel),
+            AssistantAccount = AssistantAccounts.Label(s),
+            TaskFolder = TaskFolders.Label(s),
+            Mic = s.Mic,
+            MicKey = TalkKeyLabel,
+            VoiceStatus = VoiceStatusText().Status,
+            VoiceAction = VoiceStatusText().Action,
+            ReadAloud = s.ReadAloud,
+            ReadAloudVoice = VoiceLabel(s.ReadAloudVoice),
+            SpeechStatus = SpeechStatusText().Status,
+            SpeechAction = SpeechStatusText().Action,
+            IslandModel = AssistantModels.Label(s.IslandModel),
+            Island = s.Island,
+            IslandHover = s.IslandHover,
+            IslandWhileBusy = s.IslandWhileBusy,
+            WeeklyRecap = s.WeeklyRecap,
+            Approvals = ApprovalsText(),
+            Grants = Capabilities.Available.Select(c => new GrantState(c.Id, c.Label, Capabilities.Allowed(s, c.Id))).ToList(),
+            StartWithWindows = StartupRegistration.IsEnabled,
+            Accounts = s.Accounts.Count,
+            Language = L.Label,
+            CloudModel = "Claude · " + AssistantModels.Label(s.IslandModel),
+            GeneralLocal = AnswerTopics.First(s, AnswerTopics.General) == Engine.Local,
+            Fallback = FallbackLabel(s.AnswerFallback),
+            FallbackHint = s.AnswerFallback switch
+            {
+                Engine.Cloud => L.T("Sin IA, luego el modelo local (si está descargado) y al final la nube."),
+                Engine.Local => L.T("Nunca llega a la nube, salvo internet, archivos y tareas."),
+                _ => L.T("Si el primero no entiende, Claupet pide decirlo de otra forma."),
+            },
+            ShowWho = s.ShowWhoAnswered,
+            City = string.IsNullOrWhiteSpace(s.WeatherCity) || s.WeatherPlace != WeatherService.ByCity ? L.T("Automática (por la IP)") : s.WeatherCity,
+            Saved = AnswerStats.ThisWeek() is var (none, local) && none + local == 1 ? L.T("1 respuesta") : L.T("{0} respuestas", none + local),
+            SavedDetail = AnswerStats.ThisWeek() is var (n, l) && n + l > 0 ? L.T("{0} sin IA · {1} con el modelo local", n, l) : "",
+            AnswerPreset = AnswerPresets.Label(preset),
+            AnswerPresetHint = AnswerPresets.Describe(preset),
+            AnswerCustom = preset == AnswerPresets.Custom,
+            TopicEngines = AnswerTopics.All.Select(t => new TopicState(t.Id, L.T(t.Label),
+                t.Fixed ? L.T("Siempre la nube") : Engines.Label(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
+        };
+    }
+
+    static string FallbackLabel(Engine engine) => engine switch
+    {
+        Engine.Cloud => L.T("Hasta la nube"),
+        Engine.Local => L.T("Hasta el modelo local"),
+        _ => L.T("No pasar"),
+    };
+
+    string IConsoleApp.Palette => _settings.Palette;
+
+    /// <summary>
+    /// La acción de una fila de la Console. Las listas (estilo de sonido, color, mascota, idioma, modo…) se eligen allá;
+    /// los interruptores y lo demás, como en la vista Ajustes de esta app.
+    /// </summary>
+    void IConsoleApp.Act(string key)
+    {
+        if (key.StartsWith("grant:", StringComparison.Ordinal))
+        {
+            ToggleGrant(key["grant:".Length..]);
+            PushSettings();
+            return;
+        }
+        if (key.StartsWith("topic:", StringComparison.Ordinal))
+        {
+            var topic = AnswerTopics.Find(key["topic:".Length..]);
+            Choose(AnswerTopics.Choices(topic).Select(e => (e.ToString(), Engines.Label(e))), AnswerTopics.First(_settings, topic.Id).ToString(), v =>
+            {
+                var engine = Enum.Parse<Engine>(v);
+                if (engine == topic.Default) _settings.AnswerEngines.Remove(topic.Id);
+                else _settings.AnswerEngines[topic.Id] = engine;
+                SettingsStore.Save(_settings);
+            });
+            return;
+        }
+        switch (key)
+        {
+            case "pack": Choose(Sounds.Packs, _settings.SoundPack, id => _ = OnSettingAsync("pack:" + id)); break;
+            case "palette": Choose(Theme.Palettes.Select(p => (p.Id, p.Label)), _settings.Palette, id => _ = OnSettingAsync("palette:" + id)); break;
+            case "mascot": Choose(Mascots.Choices, Mascots.ChoiceOf(_settings), id => _ = OnSettingAsync("mascot:" + id)); break;
+            case "language": Choose(L.Choices, L.Language, id => _ = OnSettingAsync("language:" + id)); break;
+            case "answerpreset":
+                Choose(AnswerPresets.Choices(), AnswerPresets.Current(_settings), v =>
+                {
+                    AnswerPresets.Apply(_settings, v);
+                    SettingsStore.Save(_settings);
+                });
+                break;
+            case "fallback":
+                Choose(new[] { Engine.Cloud, Engine.Local, Engine.None }.Select(e => (e.ToString(), FallbackLabel(e))), _settings.AnswerFallback.ToString(), v =>
+                {
+                    _settings.AnswerFallback = Enum.Parse<Engine>(v);
+                    SettingsStore.Save(_settings);
+                });
+                break;
+            case "who":
+                _settings.ShowWhoAnswered = !_settings.ShowWhoAnswered;
+                SettingsStore.Save(_settings);
+                PushSettings();
+                break;
+            case "city": _ = AskCityAsync(); break;
+            case "mmodel":
+                Choose(AssistantModels.Choices, MascotModel, m =>
+                {
+                    _settings.MascotModel = m;
+                    SettingsStore.Save(_settings);
+                    _chatBubble?.SetModel(m);
+                });
+                break;
+            case "account":
+                Choose(AssistantAccounts.Choices(_settings), _settings.AssistantAccount ?? "", a =>
+                {
+                    _settings.AssistantAccount = a.Length == 0 ? null : a;
+                    SettingsStore.Save(_settings);
+                });
+                break;
+            case "folder": Choose(TaskFolders.Choices(_settings, _lastSessions), _settings.TaskFolder ?? "", f => _ = PickTaskFolderAsync(f)); break;
+            case "imodel":
+                Choose(AssistantModels.IslandChoices, _settings.IslandModel ?? "", m =>
+                {
+                    _settings.IslandModel = m.Length == 0 ? null : m;
+                    SettingsStore.Save(_settings);
+                    PushIslandModel();
+                });
+                break;
+            // Aquí no se graban combinaciones: solo las teclas que se mantienen.
+            case "mickey": Choose(MicKeys.Choices, MicKeys.IsHold(_settings.MicKey) ? _settings.MicKey : MicKeys.Choices[0].Id, SetMicKey); break;
+            case "readvoice": Choose(VoiceChoices(), _settings.ReadAloudVoice, SetReadAloudVoice); break;
+            default: _ = OnSettingAsync(key); break;
+        }
+    }
+
+    /// <summary>Dónde sale la lista de una fila: null, en la Console; si no, en el popup (OnQuickSetting).</summary>
+    Action<IEnumerable<(string Id, string Label)>, string, Action<string>>? _menu;
+
+    /// <summary>Una lista para elegir: en la Console, junto a su fila (o en el popup); elegida, se guarda y se avisa a todos.</summary>
+    void Choose(IEnumerable<(string Id, string Label)> options, string selected, Action<string> pick)
+    {
+        void Picked(string id)
+        {
+            pick(id);
+            PushSettings();
+        }
+        if (_menu is { } menu) menu(options, selected, Picked);
+        else ConsoleHost.Offer(options, selected, Picked, null);
+    }
+
+    async Task AskCityAsync()
+    {
+        var city = await Dialogs.Ask(L.T("Mi ciudad"), L.T("Ciudad para el clima (vacía: automática, por la IP):"), _settings.WeatherCity ?? "", _theme);
+        if (city is null) return;
+        _settings.WeatherCity = city.Trim().Length == 0 ? null : city.Trim();
+        _settings.WeatherPlace = _settings.WeatherCity is null ? WeatherService.ByIp : WeatherService.ByCity;
+        SettingsStore.Save(_settings);
+        PushSettings();
+    }
+
+    // ── Chat ────────────────────────────────────────────────────────────────────────────────
+
+    ChatTarget IConsoleApp.QuickChat => QuickChat;
+    // Con la isla, es la misma conversación de la isla (y de la nubecita); sin ella, con el chat de la mascota, la de la nubecita.
+    string IConsoleApp.QuickHint => _settings.Island ? L.T("La de la isla") : _settings.Chat ? L.T("La de la nubecita") : L.T("Se olvida a los 10 minutos sin escribir");
+    string IConsoleApp.QuickAbout => _settings.Island
+        ? L.T("Es la misma conversación de la isla y de la nubecita; se olvida a los 10 minutos sin escribir.")
+        : _settings.Chat
+        ? L.T("Es la misma conversación de la nubecita; se olvida a los 10 minutos sin escribir.")
+        : L.T("Para preguntas sueltas; se olvida a los 10 minutos sin escribir.");
+
+    void IConsoleApp.AskQuick(string text)
+    {
+        _quickAsking?.Cancel();
+        _quickAsking = new CancellationTokenSource();
+        _ = AskChatAsync(QuickChat, text, _quickAsking.Token);
+    }
+
+    void IConsoleApp.StopQuick() => _quickAsking?.Cancel();
+
+    void IConsoleApp.ClearQuick()
+    {
+        _quickAsking?.Cancel();
+        _quick.Clear();
+        QuickChat.Show(false);
+    }
+
+    Task IConsoleApp.AskAsync(ChatTarget chat, string text, CancellationToken cancel) => AskChatAsync(chat, text, cancel);
+
+    /// <summary>
+    /// Le pregunta al asistente (sin IA, el modelo local o la nube, según Respuestas) con el modelo de las conversaciones.
+    /// Lo que va llegando se ve en la Console (y en la isla). Una tarea se ofrece abrir; las acciones en el equipo todavía no
+    /// están en esta app: se dice.
+    /// </summary>
+    async Task AskChatAsync(ChatTarget chat, string text, CancellationToken cancel)
+    {
+        var history = chat.Log.Turns.TakeLast(40).ToList();
+        chat.Log.Add(new ChatTurn(true, text));
+        chat.Streaming = "";
+        chat.Show(true);
+        // Con la voz encendida, la respuesta no se muestra mientras llega: sale cuando empieza a sonar.
+        var speaking = _settings.ReadAloud;
+        void Stream(string piece)
+        {
+            if (cancel.IsCancellationRequested || speaking) return;
+            Dispatcher.UIThread.Post(() =>
+            {
+                chat.Streaming = (chat.Streaming ?? "") + piece;
+                chat.Show(true);
+            });
+        }
+        var request = new AssistantRequest
+        {
+            Prompt = text,
+            Voice = chat.Voice,
+            Model = _settings.IslandModel,
+            ConfigDir = AssistantAccounts.ConfigDir(_settings),
+            Context = AssistantContext(),
+            History = history,
+            Chibi = Mascots.IsChibi,
+            Expressive = Expressive,
+        };
+        AssistantResult result;
+        try { result = await Answers.AskAsync(request, _settings, Stream, cancel: cancel); }
+        catch (Exception ex)
+        {
+            ErrorLog.Write(ex);
+            result = new AssistantResult("", null, null, null, ex.Message);
+        }
+        await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            chat.Streaming = null;
+            if (cancel.IsCancellationRequested)
+            {
+                chat.Show(false);
+                return;
+            }
+            var reply = result.Failed ? $"{result.Error} (._.)"
+                : result.Task is not null ? result.Text.Length > 0 ? result.Text : L.T("Eso es una tarea para Claude Code.")
+                // Si pidió algo en el equipo, lo hace (con su permiso); si trajo datos, la respuesta empieza de nuevo con ellos.
+                : await RunActionAsync(result, request, chat.Island, Stream, () =>
+                {
+                    chat.Streaming = "";
+                    chat.Show(true);
+                }, cancel);
+            chat.Streaming = null;
+            if (cancel.IsCancellationRequested)
+            {
+                chat.Show(false);
+                return;
+            }
+            ReadAloudIfOn(result, reply, () =>
+            {
+                if (cancel.IsCancellationRequested) return;
+                chat.Log.Add(new ChatTurn(false, reply, _settings.ShowWhoAnswered ? result.By?.Label : null));
+                chat.Show(false);
+                if (result is { Failed: false, Task: { } task }) _ = OfferTaskAsync(task);
+            });
+        });
+    }
+
+    string IConsoleApp.ChatModel => AssistantModels.Label(_settings.IslandModel);
+    bool IConsoleApp.ReadAloud => _settings.ReadAloud;
+    void IConsoleApp.Post(Action action) => Dispatcher.UIThread.Post(action);
+}

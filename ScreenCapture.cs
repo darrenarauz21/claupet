@@ -16,54 +16,28 @@ static class ScreenCapture
     public static string Folder => KnownFolders.Get(KnownFolders.Screenshots)
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots");
 
-    static string LookDir => DataFolder.In("capturas");
-
-    public static ActionOutcome Run(string value, string? question)
+    /// <summary>La pantalla bajo el cursor o el recorte que se marque: el PNG guardado (y copiado), o null si se canceló.</summary>
+    public static string? Run(bool crop)
     {
-        var crop = SystemActions.Same(value, "recorte") || SystemActions.Same(value, "recortar") || SystemActions.Same(value, "crop");
-        if (!crop && !(value.Trim().Length == 0 || SystemActions.Same(value, "pantalla") || SystemActions.Same(value, "screen")))
-            return new ActionOutcome(L.T("Sé capturar la pantalla entera o un recorte."));
         using var screen = WithoutClaupet(Shoot);
         var image = crop ? CropForm.Pick(screen) : screen;
-        if (image is null) return new ActionOutcome(L.T("Recorte cancelado."));
+        if (image is null) return null;
         try
         {
-            var file = Save(image);
-            SystemActions.Sta(() => { Clipboard.SetImage(image); return true; });
-            return question is null ? new ActionOutcome() : new ActionOutcome(Look: ForLook(file), Question: question);
+            var file = CaptureFiles.NewFile(Folder);
+            image.Save(file, ImageFormat.Png);
+            WindowsDesktop.Sta(() => { Clipboard.SetImage(image); return true; });
+            return file;
         }
         finally { if (image != screen) image.Dispose(); }
     }
 
-    static string Save(Image image)
-    {
-        Directory.CreateDirectory(Folder);
-        var file = Path.Combine(Folder, L.T("Captura de pantalla {0:yyyy-MM-dd HHmmss}.png", DateTime.Now));
-        image.Save(file, ImageFormat.Png);
-        return file;
-    }
-
-    /// <summary>Una copia de la captura, sola en LookDir, para que Claude la lea sin ver las demás.</summary>
-    static string ForLook(string file)
-    {
-        var copy = Fresh(Path.GetFileName(file));
-        File.Copy(file, copy, overwrite: true);
-        return copy;
-    }
-
-    /// <summary>Una imagen del portapapeles, sola en LookDir, para que Claude la mire.</summary>
+    /// <summary>Una imagen del portapapeles, sola en …\Claupet\capturas, para que Claude la mire.</summary>
     public static string ForLook(Image image)
     {
-        var file = Fresh(L.T("Imagen copiada {0:yyyy-MM-dd HHmmss}.png", DateTime.Now));
+        var file = CaptureFiles.ClipboardImage();
         image.Save(file, ImageFormat.Png);
         return file;
-    }
-
-    static string Fresh(string name)
-    {
-        Directory.CreateDirectory(LookDir);
-        foreach (var old in Directory.EnumerateFiles(LookDir)) try { File.Delete(old); } catch (IOException) { }
-        return Path.Combine(LookDir, name);
     }
 
     /// <summary>

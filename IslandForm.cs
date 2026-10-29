@@ -50,7 +50,10 @@ sealed class IslandForm : Form
     readonly System.Windows.Forms.Timer _frame = new() { Interval = 16 };
     readonly IslandInput _input;
     readonly List<(Rectangle Bounds, string Key, object? Tag)> _hits = new();
-    readonly Font _body, _bodyStrong, _small, _smallStrong, _glyph, _glyphTiny, _spinner, _mono;
+    readonly Font _body, _bodyStrong, _small, _smallStrong, _glyph, _glyphTiny, _glyphNode, _tiny, _spinner, _mono;
+    /// <summary>Los nodos de cada sesión en Actividad, los mismos que en la vista Actividad de la bandeja.</summary>
+    readonly LaneNodes _lanes;
+    readonly Flows.Arrivals _arrivals = new();
     readonly float _scale;
     Color _accent = Hex(0xD97757);
     Shape _shape = Shape.Hidden;
@@ -64,7 +67,7 @@ sealed class IslandForm : Form
     int _animMs = 1;
     long _pageAt;           // cuándo cambió el contenido (entra apareciendo)
     long _overSince, _outSince, _hotSince;
-    bool _pinned, _muted, _mouth, _clickOpened;
+    bool _muted, _mouth, _clickOpened;
     /// <summary>Se plegó con un clic fuera mientras respondía: al llegar la respuesta, se abre para mostrarla.</summary>
     bool _reopenForAnswer;
     /// <summary>El gancho del mouse, puesto solo mientras la isla está abierta.</summary>
@@ -113,6 +116,10 @@ sealed class IslandForm : Form
         _glyphTiny = Fonts.Make("Segoe Fluent Icons", 6.5f, "Segoe MDL2 Assets");
         _spinner = Fonts.Make("Segoe UI Symbol", 10.5f, "Segoe UI");
         _mono = Fonts.Make("Cascadia Mono", 8.5f, "Consolas");
+        _glyphNode = Fonts.Make("Segoe Fluent Icons", 9f, "Segoe MDL2 Assets");
+        _tiny = Fonts.Make("Segoe UI Variable Text", 7.75f, "Segoe UI");
+        _lanes = new LaneNodes(_scale, _glyphNode, _small, _tiny,
+            (g, text, font, color, box) => Write(g, text, font, color, box, StringAlignment.Center, ellipsis: true));
 
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -162,6 +169,7 @@ sealed class IslandForm : Form
     public void SetSessions(IReadOnlyList<SessionInfo> sessions)
     {
         _sessions = sessions;
+        _arrivals.Update(sessions);
         Redraw(relayout: _shape == Shape.Open && _page == Page.Home);
     }
 
@@ -684,9 +692,9 @@ sealed class IslandForm : Form
         if (_hoverKey is not null && !over) { _hoverKey = null; Redraw(); }
     }
 
-    /// <summary>Se puede plegar: nada la retiene abierta (fijada, escribiendo, analizando o con el resultado recién llegado).</summary>
+    /// <summary>Se puede plegar: nada la retiene abierta (escribiendo, analizando o con el resultado recién llegado).</summary>
     bool CanFold =>
-        !_pinned && !_input.Focused && _input.Value.Length == 0
+        !_input.Focused && _input.Value.Length == 0
         && !Analyzing && !(_page == Page.Analysis && Environment.TickCount64 - _analysisEnd < 5000) && !_asking
         && !(_page == Page.Chat && (Typing || Environment.TickCount64 - _answerEnd < _answerHold))
         && !_listening && !_converting
@@ -704,13 +712,13 @@ sealed class IslandForm : Form
 
     /// <summary>
     /// Un clic en otra parte (otra ventana, el escritorio, la barra de tareas) con la isla abierta: se pliega
-    /// a lo que corresponda sin el cursor, salvo fijada. No cuentan los menús que abrió la isla (el del
+    /// a lo que corresponda sin el cursor. No cuentan los menús que abrió la isla (el del
     /// modelo). Un permiso de Claude Code o una pregunta de Claupet siguen esperando en la compacta; si
     /// estaba respondiendo, se abre de nuevo al llegar la respuesta.
     /// </summary>
     void OnOutsideClick(Point at)
     {
-        if (_shape != Shape.Open || _pinned || !Visible) return;
+        if (_shape != Shape.Open || !Visible) return;
         if (Rectangle.Inflate(IslandScreenBounds(), S(4), S(4)).Contains(at) || OwnPopupAt(at)) return;
         if (_page is Page.Permission or Page.Question or Page.Choice) _page = Page.Home; // la compacta la vuelve a abrir
         _reopenForAnswer = _asking;
@@ -968,7 +976,7 @@ sealed class IslandForm : Form
         var y = b.Y + S(8);
         var x = b.X + S(10);
         var height = S(28);
-        foreach (var (key, label, page) in new (string, string, Page?)[] { ("tab:home", L.T("Inicio"), Page.Home), ("tab:chat", L.T("Chat"), Page.Chat), ("tab:new", L.T("+ Sesión"), null) })
+        foreach (var (key, label, page) in new (string, string, Page?)[] { ("tab:home", L.T("Actividad"), Page.Home), ("tab:chat", L.T("Chat"), Page.Chat), ("tab:new", L.T("+ Sesión"), null) })
         {
             var w = Measure(g, label, _small).Width + S(24);
             var rect = new Rectangle(x, y, (int)w, height);
@@ -984,14 +992,14 @@ sealed class IslandForm : Form
         }
 
         var right = b.Right - S(10);
-        foreach (var (key, glyph) in new[] { ("gear", ""), ("mute", _muted ? "" : ""), ("pin", _pinned ? "" : "") })
+        foreach (var (key, glyph) in new[] { ("gear", ""), ("mute", _muted ? "" : "") })
         {
             var rect = new Rectangle(right - S(30), y - S(1), S(30), S(30));
             Hit(rect, key);
             if (draw)
             {
                 if (_hoverKey == key) Fill(g, Raised, rect, S(8));
-                Write(g, glyph, _glyph, key == "pin" && _pinned ? _accent : Dim, rect, StringAlignment.Center);
+                Write(g, glyph, _glyph, Dim, rect, StringAlignment.Center);
             }
             right = rect.X;
         }
@@ -1015,7 +1023,7 @@ sealed class IslandForm : Form
         return (int)rect.X;
     }
 
-    // ── Inicio: las sesiones ────────────────────────────────────────────────────────────────
+    // ── Actividad: las sesiones ─────────────────────────────────────────────────────────────
 
     int ComposeHome(Graphics g, Rectangle b, int y, bool draw)
     {
@@ -1077,51 +1085,27 @@ sealed class IslandForm : Form
         return card.Bottom;
     }
 
-    /// <summary>Lo de abajo del título: los últimos pasos como fichas y el avance, o cómo terminó.</summary>
+    /// <summary>
+    /// Lo de abajo del título: los nodos del carril (como en Actividad de la bandeja) y el avance, o cómo terminó.
+    /// Un nodo con la edición de un archivo abre su diff.
+    /// </summary>
     int ComposeSessionBody(Graphics g, SessionInfo s, int x, int y, int width, bool draw)
     {
         var lineH = S(18);
+        if (s.State != SessionState.Done && LaneNodes.Shows(s))
+        {
+            var ground = s.State switch { SessionState.Working => Card, SessionState.Waiting => Hex(0x24201A), _ => Ground };
+            var colors = new LaneColors(ground, Edge, Ink, Soft, Dim, _accent, Warn, Bad);
+            y = _lanes.Compose(g, draw, s, x, width, y, colors, _arrivals, (group, column) =>
+            {
+                if (group is { Kind: ToolKind.Edit, Count: 1 } && s.Edits.LastOrDefault(e => e.StepId == group.Last.Id) is { } edit)
+                    Hit(column, "diff:" + edit.StepId, (s, edit));
+            }) + S(6);
+        }
         switch (s.State)
         {
             case SessionState.Working:
             {
-                var groups = Flows.Groups(s.Flow).TakeLast(3).ToList();
-                if (groups.Count > 0)
-                {
-                    var cx = x;
-                    foreach (var group in groups)
-                    {
-                        var live = group == groups[^1] && !group.Done;
-                        var edit = group.Kind == ToolKind.Edit && group.Count == 1 ? s.Edits.LastOrDefault(e => e.StepId == group.Last.Id) : null;
-                        var label = edit is not null ? Path.GetFileName(edit.File)
-                            : group.Count > 1 ? $"{group.Verb} ×{group.Count}" : group.Detail is { } d ? $"{group.Verb} {Short(d, 22)}" : group.Verb;
-                        var plus = edit is null ? "" : $"+{edit.Added}";
-                        var minus = edit is null || edit.Removed == 0 ? "" : $"−{edit.Removed}";
-                        var counts = plus.Length == 0 ? 0 : Measure(g, plus + " " + minus, _small).Width + S(6);
-                        var w = Measure(g, label, _small).Width + counts + S(live ? 26 : 16);
-                        if (cx + w > x + width) break;
-                        var chip = new RectangleF(cx, y, w, S(22));
-                        if (edit is not null) Hit(Rectangle.Round(chip), "diff:" + edit.StepId, (s, edit));
-                        if (draw)
-                        {
-                            var hover = edit is not null && _hoverKey == "diff:" + edit.StepId;
-                            Fill(g, live ? Hex(0x2E2A24) : hover ? Tab : Raised, chip, S(6));
-                            if (live) Pulse(g, new PointF(chip.X + S(10), chip.Y + chip.Height / 2), S(3), Warn);
-                            var tx = chip.X + S(live ? 18 : 8);
-                            var lw = Measure(g, label, _small).Width;
-                            Write(g, label, _small, live ? Hex(0xF0C27A) : edit is not null ? Soft : Dim, new RectangleF(tx, chip.Y, lw + S(2), chip.Height), StringAlignment.Near);
-                            if (plus.Length > 0)
-                            {
-                                var px = tx + lw + S(6);
-                                Write(g, plus, _small, Good, new RectangleF(px, chip.Y, S(40), chip.Height), StringAlignment.Near);
-                                if (minus.Length > 0)
-                                    Write(g, minus, _small, Bad, new RectangleF(px + Measure(g, plus + " ", _small).Width, chip.Y, S(40), chip.Height), StringAlignment.Near);
-                            }
-                        }
-                        cx += (int)w + S(6);
-                    }
-                    y += S(22) + S(6);
-                }
                 var progress = new List<string>();
                 if (s.TodoTotal > 0) progress.Add(L.T("{0} de {1} tareas", s.TodoDone, s.TodoTotal));
                 progress.Add(s.Steps == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Steps));
@@ -1244,10 +1228,13 @@ sealed class IslandForm : Form
             // en un marco de ChatViewHeight como mucho: lo que no cabe se ve con la rueda o la barra, y arriba de
             // todo se dice cuándo se renueva. Cada mensaje lleva su índice en la conversación (para su animación
             // de entrada) y la respuesta en curso se ve hasta donde va escrita.
-            var items = _turns.Select((t, n) => (t.FromPerson, Text: VisibleText(n, t.Text), Index: n, Thinking: false)).ToList();
+            // Bajo cada respuesta, quién respondió (Ajustes › Respuestas), cuando ya terminó de escribirse.
+            var items = _turns.Select((t, n) => (t.FromPerson, Text: VisibleText(n, t.Text), Index: n, Thinking: false,
+                Who: t.Who is not null && !(n == _typedIndex && Typing) ? t.Who : null)).ToList();
             if (_streaming is not null)
-                items.Add((false, _streaming.Length == 0 ? "" : _streaming[..Math.Min(_typedShown, _streaming.Length)], -1, _streaming.Length == 0 || _typedShown == 0));
-            var heights = items.Select(i => i.Thinking ? S(36) : BubbleHeight(g, i.Text, i.FromPerson ? width - S(140) : width - S(80))).ToList();
+                items.Add((false, _streaming.Length == 0 ? "" : _streaming[..Math.Min(_typedShown, _streaming.Length)], -1, _streaming.Length == 0 || _typedShown == 0, null));
+            var heights = items.Select(i => (i.Thinking ? S(36) : BubbleHeight(g, i.Text, i.FromPerson ? width - S(140) : width - S(80)))
+                + (i.Who is null ? 0 : S(18))).ToList();
             var gap = S(8);
             var content = heights.Sum() + gap * items.Count;
             var note = content > S(ChatViewHeight) ? L.T("La conversación se renueva a los 10 minutos sin escribir, o con «Nueva conversación».") : null;
@@ -1270,12 +1257,12 @@ sealed class IslandForm : Form
             }
             for (var i = 0; i < items.Count; i++)
             {
-                var (person, text, index, thinking) = items[i];
+                var (person, text, index, thinking, who) = items[i];
                 var max = person ? width - S(140) : width - S(80);
-                var bubbleH = heights[i];
+                var bubbleH = heights[i] - (who is null ? 0 : S(18));
                 var y0 = cy;
-                cy += bubbleH + gap;
-                if (!draw || y0 + bubbleH < view.Y || y0 > view.Bottom) continue; // fuera del marco: no se dibuja
+                cy += heights[i] + gap;
+                if (!draw || y0 + heights[i] < view.Y || y0 > view.Bottom) continue; // fuera del marco: no se dibuja
                 y = y0;
                 // Entrada: sube unos pixeles mientras aparece (el mensaje enviado, desde el campo).
                 var arrive = index >= 0 && _turnAt.TryGetValue(index, out var at) ? (float)Ease(Math.Clamp((Environment.TickCount64 - at) / 240.0, 0, 1)) : 1f;
@@ -1318,6 +1305,8 @@ sealed class IslandForm : Form
                     {
                         DrawHead(g, new Rectangle(x, (int)rect.Bottom - head, head, head), small: false, talking: writing);
                         Fill(g, Color.FromArgb(alpha, Raised), rect, S(12));
+                        if (who is not null)
+                            Write(g, who, _small, Faint, new RectangleF(rect.X + S(4), rect.Bottom + S(3), width - head - S(12), S(15)), StringAlignment.Near, ellipsis: true);
                         Write(g, text, _body, Color.FromArgb(alpha, Hex(0xE8E6DF)), RectangleF.Inflate(rect, -S(11), -S(7)), StringAlignment.Near, wrap: true);
                         if (writing)
                         {
@@ -1962,7 +1951,6 @@ sealed class IslandForm : Form
             case "tab:new": NewSessionClicked?.Invoke(); break;
             case "gear": SettingsClicked?.Invoke(); break;
             case "mute": _muted = !_muted; Redraw(); break;
-            case "pin": _pinned = !_pinned; Redraw(); break;
             case "model": ModelClicked?.Invoke(); break;
             case "mic": MicClicked?.Invoke(); break;
             case "newchat": NewChatClicked?.Invoke(); break;
@@ -2144,7 +2132,7 @@ sealed class IslandForm : Form
             _frame.Dispose();
             _input.Dispose();
             _body.Dispose(); _bodyStrong.Dispose(); _small.Dispose(); _smallStrong.Dispose();
-            _glyph.Dispose(); _glyphTiny.Dispose(); _spinner.Dispose(); _mono.Dispose();
+            _glyph.Dispose(); _glyphTiny.Dispose(); _glyphNode.Dispose(); _tiny.Dispose(); _spinner.Dispose(); _mono.Dispose();
         }
         base.Dispose(disposing);
     }

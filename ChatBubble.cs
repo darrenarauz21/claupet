@@ -19,7 +19,7 @@ sealed class ChatBubble : Form
     static readonly Color Accent = Color.FromArgb(0xC2, 0x5E, 0x3E);
     static readonly Color Mic = Color.FromArgb(0xD9, 0x4B, 0x3F);
     /// <summary>Lo que tarda en subir y bajar cada barrita del nivel (como en el diseño de la voz), en ms; también en la isla.</summary>
-    public static readonly int[] BarPeriods = [550, 700, 620, 800, 500, 660];
+    public static int[] BarPeriods => Flows.BarPeriods;
     const TextFormatFlags Wrap = TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
     const TextFormatFlags OneLine = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
     const int AnswerLifetime = 14000;
@@ -51,6 +51,8 @@ sealed class ChatBubble : Form
     int _visible;             // cuántas letras se ven: avanza de a poco hacia _target
     bool _streaming;
     bool _island;
+    /// <summary>Quién respondió («Sin IA · al instante»), en gris junto a «Ver en la isla»; null: no se dice.</summary>
+    string? _who;
     string? _taskPrompt, _taskFolder;
     bool _error;
     long _doneAt;
@@ -235,10 +237,12 @@ sealed class ChatBubble : Form
     /// La respuesta terminó: el texto final (puede corregir lo que llegó por partes), si ofrecer
     /// «Ver en la isla» y, si es una tarea, la tarea y el nombre de la carpeta donde se abriría.
     /// </summary>
-    public void Finish(string text, bool island, string? taskPrompt = null, string? taskFolder = null, bool error = false)
+    public void Finish(string text, bool island, string? taskPrompt = null, string? taskFolder = null, bool error = false, string? who = null)
     {
         DropChoice(null);
         ShowAnswer(text, island, taskPrompt, taskFolder, error);
+        _who = error || taskPrompt is not null ? null : who;
+        Relayout();
     }
 
     /// <summary>
@@ -272,6 +276,7 @@ sealed class ChatBubble : Form
         _streaming = false;
         _error = error;
         _island = island && !error;
+        _who = null;
         _taskPrompt = taskPrompt;
         _taskFolder = taskFolder;
         if (taskPrompt is not null)
@@ -358,7 +363,7 @@ sealed class ChatBubble : Form
                     height += S(4) + TextRenderer.MeasureText(L.T("«{0}»", _taskPrompt), _small, new Size(width, S(44)), Wrap | TextFormatFlags.EndEllipsis).Height
                         + S(10) + S(26);
                 else if (_choices is not null) height += S(10) + ChoiceLayout(0, 0).Max(c => c.Bounds.Bottom);
-                else if (_island) height += S(6) + _small.Height;
+                else if (_island || _who is not null) height += S(6) + _small.Height;
                 break;
         }
         _cols = (width + Pad * 2) / _unit + 1;
@@ -453,7 +458,7 @@ sealed class ChatBubble : Form
                         OneLine | TextFormatFlags.EndEllipsis);
                     y += _small.Height + S(4);
                 }
-                // Tres puntos que saltan uno detrás del otro (como «Pensando» en Flujos).
+                // Tres puntos que saltan uno detrás del otro (como «Pensando» en Actividad).
                 for (var i = 0; i < 3; i++)
                 {
                     var bounce = (float)Flows.DotBounce(tick, i);
@@ -490,12 +495,22 @@ sealed class ChatBubble : Form
                     foreach (var (bounds, id, text) in ChoiceLayout(x, below + S(10)))
                         _choiceBounds.Add((PixelButton(g, text, bounds.X, bounds.Y, primary: id == _choicePrimary, pressed: _pressed == "ch:" + id), id));
                 }
-                else if (_island && _visible >= _target.Length)
+                else if ((_island || _who is not null) && _visible >= _target.Length)
                 {
-                    var link = L.T("Ver en la isla");
-                    var lw = TextRenderer.MeasureText(link, _small, Size.Empty, OneLine).Width;
-                    _linkBounds = new Rectangle(x, below + S(6), lw, _small.Height);
-                    TextRenderer.DrawText(g, link, _small, _linkBounds, Accent, Color.White, OneLine);
+                    var lw = 0;
+                    if (_island)
+                    {
+                        var link = L.T("Ver en la isla");
+                        lw = TextRenderer.MeasureText(link, _small, Size.Empty, OneLine).Width;
+                        _linkBounds = new Rectangle(x, below + S(6), lw, _small.Height);
+                        TextRenderer.DrawText(g, link, _small, _linkBounds, Accent, Color.White, OneLine);
+                    }
+                    if (_who is { } who)
+                    {
+                        var left = _island ? x + lw + S(12) : x;
+                        TextRenderer.DrawText(g, who, _small, new Rectangle(left, below + S(6), x + width - left, _small.Height), Muted, Color.White,
+                            OneLine | TextFormatFlags.EndEllipsis | (_island ? TextFormatFlags.Right : TextFormatFlags.Left));
+                    }
                 }
                 break;
         }

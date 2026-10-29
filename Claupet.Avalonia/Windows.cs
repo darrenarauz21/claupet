@@ -38,8 +38,7 @@ sealed class PopupWindow : Window
         Content = _frame;
 
         Deactivated += (_, _) => { if (!HoldOpen) HidePopup(); };
-        // Escape cierra primero el selector de vistas; si no hay nada abierto, la ventana.
-        KeyDown += (_, e) => { if (e.Key == Key.Escape && !View.CloseMenus()) HidePopup(); };
+        KeyDown += (_, e) => { if (e.Key == Key.Escape) HidePopup(); };
         // Al cambiar de alto (otra vista, una sesión desplegada) se vuelve a pegar al borde.
         SizeChanged += (_, _) => { if (IsVisible) Reposition(); };
     }
@@ -323,7 +322,19 @@ static class Dialogs
         return result == 0 && !string.IsNullOrEmpty(text) ? text : null;
     }
 
-    static Task<int> Show(string text, Theme theme, string[] buttons, Control? extra = null, string title = "Claupet")
+    /// <summary>
+    /// Una pregunta con varias respuestas: el Id elegido, o null si se cerró sin elegir. primary va resaltada, pero
+    /// Enter no elige nada: una tecla suelta no da un permiso para siempre ni reinicia el equipo.
+    /// </summary>
+    public static async Task<string?> Choose(string text, Theme theme, IReadOnlyList<(string Id, string Label)> options, string primary)
+    {
+        var accent = Math.Max(0, options.ToList().FindIndex(o => o.Id == primary));
+        var chosen = await Show(text, theme, options.Select(o => o.Label).ToArray(), accent: accent, enter: false);
+        return chosen >= 0 ? options[chosen].Id : null;
+    }
+
+    /// <summary>accent: el botón resaltado; enter: si Enter lo elige (si no, ninguno es el de por defecto).</summary>
+    static Task<int> Show(string text, Theme theme, string[] buttons, Control? extra = null, string title = "Claupet", int accent = 0, bool enter = true)
     {
         var done = new TaskCompletionSource<int>();
         var window = new Window
@@ -339,8 +350,8 @@ static class Dialogs
         {
             var index = i;
             var button = new Button { Content = buttons[i], MinWidth = 84, HorizontalContentAlignment = HorizontalAlignment.Center };
-            if (i == 0) { button.Background = Gfx.B(theme.Accent); button.Foreground = Brushes.White; button.IsDefault = true; }
-            else button.IsCancel = true;
+            if (i == accent) { button.Background = Gfx.B(theme.Accent); button.Foreground = Brushes.White; button.IsDefault = enter; }
+            else if (enter) button.IsCancel = true;
             button.Click += (_, _) => { done.TrySetResult(index); window.Close(); };
             row.Children.Add(button);
         }
@@ -350,98 +361,5 @@ static class Dialogs
         window.Show();
         window.Activate();
         return done.Task;
-    }
-}
-
-/// <summary>Primera configuración: hook de permisos, iniciar con el sistema y notificaciones.</summary>
-sealed class SetupWindow : Window
-{
-    sealed record HookRow(string Dir, HookInstaller.State State, CheckBox Box);
-
-    readonly List<HookRow> _rows = new();
-    readonly CheckBox _startup;
-    readonly CheckBox _notifications;
-    readonly TaskCompletionSource<bool> _done = new();
-
-    public bool StartWithSystem => _startup.IsChecked == true;
-    public bool NotificationsOn => _notifications.IsChecked == true;
-    public Task<bool> Result => _done.Task;
-    /// <summary>Cuántos hooks agregó o actualizó ApplyHooks.</summary>
-    public int HooksChanged { get; private set; }
-
-    public SetupWindow(AppSettings settings, string exePath, Theme theme, IEnumerable<string> configDirs)
-    {
-        Title = L.T("Configurar Claupet");
-        SizeToContent = SizeToContent.WidthAndHeight;
-        CanResize = false;
-        Topmost = true;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = Gfx.B(theme.Background);
-
-        var panel = new StackPanel { Margin = new Thickness(24), Spacing = 6, Width = 440 };
-        TextBlock Label(string text, double size, IBrush color, double top = 0, FontWeight weight = FontWeight.Normal, FontFamily? family = null) => new()
-        {
-            Text = text, FontSize = size, Foreground = color, FontWeight = weight, TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, top, 0, 2), FontFamily = family ?? FontFamily.Default,
-        };
-        CheckBox Option(string text, bool isChecked, bool enabled = true) => new()
-        {
-            Content = text, IsChecked = isChecked, IsEnabled = enabled, Foreground = Gfx.B(enabled ? theme.Text : theme.Tertiary),
-        };
-
-        panel.Children.Add(Label(L.T("Configuración"), 22, Gfx.B(theme.Text), family: Gfx.Title.Typeface.FontFamily));
-        panel.Children.Add(Label(L.T("Elija qué configurar. Nada cambia sin su confirmación."), 12.5, Gfx.B(theme.Secondary)));
-        panel.Children.Add(Label(L.T("Avisos de permisos"), 14, Gfx.B(theme.Text), 14, FontWeight.SemiBold));
-        panel.Children.Add(Label(L.T("Agrega un hook al settings.json de Claude Code; antes se guarda un respaldo."), 12, Gfx.B(theme.Tertiary)));
-        foreach (var dir in configDirs)
-        {
-            var state = HookInstaller.Status(dir, exePath);
-            var name = dir.Replace(Account.Home, "~");
-            var box = state switch
-            {
-                HookInstaller.State.Installed => Option(L.T("{0} — ya está configurado", name), true, enabled: false),
-                HookInstaller.State.Outdated => Option(L.T("{0} — apunta a otra ruta: actualizarlo", name), true),
-                HookInstaller.State.Unreadable => Option(L.T("{0} — su settings.json tiene errores; no se toca", name), false, enabled: false),
-                _ => Option(L.T("{0} — agregar", name), true),
-            };
-            _rows.Add(new HookRow(dir, state, box));
-            panel.Children.Add(box);
-        }
-        if (_rows.Count == 0) panel.Children.Add(Label(L.T("No se encontró ninguna carpeta de Claude Code."), 12, Gfx.B(theme.Tertiary)));
-
-        panel.Children.Add(Label(L.T("Programa"), 14, Gfx.B(theme.Text), 14, FontWeight.SemiBold));
-        _startup = Option(L.T("Iniciar con el sistema"), StartupRegistration.IsEnabled || !settings.SetupDone);
-        _notifications = Option(L.T("Mostrar notificaciones"), settings.Notifications);
-        panel.Children.Add(_startup);
-        panel.Children.Add(_notifications);
-
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
-        var apply = new Button { Content = L.T("Aplicar"), Background = Gfx.B(theme.Accent), Foreground = Brushes.White, IsDefault = true, MinWidth = 90 };
-        var later = new Button { Content = L.T("Ahora no"), IsCancel = true, MinWidth = 90 };
-        apply.Click += (_, _) => { _done.TrySetResult(true); Close(); };
-        later.Click += (_, _) => { _done.TrySetResult(false); Close(); };
-        row.Children.Add(later);
-        row.Children.Add(apply);
-        panel.Children.Add(row);
-        Content = panel;
-        Closed += (_, _) => _done.TrySetResult(false);
-    }
-
-    public List<string> ApplyHooks(string exePath)
-    {
-        var lines = new List<string>();
-        foreach (var row in _rows.Where(r => r.Box.IsEnabled && r.Box.IsChecked == true))
-        {
-            var name = row.Dir.Replace(Account.Home, "~");
-            try
-            {
-                var backup = HookInstaller.Install(row.Dir, exePath);
-                HooksChanged++;
-                var verb = row.State == HookInstaller.State.Outdated ? L.T("hook actualizado") : L.T("hook agregado");
-                lines.Add(backup is null ? $"{name}: {verb}." : L.T("{0}: {1} (respaldo: {2}).", name, verb, Path.GetFileName(backup)));
-            }
-            catch (Exception ex) { lines.Add(L.T("{0}: no se pudo cambiar ({1}).", name, ex.Message)); }
-        }
-        return lines;
     }
 }

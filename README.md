@@ -25,11 +25,11 @@ session needs you and what each one is up to, without opening a terminal.
 ## What it does
 
 - 📊 **Usage at a glance.** Your 5-hour session and weekly limits for every account, with reset
-  times. The tray icon shows your session percentage.
+  times, and six months of use in a calendar. The tray icon shows your session percentage.
 - 🧭 **Live sessions.** See which Claude Code sessions are working, waiting for you or done, and
   start a new one with the account, folder and model you want.
-- 🎬 **Flows and activity.** Follow each session step by step and see six months of use in
-  a calendar. It all comes from local files: zero tokens.
+- 🎬 **Activity.** Follow each session step by step, live. It all comes from local files: zero
+  tokens.
 - 🔔 **Friendly heads-ups.** A little note, with sound, when a session finishes, asks something,
   needs permission, fails, or you're close to a limit.
 - 🦀 **A desktop pet.** The classic critter or a chibi in a crab hoodie who reads, searches,

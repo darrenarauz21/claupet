@@ -5,177 +5,87 @@ using SD = System.Drawing;
 
 namespace Claupet;
 
-/// <summary>Selector de vistas con pin y vista «Ajustes» (igual que en Windows).</summary>
+/// <summary>
+/// Las pestañas de las vistas y «Ajustes rápidos», como en Windows: las filas salen de SettingsPages (las mismas de
+/// Claupet Console), en cinco pestañas, sin las que son solo de la Console; lo demás, en «Todos los ajustes».
+/// </summary>
 sealed partial class UsageView
 {
-    static readonly View[] Selectable = [View.Usage, View.Sessions, View.Activity, View.Flows];
+    /// <summary>Las pestañas de arriba, en orden.</summary>
+    static readonly View[] Tabs = [View.Usage, View.Activity, View.History];
 
-    /// <summary>
-    /// Lo que muestra «Ajustes»; lo manda TrayController cada vez que cambia algo. Speak y Behavior son
-    /// null si la mascota no está en el escritorio.
-    /// </summary>
-    public sealed record SettingsState(bool Notifications, bool Sound, string SoundPack, string Palette,
-        string Mascot, bool DesktopMascot, bool? Speak, MascotBehavior? Behavior, bool StartWithSystem, int Accounts, string Language);
+    /// <summary>Las pestañas de Ajustes, en orden (los nombres son los de SettingsPage.Tab).</summary>
+    public enum SettingsTab { Avisos, Apariencia, Asistente, Isla, Sistema }
 
-    /// <summary>Un interruptor por comportamiento de la mascota del escritorio.</summary>
-    public sealed record MascotBehavior(bool FlowGestures, bool DanceToMusic, bool NoticeGestures, bool GreetOnAppear,
-        bool AngryOnClicks, bool SleepWithoutSessions);
+    static readonly SettingsTab[] AllTabs = Enum.GetValues<SettingsTab>();
 
-    readonly List<View> _pinned = [View.Usage, View.Sessions, View.Activity];
-    bool _viewMenuOpen;
-    /// <summary>Vista que se quiere fijar: el próximo pin de una fija la reemplaza.</summary>
-    View? _replacing;
+    /// <summary>Se cambió de pestaña en Ajustes (para recordarla).</summary>
+    public event Action<SettingsTab>? SettingsTabChanged;
+
+    static readonly SD.Color OnAccent = SD.Color.FromArgb(0x14, 0x14, 0x13);
+
     View _beforeSettings = View.Usage;
-    Rect _selectorBounds;
-    SettingsState _settingsState = new(true, true, "", "", "", false, null, null, false, 0, "");
-    string _soundPackId = "", _paletteId = "", _mascotId = "";
+    IReadOnlyList<SettingsPage> _settingsPages = SettingsPages.Build(new());
+    SettingsTab _settingsTab;
 
     static string ViewLabel(View view) => view switch
     {
         View.Usage => L.T("Uso"),
-        View.Sessions => L.T("Sesiones"),
         View.Activity => L.T("Actividad"),
-        View.Flows => L.T("Flujos"),
+        View.History => L.T("Historial"),
         _ => L.T("Ajustes"),
     };
 
-    /// <summary>Tres vistas distintas y elegibles; si no, las de siempre.</summary>
-    public void SetPinned(IEnumerable<string> names)
+    static string TabLabel(SettingsTab tab) => tab switch
     {
-        var views = names.Select(n => Enum.TryParse<View>(n, out var v) ? v : (View?)null).ToList();
-        var valid = views.Count == 3 && views.All(v => v is { } x && Selectable.Contains(x)) && views.Distinct().Count() == 3;
-        _pinned.Clear();
-        _pinned.AddRange(valid ? views.Select(v => v!.Value) : [View.Usage, View.Sessions, View.Activity]);
-        Relayout();
+        SettingsTab.Avisos => L.T("Avisos"),
+        SettingsTab.Apariencia => L.T("Apariencia"),
+        SettingsTab.Asistente => L.T("Asistente"),
+        SettingsTab.Isla => L.T("Isla"),
+        _ => L.T("Sistema"),
+    };
+
+    /// <summary>El estado de Ajustes (el mismo que recibe Claupet Console); las filas que aparecen o se van rehacen el tamaño.</summary>
+    public void SetSettingsState(SettingsState state)
+    {
+        _settingsPages = SettingsPages.Build(state);
+        if (_view == View.Settings) Relayout();
     }
 
-    /// <summary>Los Id marcan la opción elegida en cada lista.</summary>
-    public void SetSettingsState(SettingsState state, string soundPackId, string paletteId, string mascotId)
-    {
-        _settingsState = state;
-        _soundPackId = soundPackId;
-        _paletteId = paletteId;
-        _mascotId = mascotId;
-        if (_view == View.Settings) InvalidateVisual();
-    }
+    /// <summary>La pestaña de Ajustes con la que se abre (la última usada).</summary>
+    public void SetSettingsTab(SettingsTab tab) => _settingsTab = tab;
 
-    /// <summary>Cierra el selector si está abierto. Devuelve si había algo que cerrar (para Escape).</summary>
-    public bool CloseMenus()
+    void SelectSettingsTab(SettingsTab tab)
     {
-        if (!_viewMenuOpen) return false;
-        _viewMenuOpen = false;
-        _replacing = null;
+        if (tab == _settingsTab) return;
+        _settingsTab = tab;
         Relayout();
-        return true;
+        SettingsTabChanged?.Invoke(tab);
     }
 
     void OpenView(View view)
     {
         _view = view;
-        _viewMenuOpen = false;
-        _replacing = null;
         Relayout();
     }
 
-    /// <summary>Siempre hay 3 fijas: el pin de una libre la prepara y el pin de una fija hace el cambio.</summary>
-    void TogglePin(View view)
+    /// <summary>
+    /// La lista de una opción de Ajustes, junto al cursor: la arma TrayController (las mismas que en la Console) y
+    /// elegir llama a pick. Las paletas llevan un punto de su color.
+    /// </summary>
+    public void ShowOptions(string key, IEnumerable<(string Id, string Label)> options, string selected, Action<string> pick)
     {
-        if (!_pinned.Contains(view))
-            _replacing = _replacing == view ? null : view;
-        else if (_replacing is { } incoming)
+        var menu = new ContextMenu();
+        foreach (var (id, label) in options)
         {
-            _pinned[_pinned.IndexOf(view)] = incoming;
-            _replacing = null;
-            PinnedChanged?.Invoke(_pinned.Select(v => v.ToString()).ToList());
+            var item = new MenuItem { Header = (id == selected ? "✓  " : "     ") + label };
+            if (key == "palette" && Claupet.Theme.Palettes.Any(p => p.Id == id))
+                if (Claupet.Theme.Palettes.First(p => p.Id == id) is var palette)
+                    item.Icon = new Avalonia.Controls.Shapes.Ellipse { Width = 12, Height = 12, Fill = Gfx.B(_t.Dark ? palette.Dark : palette.Light) };
+            item.Click += (_, _) => pick(id);
+            menu.Items.Add(item);
         }
-        Relayout();
-    }
-
-    // ── Selector de la cabecera ─────────────────────────────────────────────────────────────
-
-    void ComposeViewSelector(DrawingContext? dc, double right, double top, double tabsRight)
-    {
-        const double height = 30, compact = 10 + 16 + 4 + 12 + 8;
-        var extra = !_pinned.Contains(_view);
-        var label = ViewLabel(_view);
-        var labelWidth = Gfx.Measure(label, Gfx.Body).Width;
-        var width = extra && right - (compact + 6 + labelWidth) >= tabsRight + 10 ? compact + 6 + labelWidth : compact;
-        var showLabel = width > compact;
-        _selectorBounds = new Rect(right - width, top, width, height);
-        AddHit("viewmenu", _selectorBounds, HitKind.ViewMenu);
-        if (dc is null) return;
-
-        if (_viewMenuOpen) Gfx.Fill(dc, _t.Raised, _selectorBounds, 8);
-        else if (_hoverKey == "viewmenu") Gfx.Fill(dc, _t.Hover, _selectorBounds, 8);
-        Gfx.Outline(dc, extra || _viewMenuOpen ? _t.Accent : _t.Border, _selectorBounds, 8);
-
-        var x = _selectorBounds.X + 10;
-        Gfx.Pin(dc, extra ? _t.Accent : _t.Secondary, new Rect(x, top + (height - 16) / 2, 16, 16), filled: false);
-        x += 16;
-        if (showLabel)
-        {
-            Gfx.Write(dc, label, Gfx.Body, _t.Text, new Rect(x + 6, top, labelWidth + 2, height), center: true);
-            x += 6 + labelWidth;
-        }
-        Gfx.Icon(dc, Glyph.ChevronDown, _t.Secondary, new Rect(x + 4, top, 12, height), 12);
-    }
-
-    /// <summary>La lista de vistas bajo el selector. Devuelve su borde inferior.</summary>
-    double ComposeViewMenu(DrawingContext? dc)
-    {
-        const double width = 250, rowHeight = 34;
-        var x = Math.Min(_selectorBounds.Right, ViewWidth - 10) - width;
-        var top = _selectorBounds.Bottom + 6;
-        var small = Gfx.Small.LineHeight;
-        var hint = _replacing is { } incoming
-            ? L.T("Pulse el pin de la fija que cambia por {0}.", ViewLabel(incoming))
-            : L.T("Siempre hay 3 pestañas fijas. Para fijar otra, pulse su pin y luego el de la que cambia.");
-        var hintHeight = Gfx.MeasureWrapped(hint, Gfx.Small, width - 24, 4);
-        var height = 8 + small + 8 + Selectable.Length * rowHeight + 9 + hintHeight + 12;
-        var panel = new Rect(x, top, width, height);
-        AddHit("viewmenu-panel", panel, HitKind.MenuPanel);
-
-        if (dc is not null)
-        {
-            Gfx.Fill(dc, _t.Raised, panel, 10);
-            Gfx.Outline(dc, _t.Border, panel, 10);
-            Gfx.Write(dc, L.T("Clic: abrir · Pin: fijar como pestaña"), Gfx.Small, _t.Tertiary, new Rect(x + 12, top + 8, width - 24, small));
-        }
-
-        var y = top + 8 + small + 8;
-        foreach (var view in Selectable)
-        {
-            var row = new Rect(x + 6, y, width - 12, rowHeight);
-            var pin = new Rect(row.Right - 32, row.Y + (rowHeight - 30) / 2, 30, 30);
-            var rowKey = "vrow:" + view;
-            var pinKey = "vpin:" + view;
-            AddHit(rowKey, row, HitKind.ViewRow, view: view);
-            AddHit(pinKey, pin, HitKind.ViewPin, view: view);
-            if (dc is not null)
-            {
-                var pinned = _pinned.Contains(view);
-                if (_replacing == view) Gfx.Fill(dc, Gfx.Blend(_t.Raised, _t.Warn, 0.18), row, 8);
-                else if (_view == view) Gfx.Fill(dc, _t.Hover, row, 8);
-                else if (_hoverKey == rowKey) Gfx.Fill(dc, Gfx.Blend(_t.Raised, _t.Hover, 0.6), row, 8);
-                var text = ViewLabel(view);
-                var textWidth = Gfx.Measure(text, Gfx.Body).Width;
-                Gfx.Write(dc, text, Gfx.Body, _t.Text, new Rect(row.X + 10, row.Y, textWidth + 2, rowHeight), center: true);
-                if (_view == view)
-                    Gfx.Write(dc, L.T("abierta"), Gfx.Small, _t.Tertiary, new Rect(row.X + 10 + textWidth + 8, row.Y, 80, rowHeight), center: true);
-                if (_hoverKey == pinKey) Gfx.Fill(dc, _t.Hover, pin, 8);
-                var color = pinned ? (_replacing is null ? _t.Accent : _t.Warn) : _replacing == view ? _t.Warn : _t.Tertiary;
-                Gfx.Pin(dc, color, new Rect(pin.X + 7, pin.Y + 7, 16, 16), filled: pinned);
-            }
-            y += rowHeight;
-        }
-
-        y += 4;
-        if (dc is not null)
-        {
-            dc.DrawLine(Gfx.P(_t.Border), new Point(x + 10, y), new Point(x + width - 10, y));
-            Gfx.Write(dc, hint, Gfx.Small, _replacing is null ? _t.Tertiary : _t.Warn, new Rect(x + 12, y + 5, width - 24, hintHeight), maxLines: 4);
-        }
-        return panel.Bottom;
+        menu.Open(this);
     }
 
     // ── Vista «Ajustes» ─────────────────────────────────────────────────────────────────────
@@ -187,48 +97,113 @@ sealed partial class UsageView
         AddHit("settings-close", close, HitKind.CloseSettings);
         if (dc is not null)
         {
-            Gfx.Write(dc, L.T("Ajustes"), Gfx.Title, _t.Text, new Rect(Pad, y, Inner - 40, height));
+            Gfx.Write(dc, L.T("Ajustes rápidos"), Gfx.Title, _t.Text, new Rect(Pad, y, Inner - 40, height));
             if (_hoverKey == "settings-close") Gfx.Fill(dc, _t.Hover, close, 8);
             Gfx.Icon(dc, Glyph.Close, _t.Secondary, close, 13);
         }
         return y + height + 16;
     }
 
+    /// <summary>
+    /// Todas las pestañas ocupan lo que la más alta (con lo que esté encendido): al cambiar de pestaña no cambia el
+    /// tamaño del cuadro. Las demás se miden sin dejar hits.
+    /// </summary>
     double ComposeSettings(DrawingContext? dc, double y)
     {
-        var s = _settingsState;
-        y = SettingsCaption(dc, L.T("Avisos"), y);
-        y = SwitchRow(dc, L.T("Notificaciones"), "notify", s.Notifications, y);
-        y = SwitchRow(dc, L.T("Sonido"), "sound", s.Sound, y);
-        y = ChoiceRow(dc, L.T("Estilo de sonido"), "pack", s.SoundPack, y);
-        y = LinksRow(dc, y, (L.T("Ver un aviso de ejemplo"), "sample"), (L.T("Abrir carpeta de sonidos"), "sounds"));
+        y = ComposeSettingsTabs(dc, y);
+        var bottom = ComposeSettingsTab(dc, _settingsTab, y);
+        var hits = _hits.Count;
+        foreach (var tab in AllTabs)
+            if (tab != _settingsTab) bottom = Math.Max(bottom, ComposeSettingsTab(null, tab, y));
+        _hits.RemoveRange(hits, _hits.Count - hits);
+        // Aquí solo lo de todos los días; lo demás, en la ventana grande.
+        return ConsoleCard(dc, bottom + 16) + 14;
+    }
 
-        y = SettingsCaption(dc, L.T("Apariencia"), y + 10);
-        y = ChoiceRow(dc, L.T("Color"), "palette", s.Palette, y, swatch: _t.Accent);
-        y = ChoiceRow(dc, L.T("Mascota"), "mascot", s.Mascot, y);
-        y = SwitchRow(dc, L.T("Mascota en el escritorio"), "desk", s.DesktopMascot, y);
-        if (s.Behavior is { } b)
+    /// <summary>Las pestañas: una barra con la elegida resaltada; cada una mide su nombre más una parte igual de lo que sobra.</summary>
+    double ComposeSettingsTabs(DrawingContext? dc, double y)
+    {
+        var bar = new Rect(Pad, y, Inner, 32);
+        var widths = AllTabs.Select(t => Gfx.Measure(TabLabel(t), Gfx.Small).Width).ToArray();
+        var extra = (bar.Width - 8 - widths.Sum()) / AllTabs.Length;
+        if (dc is not null) Gfx.Fill(dc, _t.Hover, bar, 9);
+        var x = bar.X + 4;
+        for (var i = 0; i < AllTabs.Length; i++)
         {
-            y = SwitchRow(dc, L.T("Gestos del flujo (lo que hace la sesión)"), "flowgest", b.FlowGestures, y);
-            // La música sale del control multimedia de Windows; en Linux y macOS todavía no se detecta.
-            if (OperatingSystem.IsWindows()) y = SwitchRow(dc, L.T("Bailar con música"), "music", b.DanceToMusic, y);
-            y = SwitchRow(dc, L.T("Gesto de los avisos"), "noticegest", b.NoticeGestures, y);
-            y = SwitchRow(dc, L.T("Saludar al aparecer"), "greet", b.GreetOnAppear, y);
-            y = SwitchRow(dc, L.T("Enojarse con muchos clics"), "angry", b.AngryOnClicks, y);
-            y = SwitchRow(dc, L.T("Dormir sin sesiones"), "sleep", b.SleepWithoutSessions, y);
+            var tab = AllTabs[i];
+            var cell = new Rect(x, bar.Y + 4, widths[i] + extra, bar.Height - 8);
+            x += cell.Width;
+            AddHit("stab:" + tab, cell, HitKind.SettingsTab);
+            if (dc is null) continue;
+            var selected = tab == _settingsTab;
+            if (selected)
+            {
+                Gfx.Fill(dc, _t.Raised, cell, 6);
+                Gfx.Outline(dc, _t.Border, cell, 6);
+            }
+            var color = selected || _hoverKey == "stab:" + tab ? _t.Text : _t.Secondary;
+            Gfx.Write(dc, TabLabel(tab), selected ? Gfx.SmallStrong : Gfx.Small, color, cell, TextAlignment.Center, center: true);
         }
-        if (s.Speak is { } speak) y = SwitchRow(dc, L.T("Hablar (los avisos en una nubecita)"), "speak", speak, y);
+        return bar.Bottom + 12;
+    }
 
-        y = SettingsCaption(dc, L.T("Cuentas"), y + 10);
-        y = LinkRow(dc, s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add", _t.Accent, y);
+    double ComposeSettingsTab(DrawingContext? dc, SettingsTab tab, double y)
+    {
+        foreach (var page in _settingsPages)
+        {
+            if (page.Tab != tab.ToString()) continue;
+            foreach (var row in page.Rows)
+            {
+                if (row.Place == RowPlace.Console) continue;
+                y = row.Kind switch
+                {
+                    RowKind.Caption => SettingsCaption(dc, row.Text, y),
+                    RowKind.Switch => SwitchRow(dc, row.Text, row.Key, row.On, y),
+                    RowKind.Choice => ChoiceRow(dc, row.Text, row.Key, row.Value, y, swatch: row.Swatch ? _t.Accent : null),
+                    RowKind.Info => InfoRow(dc, row.Text, row.Value, y),
+                    RowKind.Note => NoteRow(dc, row.Text, ToneColor(row.Tone), y),
+                    RowKind.Link => LinkRow(dc, row.Text, row.Value, row.Key, ToneColor(row.Tone), y),
+                    _ => LinksRow(dc, y, (row.Links ?? []).Select(l => (l.Text, l.Key)).ToArray()),
+                };
+            }
+        }
+        return y;
+    }
 
-        y = SettingsCaption(dc, L.T("Programa"), y + 10);
-        y = ChoiceRow(dc, L.T("Idioma"), "language", s.Language, y);
-        y = SwitchRow(dc, L.T("Iniciar con el sistema"), "startup", s.StartWithSystem, y);
-        y = LinkRow(dc, L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup", _t.Accent, y);
-        y = LinkRow(dc, L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag", _t.Accent, y);
-        y = LinkRow(dc, L.T("Quitar hook e inicio con el sistema"), L.T("Quitar…"), "unsetup", _t.Danger, y);
-        return y + 14;
+    SD.Color ToneColor(RowTone tone) => tone switch
+    {
+        RowTone.Muted => _t.Tertiary,
+        RowTone.Warn => _t.Warn,
+        RowTone.Accent => _t.Accent,
+        RowTone.Danger => _t.Danger,
+        _ => _t.Text,
+    };
+
+    /// <summary>«Todos los ajustes»: la tarjeta que abre Claupet Console, con la cabeza del chibi.</summary>
+    double ConsoleCard(DrawingContext? dc, double y)
+    {
+        var card = new Rect(Pad, y, Inner, 68);
+        AddHit("set:console", card, HitKind.Setting);
+        if (dc is null) return card.Bottom;
+        Gfx.Fill(dc, _t.Raised, card, 14);
+        Gfx.Outline(dc, _t.Border, card, 14);
+        var tile = new Rect(card.X + 14, card.Y + (card.Height - 40) / 2, 40, 40);
+        Gfx.Fill(dc, _t.Hover, tile, 10);
+        var unit = Math.Max(1, Math.Floor((tile.Width - 8) / 16));
+        Gfx.Pixels(dc, tile.X + (tile.Width - 16 * unit) / 2, tile.Y + (tile.Height - 16 * unit) / 2, unit,
+            fill => ChibiSprite.PaintHead(fill, MascotFrame.Open, small: true));
+        var open = L.T("Abrir");
+        var pillWidth = Gfx.Measure(open, Gfx.BodyStrong).Width + 36;
+        var pill = new Rect(card.Right - 14 - pillWidth, card.Y + (card.Height - 36) / 2, pillWidth, 36);
+        Gfx.Fill(dc, _hoverKey == "set:console" ? Gfx.Blend(_t.Accent, SD.Color.White, 0.12) : _t.Accent, pill, 18);
+        Gfx.Write(dc, open, Gfx.BodyStrong, OnAccent, pill, TextAlignment.Center, center: true);
+        var textX = tile.Right + 14;
+        var textWidth = pill.X - 12 - textX;
+        var lines = Gfx.BodyStrong.LineHeight + 2 + Gfx.Small.LineHeight;
+        var top = card.Y + (card.Height - lines) / 2;
+        Gfx.Write(dc, L.T("Todos los ajustes"), Gfx.BodyStrong, _t.Text, new Rect(textX, top, textWidth, Gfx.BodyStrong.LineHeight));
+        Gfx.Write(dc, L.T("En Claupet Console"), Gfx.Small, _t.Tertiary, new Rect(textX, top + Gfx.BodyStrong.LineHeight + 2, textWidth, Gfx.Small.LineHeight));
+        return card.Bottom;
     }
 
     double SettingsCaption(DrawingContext? dc, string text, double y)
@@ -264,8 +239,10 @@ sealed partial class UsageView
         if (dc is not null)
         {
             if (_hoverKey == "set:" + key) Gfx.Fill(dc, _t.Hover, row, 8);
-            Gfx.Write(dc, label, Gfx.Body, _t.Text, new Rect(Pad, y, Inner / 2, height), center: true);
-            var valueWidth = Gfx.Measure(value, Gfx.Body).Width;
+            var labelWidth = Gfx.Measure(label, Gfx.Body).Width;
+            Gfx.Write(dc, label, Gfx.Body, _t.Text, new Rect(Pad, y, labelWidth + 2, height), center: true);
+            var space = Inner - labelWidth - 18 - 14 - (swatch is null ? 0 : 20);
+            var valueWidth = Math.Max(0, Math.Min(space, Gfx.Measure(value, Gfx.Body).Width));
             var valueX = Pad + Inner - 18 - valueWidth;
             Gfx.Write(dc, value, Gfx.Body, _t.Secondary, new Rect(valueX, y, valueWidth + 2, height), center: true);
             if (swatch is { } color)
@@ -273,6 +250,29 @@ sealed partial class UsageView
             Gfx.Icon(dc, Glyph.ChevronDown, _t.Secondary, new Rect(Pad + Inner - 14, y, 14, height), 12);
         }
         return y + height;
+    }
+
+    /// <summary>Una fila que solo informa: el nombre y su valor a la derecha, sin lista.</summary>
+    double InfoRow(DrawingContext? dc, string label, string value, double y)
+    {
+        const double height = 32;
+        if (dc is not null)
+        {
+            var labelWidth = Gfx.Measure(label, Gfx.Body).Width;
+            Gfx.Write(dc, label, Gfx.Body, _t.Text, new Rect(Pad, y, labelWidth + 2, height), center: true);
+            var valueWidth = Math.Max(0, Inner - labelWidth - 14);
+            Gfx.Write(dc, value, Gfx.Body, _t.Secondary, new Rect(Pad + Inner - valueWidth, y, valueWidth, height), TextAlignment.Right, center: true);
+        }
+        return y + height;
+    }
+
+    /// <summary>Un texto chico, en varias líneas si hace falta (una aclaración bajo una fila).</summary>
+    double NoteRow(DrawingContext? dc, string text, SD.Color color, double y)
+    {
+        if (text.Length == 0) return y;
+        var height = Gfx.MeasureWrapped(text, Gfx.Small, Inner, 6);
+        Gfx.Write(dc, text, Gfx.Small, color, new Rect(Pad, y, Inner, height), maxLines: 6);
+        return y + height + 6;
     }
 
     double LinkRow(DrawingContext? dc, string label, string link, string key, SD.Color color, double y)
@@ -307,31 +307,5 @@ sealed partial class UsageView
             x += width + 4;
         }
         return y + height;
-    }
-
-    /// <summary>La lista de la opción de Ajustes con esa clave (pack, palette, mascot); elegir manda «clave:id».</summary>
-    void ShowChoiceMenu(string key)
-    {
-        IEnumerable<(string Id, string Label)> choices = key switch
-        {
-            "palette" => Claupet.Theme.Palettes.Select(p => (p.Id, p.Label)),
-            "mascot" => Mascots.Choices,
-            "language" => L.Choices,
-            _ => Sounds.Packs,
-        };
-        var selected = key switch { "palette" => _paletteId, "mascot" => _mascotId, "language" => L.Language, _ => _soundPackId };
-        var menu = new ContextMenu();
-        foreach (var (id, label) in choices)
-        {
-            var item = new MenuItem { Header = (id == selected ? "✓  " : "     ") + label };
-            if (key == "palette") // cada paleta con un punto de su color en el modo actual
-            {
-                var palette = Claupet.Theme.Palettes.First(p => p.Id == id);
-                item.Icon = new Avalonia.Controls.Shapes.Ellipse { Width = 12, Height = 12, Fill = Gfx.B(_t.Dark ? palette.Dark : palette.Light) };
-            }
-            item.Click += (_, _) => SettingRequested?.Invoke(key + ":" + id);
-            menu.Items.Add(item);
-        }
-        menu.Open(this);
     }
 }

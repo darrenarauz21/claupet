@@ -1,3 +1,5 @@
+using Microsoft.Win32;
+
 namespace Claupet;
 
 sealed partial class TrayApp : ApplicationContext
@@ -34,7 +36,8 @@ sealed partial class TrayApp : ApplicationContext
     TaskProposal? _pendingTask;
     IslandForm? _island;
     CancellationTokenSource? _islandAsking, _analyzing;
-    string? _islandStreaming;
+    /// <summary>La conversación de la isla y la nubecita mientras Claupet responde (la Console la muestra como «Conversación rápida»).</summary>
+    readonly ChatTarget _islandChat;
     /// <summary>El modelo de sus sesiones, con nombre: de la última respuesta de la isla o, antes, de la sesión más reciente.</summary>
     string? _defaultModel;
     string? _lastAnalysis, _lastAnalysisFile;
@@ -70,6 +73,7 @@ sealed partial class TrayApp : ApplicationContext
 
     public TrayApp(bool showOnStart, bool sessionsView = false, bool activityView = false, bool settingsView = false, bool demo = false, bool autoSetup = true, bool preview = false, string? demoDrop = null, string? demoVoice = null, string? reminderTask = null)
     {
+        _islandChat = new ChatTarget(_chat, AssistantVoice.Island, island: true, ShowIslandChat);
         _form.StayOpen = preview;
         _launchedReminder = reminderTask;
         _settings = SettingsStore.Load();
@@ -84,12 +88,19 @@ sealed partial class TrayApp : ApplicationContext
         Mascots.Choose(_settings, Mascots.ChoiceOf(_settings)); // deja en orden lo guardado por versiones anteriores
         Mascots.Selected = _settings.Mascot;
         _refresh.Style = RefreshSprite.Resolve(_settings.Animation, _settings.Mascot);
+        // Los accesos directos a Claupet Console, como los de cualquier app (no los de una copia de prueba).
+        if (!preview)
+        {
+            if (_settings.StartMenuShortcut) Shortcuts.Ensure(Shortcuts.StartMenu);
+            if (_settings.DesktopShortcut) Shortcuts.Ensure(Shortcuts.Desktop);
+        }
 
         // El menú del ícono queda corto: lo demás está en la vista Ajustes (botón del pie).
         var menu = _menu;
         menu.Items.Add(L.T("Abrir"), null, (_, _) => ShowForm());
         menu.Items.Add(L.T("Actualizar"), null, async (_, _) => await RefreshAsync(renewSelected: true));
         menu.Items.Add(L.T("Nueva sesión…"), null, (_, _) => NewSession(null));
+        menu.Items.Add("Claupet Console", null, (_, _) => OpenConsole());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(L.T("Ajustes…"), null, (_, _) => { ShowForm(); _form.ShowSettings(); });
         menu.Items.Add(new ToolStripSeparator());
@@ -116,14 +127,11 @@ sealed partial class TrayApp : ApplicationContext
         _form.RenameRequested += RenameAccount;
         _form.NewSessionRequested += NewSession;
         _form.ThemeChanged += () => { ApplyMenus(); ClearRefreshIcons(); UpdateTray(); };
-        _form.SetPinned(_settings.PinnedViews);
-        _form.PinnedChanged += views =>
-        {
-            _settings.PinnedViews = views.ToList();
-            SettingsStore.Save(_settings);
-        };
         _form.SettingRequested += OnSetting;
-        if (Enum.TryParse<UsageForm.SettingsTab>(_settings.SettingsTab, out var tab)) _form.SetSettingsTab(tab);
+        // --pestana <nombre>: con --settings, abre esa pestaña de Ajustes (para revisarla sin cambiar la guardada).
+        var args = Environment.GetCommandLineArgs();
+        var tabName = Array.IndexOf(args, "--pestana") is var pt and >= 0 && pt + 1 < args.Length ? args[pt + 1] : _settings.SettingsTab;
+        if (Enum.TryParse<UsageForm.SettingsTab>(tabName, out var tab)) _form.SetSettingsTab(tab);
         _form.SettingsTabChanged += t =>
         {
             _settings.SettingsTab = t.ToString();
@@ -162,8 +170,8 @@ sealed partial class TrayApp : ApplicationContext
             if (_settings.Notifications) usage.ForEach(ShowNotice);
         };
 
-        if (sessionsView) _form.ShowSessions();
-        if (activityView) _form.ShowActivity();
+        // Sesiones y Actividad son una sola vista; --sessions sigue sirviendo.
+        if (sessionsView || activityView) _form.ShowActivity();
 
         _timer.Interval = Math.Max(1, _settings.RefreshMinutes) * 60_000;
         _timer.Tick += async (_, _) => await RefreshAsync();
@@ -188,6 +196,7 @@ sealed partial class TrayApp : ApplicationContext
             UpdateKeyHook();
             CheckReminders(); // los que pasaron con la app cerrada
             _ = StartExtensionsAsync();
+            StartConsoleServer();
             if (demoDrop is not null) _ = DemoDropAsync(demoDrop);
             if (demoVoice is not null && _voice is { } voice) _ = Task.Delay(1500).ContinueWith(_ => voice.DemoAsync(demoVoice),
                 TaskScheduler.FromCurrentSynchronizationContext()).Unwrap();
@@ -308,8 +317,16 @@ sealed partial class TrayApp : ApplicationContext
     /// <summary>Lo que la vista Ajustes muestra: se manda de nuevo cada vez que algo cambia.</summary>
     void PushSettings()
     {
+        var state = BuildSettingsState();
+        _form.SetSettingsState(state);
+        ConsoleHost.PushSettings(state);
+    }
+
+    /// <summary>Lo que muestran Ajustes y Claupet Console, con los textos ya listos.</summary>
+    SettingsState BuildSettingsState()
+    {
         var s = _settings;
-        _form.SetSettingsState(new UsageForm.SettingsState
+        return new SettingsState
         {
             Notifications = s.Notifications,
             Sound = s.Sound,
@@ -318,6 +335,7 @@ sealed partial class TrayApp : ApplicationContext
             Mascot = _pet is { } pet ? pet.Name : Mascots.Label(Mascots.ChoiceOf(s)),
             MascotSize = MascotSizes.Label(s.MascotSize),
             DesktopMascot = s.DesktopMascot,
+            MascotAllDesktops = s.MascotAllDesktops,
             Speak = s.Speak,
             FlowGestures = s.FlowGestures,
             DanceToMusic = s.DanceToMusic,
@@ -326,11 +344,10 @@ sealed partial class TrayApp : ApplicationContext
             AngryOnClicks = s.AngryOnClicks,
             SleepWithoutSessions = s.SleepWithoutSessions,
             Chat = s.Chat,
-            MascotModel = ExternalLabel(ExtensionSlots.Assistant) ?? AssistantModels.Label(s.MascotModel),
+            MascotModel = ExternalLabel(ExtensionSlots.Assistant) ?? ModelLabel(s.MascotModel),
             AssistantAccount = AssistantAccountLabel(),
             TaskFolder = TaskFolderLabel(),
             AnalyzeDrops = s.AnalyzeDrops,
-            Permissions = L.T("{0} de {1} permitidas", Capabilities.All.Count(c => Capabilities.Allowed(s, c.Id)), Capabilities.All.Length),
             Mic = s.Mic,
             MicKey = MicKeys.Label(s.MicKey),
             ChatKey = KeyNames.Label(s.ChatKey),
@@ -341,18 +358,45 @@ sealed partial class TrayApp : ApplicationContext
             ReadAloudVoice = ExternalLabel(ExtensionSlots.TextToSpeech) ?? VoiceChoices().FirstOrDefault(v => v.Id == s.ReadAloudVoice).Label ?? ClaupetVoices.Label(s.ReadAloudVoice),
             SpeechStatus = SpeechStatusText().Status,
             SpeechAction = SpeechStatusText().Action,
+            LocalModel = L.T("{0} · unos {1} de RAM", LocalChoice.Name, LocalChoice.Ram),
+            LocalStatus = LocalStatusText().Status,
+            LocalAction = LocalStatusText().Action,
             Island = s.Island,
-            IslandModel = ExternalLabel(ExtensionSlots.Assistant) ?? AssistantModels.Label(s.IslandModel),
+            IslandModel = ExternalLabel(ExtensionSlots.Assistant) ?? ModelLabel(s.IslandModel),
             IslandHover = s.IslandHover,
             IslandWhileBusy = s.IslandWhileBusy,
             WeeklyRecap = s.WeeklyRecap,
             Approvals = ApprovalsText(),
             StartWithWindows = StartupRegistration.IsEnabled,
+            StartMenuShortcut = s.StartMenuShortcut,
+            DesktopShortcut = s.DesktopShortcut,
             Accounts = s.Accounts.Count,
             Language = L.Label,
             Extensions = _extensions.Installed.Count == 0 ? L.T("Ninguna")
                 : L.T("{0} de {1} encendidas", _extensions.Installed.Count(e => _extensions.IsEnabled(e.Id)), _extensions.Installed.Count),
-        });
+            LocalReady = LocalModel.Ready(LocalChoice),
+            LocalIdle = L.T("{0} min", s.LocalIdleMinutes),
+            CloudModel = ExternalLabel(ExtensionSlots.Assistant) ?? (s.MascotModel == AssistantModels.Local
+                ? L.T("Claude · {0} (solo la isla)", AssistantModels.Label(s.IslandModel)) : "Claude · " + AssistantModels.Label(s.MascotModel)),
+            GeneralLocal = AnswerTopics.First(s, AnswerTopics.General) == Engine.Local,
+            Fallback = FallbackLabel(s.AnswerFallback),
+            FallbackHint = s.AnswerFallback switch
+            {
+                Engine.Cloud => L.T("Sin IA, luego el modelo local (si está descargado) y al final la nube."),
+                Engine.Local => L.T("Nunca llega a la nube, salvo internet, archivos y tareas."),
+                _ => L.T("Si el primero no entiende, Claupet pide decirlo de otra forma."),
+            },
+            ShowWho = s.ShowWhoAnswered,
+            City = CityLabel(),
+            Saved = AnswerStats.ThisWeek() is var (none, local) && none + local == 1 ? L.T("1 respuesta") : L.T("{0} respuestas", none + local),
+            SavedDetail = AnswerStats.ThisWeek() is var (n, l) && n + l > 0 ? L.T("{0} sin IA · {1} con el modelo local", n, l) : "",
+            AnswerPreset = AnswerPresets.Label(AnswerPresets.Current(s)),
+            AnswerPresetHint = AnswerPresets.Describe(AnswerPresets.Current(s)),
+            AnswerCustom = AnswerPresets.Current(s) == AnswerPresets.Custom,
+            TopicEngines = AnswerTopics.All.Select(t => new TopicState(t.Id, L.T(t.Label),
+                t.Fixed ? L.T("Siempre la nube") : EngineLabel(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
+            Grants = Capabilities.Available.Select(c => new GrantState(c.Id, c.Label, Capabilities.Allowed(s, c.Id))).ToList(),
+        };
     }
 
     /// <summary>La extensión que ocupa una ranura exclusiva, dicha para Ajustes; null: el integrado.</summary>
@@ -365,15 +409,9 @@ sealed partial class TrayApp : ApplicationContext
     /// <summary>Una voz que necesita el modelo de Supertonic: la de Claupet o la de un paquete.</summary>
     static bool NeedsSupertonic(string voice) => ClaupetVoices.IsClaupet(voice) || voice.StartsWith(ExtensionManager.PackPrefix, StringComparison.Ordinal);
 
-    string AssistantAccountLabel() =>
-        _settings.AssistantAccount is { } dir && _settings.Accounts.FirstOrDefault(a => Account.SamePath(a.ConfigDir, dir)) is { } account
-            ? account.Label : L.T("La elegida en Uso");
+    string AssistantAccountLabel() => AssistantAccounts.Label(_settings);
 
-    string TaskFolderLabel()
-    {
-        var folder = _settings.TaskFolder ?? _settings.Launch.Folder;
-        return string.IsNullOrEmpty(folder) ? L.T("Elegir…") : Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : folder;
-    }
+    string TaskFolderLabel() => TaskFolders.Label(_settings);
 
     /// <summary>La fila del modelo de voz en Ajustes: qué dice y qué enlace lleva.</summary>
     (string Status, string Action) VoiceStatusText() =>
@@ -538,6 +576,23 @@ sealed partial class TrayApp : ApplicationContext
 
     void OnSetting(string action)
     {
+        // Las filas de Claupet Console: el motor de un tipo de pregunta y el permiso de una capacidad.
+        if (action.StartsWith("topic:", StringComparison.Ordinal))
+        {
+            var topic = AnswerTopics.Find(action["topic:".Length..]);
+            ShowOptions(AnswerTopics.Choices(topic).Select(e => (e.ToString(), EngineLabel(e))), AnswerTopics.First(_settings, topic.Id).ToString(),
+                v => PickEngine(topic, Enum.Parse<Engine>(v)));
+            return;
+        }
+        if (action.StartsWith("grant:", StringComparison.Ordinal))
+        {
+            var id = action["grant:".Length..];
+            Change(s =>
+            {
+                if (!s.Permissions.Remove(id)) s.Permissions.Add(id);
+            });
+            return;
+        }
         switch (action)
         {
             case "notify": ToggleNotifications(); break;
@@ -558,6 +613,10 @@ sealed partial class TrayApp : ApplicationContext
             case "extinstall": _ = PickPackageAsync(); break;
             case "size": ShowOptions(MascotSizes.Choices, _settings.MascotSize, SetMascotSize); break;
             case "desk": ToggleDesktopMascot(); break;
+            case "alldesks":
+                Toggle(s => s.MascotAllDesktops = !s.MascotAllDesktops);
+                UpdateMascotWindow(); // se rehace: el dueño de la ventana se elige al crearla
+                break;
             case "speak": ToggleSpeak(); break;
             case "flowgest": Toggle(s => s.FlowGestures = !s.FlowGestures); break;
             case "music": Toggle(s => s.DanceToMusic = !s.DanceToMusic); break;
@@ -572,12 +631,15 @@ sealed partial class TrayApp : ApplicationContext
             case "mmodel":
                 // Con un asistente de una extensión, el modelo se elige en sus ajustes.
                 if (_extensions.ProviderFor(ExtensionSlots.Assistant) is not null) ShowExtensions();
-                else ShowOptions(AssistantModels.Choices, _settings.MascotModel, m => Change(s => s.MascotModel = m));
+                else ShowOptions(MascotModelChoices(), _settings.MascotModel, m =>
+                {
+                    Change(s => s.MascotModel = m);
+                    ModelPicked(m);
+                });
                 break;
             case "account": ShowOptions(AssistantAccountChoices(), _settings.AssistantAccount ?? "", a => Change(s => s.AssistantAccount = a.Length == 0 ? null : a)); break;
             case "folder": ShowOptions(TaskFolderChoices(), _settings.TaskFolder ?? "", PickTaskFolder); break;
             case "drops": Toggle(s => s.AnalyzeDrops = !s.AnalyzeDrops); break;
-            case "grants": ShowPermissions(); break;
             case "mic":
                 Toggle(s => s.Mic = !s.Mic);
                 // Se descarga una vez, al encenderlo; con una extensión de voz a texto no hace falta.
@@ -622,10 +684,38 @@ sealed partial class TrayApp : ApplicationContext
                 if (_speechDownload is { } speech) speech.Cancel();
                 else _ = DownloadSpeechAsync();
                 break;
+            case "localmodel": PickLocalModel(); break;
+            case "localidle":
+                ShowOptions(new[] { 2, 5, 10, 30 }.Select(m => (m.ToString(), L.T("{0} min", m))), _settings.LocalIdleMinutes.ToString(), v =>
+                {
+                    Change(s => s.LocalIdleMinutes = int.Parse(v));
+                    _localServer.IdleMinutes = _settings.LocalIdleMinutes;
+                    _localServer.Stop(); // vuelve a arrancar con el nuevo tiempo en la próxima pregunta
+                });
+                break;
+            case "answerpreset":
+                ShowOptions(AnswerPresets.Choices(), AnswerPresets.Current(_settings), v =>
+                {
+                    Change(s => AnswerPresets.Apply(s, v));
+                    if (AnswerPresets.UsesLocal(v)) ModelPicked(AssistantModels.Local); // si falta, se descarga
+                });
+                break;
+            case "fallback":
+                ShowOptions(new[] { Engine.Cloud, Engine.Local, Engine.None }.Select(e => (e.ToString(), FallbackLabel(e))), _settings.AnswerFallback.ToString(),
+                    v => Change(s => s.AnswerFallback = Enum.Parse<Engine>(v)));
+                break;
+            case "who": Toggle(s => s.ShowWhoAnswered = !s.ShowWhoAnswered); break;
+            case "city": PickCity(); break;
+            case "console": OpenConsole("general"); break;
+            case "local": LocalModelAction(); break;
             case "island": Toggle(s => s.Island = !s.Island); break;
             case "imodel":
                 if (_extensions.ProviderFor(ExtensionSlots.Assistant) is not null) ShowExtensions();
-                else ShowOptions(AssistantModels.IslandChoices, _settings.IslandModel ?? "", m => Change(s => s.IslandModel = m.Length == 0 ? null : m));
+                else ShowOptions(IslandModelChoices(), _settings.IslandModel ?? "", m =>
+                {
+                    Change(s => s.IslandModel = m.Length == 0 ? null : m);
+                    ModelPicked(m);
+                });
                 break;
             case "hover": Toggle(s => s.IslandHover = !s.IslandHover); break;
             case "busy": Toggle(s => s.IslandWhileBusy = !s.IslandWhileBusy); break;
@@ -634,6 +724,14 @@ sealed partial class TrayApp : ApplicationContext
             case "shortcuts": ShowShortcuts(); break;
             case "recapnow": MaybeShowRecap(true); break;
             case "startup": ToggleStartup(); break;
+            case "startmenu":
+                Toggle(s => s.StartMenuShortcut = !s.StartMenuShortcut);
+                Shortcuts.Set(Shortcuts.StartMenu, _settings.StartMenuShortcut);
+                break;
+            case "desktoplink":
+                Toggle(s => s.DesktopShortcut = !s.DesktopShortcut);
+                Shortcuts.Set(Shortcuts.Desktop, _settings.DesktopShortcut);
+                break;
             case "language": ShowOptions(L.Choices, L.Language, SetLanguage); break;
             case "sample": ShowNextSample(); break;
             case "sounds": OpenSoundsFolder(); break;
@@ -981,16 +1079,17 @@ sealed partial class TrayApp : ApplicationContext
             island.TerminalClicked += s => Terminals.Focus(s.Pid);
             island.NewSessionClicked += () => NewSession(null);
             island.SettingsClicked += () => { ShowForm(); _form.ShowSettings(); };
-            island.ModelClicked += () => ShowOptions(AssistantModels.IslandChoices, _settings.IslandModel ?? "", m =>
+            island.ModelClicked += () => ShowOptions(IslandModelChoices(), _settings.IslandModel ?? "", m =>
             {
                 Change(s => s.IslandModel = m.Length == 0 ? null : m);
+                ModelPicked(m);
                 PushIslandModel();
             });
             island.NewChatClicked += () =>
             {
                 _islandAsking?.Cancel();
                 _chat.Clear();
-                PushIslandChat(false);
+                _islandChat.Show(false);
             };
             island.Asked += text => _ = AskIslandAsync(text);
             island.FilesDropped += files =>
@@ -1020,14 +1119,14 @@ sealed partial class TrayApp : ApplicationContext
         _island.SetMascot(Mascots.IsChibi);
         PushIslandModel();
         PushIslandUsage();
-        PushIslandChat(_islandAsking is { IsCancellationRequested: false } && _islandStreaming is not null);
+        _islandChat.Show(_islandAsking is { IsCancellationRequested: false } && _islandChat.Streaming is not null);
         if (_lastSessions is { } sessions) _island.SetSessions(sessions);
     }
 
     void PushIslandModel()
     {
         var label = _settings.IslandModel is { } model
-            ? AssistantModels.Label(model)
+            ? ModelLabel(model)
             : _defaultModel ?? AssistantModels.Label(null);
         var account = AssistantConfigDir is { } dir ? _settings.Accounts.FirstOrDefault(a => Account.SamePath(a.ConfigDir, dir))?.Label ?? "" : "";
         _island?.SetModel(label, account);
@@ -1043,46 +1142,61 @@ sealed partial class TrayApp : ApplicationContext
         _island.SetUsage(snap?.Session?.Percent, snap?.Weekly?.Percent);
     }
 
-    void PushIslandChat(bool asking) => _island?.SetChat(_chat.Turns.ToList(), _islandStreaming, asking);
+    /// <summary>Muestra la conversación de la isla en la isla y, si la tiene abierta, en la Console.</summary>
+    void ShowIslandChat(bool asking)
+    {
+        _island?.SetChat(_chat.Turns.ToList(), _islandChat.Streaming, asking);
+        ConsoleHost.QuickChanged(asking);
+    }
 
     /// <summary>Le pregunta a Claude desde la isla, con el modelo de sus sesiones (o el elegido).</summary>
-    async Task AskIslandAsync(string text)
+    Task AskIslandAsync(string text)
     {
         _islandAsking?.Cancel();
         var cancel = _islandAsking = new CancellationTokenSource();
-        var history = _chat.Turns.ToList();
-        _chat.Add(new ChatTurn(true, text));
-        _islandStreaming = "";
-        PushIslandChat(true);
+        return AskChatAsync(_islandChat, text, cancel.Token);
+    }
+
+    /// <summary>
+    /// Le pregunta a Claude en una conversación (la de la isla y la nubecita, o una de Claupet Console), con el
+    /// modelo de la isla. Lo que va llegando queda en chat.Streaming y chat.Show lo muestra donde se ve.
+    /// </summary>
+    async Task AskChatAsync(ChatTarget chat, string text, CancellationToken cancel)
+    {
+        var history = chat.Log.Turns.TakeLast(40).ToList();
+        chat.Log.Add(new ChatTurn(true, text));
+        chat.Streaming = "";
+        chat.Show(true);
         // Con la voz encendida, la respuesta no se muestra mientras llega: sale cuando empieza a sonar.
         var speaking = _settings.ReadAloud;
+        void Stream(string piece)
+        {
+            if (cancel.IsCancellationRequested || speaking) return;
+            chat.Streaming = (chat.Streaming ?? "") + piece;
+            chat.Show(true);
+        }
         if (SkillCommand(text) is { } command)
         {
-            var reply = await RunSkillCommandAsync(command, piece =>
-            {
-                if (cancel.IsCancellationRequested || speaking) return;
-                _islandStreaming = (_islandStreaming ?? "") + piece;
-                PushIslandChat(true);
-            }, cancel.Token);
-            _islandStreaming = null;
+            var reply = await RunSkillCommandAsync(command, Stream, cancel);
+            chat.Streaming = null;
             if (cancel.IsCancellationRequested)
             {
-                PushIslandChat(false);
+                chat.Show(false);
                 return;
             }
             if (reply.Length == 0) reply = L.T("Listo. (^_^)");
             ReadAloudIfOn(reply, () =>
             {
                 if (cancel.IsCancellationRequested) return;
-                _chat.Add(new ChatTurn(false, reply));
-                PushIslandChat(false);
+                chat.Log.Add(new ChatTurn(false, reply));
+                chat.Show(false);
             });
             return;
         }
         var request = new AssistantRequest
         {
             Prompt = text,
-            Voice = AssistantVoice.Island,
+            Voice = chat.Voice,
             Model = _settings.IslandModel,
             ConfigDir = AssistantConfigDir,
             Context = AssistantContext(),
@@ -1090,51 +1204,45 @@ sealed partial class TrayApp : ApplicationContext
             Chibi = Mascots.IsChibi,
             Expressive = Expressive,
         };
-        void Stream(string piece)
-        {
-            if (cancel.IsCancellationRequested || speaking) return;
-            _islandStreaming = (_islandStreaming ?? "") + piece;
-            PushIslandChat(true);
-        }
-        var result = await Assistant.AskAsync(request, Stream, cancel: cancel.Token);
-        _islandStreaming = null;
+        var result = await Answers.AskAsync(request, _settings, Stream, cancel: cancel);
+        chat.Streaming = null;
         if (cancel.IsCancellationRequested)
         {
-            PushIslandChat(false);
+            chat.Show(false);
             return;
         }
-        if (result.Model is { } used && _settings.IslandModel is null)
+        if (result.By is { Engine: Engine.Cloud } && result.Model is { } used && _settings.IslandModel is null)
         {
             _defaultModel = Format.Model(used);
             PushIslandModel();
         }
-        if (result.Failed) _chat.Add(new ChatTurn(false, $"{result.Error} (._.)"));
+        if (result.Failed) chat.Log.Add(new ChatTurn(false, $"{result.Error} (._.)"));
         else if (result.Task is { } task)
         {
-            _chat.Add(new ChatTurn(false, result.Text.Length > 0 ? result.Text : L.T("Eso es una tarea para Claude Code.")));
+            chat.Log.Add(new ChatTurn(false, result.Text.Length > 0 ? result.Text : L.T("Eso es una tarea para Claude Code.")));
             OfferTask(task);
         }
         else
         {
             // Si Claude vuelve a responder con lo que encontró la acción, la respuesta en curso empieza de nuevo.
-            var answer = await RunActionAsync(result, request, island: true, Stream, () =>
+            var answer = await RunActionAsync(result, request, chat.Island, Stream, () =>
             {
-                _islandStreaming = null;
-                PushIslandChat(true);
-                _islandStreaming = "";
-                PushIslandChat(true);
-            }, cancel.Token);
-            _islandStreaming = null;
+                chat.Streaming = null;
+                chat.Show(true);
+                chat.Streaming = "";
+                chat.Show(true);
+            }, cancel);
+            chat.Streaming = null;
             if (cancel.IsCancellationRequested) return;
             ReadAloudIfOn(result, answer, () =>
             {
                 if (cancel.IsCancellationRequested) return;
-                _chat.Add(new ChatTurn(false, answer));
-                PushIslandChat(false);
+                chat.Log.Add(new ChatTurn(false, answer, WhoAnswered(result)));
+                chat.Show(false);
             });
             return;
         }
-        PushIslandChat(false);
+        chat.Show(false);
     }
 
     /// <summary>
@@ -1159,7 +1267,7 @@ sealed partial class TrayApp : ApplicationContext
         if (outcome.Data is { } data)
         {
             restart?.Invoke();
-            var follow = await Assistant.AskAsync(request with { Data = data }, onText, cancel: cancel);
+            var follow = await Answers.AskAsync(request with { Data = data, Engine = result.By?.Engine }, _settings, onText, cancel: cancel);
             return follow.Failed ? $"{follow.Error} (._.)" : follow.Text;
         }
         return outcome.Say ?? (result.Text.Length > 0 ? result.Text : L.T("¡Listo! (^_^)"));
@@ -1175,7 +1283,7 @@ sealed partial class TrayApp : ApplicationContext
         if (SystemActions.CapabilityOf(action) is { } capability && !Capabilities.Allowed(_settings, capability))
         {
             var choice = await AskChoiceAsync(island, L.T("¿Dejo que Claupet {0}?", Capabilities.Ask(capability)),
-                L.T("Se lo pregunto la primera vez. Puede quitarlo en Ajustes › Asistente › Permisos."),
+                L.T("Se lo pregunto la primera vez. Puede quitarlo en Claupet Console › Asistente › Permisos."),
                 [("no", L.T("No")), ("always", L.T("Permitir siempre")), ("once", L.T("Solo esta vez"))], "always", cancel);
             if (choice == "always") Change(s => s.Permissions.Add(capability));
             if (choice is not ("always" or "once")) return false;
@@ -1236,7 +1344,7 @@ sealed partial class TrayApp : ApplicationContext
     }
 
     /// <summary>El nombre de la carpeta donde se abriría una tarea, para la nubecita.</summary>
-    static string FolderLabel(string? folder) => folder is null ? L.T("una carpeta") : Path.GetFileName(folder.TrimEnd('\\', '/'));
+    static string FolderLabel(string? folder) => TaskFolders.Name(folder);
 
     /// <summary>Una tarea pedida en la isla (o un archivo que hay que encargar): la mascota la ofrece en su nubecita; sin mascota, se pregunta aquí.</summary>
     void OfferTask(TaskProposal task)
@@ -1250,16 +1358,9 @@ sealed partial class TrayApp : ApplicationContext
             return;
         }
         var folder = task.Folder ?? TaskFolderPath;
-        var where = folder is null ? L.T("una carpeta que elija") : L.T("«{0}»", FolderLabel(folder));
-        if (MessageBox.Show(L.T("¿Abro Claude Code en {0} con esta tarea?\n\n«{1}»", where, task.Prompt), "Claupet",
+        if (MessageBox.Show(L.T("¿Abro Claude Code en {0} con esta tarea?\n\n«{1}»", L.T("«{0}»", FolderLabel(folder)), task.Prompt), "Claupet",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-        if (folder is null)
-        {
-            using var dialog = new FolderBrowserDialog { Description = L.T("Carpeta donde se abre la sesión."), UseDescriptionForTitle = true };
-            if (dialog.ShowDialog() != DialogResult.OK) return;
-            folder = dialog.SelectedPath;
-            Change(s => s.TaskFolder = folder);
-        }
+        Prepare(folder);
         try
         {
             Launcher.Start(new LaunchOptions
@@ -1429,7 +1530,7 @@ sealed partial class TrayApp : ApplicationContext
         {
             case "ask":
                 _chat.Add(new ChatTurn(false, L.T("(Resumen de {0}) {1}", Path.GetFileName(file), analysis)));
-                PushIslandChat(false);
+                _islandChat.Show(false);
                 _island?.ShowPage(IslandForm.Page.Chat);
                 break;
             case "copy":
@@ -1451,39 +1552,10 @@ sealed partial class TrayApp : ApplicationContext
         }
     }
 
-    /// <summary>
-    /// Ajustes › Asistente › Permisos: las capacidades, con una marca en las que tienen «Permitir siempre»;
-    /// un clic la da o la quita (el menú queda abierto para cambiar varias). Sin marca, se pregunta al usarla.
-    /// </summary>
-    void ShowPermissions()
-    {
-        var menu = new ContextMenuStrip();
-        foreach (var (id, label, _) in Capabilities.All)
-        {
-            var item = new ToolStripMenuItem(label) { Checked = Capabilities.Allowed(_settings, id), CheckOnClick = true };
-            item.CheckedChanged += (_, _) => Change(s =>
-            {
-                s.Permissions.Remove(id);
-                if (item.Checked) s.Permissions.Add(id);
-            });
-            menu.Items.Add(item);
-        }
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem(L.T("Sin marca: se pregunta la primera vez que lo use.")) { Enabled = false });
-        Menus.Apply(menu, _form.Theme);
-        menu.Closing += (_, e) => e.Cancel = e.CloseReason == ToolStripDropDownCloseReason.ItemClicked;
-        menu.Closed += (_, _) =>
-        {
-            _form.HoldOpen = false;
-            _form.BeginInvoke(menu.Dispose);
-        };
-        _form.HoldOpen = true;
-        menu.Show(Cursor.Position);
-    }
-
     /// <summary>Una lista armada al momento (cuentas, carpetas…), con la elegida marcada; elegir llama a pick con su Id.</summary>
     void ShowOptions(IEnumerable<(string Id, string Label)> options, string selected, Action<string> pick, Action? onClosed = null)
     {
+        if (OfferToConsole(options, selected, pick, onClosed)) return;
         var menu = new ContextMenuStrip();
         foreach (var (id, label) in options)
         {
@@ -1503,12 +1575,31 @@ sealed partial class TrayApp : ApplicationContext
 
     // ── Chat con la mascota ─────────────────────────────────────────────────────────────────
 
-    /// <summary>La cuenta que responde: la elegida en Ajustes o, si no, la de Uso.</summary>
-    string? AssistantConfigDir => _settings.AssistantAccount ?? _settings.Selected;
+    /// <summary>Quién respondió, para mostrarlo bajo la respuesta (si está encendido en Ajustes › Respuestas).</summary>
+    string? WhoAnswered(AssistantResult result) => _settings.ShowWhoAnswered ? result.By?.Label : null;
 
-    /// <summary>Dónde se abren las tareas: la carpeta elegida o la última de «Nueva sesión».</summary>
-    string? TaskFolderPath =>
-        new[] { _settings.TaskFolder, _settings.Launch.Folder }.FirstOrDefault(f => !string.IsNullOrEmpty(f) && Directory.Exists(f));
+    /// <summary>El uso de Claude dicho sin IA: cada límite con su porcentaje y cuándo se reinicia (null si aún no se sabe).</summary>
+    string? UsageAnswer()
+    {
+        var parts = new List<string>();
+        var known = _settings.Accounts.Where(a => _snapshots.TryGetValue(a.ConfigDir, out var s) && s.Limits.Count > 0).ToList();
+        foreach (var account in known)
+        {
+            var snap = _snapshots[account.ConfigDir];
+            var limits = string.Join(", ", snap.Limits.Select(l => L.T("{0} al {1:0} %", l.Label, l.Percent)
+                + (Format.Reset(l.ResetsAt) is { Length: > 0 } r ? $" ({r.ToLowerInvariant()})" : "")));
+            parts.Add(known.Count == 1 ? limits + "." : L.T("«{0}»: {1}.", account.Label, limits));
+        }
+        return parts.Count == 0 ? null : string.Join(" ", parts) + " (^_^)";
+    }
+
+    /// <summary>La cuenta que responde: la elegida en Ajustes o, si no, la de Uso.</summary>
+    string? AssistantConfigDir => AssistantAccounts.ConfigDir(_settings);
+
+    /// <summary>Dónde se abren las tareas: la carpeta elegida o, si no hay (o ya no existe), la del asistente.</summary>
+    string TaskFolderPath => TaskFolders.For(_settings);
+
+    static void Prepare(string folder) => TaskFolders.Prepare(folder);
 
     /// <summary>El campo para escribirle, en la nubecita, con la mascota escuchando.</summary>
     void OpenChat()
@@ -1517,7 +1608,7 @@ sealed partial class TrayApp : ApplicationContext
         _bubble.Hide();
         _asking?.Cancel(); // si estaba respondiendo, deja de esperar esa respuesta
         _pendingTask = null;
-        ChatBubbleFor().AskInput(mascot.Bounds, AssistantModels.Label(_settings.MascotModel));
+        ChatBubbleFor().AskInput(mascot.Bounds, ModelLabel(_settings.MascotModel));
         _director.SetMood(ChibiMove.Listen);
     }
 
@@ -1529,10 +1620,11 @@ sealed partial class TrayApp : ApplicationContext
         bubble.ModelClicked += () =>
         {
             bubble.HoldOpen = true;
-            ShowOptions(AssistantModels.Choices, _settings.MascotModel, m =>
+            ShowOptions(MascotModelChoices(), _settings.MascotModel, m =>
             {
                 Change(s => s.MascotModel = m);
-                bubble.SetModel(AssistantModels.Label(m));
+                ModelPicked(m);
+                bubble.SetModel(ModelLabel(m));
             }, onClosed: () =>
             {
                 bubble.HoldOpen = false;
@@ -1602,7 +1694,7 @@ sealed partial class TrayApp : ApplicationContext
             bubble.Append(piece);
             _director.SetMood(ChibiMove.Talk);
         }
-        var result = await Assistant.AskAsync(request, Stream, cancel: cancel.Token);
+        var result = await Answers.AskAsync(request, _settings, Stream, cancel: cancel.Token);
         if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
 
         if (result.Failed)
@@ -1627,12 +1719,12 @@ sealed partial class TrayApp : ApplicationContext
             _director.SetMood(ChibiMove.Think);
         }, cancel.Token);
         if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
-        _chat.Add(new ChatTurn(false, answer));
+        _chat.Add(new ChatTurn(false, answer, WhoAnswered(result)));
         ReadAloudIfOn(result, answer, () =>
         {
             if (cancel.IsCancellationRequested || bubble.IsDisposed) return;
             if (speaking) _director.SetMood(ChibiMove.Talk);
-            bubble.Finish(answer, _settings.Island);
+            bubble.Finish(answer, _settings.Island, who: WhoAnswered(result));
         });
     }
 
@@ -1650,7 +1742,7 @@ sealed partial class TrayApp : ApplicationContext
                 {
                     Description = L.T("Carpeta donde se abre la sesión de Claude Code con la tarea."),
                     UseDescriptionForTitle = true,
-                    InitialDirectory = TaskFolderPath ?? Account.Home,
+                    InitialDirectory = TaskFolderPath,
                 };
                 if (dialog.ShowDialog() != DialogResult.OK) return;
                 folder = dialog.SelectedPath;
@@ -1659,6 +1751,7 @@ sealed partial class TrayApp : ApplicationContext
             Change(s => s.TaskFolder = folder);
         }
         _pendingTask = null;
+        Prepare(folder);
         try
         {
             Launcher.Start(new LaunchOptions
@@ -1677,35 +1770,8 @@ sealed partial class TrayApp : ApplicationContext
         }
     }
 
-    /// <summary>
-    /// Lo que la mascota sabe del momento, para responder sobre el uso y las sesiones: la hora, el uso
-    /// de cada cuenta y las sesiones abiertas (título, cuenta, carpeta y estado). Sin correos ni tokens.
-    /// </summary>
-    string AssistantContext()
-    {
-        var text = new System.Text.StringBuilder(); // la fecha y la hora van en el prompt de sistema
-        foreach (var account in _settings.Accounts)
-        {
-            if (!_snapshots.TryGetValue(account.ConfigDir, out var snap) || snap.Limits.Count == 0) continue;
-            _profiles.TryGetValue(account.ConfigDir, out var profile);
-            var limits = snap.Limits.Select(l => $"{l.Label} al {l.Percent:0} %" + (Format.Reset(l.ResetsAt) is { Length: > 0 } r ? $" ({r.ToLowerInvariant()})" : ""));
-            text.AppendLine($"Cuenta «{account.Label}»{(profile?.Plan is { Length: > 0 } plan ? $" (plan {plan})" : "")}: {string.Join("; ", limits)}.");
-        }
-        var sessions = (_lastSessions ?? []).Where(s => s.State != SessionState.Idle).Take(8).ToList();
-        if (sessions.Count == 0) text.AppendLine("No hay sesiones de Claude Code activas.");
-        foreach (var s in sessions)
-        {
-            var state = s.State switch
-            {
-                SessionState.Working => "trabajando" + (s.Action is { } a ? $" ({a})" : "") + (s.TodoTotal > 0 ? $", {s.TodoDone} de {s.TodoTotal} tareas" : ""),
-                SessionState.Waiting => s.AwaitingAnswer ? "esperando su respuesta" : "esperando su permiso",
-                SessionState.Failed => "falló: " + (s.ErrorText ?? "error de la API"),
-                _ => "terminó " + Format.Ago(s.TurnEndedAt ?? s.StatusAt),
-            };
-            text.AppendLine($"Sesión «{s.DisplayTitle}» ({s.Account.Label}, carpeta {Path.GetFileName(s.Cwd.TrimEnd('\\', '/'))}): {state}.");
-        }
-        return text.ToString().TrimEnd();
-    }
+    /// <summary>Lo que la mascota sabe del momento (el uso y las sesiones abiertas), para responder sobre eso.</summary>
+    string AssistantContext() => MascotContext.Build(_settings, _snapshots, _profiles, _lastSessions);
 
     void SetMascotSize(string size)
     {
@@ -1715,22 +1781,13 @@ sealed partial class TrayApp : ApplicationContext
         mascot.SetSize(mascot.Pet is { } pet ? MascotSizes.PetUnit(size, pet.Height, scale) : MascotSizes.Unit(size, mascot.Chibi, scale));
     }
 
-    IEnumerable<(string Id, string Label)> AssistantAccountChoices() =>
-        _settings.Accounts.Select(a => (a.ConfigDir, a.Label)).Prepend(("", L.T("La elegida en Uso")));
+    IEnumerable<(string Id, string Label)> AssistantAccountChoices() => AssistantAccounts.Choices(_settings);
 
-    /// <summary>Las carpetas de las sesiones abiertas y la última de «Nueva sesión», y elegir otra.</summary>
-    IEnumerable<(string Id, string Label)> TaskFolderChoices()
-    {
-        var folders = (_lastSessions ?? []).Select(s => s.Cwd)
-            .Prepend(_settings.Launch.Folder ?? "").Prepend(_settings.TaskFolder ?? "")
-            .Where(f => f.Length > 0 && Directory.Exists(f))
-            .Distinct(StringComparer.OrdinalIgnoreCase).Take(8);
-        return folders.Select(f => (f, f.Replace(Account.Home, "~"))).Append(("…", L.T("Elegir otra carpeta…")));
-    }
+    IEnumerable<(string Id, string Label)> TaskFolderChoices() => TaskFolders.Choices(_settings, _lastSessions);
 
     void PickTaskFolder(string folder)
     {
-        if (folder == "…")
+        if (folder == TaskFolders.Other)
         {
             _form.HoldOpen = true;
             try
@@ -1739,19 +1796,22 @@ sealed partial class TrayApp : ApplicationContext
                 {
                     Description = L.T("Carpeta donde se abren las tareas que le pida a la mascota."),
                     UseDescriptionForTitle = true,
-                    InitialDirectory = _settings.TaskFolder ?? _settings.Launch.Folder ?? Account.Home,
+                    InitialDirectory = TaskFolderPath,
                 };
                 if (dialog.ShowDialog(_form) != DialogResult.OK) return;
                 folder = dialog.SelectedPath;
             }
             finally { _form.HoldOpen = false; }
         }
-        Change(s => s.TaskFolder = folder);
+        // Vacío: la del asistente.
+        Change(s => s.TaskFolder = folder.Length == 0 ? null : folder);
     }
 
     /// <summary>La lista de una opción de Ajustes (estilo de sonido, color, animación), con la elegida marcada.</summary>
     void ShowChoiceMenu(ContextMenuStrip choices, string selected)
     {
+        var items = choices.Items.OfType<ToolStripMenuItem>().Where(i => i.Tag is string).ToList();
+        if (OfferToConsole(items.Select(i => ((string)i.Tag!, i.Text ?? "")), selected, id => items.First(i => (string)i.Tag! == id).PerformClick(), null)) return;
         foreach (ToolStripMenuItem item in choices.Items) item.Checked = (string?)item.Tag == selected;
         _form.HoldOpen = true;
         choices.Show(Cursor.Position);
@@ -1838,7 +1898,8 @@ sealed partial class TrayApp : ApplicationContext
     {
         var wanted = _settings.DesktopMascot;
         Music.Watch(wanted && _settings.DanceToMusic); // la música solo se mira si hay mascota que baile
-        if (_mascotWindow is { } current && (!wanted || current.Pet != _pet || (_pet is null && current.Chibi != Mascots.IsChibi)))
+        if (_mascotWindow is { } current && (!wanted || current.Pet != _pet || (_pet is null && current.Chibi != Mascots.IsChibi)
+            || current.AllDesktops != _settings.MascotAllDesktops))
         {
             _bubble.Hide();
             _chatBubble?.Close(dismissed: true);
@@ -1848,7 +1909,9 @@ sealed partial class TrayApp : ApplicationContext
         }
         if (!wanted || _mascotWindow is not null) return;
         Point? saved = _settings.DesktopMascotX is { } x && _settings.DesktopMascotY is { } y ? new Point(x, y) : null;
-        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _form.Theme.Accent, _settings.MascotSize, _pet);
+        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _form.Theme.Accent, _settings.MascotSize, _pet,
+            _settings.MascotAllDesktops);
+        WatchMascotScreens();
         _mascotWindow.LocationChanged += (_, _) =>
         {
             if (_mascotWindow is not { } moved) return;
@@ -1885,6 +1948,67 @@ sealed partial class TrayApp : ApplicationContext
         };
         _mascotWindow.Show();
         _ = ScanSessionsAsync(); // para que empiece haciendo lo que corresponde
+    }
+
+    // ── La mascota después de bloquear, suspender o apagar la pantalla ──────────────────────
+
+    bool _watchingScreens;
+
+    /// <summary>
+    /// Al volver de bloquear o suspender, o al cambiar las pantallas (apagarse un monitor lo desconecta), la mascota
+    /// vuelve a verse: enseguida y otra vez a los 2 y 6 s, cuando los monitores terminan de reconectarse.
+    /// </summary>
+    void WatchMascotScreens()
+    {
+        if (_watchingScreens) return;
+        _watchingScreens = true;
+        SystemEvents.SessionSwitch += OnSessionSwitch;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+    }
+
+    void UnwatchMascotScreens()
+    {
+        if (!_watchingScreens) return;
+        _watchingScreens = false;
+        SystemEvents.SessionSwitch -= OnSessionSwitch;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+    }
+
+    void OnSessionSwitch(object? sender, SessionSwitchEventArgs e)
+    {
+        if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.ConsoleConnect or SessionSwitchReason.RemoteConnect)
+            PostUi(RecoverMascotSoon);
+    }
+
+    void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == PowerModes.Resume) PostUi(RecoverMascotSoon);
+    }
+
+    void OnDisplaySettingsChanged(object? sender, EventArgs e) => PostUi(RecoverMascotSoon);
+
+    void RecoverMascotSoon()
+    {
+        RecoverMascot();
+        foreach (var ms in new[] { 2000, 6000 })
+        {
+            var later = new System.Windows.Forms.Timer { Interval = ms };
+            later.Tick += (_, _) =>
+            {
+                later.Dispose();
+                RecoverMascot();
+            };
+            later.Start();
+        }
+    }
+
+    void RecoverMascot()
+    {
+        if (_mascotWindow is not { IsDisposed: false } mascot) return;
+        Point? saved = _settings.DesktopMascotX is { } x && _settings.DesktopMascotY is { } y ? new Point(x, y) : null;
+        mascot.Recover(saved);
     }
 
     /// <summary>El cuadro actual de la animación en el ícono y en el pie de la ventana.</summary>
@@ -2217,7 +2341,17 @@ sealed partial class TrayApp : ApplicationContext
         if (setup.Mic != _settings.Mic || setup.ReadAloud != _settings.ReadAloud)
             Change(s => (s.Mic, s.ReadAloud) = (setup.Mic, setup.ReadAloud));
         if (!_settings.ReadAloud) _readAloud?.Stop();
-        if (relaunch && (voiceMissing || speechMissing))
+        // El modelo local: la mascota responde con él; al apagarlo vuelve a Haiku.
+        if (setup.LocalModelId != LocalChoice.Id || setup.LocalModelOn && _settings.LocalModel is null)
+        {
+            _localDownload?.Cancel();
+            _localServer.Stop();
+            Change(s => s.LocalModel = setup.LocalModelId);
+        }
+        if (setup.LocalModelOn != (_settings.MascotModel == AssistantModels.Local))
+            Change(s => s.MascotModel = setup.LocalModelOn ? AssistantModels.Local : "haiku");
+        var localMissing = setup.LocalModelOn && !LocalModel.Ready(LocalChoice);
+        if (relaunch && (voiceMissing || speechMissing || localMissing))
             lines.Add(L.T("Al reiniciar, descargue los modelos en Ajustes › Asistente."));
         else
         {
@@ -2230,6 +2364,11 @@ sealed partial class TrayApp : ApplicationContext
             {
                 _ = DownloadSpeechAsync();
                 lines.Add(L.T("La voz de Claupet se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+            }
+            if (localMissing)
+            {
+                _ = DownloadLocalModelAsync();
+                lines.Add(L.T("El modelo local se descarga en segundo plano; el avance está en Claupet Console › Respuestas."));
             }
         }
 
@@ -2297,12 +2436,16 @@ sealed partial class TrayApp : ApplicationContext
         _sessionTimer.Stop();
         _reminderTimer.Stop();
         _toasts.CloseAll();
+        UnwatchMascotScreens();
         _mascotWindow?.Dispose();
         _approvals?.Dispose();
         _hotkeys?.Dispose();
         _keyHook?.Dispose();
         _modelDownload?.Cancel();
         _speechDownload?.Cancel();
+        _localDownload?.Cancel();
+        _localServer.Dispose();
+        _consoleHost?.Dispose();
         _voice?.Dispose();
         _readAloud?.Dispose();
         _island?.Dispose();

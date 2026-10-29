@@ -1,64 +1,12 @@
-using System.Drawing.Drawing2D;
-
 namespace Claupet;
 
-/// <summary>Selector de vistas con pin y vista «Ajustes».</summary>
+/// <summary>Las pestañas de las vistas y la vista «Ajustes».</summary>
 sealed partial class UsageForm
 {
     const string GlyphSettings = "", GlyphChevronRight = "", GlyphBack = "";
 
-    static readonly View[] Selectable = [View.Usage, View.Sessions, View.Activity, View.Flows];
-
-    /// <summary>Lo que muestra «Ajustes»; lo manda TrayApp cada vez que cambia algo. Los textos son los valores ya listos para mostrar.</summary>
-    public sealed record SettingsState
-    {
-        public bool Notifications { get; init; } = true;
-        public bool Sound { get; init; } = true;
-        public string SoundPack { get; init; } = "";
-        public string Palette { get; init; } = "";
-        public string Mascot { get; init; } = "";
-        public string MascotSize { get; init; } = "";
-        public bool DesktopMascot { get; init; }
-        public bool Speak { get; init; }
-        public bool FlowGestures { get; init; }
-        public bool DanceToMusic { get; init; }
-        public bool NoticeGestures { get; init; }
-        public bool GreetOnAppear { get; init; }
-        public bool AngryOnClicks { get; init; }
-        public bool SleepWithoutSessions { get; init; }
-        public bool Chat { get; init; }
-        public string MascotModel { get; init; } = "";
-        public string AssistantAccount { get; init; } = "";
-        public string TaskFolder { get; init; } = "";
-        public bool AnalyzeDrops { get; init; }
-        /// <summary>Cuántas capacidades tienen «Permitir siempre» («3 de 10 permitidas»).</summary>
-        public string Permissions { get; init; } = "";
-        public bool Mic { get; init; }
-        public string MicKey { get; init; } = "";
-        public string ChatKey { get; init; } = "";
-        public bool CopilotKey { get; init; }
-        /// <summary>El modelo de voz: lo que dice la fila y su enlace (descargar, el avance o listo).</summary>
-        public string VoiceStatus { get; init; } = "";
-        public string VoiceAction { get; init; } = "";
-        public bool ReadAloud { get; init; }
-        /// <summary>La voz que lee y, si es de Claupet y falta su modelo, lo que dice su fila y su enlace (vacío: sin fila).</summary>
-        public string ReadAloudVoice { get; init; } = "";
-        public string SpeechStatus { get; init; } = "";
-        public string SpeechAction { get; init; } = "";
-        public bool Island { get; init; }
-        public string IslandModel { get; init; } = "";
-        public bool IslandHover { get; init; }
-        public bool IslandWhileBusy { get; init; }
-        public bool WeeklyRecap { get; init; }
-        /// <summary>El hook de permisos y preguntas: «Configurar…» o «Listo».</summary>
-        public string Approvals { get; init; } = "";
-        public bool StartWithWindows { get; init; }
-        public int Accounts { get; init; }
-        /// <summary>El idioma elegido, en su idioma («Español», «English»).</summary>
-        public string Language { get; init; } = "";
-        /// <summary>Cuántas extensiones hay y cuántas encendidas («Ninguna», «2 de 3 encendidas»).</summary>
-        public string Extensions { get; init; } = "";
-    }
+    /// <summary>Las pestañas de arriba, en orden.</summary>
+    static readonly View[] Tabs = [View.Usage, View.Activity, View.History];
 
     /// <summary>Las pestañas de Ajustes, en orden.</summary>
     public enum SettingsTab { Avisos, Apariencia, Asistente, Isla, Sistema }
@@ -66,13 +14,10 @@ sealed partial class UsageForm
     /// <summary>Se cambió de pestaña en Ajustes (para recordarla).</summary>
     public event Action<SettingsTab>? SettingsTabChanged;
 
-    readonly List<View> _pinned = [View.Usage, View.Sessions, View.Activity];
-    bool _viewMenuOpen;
-    /// <summary>Vista que se quiere fijar: el próximo pin de una fija la reemplaza.</summary>
-    View? _replacing;
     View _beforeSettings = View.Usage;
-    Rectangle _selectorBounds;
     SettingsState _settingsState = new();
+    /// <summary>Las secciones de Ajustes armadas con el estado (las mismas de Claupet Console).</summary>
+    IReadOnlyList<SettingsPage> _settingsPages = SettingsPages.Build(new());
     SettingsTab _settingsTab;
     /// <summary>Desde qué pestaña se desliza el indicador y cuándo empezó.</summary>
     SettingsTab _tabFrom;
@@ -81,26 +26,16 @@ sealed partial class UsageForm
     static string ViewLabel(View view) => view switch
     {
         View.Usage => L.T("Uso"),
-        View.Sessions => L.T("Sesiones"),
         View.Activity => L.T("Actividad"),
-        View.Flows => L.T("Flujos"),
+        View.History => L.T("Historial"),
         _ => L.T("Ajustes"),
     };
-
-    /// <summary>Tres vistas distintas y elegibles; si no, las de siempre.</summary>
-    public void SetPinned(IEnumerable<string> names)
-    {
-        var views = names.Select(n => Enum.TryParse<View>(n, out var v) ? v : (View?)null).ToList();
-        var valid = views.Count == 3 && views.All(v => v is { } x && Selectable.Contains(x)) && views.Distinct().Count() == 3;
-        _pinned.Clear();
-        _pinned.AddRange(valid ? views.Select(v => v!.Value) : [View.Usage, View.Sessions, View.Activity]);
-        if (IsHandleCreated) Relayout();
-    }
 
     public void SetSettingsState(SettingsState state)
     {
         var old = _settingsState;
         _settingsState = state;
+        _settingsPages = SettingsPages.Build(state);
         if (_view != View.Settings) return;
         // Las filas que aparecen o se van (al encender el chat, la isla, el micrófono…) entran con una transición.
         if (old.Chat != state.Chat || old.Mic != state.Mic || old.Island != state.Island || old.DesktopMascot != state.DesktopMascot || old.DanceToMusic != state.DanceToMusic
@@ -129,163 +64,21 @@ sealed partial class UsageForm
 
     void OpenView(View view)
     {
-        if (view != _view || _viewMenuOpen) BeginTransition(view == _view ? Slide.Fade : SlideFor(_view, view));
+        if (view != _view) BeginTransition(SlideFor(_view, view));
         _view = view;
-        _viewMenuOpen = false;
-        _replacing = null;
         Relayout();
-    }
-
-    void CloseViewMenu()
-    {
-        BeginTransition(Slide.Fade);
-        _viewMenuOpen = false;
-        _replacing = null;
-        Relayout();
-    }
-
-    /// <summary>Siempre hay 3 fijas: el pin de una libre la prepara y el pin de una fija hace el cambio.</summary>
-    void TogglePin(View view)
-    {
-        if (!_pinned.Contains(view))
-            _replacing = _replacing == view ? null : view;
-        else if (_replacing is { } incoming)
-        {
-            _pinned[_pinned.IndexOf(view)] = incoming;
-            _replacing = null;
-            PinnedChanged?.Invoke(_pinned.Select(v => v.ToString()).ToList());
-        }
-        Relayout();
-    }
-
-    // ── Selector de la cabecera ─────────────────────────────────────────────────────────────
-
-    /// <summary>Botón con el pin, a la izquierda de «actualizar». Si la vista abierta no es fija, lleva su nombre cuando cabe.</summary>
-    void ComposeViewSelector(Graphics g, bool draw, int right, int top, int tabsRight)
-    {
-        var height = S(30);
-        var extra = !_pinned.Contains(_view);
-        var label = ViewLabel(_view);
-        var labelWidth = TextRenderer.MeasureText(g, label, _body, Size.Empty, Line).Width;
-        var compact = S(10) + S(16) + S(4) + S(12) + S(8);
-        var width = extra && right - (compact + S(6) + labelWidth) >= tabsRight + S(10) ? compact + S(6) + labelWidth : compact;
-        var showLabel = width > compact;
-        _selectorBounds = new Rectangle(right - width, top, width, height);
-        AddHit("viewmenu", _selectorBounds, HitKind.ViewMenu);
-        if (!draw) return;
-
-        var highlight = extra || _viewMenuOpen;
-        if (_viewMenuOpen) Draw.Fill(g, _t.Raised, _selectorBounds, S(8));
-        else if (_hoverKey == "viewmenu") Draw.Fill(g, _t.Hover, _selectorBounds, S(8));
-        Draw.Outline(g, highlight ? _t.Accent : _t.Border, _selectorBounds, S(8));
-
-        var x = _selectorBounds.X + S(10);
-        DrawPin(g, new RectangleF(x, top + (height - S(16)) / 2f, S(16), S(16)), extra ? _t.Accent : _t.Secondary, filled: false);
-        x += S(16);
-        if (showLabel)
-        {
-            Write(g, label, _body, _t.Text, new Rectangle(x + S(6), top, labelWidth, height), TextFormatFlags.VerticalCenter);
-            x += S(6) + labelWidth;
-        }
-        Write(g, GlyphChevronDown, _glyphSmall, _t.Secondary, new Rectangle(x + S(4), top, S(12), height),
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-    }
-
-    /// <summary>La lista de vistas bajo el selector. Devuelve su borde inferior.</summary>
-    int ComposeViewMenu(Graphics g, bool draw)
-    {
-        var width = S(250);
-        var x = Math.Min(_selectorBounds.Right, ClientSize.Width - S(10)) - width;
-        var top = _selectorBounds.Bottom + S(6);
-        var rowHeight = S(34);
-        var smallHeight = _small.Height;
-        var hintFlags = TextFormatFlags.NoPadding | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
-        var hint = _replacing is { } incoming
-            ? L.T("Pulse el pin de la fija que cambia por {0}.", ViewLabel(incoming))
-            : L.T("Siempre hay 3 pestañas fijas. Para fijar otra, pulse su pin y luego el de la que cambia.");
-        var hintHeight = TextRenderer.MeasureText(g, hint, _small, new Size(width - S(24), 0), hintFlags).Height;
-        var height = S(8) + smallHeight + S(8) + Selectable.Length * rowHeight + S(9) + hintHeight + S(12);
-        var panel = new Rectangle(x, top, width, height);
-        AddHit("viewmenu-panel", panel, HitKind.MenuPanel);
-
-        if (draw)
-        {
-            Draw.Fill(g, _t.Raised, panel, S(10));
-            Draw.Outline(g, _t.Border, panel, S(10));
-            Write(g, L.T("Clic: abrir · Pin: fijar como pestaña"), _small, _t.Tertiary, new Rectangle(x + S(12), top + S(8), width - S(24), smallHeight));
-        }
-
-        var y = top + S(8) + smallHeight + S(8);
-        foreach (var view in Selectable)
-        {
-            var row = new Rectangle(x + S(6), y, width - S(12), rowHeight);
-            var pin = new Rectangle(row.Right - S(32), row.Y + (rowHeight - S(30)) / 2, S(30), S(30));
-            var rowKey = "vrow:" + view;
-            var pinKey = "vpin:" + view;
-            AddHit(rowKey, row, HitKind.ViewRow, view: view);
-            AddHit(pinKey, pin, HitKind.ViewPin, view: view);
-            if (draw)
-            {
-                var pinned = _pinned.Contains(view);
-                if (_replacing == view) Draw.Fill(g, Blend(_t.Raised, _t.Warn, 0.18), row, S(8));
-                else if (_view == view) Draw.Fill(g, _t.Hover, row, S(8));
-                else if (_hoverKey == rowKey) Draw.Fill(g, Blend(_t.Raised, _t.Hover, 0.6), row, S(8));
-                var text = ViewLabel(view);
-                var textWidth = TextRenderer.MeasureText(g, text, _body, Size.Empty, Line).Width;
-                Write(g, text, _body, _t.Text, new Rectangle(row.X + S(10), row.Y, textWidth, rowHeight), TextFormatFlags.VerticalCenter);
-                if (_view == view)
-                    Write(g, L.T("abierta"), _small, _t.Tertiary, new Rectangle(row.X + S(10) + textWidth + S(8), row.Y, S(80), rowHeight), TextFormatFlags.VerticalCenter);
-                if (_hoverKey == pinKey) Draw.Fill(g, _t.Hover, pin, S(8));
-                var color = pinned ? (_replacing is null ? _t.Accent : _t.Warn) : _replacing == view ? _t.Warn : _t.Tertiary;
-                DrawPin(g, new RectangleF(pin.X + S(7), pin.Y + S(7), S(16), S(16)), color, filled: pinned);
-            }
-            y += rowHeight;
-        }
-
-        y += S(4);
-        if (draw)
-        {
-            using (var pen = new Pen(_t.Border)) g.DrawLine(pen, x + S(10), y, x + width - S(10), y);
-            TextRenderer.DrawText(g, hint, _small, new Rectangle(x + S(12), y + S(5), width - S(24), hintHeight),
-                _replacing is null ? _t.Tertiary : _t.Warn, hintFlags);
-        }
-        return panel.Bottom;
-    }
-
-    /// <summary>Una tachuela inclinada 30°, dibujada para poder rellenarla cuando la vista está fija.</summary>
-    void DrawPin(Graphics g, RectangleF box, Color color, bool filled)
-    {
-        using var body = new GraphicsPath();
-        body.AddPolygon(new PointF[] { new(8.5f, 2.5f), new(15.5f, 2.5f), new(15.5f, 5.5f), new(14.8f, 5.5f), new(16f, 12.5f),
-            new(18.5f, 13.5f), new(18.5f, 16f), new(5.5f, 16f), new(5.5f, 13.5f), new(8f, 12.5f), new(9.2f, 5.5f), new(8.5f, 5.5f) });
-        using var needle = new GraphicsPath();
-        needle.AddLine(12f, 16f, 12f, 22f);
-
-        using var matrix = new Matrix();
-        matrix.Translate(box.X + box.Width / 2, box.Y + box.Height / 2);
-        matrix.Rotate(30);
-        matrix.Scale(box.Width / 24f, box.Height / 24f);
-        matrix.Translate(-12, -12);
-        body.Transform(matrix);
-        needle.Transform(matrix);
-
-        using var pen = new Pen(color, Math.Max(1.2f, box.Width / 11f)) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round };
-        if (filled)
-            using (var brush = new SolidBrush(color)) g.FillPath(brush, body);
-        g.DrawPath(pen, body);
-        g.DrawPath(pen, needle);
     }
 
     // ── Vista «Ajustes» ─────────────────────────────────────────────────────────────────────
 
     int ComposeSettingsHeader(Graphics g, bool draw, int y)
     {
-        var height = TextRenderer.MeasureText(g, L.T("Ajustes"), _title, Size.Empty, Line).Height;
+        var height = TextRenderer.MeasureText(g, L.T("Ajustes rápidos"), _title, Size.Empty, Line).Height;
         var close = new Rectangle(ClientSize.Width - Pad - S(24), y + (height - S(30)) / 2, S(30), S(30));
         AddHit("settings-close", close, HitKind.CloseSettings);
         if (draw)
         {
-            Write(g, L.T("Ajustes"), _title, _t.Text, new Rectangle(Pad, y, Inner - S(40), height));
+            Write(g, L.T("Ajustes rápidos"), _title, _t.Text, new Rectangle(Pad, y, Inner - S(40), height));
             if (_hoverKey == "settings-close") Draw.Fill(g, _t.Hover, close, S(8));
             Write(g, GlyphClose, _glyphSmall, _t.Secondary, close, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
@@ -357,95 +150,71 @@ sealed partial class UsageForm
         foreach (var tab in AllTabs)
             if (tab != _settingsTab) bottom = Math.Max(bottom, ComposeSettingsTab(g, false, tab, y));
         _hits.RemoveRange(hits, _hits.Count - hits);
-        return bottom + S(14);
+        // Aquí solo lo de todos los días; lo demás, en la ventana grande.
+        return ConsoleCard(g, draw, bottom + S(16)) + S(14);
+    }
+
+    /// <summary>«Todos los ajustes»: la tarjeta que abre Claupet Console, con la cabeza del chibi.</summary>
+    int ConsoleCard(Graphics g, bool draw, int y)
+    {
+        var card = new Rectangle(Pad, y, Inner, S(68));
+        AddHit("set:console", card, HitKind.Setting);
+        if (!draw) return card.Bottom;
+        Draw.Fill(g, _t.Raised, card, S(14));
+        Draw.Outline(g, _t.Border, card, S(14));
+        var tile = new Rectangle(card.X + S(14), card.Y + (card.Height - S(40)) / 2, S(40), S(40));
+        Draw.Fill(g, _t.Hover, tile, S(10));
+        var unit = Math.Max(1, (tile.Width - S(8)) / 16);
+        ToastArt.Pixels(g, tile.X + (tile.Width - 16 * unit) / 2, tile.Y + (tile.Height - 16 * unit) / 2, unit,
+            fill => ChibiSprite.PaintHead(fill, MascotFrame.Open, small: true));
+        var open = L.T("Abrir");
+        var pillWidth = TextRenderer.MeasureText(g, open, _bodyStrong, Size.Empty, Line).Width + S(36);
+        var pill = new Rectangle(card.Right - S(14) - pillWidth, card.Y + (card.Height - S(36)) / 2, pillWidth, S(36));
+        var hover = _hoverKey == "set:console";
+        Draw.Fill(g, hover ? Blend(_t.Accent, Color.White, 0.12) : _t.Accent, pill, S(18));
+        Write(g, open, _bodyStrong, Color.FromArgb(0x14, 0x14, 0x13), pill, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        var textX = tile.Right + S(14);
+        var textWidth = pill.X - S(12) - textX;
+        var lines = _bodyStrong.Height + S(2) + _small.Height;
+        var top = card.Y + (card.Height - lines) / 2;
+        Write(g, L.T("Todos los ajustes"), _bodyStrong, _t.Text, new Rectangle(textX, top, textWidth, _bodyStrong.Height), TextFormatFlags.EndEllipsis);
+        Write(g, L.T("En Claupet Console"), _small, _t.Tertiary, new Rectangle(textX, top + _bodyStrong.Height + S(2), textWidth, _small.Height), TextFormatFlags.EndEllipsis);
+        return card.Bottom;
     }
 
     int ComposeSettingsTab(Graphics g, bool draw, SettingsTab tab, int y)
     {
-        var s = _settingsState;
-        switch (tab)
+        var first = true;
+        foreach (var page in _settingsPages)
         {
-            case SettingsTab.Avisos:
-                y = SwitchRow(g, draw, L.T("Notificaciones"), "notify", s.Notifications, y);
-                y = SwitchRow(g, draw, L.T("Sonido"), "sound", s.Sound, y);
-                y = ChoiceRow(g, draw, L.T("Estilo de sonido"), "pack", s.SoundPack, y);
-                y = LinksRow(g, draw, y, (L.T("Ver un aviso de ejemplo"), "sample"), (L.T("Abrir carpeta de sonidos"), "sounds"));
-                break;
-            case SettingsTab.Apariencia:
-                y = ChoiceRow(g, draw, L.T("Color"), "palette", s.Palette, y, swatch: _t.Accent);
-                y = ChoiceRow(g, draw, L.T("Mascota"), "mascot", s.Mascot, y);
-                y = ChoiceRow(g, draw, L.T("Tamaño de la mascota"), "size", s.MascotSize, y);
-                y = SwitchRow(g, draw, L.T("Mascota en el escritorio"), "desk", s.DesktopMascot, y);
-                if (s.DesktopMascot)
+            if (page.Tab != tab.ToString()) continue;
+            foreach (var row in page.Rows)
+            {
+                if (row.Place == RowPlace.Console) continue;
+                y = row.Kind switch
                 {
-                    y = SwitchRow(g, draw, L.T("Gestos del flujo (lo que hace la sesión)"), "flowgest", s.FlowGestures, y);
-                    y = SwitchRow(g, draw, L.T("Bailar con música"), "music", s.DanceToMusic, y);
-                    y = SwitchRow(g, draw, L.T("Gesto de los avisos"), "noticegest", s.NoticeGestures, y);
-                    y = SwitchRow(g, draw, L.T("Saludar al aparecer"), "greet", s.GreetOnAppear, y);
-                    y = SwitchRow(g, draw, L.T("Enojarse con muchos clics"), "angry", s.AngryOnClicks, y);
-                    y = SwitchRow(g, draw, L.T("Dormir sin sesiones"), "sleep", s.SleepWithoutSessions, y);
-                    y = SwitchRow(g, draw, L.T("Hablar (los avisos en una nubecita)"), "speak", s.Speak, y);
-                }
-                break;
-            case SettingsTab.Asistente:
-                y = SettingsCaption(g, draw, L.T("Chat"), y);
-                y = SwitchRow(g, draw, L.T("Chat con la mascota"), "chat", s.Chat, y);
-                if (s.Chat)
-                {
-                    y = ChoiceRow(g, draw, L.T("Modelo de la mascota"), "mmodel", s.MascotModel, y);
-                    y = ChoiceRow(g, draw, L.T("Cuenta que responde"), "account", s.AssistantAccount, y);
-                    y = ChoiceRow(g, draw, L.T("Carpeta de las tareas"), "folder", s.TaskFolder, y);
-                    y = SwitchRow(g, draw, L.T("Analizar los archivos que le suelte"), "drops", s.AnalyzeDrops, y);
-                }
-                // Lo que hace en el equipo (captura, calendario, ventanas…) se pide desde el chat o la isla.
-                if (s.Chat || s.Island) y = ChoiceRow(g, draw, L.T("Permisos"), "grants", s.Permissions, y);
-                y = SettingsCaption(g, draw, L.T("Voz"), y + S(8));
-                y = SwitchRow(g, draw, L.T("Micrófono"), "mic", s.Mic, y);
-                if (s.Mic)
-                {
-                    y = ChoiceRow(g, draw, L.T("Tecla para hablar"), "mickey", s.MicKey, y);
-                    y = LinkRow(g, draw, s.VoiceStatus, s.VoiceAction, "voice", _t.Accent, y);
-                }
-                // Aparte del micrófono: puede escribirle y que le responda hablando.
-                y = SwitchRow(g, draw, L.T("Leer las respuestas en voz alta"), "readaloud", s.ReadAloud, y);
-                if (s.ReadAloud)
-                {
-                    y = ChoiceRow(g, draw, L.T("Voz"), "readvoice", s.ReadAloudVoice, y);
-                    if (s.SpeechStatus.Length > 0) y = LinkRow(g, draw, s.SpeechStatus, s.SpeechAction, "speech", _t.Accent, y);
-                }
-                if (s.Chat || s.Island)
-                {
-                    y = SettingsCaption(g, draw, L.T("Teclas"), y + S(8));
-                    y = ChoiceRow(g, draw, L.T("Atajo del chat"), "chatkey", s.ChatKey, y);
-                    y = SwitchRow(g, draw, s.Mic ? L.T("Tecla Copilot: chat y voz") : L.T("Tecla Copilot: abre el chat"), "copilot", s.CopilotKey, y);
-                    y = LinkRow(g, draw, L.T("Atajos de teclado"), L.T("Ver…"), "shortcuts", _t.Accent, y);
-                }
-                break;
-            case SettingsTab.Isla:
-                y = SwitchRow(g, draw, L.T("Isla en el borde de arriba"), "island", s.Island, y);
-                if (s.Island)
-                {
-                    y = ChoiceRow(g, draw, L.T("Modelo de la isla"), "imodel", s.IslandModel, y);
-                    y = SwitchRow(g, draw, L.T("Abrir al pasar el cursor"), "hover", s.IslandHover, y);
-                    y = SwitchRow(g, draw, L.T("A la vista mientras algo trabaja"), "busy", s.IslandWhileBusy, y);
-                    y = LinkRow(g, draw, L.T("Permisos y preguntas en la isla"), s.Approvals, "approvals", _t.Accent, y);
-                    y = SwitchRow(g, draw, L.T("Resumen de la semana, los lunes"), "recap", s.WeeklyRecap, y);
-                    y = LinkRow(g, draw, L.T("El de esta semana"), L.T("Ver ahora"), "recapnow", _t.Accent, y);
-                }
-                break;
-            default:
-                y = ChoiceRow(g, draw, L.T("Idioma"), "language", s.Language, y);
-                y = LinkRow(g, draw, s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add", _t.Accent, y);
-                y = SwitchRow(g, draw, L.T("Iniciar con Windows"), "startup", s.StartWithWindows, y);
-                y = ChoiceRow(g, draw, L.T("Extensiones"), "extensions", s.Extensions, y);
-                y = LinkRow(g, draw, L.T("Un paquete .claupet (o suéltelo en la mascota)"), L.T("Instalar…"), "extinstall", _t.Accent, y);
-                y = LinkRow(g, draw, L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup", _t.Accent, y);
-                y = LinkRow(g, draw, L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag", _t.Accent, y);
-                y = LinkRow(g, draw, L.T("Quitar hook e inicio con Windows"), L.T("Quitar…"), "unsetup", _t.Danger, y);
-                break;
+                    RowKind.Caption => SettingsCaption(g, draw, row.Text, first ? y : y + S(8)),
+                    RowKind.Switch => SwitchRow(g, draw, row.Text, row.Key, row.On, y),
+                    RowKind.Choice => ChoiceRow(g, draw, row.Text, row.Key, row.Value, y, swatch: row.Swatch ? _t.Accent : null),
+                    RowKind.Info => InfoRow(g, draw, row.Text, row.Value, y),
+                    RowKind.Note => NoteRow(g, draw, row.Text, ToneColor(row.Tone), y),
+                    RowKind.Link => LinkRow(g, draw, row.Text, row.Value, row.Key, ToneColor(row.Tone), y),
+                    _ => LinksRow(g, draw, y, (row.Links ?? []).Select(l => (l.Text, l.Key)).ToArray()),
+                };
+                first = false;
+            }
         }
         return y;
     }
+
+    Color ToneColor(RowTone tone) => tone switch
+    {
+        RowTone.Muted => _t.Tertiary,
+        RowTone.Warn => _t.Warn,
+        RowTone.Accent => _t.Accent,
+        RowTone.Danger => _t.Danger,
+        _ => _t.Text,
+    };
 
     int SettingsCaption(Graphics g, bool draw, string text, int y)
     {
@@ -498,6 +267,31 @@ sealed partial class UsageForm
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
         return y + height;
+    }
+
+    /// <summary>Una fila que solo informa: el nombre y su valor a la derecha, sin lista.</summary>
+    int InfoRow(Graphics g, bool draw, string label, string value, int y)
+    {
+        var height = S(32);
+        if (draw)
+        {
+            var labelWidth = TextRenderer.MeasureText(g, label, _body, Size.Empty, Line).Width;
+            Write(g, label, _body, _t.Text, new Rectangle(Pad, y, labelWidth, height), TextFormatFlags.VerticalCenter);
+            var valueWidth = Math.Max(0, Inner - labelWidth - S(14));
+            Write(g, value, _body, _t.Secondary, new Rectangle(Pad + Inner - valueWidth, y, valueWidth, height),
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.EndEllipsis);
+        }
+        return y + height;
+    }
+
+    /// <summary>Un texto chico, en varias líneas si hace falta (una aclaración bajo una fila).</summary>
+    int NoteRow(Graphics g, bool draw, string text, Color color, int y)
+    {
+        if (text.Length == 0) return y;
+        const TextFormatFlags flags = TextFormatFlags.WordBreak | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix;
+        var height = TextRenderer.MeasureText(g, text, _small, new Size(Inner, 0), flags).Height;
+        if (draw) TextRenderer.DrawText(g, text, _small, new Rectangle(Pad, y, Inner, height), color, flags);
+        return y + height + S(6);
     }
 
     int LinkRow(Graphics g, bool draw, string label, string link, string key, Color color, int y)

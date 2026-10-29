@@ -3,77 +3,44 @@ using System.Drawing.Drawing2D;
 namespace Claupet;
 
 /// <summary>
-/// Vista «Flujos»: un carril por sesión con sus pasos del turno; clic en un carril abre el mapa de
-/// esa sesión. Mientras una sesión trabaja siempre hay algo animado: el paso en curso o «Pensando…»,
-/// y cada paso nuevo entra creciendo. Todo sale del .jsonl que ya se lee: no consulta la API.
+/// Vista «Actividad» (antes «Sesiones» y «Flujos»): un carril por sesión con sus pasos del turno, y las inactivas
+/// plegadas al final; clic en un carril abre el detalle de esa sesión con su mapa. Mientras una sesión trabaja
+/// siempre hay algo animado: el paso en curso o «Pensando…», y cada paso nuevo entra creciendo. Todo sale del
+/// .jsonl que ya se lee: no consulta la API.
 /// </summary>
 sealed partial class UsageForm
 {
     readonly Flows.Arrivals _arrivals = new();
     string? _flowSession;
+    /// <summary>Cuándo se copió el ID de la sesión (el botón dice «Copiado» un momento).</summary>
+    long _copiedAt = -10_000;
     Font? _tiny;
     Font Tiny => _tiny ??= Fonts.Make("Segoe UI Variable Text", 7.75f, "Segoe UI");
 
-    static string KindGlyph(ToolKind kind) => kind switch
-    {
-        ToolKind.Read => "",
-        ToolKind.Search => "",
-        ToolKind.Edit => "",
-        ToolKind.Run => "",
-        ToolKind.Agent => "",
-        ToolKind.Web => "",
-        ToolKind.Ask => "",
-        _ => "",
-    };
+    LaneNodes? _lanes;
+    /// <summary>Los nodos de cada carril, los mismos que en la isla.</summary>
+    LaneNodes Lanes => _lanes ??= new LaneNodes(_scale, _glyphSmall, _small, Tiny,
+        (g, text, font, color, box) => Write(g, text, font, color, box, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis));
 
-    static double EaseOut(double p) => 1 - (1 - p) * (1 - p);
+    LaneColors LanePalette => new(_t.Background, _t.Border, _t.Text, _t.Secondary, _t.Tertiary, _t.Accent, _t.Warn, _t.Danger);
 
-    /// <summary>Halo que se expande y se desvanece, en bucle.</summary>
-    void DrawHalo(Graphics g, RectangleF box, Color color, float spread)
+    int ComposeActivity(Graphics g, bool draw, int y)
     {
-        var wave = Environment.TickCount64 % 1400 / 1400.0;
-        var grow = (float)(spread * wave);
-        using var brush = new SolidBrush(Color.FromArgb((int)(110 * (1 - wave)), color));
-        g.FillEllipse(brush, box.X - grow, box.Y - grow, box.Width + 2 * grow, box.Height + 2 * grow);
-    }
-
-    /// <summary>Nodo «Pensando»: crece y suelta una onda con cada golpe del latido; tres puntos saltan dentro.</summary>
-    void DrawThinking(Graphics g, PointF center, int circle)
-    {
-        var tick = Environment.TickCount64;
-        var beat = (float)Flows.Heartbeat(tick);
-        var size = circle * (1 + 0.16f * beat);
-        var box = new RectangleF(center.X - size / 2, center.Y - size / 2, size, size);
-        var wave = S(10) * beat;
-        using (var halo = new SolidBrush(Color.FromArgb((int)(120 * beat), _t.Accent)))
-            g.FillEllipse(halo, RectangleF.Inflate(box, wave, wave));
-        using (var fill = new SolidBrush(_t.Accent)) g.FillEllipse(fill, box);
-        DrawDots(g, center, _t.Background, tick);
-    }
-
-    /// <summary>Tres puntos que saltan uno detrás del otro, centrados en el punto dado.</summary>
-    void DrawDots(Graphics g, PointF center, Color color, long tick)
-    {
-        var r = Math.Max(1.5f, 1.8f * _scale);
-        var gap = 5.5f * _scale;
-        using var brush = new SolidBrush(color);
-        for (var i = 0; i < 3; i++)
-        {
-            var x = center.X + (i - 1) * gap;
-            var y = center.Y - (float)(3.5 * _scale * Flows.DotBounce(tick, i));
-            g.FillEllipse(brush, x - r, y - r, 2 * r, 2 * r);
-        }
-    }
-
-    int ComposeFlows(Graphics g, bool draw, int y)
-    {
+        _rowBounds.Keys.Where(k => !_sessions.Any(s => "flow:" + s.SessionId == k)).ToList().ForEach(k => _rowBounds.Remove(k));
         if (_flowSession is { } id)
         {
             if (_sessions.FirstOrDefault(s => s.SessionId == id) is { } session) return ComposeFlowDetail(g, draw, session, y);
             _flowSession = null;
         }
 
+        if (_sessions.Count == 0)
+        {
+            if (draw) Write(g, L.T("No hay sesiones abiertas."), _body, _t.Tertiary, new Rectangle(Pad, y, Inner, _body.Height));
+            return y + _body.Height + S(24);
+        }
+
         var lanes = _sessions.Where(s => s.State != SessionState.Idle).ToList();
+        var idle = _sessions.Where(s => s.State == SessionState.Idle).ToList();
         if (lanes.Count == 0)
         {
             if (draw) Write(g, L.T("No hay sesiones activas."), _body, _t.Tertiary, new Rectangle(Pad, y, Inner, _body.Height));
@@ -82,17 +49,36 @@ sealed partial class UsageForm
         foreach (var session in lanes)
             y = ComposeLane(g, draw, session, y) + S(8);
 
+        // Las inactivas, plegadas al final: cada una con su título y desde cuándo no hace nada.
+        if (idle.Count > 0)
+        {
+            var height = _small.Height + S(12);
+            var toggle = new Rectangle(Pad - S(4), y, Inner + S(8), height);
+            AddHit("idle", toggle, HitKind.IdleToggle);
+            if (draw)
+            {
+                if (_hoverKey == "idle") Draw.Fill(g, _t.Hover, toggle, S(8));
+                Write(g, L.T("Inactivas ({0})", idle.Count), _small, _t.Tertiary, new Rectangle(Pad + S(4), y, Inner - S(8), height), TextFormatFlags.VerticalCenter);
+                Write(g, _showIdle ? GlyphChevronUp : GlyphChevronDown, _glyphSmall, _t.Tertiary,
+                    new Rectangle(Pad + Inner - S(20), y, S(16), height), TextFormatFlags.VerticalCenter | TextFormatFlags.Right);
+            }
+            y += height + S(8);
+            if (_showIdle)
+                foreach (var session in idle)
+                    y = ComposeLane(g, draw, session, y) + S(8);
+        }
+
         var flags = TextFormatFlags.NoPadding | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
-        var hint = L.T("Clic en una sesión: su mapa completo. Sale de los archivos de Claude Code; no gasta tokens.");
-        var height = TextRenderer.MeasureText(g, hint, _small, new Size(Inner, 0), flags).Height;
-        if (draw) TextRenderer.DrawText(g, hint, _small, new Rectangle(Pad, y + S(2), Inner, height), _t.Tertiary, flags);
-        return y + height + S(14);
+        var hint = L.T("Clic en una sesión: su detalle y su mapa. Sale de los archivos de Claude Code; no gasta tokens.");
+        var hintHeight = TextRenderer.MeasureText(g, hint, _small, new Size(Inner, 0), flags).Height;
+        if (draw) TextRenderer.DrawText(g, hint, _small, new Rectangle(Pad, y + S(2), Inner, hintHeight), _t.Tertiary, flags);
+        return y + hintHeight + S(14);
     }
 
     int ComposeLane(Graphics g, bool draw, SessionInfo s, int y)
     {
         var key = "flow:" + s.SessionId;
-        var compact = s.State == SessionState.Done;
+        var compact = s.State is SessionState.Done or SessionState.Idle;
         var top = y;
         var x0 = Pad + S(4);
         var width = Inner - S(8);
@@ -122,7 +108,7 @@ sealed partial class UsageForm
         if (draw) Write(g, status, _small, color, new Rectangle(x0 + S(22), y, width - S(22), smallHeight), TextFormatFlags.EndEllipsis);
         y += smallHeight;
 
-        if (!compact && (s.Flow.Count > 0 || Flows.Thinking(s)))
+        if (!compact && LaneNodes.Shows(s))
         {
             y += S(12);
             y = ComposeLaneNodes(g, draw, s, x0, width, y);
@@ -151,103 +137,22 @@ sealed partial class UsageForm
                 parts.Add(s.Steps == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Steps));
                 if (s.LastTurn is { } d) parts.Add(Format.Duration(d));
                 return (string.Join(" · ", parts), _t.Tertiary);
+            case SessionState.Idle:
+                parts.Add(L.T("última actividad {0}", Format.Ago(s.TurnEndedAt ?? s.StatusAt)));
+                return (string.Join(" · ", parts), _t.Tertiary);
             default:
+                if (s.TodoTotal > 0) parts.Add(L.T("{0} de {1} tareas", s.TodoDone, s.TodoTotal));
                 if (s.Model is { } model) parts.Add(Format.Model(model) + (s.Effort is { } e ? " " + e : ""));
                 if (s.TurnStartedAt is { } start) parts.Add(Format.Duration(DateTimeOffset.Now - start));
                 return (string.Join(" · ", parts), _t.Tertiary);
         }
     }
 
-    /// <summary>
-    /// «Pedido», «+N» con lo anterior y los últimos grupos, unidos por líneas. El último late (o
-    /// «Pensando…» si ya volvió) y un punto viaja hacia él; cada paso nuevo entra creciendo.
-    /// </summary>
+    /// <summary>Los nodos del carril y, debajo, el último subagente del turno.</summary>
     int ComposeLaneNodes(Graphics g, bool draw, SessionInfo s, int x0, int width, int y)
     {
-        var groups = Flows.Groups(s.Flow);
-        var thinking = Flows.Thinking(s);
-        var shown = groups.TakeLast(thinking ? 2 : 3).ToList();
-        var hidden = groups.Count - shown.Count;
-        var columns = 1 + (hidden > 0 ? 1 : 0) + shown.Count + (thinking ? 1 : 0);
-        var column = width / Math.Max(columns, 4);
-        var circle = S(26);
+        y = Lanes.Compose(g, draw, s, x0, width, y, LanePalette, _arrivals);
         var tinyHeight = Tiny.Height;
-        var cy = y + circle / 2;
-        var centers = Enumerable.Range(0, columns).Select(i => x0 + i * column + column / 2).ToList();
-        var active = Flows.Active(s);
-
-        // Avance de entrada de cada columna (1 = ya está); la línea que llega a un nodo nuevo crece con él.
-        var arrival = new double[columns];
-        Array.Fill(arrival, 1);
-        var first = 1 + (hidden > 0 ? 1 : 0);
-        for (var i = 0; i < shown.Count; i++) arrival[first + i] = EaseOut(_arrivals.Progress(shown[i].Last.Id));
-
-        if (draw)
-        {
-            for (var i = 1; i < columns; i++)
-            {
-                var from = centers[i - 1] + circle / 2 + S(3);
-                var to = centers[i] - circle / 2 - S(3);
-                var end = from + (to - from) * (float)arrival[i];
-                var live = i == columns - 1 && s.State is SessionState.Working or SessionState.Waiting;
-                using (var pen = new Pen(live ? Blend(_t.Border, _t.Accent, 0.5) : _t.Border, S(2)))
-                    g.DrawLine(pen, from, cy, end, cy);
-                if (live && s.State == SessionState.Working && to > from)
-                {
-                    var phase = Environment.TickCount64 % 1100 / 1100f;
-                    var dot = S(6);
-                    using var brush = new SolidBrush(_t.Accent);
-                    g.FillEllipse(brush, from + (to - from - dot) * phase, cy - dot / 2f, dot, dot);
-                }
-            }
-        }
-
-        var index = 0;
-        void Node(string glyph, string label, string? detail, Color fill, Color iconColor, Color? halo, bool outline, double grow = 1)
-        {
-            var cx = centers[index++];
-            if (!draw) return;
-            var size = (float)(circle * (0.45 + 0.55 * grow));
-            var box = new RectangleF(cx - size / 2, y + (circle - size) / 2, size, size);
-            if (halo is { } h) DrawHalo(g, box, h, S(9));
-            using (var brush = new SolidBrush(fill)) g.FillEllipse(brush, box);
-            if (outline) using (var pen = new Pen(_t.Border)) g.DrawEllipse(pen, box);
-            if (grow > 0.7)
-                Write(g, glyph, glyph.StartsWith('+') ? _small : _glyphSmall, iconColor, Rectangle.Round(box),
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-            var labelBox = new Rectangle(cx - column / 2, y + circle + S(4), column, tinyHeight);
-            var labelColor = Blend(_t.Background, halo is null ? _t.Tertiary : _t.Text, grow);
-            Write(g, label, Tiny, labelColor, labelBox, TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
-            if (detail is not null)
-                Write(g, detail, Tiny, Blend(_t.Background, _t.Tertiary, grow), new Rectangle(labelBox.X, labelBox.Bottom, column, tinyHeight),
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
-        }
-
-        Node("", L.T("Pedido"), null, _t.Background, _t.Secondary, null, outline: true);
-        if (hidden > 0) Node("+" + hidden, L.T("antes"), null, _t.Background, _t.Secondary, null, outline: true);
-        foreach (var group in shown)
-        {
-            var isLast = group == shown[^1];
-            var running = isLast && active is not null && group.Last == active && !thinking;
-            var waiting = isLast && s.State == SessionState.Waiting;
-            var failed = isLast && s.State == SessionState.Failed;
-            var accent = waiting ? _t.Warn : failed ? _t.Danger : _t.Accent;
-            var lit = running || waiting || failed;
-            var label = group.Count > 1 ? $"{group.Verb} ×{group.Count}" : group.Verb;
-            Node(KindGlyph(group.Kind), label, lit || (isLast && thinking) ? group.Detail : null,
-                lit ? accent : _t.Background, lit ? _t.Background : _t.Secondary,
-                running || waiting ? accent : null, outline: !lit, grow: arrival[index]);
-        }
-        if (thinking)
-        {
-            // El modelo está generando el siguiente paso: el nodo late y tres puntos saltan dentro.
-            var cx = centers[index++];
-            if (draw) DrawThinking(g, new PointF(cx, cy), circle);
-            if (draw)
-                Write(g, L.T("Pensando…"), Tiny, _t.Text, new Rectangle(cx - column / 2, y + circle + S(4), column, tinyHeight),
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
-        }
-        y += circle + S(4) + 2 * tinyHeight;
 
         // Subagentes del turno: el último, con su estado.
         if (s.Flow.LastOrDefault(f => f.Kind == ToolKind.Agent) is { } agent)
@@ -262,7 +167,7 @@ sealed partial class UsageForm
         return y;
     }
 
-    // ── Mapa de una sesión ──────────────────────────────────────────────────────────────────
+    // ── Detalle de una sesión: lo que es, su mapa y qué hacer con ella ──────────────────────
 
     int ComposeFlowDetail(Graphics g, bool draw, SessionInfo s, int y)
     {
@@ -275,10 +180,26 @@ sealed partial class UsageForm
             Draw.Fill(g, _hoverKey == "flow-back" ? _t.Hover : _t.Raised, back, S(8));
             Write(g, GlyphBack, _glyphSmall, _t.Text, back, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             Write(g, s.DisplayTitle, _body, _t.Text, new Rectangle(back.Right + S(10), y - S(2), Inner - S(40), bodyHeight), TextFormatFlags.EndEllipsis);
-            var sub = string.Join(" · ", new[] { Path.GetFileName(s.Cwd.TrimEnd('\\', '/')), Format.ModelLine(s) }.Where(p => !string.IsNullOrEmpty(p)));
-            Write(g, sub, _small, _t.Tertiary, new Rectangle(back.Right + S(10), y + bodyHeight, Inner - S(40), smallHeight), TextFormatFlags.EndEllipsis);
+            var (status, color) = StatusLine(s);
+            Write(g, status, _small, color, new Rectangle(back.Right + S(10), y + bodyHeight, Inner - S(40), smallHeight), TextFormatFlags.EndEllipsis);
         }
         y += Math.Max(S(28), bodyHeight + smallHeight) + S(14);
+
+        // El pedido, la carpeta, el modelo y cuántas interacciones lleva.
+        var labelWidth = S(84);
+        foreach (var (label, value, lines) in Details(s))
+        {
+            var flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis;
+            var measured = TextRenderer.MeasureText(g, value, _small, new Size(Inner - labelWidth, 0), flags).Height;
+            var height = Math.Min(measured, smallHeight * lines);
+            if (draw)
+            {
+                Write(g, label, _small, _t.Tertiary, new Rectangle(Pad, y, labelWidth, smallHeight));
+                TextRenderer.DrawText(g, value, _small, new Rectangle(Pad + labelWidth, y, Inner - labelWidth, height), _t.Secondary, flags);
+            }
+            y += height + S(5);
+        }
+        y += S(14);
 
         // Cuenta → sesión → herramientas; el subagente debajo de la sesión.
         var active = Flows.Active(s);
@@ -352,7 +273,7 @@ sealed partial class UsageForm
             if (thinking)
             {
                 var textWidth = TextRenderer.MeasureText(g, status, Tiny, Size.Empty, Line).Width;
-                DrawDots(g, new PointF(statusBox.X + textWidth + 9 * _scale, statusBox.Y + statusBox.Height * 0.62f), color, Environment.TickCount64);
+                Lanes.DrawDots(g, new PointF(statusBox.X + textWidth + 9 * _scale, statusBox.Y + statusBox.Height * 0.62f), color, Environment.TickCount64);
             }
             var steps = s.Flow.Count == 1 ? L.T("1 paso") : L.T("{0} pasos", s.Flow.Count);
             Write(g, steps, Tiny, _t.Tertiary, new Rectangle(inner.X, inner.Y + smallHeight + Tiny.Height + S(2), inner.Width, Tiny.Height));
@@ -404,7 +325,7 @@ sealed partial class UsageForm
             var isActive = working && f == active;
             if (draw)
             {
-                var p = EaseOut(_arrivals.Progress(f.Id));
+                var p = LaneNodes.EaseOut(_arrivals.Progress(f.Id));
                 var shift = (int)(S(14) * (1 - p));
                 var time = f.At is { } at ? $"{at.LocalDateTime:HH:mm:ss}" : "";
                 Write(g, time, _small, Blend(_t.Background, isActive ? _t.Accent : _t.Tertiary, p), new Rectangle(Pad, y, S(62), smallHeight));
@@ -415,6 +336,55 @@ sealed partial class UsageForm
             }
             y += smallHeight + S(5);
         }
-        return y + S(10);
+        return ComposeSessionActions(g, draw, s, y + S(10)) + S(14);
+    }
+
+    /// <summary>Los botones del detalle, los mismos del menú del clic derecho.</summary>
+    int ComposeSessionActions(Graphics g, bool draw, SessionInfo s, int y)
+    {
+        var copied = Environment.TickCount64 - _copiedAt < 1500;
+        (string Key, string Label)[] actions =
+        [
+            ("act:new", L.T("Nueva sesión aquí…")),
+            ("act:folder", L.T("Abrir carpeta")),
+            ("act:copy", copied ? L.T("Copiado") : L.T("Copiar ID")),
+        ];
+        var height = S(28);
+        var x = Pad;
+        foreach (var (key, label) in actions)
+        {
+            var width = TextRenderer.MeasureText(g, label, _small, Size.Empty, Line).Width + S(24);
+            if (x + width > Pad + Inner && x > Pad) { x = Pad; y += height + S(6); }
+            var box = new Rectangle(x, y, width, height);
+            AddHit(key, box, HitKind.SessionAction, session: s);
+            if (draw)
+            {
+                Draw.Fill(g, _hoverKey == key ? _t.Hover : _t.Raised, box, S(8));
+                Draw.Outline(g, _t.Border, box, S(8));
+                Write(g, label, _small, _t.Text, box, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            }
+            x += width + S(6);
+        }
+        return y + height;
+    }
+
+    void RunSessionAction(string key, SessionInfo s)
+    {
+        switch (key)
+        {
+            case "act:new":
+                NewSessionRequested?.Invoke(s);
+                break;
+            case "act:folder":
+                OpenFolder(s.Cwd);
+                break;
+            case "act:copy":
+                Clipboard.SetText(s.SessionId);
+                _copiedAt = Environment.TickCount64;
+                Invalidate();
+                // Vuelve a decir «Copiar ID» aunque no haya ninguna animación corriendo.
+                _ = Task.Delay(1600).ContinueWith(_ => { if (IsHandleCreated) BeginInvoke(() => Invalidate()); });
+                break;
+        }
     }
 }

@@ -27,6 +27,19 @@ static class Program
             Console.Write(Diagnostics.Report(settings, new SessionMonitor().Scan(settings.Accounts), 0));
             return 0;
         }
+        // --accion <acción> <valor>: hace esa acción de la mascota, sin pasar por Claude ni pedir permiso, y dice cómo le
+        // fue (como en Windows). Sin ventanas: no hay portapapeles de texto ni nada que esconder al capturar.
+        if (Array.IndexOf(args, "--accion") is var a and >= 0 && a + 2 < args.Length)
+        {
+            SystemActions.Desktop = OperatingSystem.IsMacOS() ? new MacDesktop(null, work => work())
+                : OperatingSystem.IsLinux() ? new LinuxDesktop(null, work => work())
+                : null;
+            var outcome = SystemActions.RunAsync(new AssistantAction(args[a + 1], args[a + 2]),
+                palette => Console.WriteLine($"color de la app: {palette}")).GetAwaiter().GetResult();
+            if (outcome.Problem is { } problem) { Console.WriteLine(problem); return 1; }
+            Console.WriteLine(outcome.Say ?? outcome.Data ?? (outcome.Look is { } look ? $"para mirar: {look}" : "listo"));
+            return 0;
+        }
 
         if (OperatingSystem.IsLinux() && MissingLinuxLibraries() is { Length: > 0 } missing)
         {
@@ -38,12 +51,22 @@ static class Program
             return 1;
         }
 
+        // --console: Claupet Console, la ventana grande, en su propio proceso (la misma de Windows).
+        if (args.Contains(ConsoleApp.Flag)) return ConsoleApp.Run(args);
+
         // --preview: abre la ventana aunque ya haya otra instancia (para probar cambios).
         var preview = args.Contains("--preview");
-        using var mutex = new Mutex(true, @"Local\Claupet-avalonia", out var created);
+        using var mutex = new Mutex(true, ConsoleLink.AvaloniaTrayMutex, out var created);
         // --reiniciar: la abrió la anterior al cambiar el idioma; espera a que termine de cerrarse.
         if (!created && args.Contains("--reiniciar")) created = WaitFor(mutex);
-        if (!created && !preview) return 0;
+        if (!created && !preview)
+        {
+            if (args.Length > 0) return 0;
+            // Abrir Claupet otra vez, sin argumentos, trae Claupet Console, como cualquier app (como en Windows).
+            // El mutex se suelta antes: si no, una bandeja que arranque después creería que ya hay otra.
+            mutex.Dispose();
+            return ConsoleApp.Run(args);
+        }
         // Lo que quedó con el nombre de antes de Claupet (la carpeta de datos, la entrada de inicio) pasa a este .exe.
         if (!preview)
         {

@@ -7,8 +7,9 @@ se compila y cuáles son los límites conocidos.
 
 ```text
 Core/                    núcleo común, sin interfaz: uso, sesiones, actividad, avisos, sonidos,
-                         hook, credenciales, inicio con el sistema y diagnóstico
+                         hook, credenciales, inicio con el sistema, diagnóstico y la voz (Voice/)
 *.cs + Claupet.csproj            app de Windows (WinForms)
+Console/                 Claupet Console (Avalonia 11), la ventana grande: el mismo Claupet.exe con --console
 Claupet.Avalonia/        app de Linux y macOS (Avalonia 11); también corre en Windows para probar
 herramientas/            empaquetado (empaquetar.py), scripts de instalación y Info.plist de macOS
 app.ico                  ícono de la mascota
@@ -38,6 +39,8 @@ mascota (`[ACCION]`) son del protocolo y van siempre en español. Para otro idio
 | Sonidos | `…\Claupet\sonidos` | `…/Claupet/sonidos` |
 | Modelo de voz (Whisper) | `…\Claupet\voz\ggml-small.bin` | — |
 | Voz de Claupet (Supertonic 3) | `…\Claupet\voz\supertonic-3` | — |
+| Modelo local (llama-server y el GGUF elegido) | `…\Claupet\modelo-local` | — |
+| Respuestas sin la nube de la semana (Ajustes › Respuestas › Ahorro) | `…\Claupet\respuestas.json` | — |
 | Consultas del asistente (prompts de sistema) | `…\Claupet\asistente` | — |
 | Permisos de lo que la mascota hace en el equipo | `Permissions` en `settings.json` | — |
 | Notas | `Documentos\Claupet\Notas`, un `.md` por nota | — |
@@ -103,7 +106,7 @@ muestra al elegir.
 
 Se guardan en `Palette`, `Animation` (el estilo al actualizar), `Mascot` (la de los avisos),
 `DesktopMascot`, `Speak`, `FlowGestures`, `DanceToMusic`, `NoticeGestures`, `GreetOnAppear`,
-`AngryOnClicks` y `SleepWithoutSessions` del `settings.json` de la app.
+`AngryOnClicks`, `SleepWithoutSessions` y `MascotAllDesktops` del `settings.json` de la app.
 
 ## Chibi
 
@@ -157,7 +160,12 @@ a lo que corresponda (con «Gesto de los avisos» encendido).
 En los avisos asoma desde abajo (de la cabeza al ruedo). En el escritorio vive en una ventana sin
 marco ni fondo, siempre encima, que no quita el foco: se arrastra para moverla, sin salirse de la
 pantalla (la posición queda en `DesktopMascotX` y `DesktopMascotY`), y el clic derecho la abre o la
-oculta. `ChibiDirector` decide qué hace según las sesiones, que la app sigue leyendo mientras la
+oculta. Con **En todos los escritorios** (`MascotAllDesktops`, encendido de entrada) sigue a la vista al cambiar de
+escritorio virtual: en Windows la ventana va sin dueña (WinForms le pone una escondida si no va en la barra de tareas,
+y Windows la ata al escritorio de esa dueña; `WS_EX_TOOLWINDOW` la deja igual fuera de la barra y de Alt+Tab); en
+macOS pide `NSWindow.collectionBehavior` con todos los Espacios. Al volver de bloquear o suspender, o si cambian las
+pantallas (apagarse un monitor lo desconecta y Windows mueve las ventanas), vuelve a su lugar o al más cercano que se
+vea, arriba de todo y repintada: enseguida y otra vez a los 2 y 6 s, mientras los monitores se reconectan. `ChibiDirector` decide qué hace según las sesiones, que la app sigue leyendo mientras la
 mascota esté a la vista aunque las notificaciones estén apagadas. La mascota clásica también puede
 estar en el escritorio, con los mismos movimientos armados con sus dibujos de los avisos
 (`ToastSprite.PaintMove`; los gestos del flujo, en `ToastFlows`, con el objeto al costado o encima, y
@@ -169,47 +177,138 @@ el aviso.
 
 | Estado | Señal | De dónde sale |
 |---|---|---|
-| Trabajando | asterisco animado y barra con destello | `status: busy` en `sessions/<pid>.json` |
+| Trabajando | asterisco animado y su carril de pasos | `status: busy` en `sessions/<pid>.json` |
 | Esperando su respuesta | punto ámbar que late | una pregunta (`AskUserQuestion`) sin responder |
 | Falló | cruz roja y el texto del error | un error de la API (`isApiErrorMessage`) después del último pedido |
 | Terminó | marca verde, «hace 5 min · 2 min 25 s» | `status: idle` y el último turno hace menos de 30 min |
 | Inactiva | punto gris, agrupadas y plegadas | `status: idle` desde hace más de 30 min |
 
-Mientras trabaja, la sesión muestra lo que está haciendo, los pasos del turno y el tiempo. Con
-lista de tareas (`TodoWrite`), la barra pasa a «3 de 5 tareas». Clic: despliega el último pedido,
-la carpeta, el modelo y las interacciones. Clic derecho: nueva sesión en esa carpeta, abrir la
-carpeta o copiar el ID. Solo se cuentan los procesos vivos: `procStart` (no documentado) se compara
+Las sesiones se ven en la vista **Actividad**. Mientras trabaja, cada una muestra su carpeta, el modelo, el
+tiempo del turno y, con lista de tareas (`TodoWrite`), «3 de 5 tareas»; debajo, su carril de pasos. Las
+inactivas van plegadas al final. Clic: el detalle de la sesión (ver Actividad). Clic derecho: nueva sesión en
+esa carpeta, abrir la carpeta o copiar el ID. Solo se cuentan los procesos vivos: `procStart` (no documentado) se compara
 con la hora de inicio del proceso en los formatos conocidos y, si el formato no se reconoce, basta
 con que el proceso exista.
 
 La línea «Modelo» sale de la última respuesta del `.jsonl`: `message.model`, `effort` y
 `advisorModel` (no documentados). Un `/model` o `/effort` se ve recién en la respuesta siguiente.
 
-## Vistas fijas y ajustes
+## Vistas y ajustes
 
-La cabecera muestra siempre 3 vistas fijas (por defecto Uso, Sesiones y Actividad). El botón de la
-tachuela abre la lista de todas: clic en el nombre la abre sin fijarla (el botón muestra su nombre
-si cabe); el pin de una vista libre la prepara y el pin de una fija hace el cambio en ese lugar,
-así nunca hay más ni menos de 3. Se guardan en `PinnedViews` del `settings.json` de la app. El
-engranaje del pie abre **Ajustes**, en cinco pestañas: Avisos (notificaciones y sonido), Apariencia,
-Asistente (chat, voz y teclas), Isla y Sistema (cuentas, inicio con el sistema, hook y diagnóstico);
-la última abierta queda en `SettingsTab`. Todas miden lo que la más alta (con lo que esté
+La cabecera muestra 3 vistas: **Uso** (los límites de la cuenta elegida), **Actividad** (las sesiones, cada
+una con su carril) e **Historial** (el mapa de calor de 6 meses). El engranaje del pie abre los **Ajustes rápidos**, en cinco pestañas: Avisos (notificaciones y sonido), Apariencia
+(color, mascota y su tamaño), Asistente (chat, micrófono y leer en voz alta), Isla y Sistema (idioma, inicio con
+Windows y diagnóstico); la última abierta queda en `SettingsTab`. Todas miden lo que la más alta (con lo que esté
 encendido), así que al cambiar de pestaña el cuadro no cambia de tamaño. El menú del ícono queda en abrir, actualizar, nueva
 sesión, ajustes y salir.
 
-## Flujos
+Las filas de cada pestaña no están escritas en la ventana: salen de `SettingsPages.Build` (`Core/SettingsPages.cs`),
+la misma lista que muestra Claupet Console. Cada fila dice su tipo (interruptor, lista, dato, nota, enlace), su
+acción (la que atiende `OnSetting` en `TrayApp.cs`) y dónde va: en las dos o solo en la Console
+(`RowPlace.Console`). Los rápidos llevan solo lo de todos los días; lo demás (los gestos de la mascota, la cuenta
+y la carpeta del asistente, los permisos, las teclas, el resto de la isla, el hook) está en la Console. Las
+secciones sin pestaña (`Tab` nulo: Respuestas, Extensiones y Cuentas) solo están en la Console. Al pie de los
+rápidos, la tarjeta **Todos los ajustes › Abrir** abre la Console.
 
-Un carril por sesión activa: «Pedido», «+N» con lo anterior y los últimos grupos de pasos del
+La app Avalonia arma sus rápidos igual (`UsageView.Views.cs`), con el estado que le da a la Console
+(`IConsoleApp.SettingsState`, sin lo que ese sistema no tiene). Cada fila hace lo mismo que en la Console
+(`IConsoleApp.Act`); solo cambia dónde sale la lista para elegir: junto al cursor, en el popup (`OnQuickSetting`).
+
+## Claupet Console
+
+La ventana grande (Windows por ahora). A la izquierda, un riel con Chat, Editor y Ajustes (el editor llega en una
+próxima etapa). En **Chat**, la lista de conversaciones (la **Conversación rápida**, que es la de la isla y la
+nubecita, y las guardadas, agrupadas en Hoy, Ayer, Esta semana y Antes) y la conversación abierta: el modelo, leer
+en voz alta, los bloques de código con «Copiar» y de dónde vino cada respuesta; Intro envía y Mayús+Intro hace otra
+línea. Las guardadas van una por archivo en `conversaciones\<id>.json`, junto a los ajustes, y no se escriben hasta
+su primer mensaje; responde el mismo asistente de la isla, con respuestas más completas. En **Ajustes**, las
+secciones (General, Avisos, Apariencia, Mascota, Asistente, Respuestas, Extensiones, Isla, Cuentas y Sistema).
+Las barras de desplazamiento y los globos de ayuda son los del diseño (`Console/Themes.cs`); las listas para elegir y
+los menús, una tarjeta flotante dentro de la ventana con la elegida marcada y las acciones («Elegir otra carpeta…»)
+separadas abajo, que se maneja también con las flechas, Intro y Esc (`Console/DropList.cs`). Es el mismo `Claupet.exe`
+en otro proceso (`Claupet.exe --console`, código en `Console/`, Avalonia 11): se abre solo cuando se pide y se
+cierra con su ventana. La bandeja no carga Avalonia ni Skia; solo ese proceso. Una sola ventana a la vez:
+abrirla de nuevo la trae al frente. Tiene su propia barra de arriba (la cabeza del chibi, minimizar, maximizar y cerrar) y las esquinas
+redondeadas de Windows 11; sigue el modo claro u oscuro de Windows y el color elegido en Apariencia.
+
+Solo la bandeja guarda los ajustes. Las dos se hablan por una tubería con nombre, `Claupet.Console.<usuario>`,
+que solo abre el mismo usuario de Windows (`PipeOptions.CurrentUserOnly`), con un mensaje JSON por línea
+(`Core/ConsoleLink.cs`):
+
+| Mensaje | De | Qué lleva |
+|---|---|---|
+| `estado` | bandeja | las secciones ya armadas, el idioma y la paleta; se manda al conectarse y con cada cambio |
+| `accion` | Console | la acción de la fila que se tocó (la misma de los ajustes rápidos) |
+| `opciones` | bandeja | la lista que esa acción mostraría como menú, con la elegida y un número |
+| `elegir` | Console | la opción elegida de la lista con ese número; sin valor, se cerró sin elegir |
+| `mostrar` | bandeja | traer la ventana al frente, en una sección o, sin ella, en el chat |
+| `chats` | bandeja | la lista de conversaciones: la rápida y las guardadas |
+| `chat` | bandeja | la conversación abierta, con lo que va llegando de la respuesta |
+| `chat-abrir`, `chat-nuevo` | Console | abrir una conversación o crear una (con el id que elige la Console) |
+| `chat-enviar`, `chat-parar` | Console | mandar un mensaje o detener la respuesta |
+| `chat-borrar`, `chat-limpiar` | Console | borrar una guardada o vaciar la rápida |
+
+Lo que todavía abre una ventana de la bandeja (grabar una tecla, escribir la ciudad, las extensiones, el
+hook) se abre desde Claupet, al frente. Si Claupet no está abierto, la Console lo dice y ofrece abrirlo.
+`Claupet.exe --console` abre en el chat (también la entrada «Claupet Console» del menú del ícono) y
+`Claupet.exe --console --seccion=<id>`, en esa sección de Ajustes (`general`, `avisos`, `apariencia`, `mascota`,
+`asistente`, `respuestas`, `isla`, `cuentas` o `sistema`).
+
+**En Linux y macOS** la Console es la misma (`Claupet --console`, la entrada «Claupet Console» del menú del ícono o
+abrir Claupet otra vez). Lo que no depende del sistema (la tubería, las conversaciones, las listas para elegir) lo hace
+`Core/ConsoleHost.cs`; cada bandeja le da lo suyo con `IConsoleApp` (`TrayApp.Console.cs` en Windows,
+`Claupet.Avalonia/TrayController.Console.cs` en la app Avalonia): sus ajustes, sus acciones y el asistente del chat.
+Las filas de lo que un sistema todavía no tiene no aparecen (`PlatformFeatures` en `SettingsState`); una sección que
+queda sin nada dice «Todavía no está disponible en este sistema.». En la app Avalonia el chat responde como en
+Respuestas, con las acciones en el equipo en Linux y macOS (en Windows, esta app todavía no las hace: lo dice); con la
+isla, la conversación rápida es la suya (ver Asistente en Linux y macOS).
+
+Una sola bandeja y una sola Console por persona, con mutex con nombre (`Core/ConsoleLink.cs`). En Windows van en
+`Local\` (la sesión de Windows). En Linux y macOS, .NET limita `Local\` a la sesión del proceso (cada terminal tiene
+la suya) y la Console abierta desde el menú no vería la bandeja abierta al iniciar: allí van en `Global\`, con el
+nombre del usuario. La Console nueva le pasa los archivos a la abierta, y la trae al frente, por la tubería
+`Claupet.ConsoleWake.<usuario>` (los eventos con nombre solo existen en Windows).
+
+**Editor** (etapa 1). AvaloniaEdit es solo el motor; el aspecto es el del diseño (`Console/EditorPane.cs` y
+`Console/EditorLook.cs`). Arriba, el botón de la lista de archivos (abiertos y recientes, en `editor-recientes.json`
+junto a los ajustes), las pestañas con un punto si hay cambios sin guardar, **Documento** o **Código** y más opciones
+(Nuevo, Abrir, Guardar, Guardar como y Cerrar, con Ctrl+N, O, S, Mayús+S y W). En Documento, el Markdown se ve sin sus
+marcas salvo en la línea del cursor (títulos grandes, negritas, cursivas, código en línea, enlaces sin la dirección,
+viñetas «•» y citas), en una columna de 640 al centro; Markdown y texto se abren así. En Código, números de línea y los
+colores del diseño, iguales en todos los lenguajes que trae AvaloniaEdit (C#, JavaScript, Python, PowerShell, SQL,
+HTML, CSS, JSON, XML y otros). Guarda en UTF-8, primero a un archivo de al lado. Al cerrar un archivo o la ventana con
+cambios, pregunta. `Claupet.exe --console archivo…` los abre en el editor (si la Console ya está abierta, se los pasa).
+La IA en el editor, el texto propuesto, leer en voz alta y su sección de ajustes vienen en las etapas 2 y 3.
+
+Como cualquier app, Claupet tiene su acceso directo en el menú Inicio (encendido por defecto) y, si se pide, en
+el escritorio (Ajustes › General › Accesos directos; `StartMenuShortcut` y `DesktopShortcut`). Abren
+`Claupet.exe --console` con la cabeza del chibi como ícono (`claupet.ico`, junto a los ajustes); si Claupet no
+estaba abierto, la Console lo abre y se conecta cuando está listo. Al arrancar, la bandeja vuelve a crear los
+encendidos si faltan o apuntan a otra carpeta (`Shortcuts.cs`); una copia de prueba (`--preview`) no los toca.
+Abrir `Claupet.exe` otra vez, sin argumentos, con Claupet ya abierto, también trae la Console.
+
+## Actividad
+
+Un carril por sesión activa (los nodos los dibuja `LaneNodes.cs`, que usa también la isla): «Pedido», «+N» con lo anterior y los últimos grupos de pasos del
 turno (los seguidos de la misma herramienta se juntan: «Leyendo ×3»). Mientras la sesión trabaja
 siempre hay algo animado: si el último paso sigue en curso, late; si ya volvió (leer o buscar duran
 milisegundos), aparece al final «Pensando…» con el asterisco que gira. Un punto viaja hacia el
 último nodo, cada paso nuevo entra creciendo y el ícono de actualizar gira mientras actualiza; en
-ámbar si la sesión le espera. Debajo, el último subagente y su estado. Clic en un carril: el mapa
-de esa sesión, con la cuenta, la sesión, cuántas veces usó cada familia de herramientas en el turno
-(línea animada hacia la herramienta en uso, o de vuelta a la sesión mientras piensa), el subagente
-y los últimos 5 pasos con su hora. Sale del mismo `.jsonl` que la vista Sesiones: cada `tool_use`
+ámbar si la sesión le espera. Debajo, el último subagente y su estado. Clic en un carril: el detalle
+de esa sesión, con su estado, el último pedido, la carpeta, el modelo y las interacciones; el mapa con la cuenta,
+la sesión y cuántas veces usó cada familia de herramientas en el turno (línea animada hacia la herramienta en
+uso, o de vuelta a la sesión mientras piensa) y el subagente; los últimos 5 pasos con su hora, y los botones
+«Nueva sesión aquí…», «Abrir carpeta» y «Copiar ID». Sale del mismo `.jsonl` que el estado de la sesión: cada `tool_use`
 es un paso y su `tool_result` lo cierra; del subagente se toman `agentType` y `totalToolUseCount`
 del resultado. La lógica común está en `Core/Flows.cs`.
+
+## Historial de uso
+
+En la vista Historial: una casilla por día de los últimos 6 meses, de todas las cuentas; el color
+sube con los tokens (entrada + escritura en caché + salida) y con el cursor encima se ve la cifra del día.
+Debajo, las del período: tokens, días activos, racha actual y más larga, el día más activo y el modelo
+favorito. Sale de los `.jsonl` de Claude Code de este equipo; como Claude Code borra los registros de más de 30
+días, la app guarda un resumen diario (solo cifras) en `history.json`.
 
 ## Nueva sesión
 
@@ -241,7 +340,12 @@ hooks ni MCP: la entrada baja de unos 7.400 a 1.000 tokens), `--no-session-persi
 entrada estándar y el prompt de sistema en un archivo. El chat solo puede buscar en internet
 (`WebSearch` y `WebFetch`; el clima sale de `wttr.in`); el análisis de un archivo solo puede leer su
 carpeta (`Read`, `Glob`, `Grep`). La mascota usa `MascotModel` (Haiku, de entrada) y se le pide
-responder en 220 caracteres como mucho; la isla, `IslandModel` (vacío: el modelo de sus sesiones).
+responder en 220 caracteres como mucho; la isla y las conversaciones de Claupet Console, `IslandModel` (vacío:
+el modelo de sus sesiones). Con **Automático** (`auto`), cada pregunta va al modelo y al esfuerzo que pide
+(`Core/AutoModel.cs`, reglas sobre el texto, sin gastar tokens): lo corto y suelto a Haiku con `--effort low`;
+explicar, escribir, traducir o un ejemplo de código, a Sonnet con `medium`; diseñar, analizar, comparar a fondo
+o código que falla (una traza de error), a Opus con `high`. Repreguntar sobre una respuesta con código o
+analizar un archivo no baja de Sonnet. El chip de quién respondió dice también el esfuerzo.
 **Sin internet.** Mientras arranca `claude`, la app comprueba la conexión (`Connectivity`, una
 petición corta a la API por el proxy del momento). Si no hay, lo cierra enseguida y responde ella:
 el saludo, la hora y la fecha se contestan en el equipo, y a lo demás se le dice que no hay
@@ -252,10 +356,12 @@ La primera línea de la respuesta puede traer una marca, que no se muestra:
 | Marca | Qué pasa |
 |---|---|
 | `[ACCION] {"accion":"…","valor":"…"}` | la app hace esa acción en el equipo (tabla de abajo) y la mascota dice la frase que sigue, o lo que falló |
-| `[TAREA] <pedido>` | lo que Claude no puede hacer con sus herramientas ni con las acciones: se ofrece abrir una sesión de Claude Code con ese pedido, en `TaskFolder` o, si vino de un archivo soltado que no pudo abrir (un Excel, por ejemplo), en la carpeta del archivo |
+| `[TAREA] <pedido>` | lo que Claude no puede hacer con sus herramientas ni con las acciones: se ofrece abrir una sesión de Claude Code con ese pedido, en `TaskFolder` (si no se eligió otra, la propia del asistente, `~\Claupet\Tareas`, que se crea al abrir la primera tarea; no va en Documentos porque suele estar en OneDrive) o, si vino de un archivo soltado que no pudo abrir (un Excel, por ejemplo), en la carpeta del archivo |
 
-Las acciones son una lista cerrada (`SystemActions.cs`), para que una frase mal entendida no pueda
-hacer otra cosa; lo demás se encarga a Claude Code:
+Las acciones son una lista cerrada (`Core/Actions/SystemActions.cs`), para que una frase mal entendida no pueda
+hacer otra cosa; lo demás se encarga a Claude Code. Lo que cambia de un sistema a otro está detrás de `IDesktop`
+(`Core/Actions/Desktop.cs`): en Windows, `WindowsDesktop.cs`; en Linux y macOS, ver Asistente en Linux y macOS. El
+prompt y las reglas sin IA solo ofrecen las acciones que el sistema sabe hacer (`SystemActions.Supports`):
 
 | Acción | Valor | Cómo |
 |---|---|---|
@@ -312,22 +418,25 @@ Por si la app está cerrada, cada uno crea una tarea del Programador de tareas, 
 abierta, la nueva se cierra enseguida y avisa la otra. Los que pasaron con la app cerrada se avisan al
 abrirla («se le pasó»). La tarea se borra al avisar o cancelar y, si no, sola un día después.
 
-Las consultas dejan un `sessions/<pid>.json` mientras corren; la vista Sesiones las ignora por su
-carpeta. El código está en `Core/Assistant.cs`; las acciones, en `SystemActions.cs`, `ScreenCapture.cs`,
-`ReminderTasks.cs` y `Core/Agenda.cs` (notas, `.ics` y recordatorios, sin interfaz). Son solo de Windows,
-como el chat.
+Las consultas dejan un `sessions/<pid>.json` mientras corren; la vista Actividad las ignora por su
+carpeta. El código está en `Core/Assistant.cs`; las acciones, en `Core/Actions/` (qué se pide, los permisos y los
+mensajes, igual en los tres sistemas), `WindowsDesktop.cs`, `ScreenCapture.cs`, `ReminderTasks.cs` y `Core/Agenda.cs`
+(notas, `.ics` y recordatorios, sin interfaz).
 
 **La isla** (`IslandForm.cs`) es una ventana siempre oscura, con el acento de la paleta. Oculta, una
 franja invisible de 320 × 6 px en el centro del borde de arriba la hace asomar compacta (300 × 36);
-con el cursor encima (o un clic, según `IslandHover`) se abre con Inicio (las sesiones y sus pasos,
-los cambios por archivo con su diff, ir a la terminal), Chat y «+ Sesión». Se pliega al irse el
-cursor, salvo si está fijada, se está escribiendo, hay una pregunta en curso o acaba de llegar una
-respuesta: esa queda a la vista de 5 a 15 s, según su largo. Un clic en cualquier otra parte (otra
-ventana, el escritorio, la barra de tareas) la pliega, salvo fijada: un gancho de mouse de bajo nivel
+con el cursor encima (o un clic, según `IslandHover`) se abre con Actividad (cada sesión con los nodos de
+su carril, como en la vista Actividad de la bandeja, con `LaneNodes.cs`; el nodo de la edición de un archivo
+abre su diff; ir a la terminal), Chat y «+ Sesión». Se pliega al irse el cursor, salvo si se está
+escribiendo, hay una pregunta en curso o acaba de llegar una respuesta: esa queda a la vista de 5 a
+15 s, según su largo. Un clic en cualquier otra parte (otra
+ventana, el escritorio, la barra de tareas) la pliega: un gancho de mouse de bajo nivel
 (`MouseDownHook`), puesto solo mientras está abierta. No cuentan los menús que abrió la isla; un permiso
 de Claude Code o una pregunta de Claupet siguen esperando en la compacta y, si estaba respondiendo, se abre de nuevo al llegar la
 respuesta. Con `IslandWhileBusy` queda compacta a la vista mientras alguna sesión trabaja; con
-`WeeklyRecap`, los lunes muestra el resumen de la semana.
+`WeeklyRecap`, los lunes muestra el resumen de la semana. Lo saca de los tokens por día (entrada + escritura en
+caché + salida) de los `.jsonl` de Claude Code de este equipo; como Claude Code borra los registros de más de 30
+días, la app guarda un resumen diario (solo cifras) en `history.json`, aunque la ventana esté cerrada.
 
 El chat muestra toda la conversación (se guardan las últimas 40 y se olvida a los 10 minutos sin
 escribir, o con «Nueva conversación») en un marco de 300 px como mucho: lo que no cabe se ve con la rueda
@@ -356,7 +465,7 @@ a su lugar. Sin la isla, no camina: piensa con la caja en las manos. Se apaga co
 
 ![La isla escuchando](docs/capturas/isla-escucha.png)
 
-**Voz** (`Voice.cs`). El micrófono se graba a 16 kHz y se pasa a texto en el equipo con
+**Voz** (`Voice.cs`; Whisper y la descarga, en `Core/Voice/Transcriber.cs`). El micrófono se graba a 16 kHz y se pasa a texto en el equipo con
 [Whisper.net](https://github.com/sandrohanea/whisper.net) 1.9.1 y el modelo `ggml-small`
 multilingüe (488 MB, de `huggingface.co/ggerganov/whisper.cpp`). Se descarga una vez, al encender el
 micrófono; si se corta, se retoma, y solo se usa si su SHA-256 coincide. La ventana del codificador
@@ -365,7 +474,7 @@ se ajusta al largo de lo dicho (`WithAudioContextSize`) en vez de los 30 s de si
 se habla, cada 0,7 s de audio nuevo se muestra lo entendido hasta ahí. El modelo cargado ocupa unos
 850 MB de memoria y se suelta a los 3 minutos sin usarlo.
 
-**La voz de Claupet** (`Supertonic.cs`, `ClaupetVoice.cs`). Con «Leer las respuestas en voz alta» (no necesita el
+**La voz de Claupet** (`Core/Voice/Supertonic.cs`, `Core/Voice/ClaupetVoice.cs`). Con «Leer las respuestas en voz alta» (no necesita el
 micrófono: también lee lo que responde a un mensaje escrito), las
 lee [Supertonic 3](https://github.com/supertone-inc/supertonic) en el equipo, con ONNX Runtime 1.20.1
 en la CPU: la voz femenina (F4) o la masculina (M1), en `ReadAloudVoice`. El texto entra tal cual, sin
@@ -382,6 +491,70 @@ pasar a fonemas. La inferencia está adaptada de su ejemplo en C# (MIT); el mode
 | Sin el modelo | mientras se baja, o con «La de Windows», lee una voz de Windows en español, sin las etiquetas |
 
 Las caritas de texto, como `(^_^)`, no se leen.
+
+**Modelo local** (`LocalModel.cs`, `TrayApp.LocalModel.cs`). Responde en la mascota o la isla sin internet
+ni tokens cuando se elige «Local: …» como su modelo (`AssistantModels.Local`), o con «La mascota responde
+con un modelo local» en el asistente de configuración. Recibe el mismo prompt de sistema que Claude, sin
+las herramientas que no tiene, y su respuesta pasa por las mismas reglas (marcas, acciones y permisos),
+como el asistente de una extensión.
+
+| Qué | Cómo |
+|---|---|
+| Modelos | Qwen3.5 0.8B (533 MB), 2B (1,3 GB, el propuesto) o 4B (2,7 GB), Apache 2.0, en GGUF Q4_K_M de Unsloth fijado a un commit de Hugging Face y con su SHA-256 (`LocalModel.Choices`, `LocalModel` en `settings.json`) |
+| Programa | `llama-server` de llama.cpp b11913 para CPU x64 (24 MB, MIT), de su Release de GitHub y con su SHA-256; del zip se sacan solo el servidor, sus DLL y las de ggml para cada CPU |
+| Descarga | a pedido, en `…\Claupet\modelo-local`, retomando como la de Whisper; al terminar se borran los otros modelos. **Ajustes › Respuestas › Motores** muestra el avance, cancela o borra |
+| Arranque | la primera pregunta lo arranca en `127.0.0.1`, en un puerto libre y con una clave nueva en cada arranque (`--api-key`): otro programa del equipo no puede usarlo. Va en un Job que lo cierra si Claupet termina; tras los minutos sin uso de «Liberar la memoria tras» (5 por defecto) suelta la memoria (`--sleep-idle-seconds`) |
+| Respuestas | por `/v1/chat/completions` con stream, como una extensión `openai-chat`; sin razonamiento (`--reasoning-budget 0`), contexto de 4.096 y una conversación a la vez |
+| Solo conversa | no recibe la lista de acciones ni puede encargar tareas a Claude Code: con ella, el 0.8B y el 2B inventaban acciones (ante un «Hola», minimizar todo) o las armaban mal (`ISmallBrain`). Las acciones las elige aparte, con un JSON de esquema cerrado (ver Respuestas) |
+| Identidad | el prompt le dice que es Claupet y solo Claupet; si le preguntan qué modelo usa, dice con cuál piensa. Qwen3.5 a veces abre con `<think></think>` vacío: no se muestra (`ThinkFilter`) |
+| Velocidad | en un Ryzen 7 5700U arranca en 2 s; el 2B responde a la mascota en 3 a 5 s (el 0.8B escribe unos 35 tokens por segundo) |
+| Memoria | unos 1, 2 o 3,5 GB mientras responde, según el tamaño (estimado) |
+
+### Respuestas: quién responde cada pregunta
+
+**Ajustes › Respuestas** reparte las preguntas de la mascota y de la isla entre tres motores: **sin IA** (la
+app sola), el **modelo local** y la **nube** (Claude Code con el modelo elegido, o la extensión del
+asistente). `Answers.AskAsync` (`Core/Answers.Router.cs`) decide en cada pregunta:
+
+1. **Las reglas sin IA** (`AnswerRules`, `Core/Answers.cs`) reconocen frases cortas y claras, enteras: «¿qué
+   hora es (en Tokio)?», «¿qué día es hoy?», «¿va a llover mañana en Boquete?», «¿cuánta batería me queda?»,
+   «¿cuánto me queda de Claude?», «sube el volumen», «pon el brillo al 40», «modo oscuro», «abre Spotify»,
+   «recuérdame X en 20 minutos», «anota X», «25 × 4 + 10», «15 % de 200», «10 km a millas», «hola», «gracias».
+   Si sobra algo («sube el volumen y abre Spotify»), no adivinan: pasa al siguiente.
+2. **Si ninguna regla sirve y el modelo local está descargado**, él entiende la pregunta: responde un JSON con
+   el tipo, la acción, el lugar y el día, restringido por un esquema (`response_format` con `json_schema`, que
+   llama-server convierte en gramática). Solo puede elegir tipos y acciones de la lista; las que llevan un
+   JSON propio (notas, recordatorios, agendar) no las elige él.
+3. **Cada tipo de pregunta tiene quién responde primero** (`AnswerEngines`), y si no entiende o no está
+   disponible pasa al siguiente motor, sin IA → local → nube, hasta donde diga «Si no entiende»
+   (`AnswerFallback`: hasta la nube, hasta el modelo local o no pasar).
+4. **Modos ya armados** (`AnswerPresets`): **Por defecto** (la tabla de abajo, hasta la nube), **Ahorro de
+   tokens** (sin IA en todo lo que la app sabe, el modelo local en lo demás, hasta la nube) y **Solo en este
+   equipo** (lo mismo, pero sin pasar a la nube). **Personalizado** muestra las filas de cada tipo. El modo no se
+   guarda: es el que coincide con lo elegido; solo «Personalizado» elegido a mano queda en `AnswerPreset`.
+
+| Tipo | Primero, por defecto | Sin IA hace |
+|---|---|---|
+| Hora y fecha | Sin IA | la hora o la fecha de este equipo; en otra ciudad, por su zona horaria (geocodificación de Open-Meteo) |
+| Clima | Sin IA | el de ahora y el de hoy, mañana o pasado mañana, de Open-Meteo |
+| Estado del equipo | Sin IA | la acción «estado» (con su permiso) y sus datos tal cual |
+| Uso de Claude | Sin IA | cada límite con su porcentaje y cuándo se reinicia |
+| Cuentas y conversiones | Nube | la cuenta o la conversión; con el modelo local, él la dice con el resultado ya hecho |
+| Acciones del equipo, Abrir apps y sitios, Notas y recordatorios | Nube | la acción de la regla (abrir solo si existe la app, la carpeta o la URL) |
+| Saludo y charla | Nube | un saludo según la hora, «de nada», «hasta luego» |
+| Preguntas generales | Nube | — (sin IA no se puede; con el modelo local se avisa que puede inventar) |
+| Internet, archivos y tareas | Siempre la nube | — |
+
+Los de «sin IA» por defecto son los acordados (hora, fecha, estado del equipo y uso de Claude) más el clima,
+que ya no gasta tokens con Open-Meteo. Con **«Local» como modelo de la mascota o la isla**, la nube no se usa:
+lo que no responde la app, lo responde el modelo local. Un archivo soltado va siempre al asistente.
+
+| Detalle | Cómo |
+|---|---|
+| Quién respondió | `AssistantResult.By`: debajo de la respuesta en la nubecita y en la isla («Sin IA · Open-Meteo», «Modelo local · Qwen3.5 2B», «Nube · Haiku 4.5»), si «Mostrar quién respondió» está encendido |
+| Mi ciudad | por la IP (ipwho.is, por defecto), la ubicación de Windows (PowerShell con `System.Device.Location`; se prueba al elegirla) o una ciudad escrita, buscada en Open-Meteo. La ubicación se guarda 6 horas y el pronóstico 15 minutos |
+| Ahorro | cuántas respuestas de esta semana (desde el lunes) no usaron la nube: sin IA y con el modelo local (`AnswerStats`) |
+| Privacidad | sin IA nada sale del equipo, salvo el clima: el nombre de la ciudad o las coordenadas van a Open-Meteo, y la IP a ipwho.is si Mi ciudad es automática |
 
 | Para hablar | Qué pasa |
 |---|---|
@@ -414,6 +587,69 @@ hablar grabada la toma la app como la Copilot: un toque escucha sin mantenerla.
 
 ![Ajustes › Asistente, con la sección Teclas](docs/capturas/ajustes-teclas.png)
 ![Grabar una tecla](docs/capturas/grabar-tecla.png)
+
+## Asistente en Linux y macOS
+
+La app Avalonia (`Claupet.Avalonia/`) trae el asistente por partes, con lo mismo que en Windows salvo lo que dice
+cada una. Lo que ya tiene está en `Features` (`TrayController.Console.cs`): sus filas aparecen en Claupet Console y
+en el asistente de configuración; lo demás sigue bajo «Próximamente».
+
+**Chat con la mascota** (`ChatBubbleWindow.cs`, `TrayController.Chat.cs`). La nubecita, con el selector de modelo,
+la respuesta mientras llega y las tareas para Claude Code. Es la conversación rápida de Claupet Console y la del chat
+de la isla. Si se le pide algo en el equipo, lo hace como en Windows (ver Acciones, más abajo).
+
+**Isla** (`IslandWindow.cs`, `IslandWindow.Pages.cs`, `TrayController.Island.cs`). Las mismas páginas (sesiones,
+chat, análisis de un archivo, permisos, preguntas, cambios y resumen de la semana), en una ventana transparente que
+siempre está encima y no toma el foco. Para asomar al acercar el cursor al borde y plegarse con un clic fuera, mira el
+cursor de todo el escritorio (`GlobalPointer.cs`): Windows lo da directo; en Linux lo pregunta a X11 y en macOS a
+`NSEvent`. Los permisos llegan como en Windows: el pipe con nombre de `Core/Approvals.cs` es, en Linux y macOS, un
+socket de Unix que .NET crea solo. Una copia de prueba (`--preview`) no responde los permisos: los sigue
+respondiendo la app de siempre.
+
+**Asistente de configuración** (`SetupWindow.cs`). Los mismos cinco pasos que en Windows. «Aplicar» solo está en el
+último, no es el botón por defecto y no responde a Enter.
+
+**Voz** (`Audio.cs`, `Voice.cs`, `GlobalKeys.cs`, `TrayController.Voice.cs`). Whisper, la voz de Claupet y sus
+descargas son las de Windows (`Core/Voice/`, que compilan las dos apps); cambian el audio y la tecla:
+
+| Qué | Cómo |
+|---|---|
+| Micrófono y parlantes | [PortAudio](https://www.portaudio.com/) por [PortAudioSharp2](https://github.com/csukuangfj/PortAudioSharp2) 1.0.6, que trae su biblioteca para Windows, Linux (x64 y arm64) y macOS (x64 y arm64). El dispositivo de siempre, en mono; si no acepta 16 kHz (el micrófono) o 44,1 kHz (la voz), se abre a su frecuencia y se convierte (`Core/Voice/PcmResampler.cs`, el de las extensiones que escuchan) |
+| Tecla para hablar | sin gancho de teclado: se mira el teclado cada 30 ms (`GlobalKeys`). Windows con `GetAsyncKeyState`; Linux con `XQueryKeymap` de X11 (con Wayland, solo mientras el foco está en una app de X11); macOS con `CGEventSourceKeyState`, que puede pedir el permiso de **Monitoreo de entrada**. Solo mira: la tecla sigue llegando a la app que tiene el foco |
+| Teclas | Ctrl, Alt o Mayús derechos, que se mantienen (o dos toques), como en Windows. Grabar otra combinación todavía no: una grabada en Windows vuelve a Ctrl derecho. Sin forma de mirar el teclado, se habla con el botón del micrófono de la isla |
+| Sin la voz de Claupet | la del sistema: la de Windows (System.Speech), `say` en macOS y, en Linux, `spd-say` (speech-dispatcher) o `espeak-ng`, si están instalados; si no, no lee |
+| Permiso en macOS | `Info.plist` lleva `NSMicrophoneUsageDescription`: macOS lo pregunta la primera vez que se abre el micrófono |
+| Copia de prueba | con `--preview` en Windows no mira la tecla (la mira la app de siempre, con los mismos ajustes): se habla con el botón del micrófono |
+
+Para macOS, `empaquetar.py` deja fuera del `.app` las bibliotecas de Whisper y de ONNX Runtime para otros sistemas
+(unos 24 MB), que los paquetes copian siempre.
+
+**Acciones** (`MacDesktop.cs`, `LinuxDesktop.cs`, `UnixDesktop.cs`, `TrayController.Actions.cs`). Lo que se pide, los
+permisos por capacidad y la confirmación de reiniciar o apagar son los de Windows (`Core/Actions/`); cambia cómo se
+hace cada cosa. Se hacen con los programas del sistema, sin shell (cada argumento va aparte, y lo que dice la persona
+llega a AppleScript como dato, nunca dentro del script), y fuera del hilo de la interfaz: un programa que tarda o un
+permiso que pregunta el sistema no la congela. Si falta un programa, la respuesta dice cuál instalar.
+
+| Acción | macOS | Linux |
+|---|---|---|
+| fondo, tema | AppleScript a System Events | `gsettings` (GNOME, Cinnamon, MATE) o las herramientas de Plasma |
+| volumen | AppleScript (`set volume`) | `wpctl` (PipeWire) o `pactl` |
+| musica | Spotify o Música, el que esté abierto | MPRIS: `playerctl` o `dbus-send` (Spotify, navegadores…) |
+| abrir | `open`; las apps, de `/Applications` y las del sistema | `xdg-open`; las apps, de sus `.desktop` (con `gio` o `gtk-launch`) |
+| captura | `screencapture` (la pantalla principal, o el recorte con la herramienta de macOS) | `spectacle`, `gnome-screenshot`, `grim` y `slurp`, `maim`, `scrot` o `import`; al portapapeles con `wl-copy` o `xclip` |
+| agendar | el `.ics` se abre en Calendario | el `.ics` se abre con `xdg-open` |
+| recordar | un LaunchAgent que abre la app a esa hora (se quita al avisar) | `systemd-run --user --on-calendar` (no sobrevive a un reinicio: avisa la app al abrirse) |
+| ventana | AppleScript; maximizar y ocultar piden Accesibilidad | `wmctrl` (y `xdotool` para minimizar), solo en X11 |
+| equipo | `pmset` para bloquear y suspender; reiniciar y apagar por System Events | `loginctl`, `systemctl`; reiniciar y apagar por GNOME o Plasma (cada app puede pedir guardar), si no `systemctl` |
+| brillo | no (no hay forma sin bibliotecas privadas): no se ofrece | `brightnessctl` o el servicio de energía de GNOME |
+| estado | `pmset -g batt`, `vm_stat` y `sysctl` | `/sys/class/power_supply` y `/proc/meminfo` |
+| portapapeles | el de Avalonia; una imagen copiada, con AppleScript | el de Avalonia; una imagen, con `wl-paste` o `xclip` |
+| carpeta | las de siempre en la carpeta de usuario | las de `xdg-user-dirs` («Descargas», «Imágenes»…) |
+
+Mientras se captura, la mascota, las nubecitas y la isla se vuelven transparentes. En Linux con Wayland no hay
+«ventana»: Wayland no deja que una app mueva las de otras. En Windows, esta app todavía no hace acciones (las hace la
+de siempre): se ofrece en el paso 4. `Claupet --accion <acción> <valor>` las prueba sin abrir ventanas, como en
+Windows (sin portapapeles de texto, que necesita la app abierta).
 
 ## Avisos
 
@@ -450,12 +686,6 @@ lectura en japonés), con una variante por caso. Carpetas `clasico/`,
 donde un `.wav` o `.mp3` con el mismo nombre (`terminado`, `pregunta`, `permiso`, `fallo`, `uso`,
 `aviso`) manda sobre el estilo. Se reproducen con winmm en Windows, `afplay` en macOS y `paplay`,
 `pw-play` o `aplay` en Linux.
-
-## Actividad
-
-Una casilla por día de los últimos 6 meses; el color sube con los tokens (entrada + escritura en
-caché + salida). Sale de los `.jsonl` de Claude Code de este equipo. Como Claude Code borra los
-registros de más de 30 días, la app guarda un resumen diario (solo cifras) en `history.json`.
 
 ## Compilar
 
@@ -500,12 +730,20 @@ Solo en Windows, para probar el asistente:
 - `--preguntar <texto>`: se lo pregunta a la mascota (con su cuenta y su modelo) y escribe la
   respuesta y la acción o la tarea que pediría. Con `--hacer`, además hace la acción (sin pedir
   permiso) y, si trajo datos, le vuelve a preguntar con ellos, como el chat. Con `HTTPS_PROXY`
-  apuntando a un puerto cerrado sirve para probar las respuestas sin internet.
+  apuntando a un puerto cerrado sirve para probar las respuestas sin internet. Con `--modelo <id>`
+  usa ese modelo (`auto` para ver qué elige el modo automático) y escribe cuál respondió.
 - `--idioma <es|en>`: ese idioma solo en esta ejecución, sin tocar los ajustes (para probar las
   traducciones con `--accion` o `--preguntar`).
 - `--recordatorio <id>`: la usa la tarea programada de un recordatorio para abrir la app.
 - `--descargar-voz`: baja la voz de Claupet como desde **Ajustes**, con el avance.
 - `--decir <F4|M1> <texto>`: lo dice con esa voz, frase por frase, y escribe cuánto tardó cada una.
+- `--responder <pregunta>`: la reparte como la mascota (Ajustes › Respuestas) y dice quién respondió, en
+  cuánto tiempo y qué (la acción no se hace). Usa el modelo local si está descargado.
+- `--settings --pestana <Avisos|Apariencia|Asistente|Isla|Sistema>`: abre Ajustes en esa pestaña
+  sin cambiar la guardada (con `--preview`, para revisarla junto a la que está abierta).
+- `--modelo-local <id> [pregunta]`: baja ese modelo local (`qwen3.5-0.8b`, `qwen3.5-2b` o `qwen3.5-4b`) y
+  llama-server como desde **Ajustes**, con el avance; con una pregunta, se la hace como la mascota y
+  escribe cuánto tardó en arrancar y en responder.
 
 ## Si no salen avisos
 
@@ -529,8 +767,14 @@ registradas y vivas, y el hook. Lo habitual:
 - Linux: Avalonia 11 necesita `libICE`, `libSM` y `fontconfig` (vienen en los escritorios
   habituales). En GNOME, el ícono de la bandeja necesita la extensión AppIndicator.
 - Windows 11 deja los íconos nuevos en el desbordamiento (^).
-- El chat, la isla, la voz y las teclas son solo de Windows por ahora; Linux y macOS, en una etapa
-  siguiente.
+- Los atajos (el del chat y la tecla Copilot), las extensiones y el modelo local son solo de Windows por ahora. En
+  Linux y macOS ya están Claupet Console, el chat con la mascota, la isla, la voz y las acciones en el equipo; lo
+  demás, en las etapas siguientes.
+- Las acciones de Linux se probaron con `--accion` en WSL (Ubuntu, sin escritorio): estado, rechazos y avisos de
+  programas que faltan. Con un escritorio real (GNOME, Plasma) y en macOS, sin probar todavía.
+- En Linux con Wayland, la isla y la tecla para hablar solo ven el cursor y el teclado mientras están sobre una app
+  de X11 (X11 no ve las demás): puede que la isla no asome al acercar el cursor y que la tecla no responda. Se sigue
+  hablando con el botón del micrófono de la isla. Sin probar todavía en un escritorio Linux.
 - Con ruido de fondo, Whisper a veces «oye» frases que nadie dijo; las conocidas («subtítulos
   realizados por…») se descartan.
 - La tecla Copilot se probó simulándola (Win+Mayús+F23); en algunos equipos, como los Surface, puede
@@ -550,8 +794,19 @@ Lo que no se pudo probar sin una Mac. Para quien la pruebe por primera vez:
 2. El número del ícono coincide con `/usage` de Claude Code. Si sale «Sin credenciales», revisar
    en **Acceso a Llaveros** que exista «Claude Code-credentials» (o «…-credentials-xxxxxxxx» si se
    usa `CLAUDE_CONFIG_DIR`) y responder **Permitir siempre** cuando macOS lo pregunte.
-3. **Sesiones** muestra las sesiones abiertas de Claude Code y su estado.
+3. **Actividad** muestra las sesiones abiertas de Claude Code y su estado.
 4. **Ajustes › Ver un aviso de ejemplo** muestra el aviso arriba a la derecha y suena.
 5. **Ajustes › Configurar…** agrega el hook; al pedir permiso una sesión nueva, sale «Necesita su permiso».
 6. **Iniciar con el sistema** crea `~/Library/LaunchAgents/local.claupet.plist`.
 7. **Ajustes › Copiar diagnóstico**: pegar el resultado si algo falla.
+8. Con la isla encendida, al acercar el cursor al borde de arriba asoma, y un clic fuera la pliega (la posición
+   pasa de puntos a pixeles con la escala de la pantalla principal: con dos pantallas, revisar las dos).
+9. Con el micrófono encendido, mantener Ctrl derecho escucha. macOS pregunta por el micrófono la primera vez; si
+   la tecla no responde, dar a Claupet el permiso de **Monitoreo de entrada** en Privacidad y seguridad.
+10. Con «Leer las respuestas en voz alta» y la voz de Claupet descargada, la respuesta suena; con «La del
+    sistema», la lee `say`.
+11. Acciones, desde la terminal y sin abrir la app: `Claupet.app/Contents/MacOS/Claupet --accion estado todo`
+    (batería, disco y memoria), `--accion volumen 30`, `--accion tema oscuro` (macOS pregunta por la
+    Automatización de System Events la primera vez) y `--accion captura recorte` (pide Grabación de pantalla).
+12. Con la app abierta, «recuérdame en 2 minutos tomar agua» avisa a los 2 minutos; cerrando la app antes, el
+    LaunchAgent la abre y avisa.

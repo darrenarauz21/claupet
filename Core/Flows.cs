@@ -3,7 +3,7 @@ namespace Claupet;
 /// <summary>Pasos seguidos de la misma familia, juntos en un nodo («Leyendo ×3»).</summary>
 sealed record FlowGroup(ToolKind Kind, string Verb, string? Detail, int Count, bool Done, FlowStep Last);
 
-/// <summary>Lo que la vista Flujos necesita saber de una sesión, igual en las dos apps.</summary>
+/// <summary>Lo que la vista Actividad (los carriles por sesión) necesita saber de una sesión, igual en las dos apps.</summary>
 static class Flows
 {
     public static readonly ToolKind[] MapKinds = [ToolKind.Read, ToolKind.Search, ToolKind.Edit, ToolKind.Run, ToolKind.Agent, ToolKind.Web];
@@ -51,6 +51,9 @@ static class Flows
         var t = (tick % 1000 / 1000.0 - index * 0.16 + 1) % 1;
         return Bump(t, 0, 0.4);
     }
+
+    /// <summary>Lo que tarda en subir y bajar cada barrita del nivel de la voz (como en el diseño de la voz), en ms.</summary>
+    public static readonly int[] BarPeriods = [550, 700, 620, 800, 500, 660];
 
     public static string KindLabel(ToolKind kind) => kind switch
     {
