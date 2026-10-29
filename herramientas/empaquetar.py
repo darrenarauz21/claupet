@@ -7,6 +7,13 @@ Claupet-macos-x64.zip.
 
     python herramientas/empaquetar.py            los tres sistemas
     python herramientas/empaquetar.py linux mac  solo los indicados
+    python herramientas/empaquetar.py --clave <ruta/clave.pem>
+                                                 además, firma cada paquete (paquete.firma)
+
+Con --clave, junto a cada paquete queda su firma (<paquete>.firma), que se sube a la Release con él: la app
+la comprueba antes de instalar una versión nueva. Firma la misma app («Claupet --release-sign», ES256 como
+los paquetes de extensiones); la contraseña de la clave, si tiene, va en CLAUPET_KEY_PASSWORD. La clave
+privada nunca va en el repositorio: la app solo lleva la pública (Updates.ReleaseKey en Core/Updates.cs).
 
 Solo usa la biblioteca estándar. Arma los .tar.gz y .zip a mano para conservar los permisos de
 ejecución, que se pierden al comprimir desde Windows.
@@ -161,13 +168,34 @@ def mac(rid):
     print(f"  listo: paquetes/{name}.zip")
 
 
+def sign(key, files):
+    """La firma de cada paquete (<paquete>.firma), con la app misma: Python no trae ECDSA en su biblioteca estándar."""
+    args = ["dotnet", "run", "--project", AVALONIA, "-c", "Release", "-nologo", "-v", "q", "--",
+            "--release-sign", os.path.abspath(key), VERSION] + files
+    print("  firmando…")
+    subprocess.run(args, check=True)
+
+
 if __name__ == "__main__":
-    wanted = set(sys.argv[1:]) or {"windows", "linux", "mac"}
+    args = sys.argv[1:]
+    key = None
+    if "--clave" in args:
+        at = args.index("--clave")
+        if at + 1 >= len(args):
+            sys.exit("Falta la ruta de la clave: --clave <ruta/clave.pem>")
+        key = args[at + 1]
+        del args[at:at + 2]
+        if not os.path.isfile(key):
+            sys.exit(f"No existe la clave: {key}")
+    wanted = set(args) or {"windows", "linux", "mac"}
     os.makedirs(OUT, exist_ok=True)
+    built = []
     if "windows" in wanted:
-        print("Windows"); windows()
+        print("Windows"); windows(); built.append("Claupet-windows-x64.exe")
     if "linux" in wanted:
-        print("Linux"); linux()
+        print("Linux"); linux(); built.append("Claupet-linux-x64.tar.gz")
     if "mac" in wanted:
-        print("macOS"); mac("osx-arm64"); mac("osx-x64")
+        print("macOS"); mac("osx-arm64"); mac("osx-x64"); built += ["Claupet-macos-arm64.zip", "Claupet-macos-x64.zip"]
     shutil.rmtree(WORK, ignore_errors=True)
+    if key:
+        print("Firmas"); sign(key, [os.path.join(OUT, name) for name in built])

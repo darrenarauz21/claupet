@@ -4,27 +4,36 @@ using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
 /// <summary>
 /// Una sección de Ajustes como la manda la bandeja: el título, y las filas en tarjetas separadas por sus
 /// encabezados. Si llega el mismo armado con otros valores (un avance de descarga, un interruptor), se
-/// actualiza en su lugar: no se pierde el desplazamiento ni la lista abierta.
+/// actualiza en su lugar: no se pierde el desplazamiento, la lista abierta ni lo que se está escribiendo. Una página
+/// dentro de una sección (el detalle de una extensión) lleva arriba el enlace para volver.
 /// </summary>
 sealed class SettingsView : StackPanel
 {
-    /// <summary>Se tocó una fila: la acción que hay que pedirle a la bandeja.</summary>
-    public event Action<string>? Action;
+    /// <summary>Se tocó una fila: la acción que hay que pedirle a la bandeja y, si la hay, lo escrito o el archivo elegido.</summary>
+    public event Action<string, string?>? Action;
+
+    /// <summary>Se pidió ir a otra página (una fila que lleva a otra, o volver): su id.</summary>
+    public event Action<string>? Navigate;
 
     readonly List<RowView> _rows = [];
+    readonly TextBlock _title = new() { FontFamily = Ink.Display, FontSize = 26, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
+    readonly TextBlock _description = new() { FontSize = 13.5, FontFamily = Ink.Sans, Margin = new Thickness(0, 6, 0, 0), TextWrapping = TextWrapping.Wrap };
     string _shape = "";
     string _page = "";
 
     public SettingsView() => Spacing = 0;
 
-    public void Show(SettingsPage page, Ink ink, bool rebuild)
+    /// <summary>Muestra la página; back es el título de la sección a la que vuelve (solo en las páginas de adentro).</summary>
+    public void Show(SettingsPage page, Ink ink, bool rebuild, string? back = null)
     {
         var rows = page.Rows.ToList();
         var shape = string.Join("|", rows.Select(r => $"{r.Kind}:{r.Key}:{r.Tone}:{r.Text.Length > 0}"));
@@ -32,31 +41,25 @@ sealed class SettingsView : StackPanel
         {
             // Mismo armado: solo cambian los textos y los interruptores.
             for (var i = 0; i < _rows.Count; i++) _rows[i].Update(_rows[i].Index < rows.Count ? rows[_rows[i].Index] : _rows[i].Row, ink);
-            ((TextBlock)Children[0]).Text = page.Title;
-            ((TextBlock)Children[1]).Text = page.Description;
+            _title.Text = page.Title;
+            _description.Text = page.Description;
+            _description.IsVisible = page.Description.Length > 0;
             return;
         }
         _page = page.Id;
         _shape = shape;
         _rows.Clear();
         Children.Clear();
-        Children.Add(new TextBlock
-        {
-            Text = page.Title,
-            FontFamily = Ink.Display,
-            FontSize = 26,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = ink.Text,
-        });
-        Children.Add(new TextBlock
-        {
-            Text = page.Description,
-            FontSize = 13.5,
-            FontFamily = Ink.Sans,
-            Foreground = ink.Tertiary,
-            Margin = new Thickness(0, 6, 0, 0),
-            TextWrapping = TextWrapping.Wrap,
-        });
+        if (page.Parent is { } parent && back is not null) Children.Add(BackLink(parent, back, ink));
+        _title.Text = page.Title;
+        _title.Foreground = ink.Text;
+        _description.Text = page.Description;
+        _description.Foreground = ink.Tertiary;
+        _description.IsVisible = page.Description.Length > 0;
+        Children.Add(_title);
+        Children.Add(_description);
+        var head = Children.Count;
+        var actions = new RowActions(Act, Send, id => Navigate?.Invoke(id));
 
         StackPanel? card = null;
         RowView? last = null;
@@ -89,27 +92,55 @@ sealed class SettingsView : StackPanel
                     BorderBrush = ink.Hairline,
                     BorderThickness = new Thickness(1),
                     Padding = new Thickness(16, 4),
-                    Margin = new Thickness(0, Children.Count == 2 ? 24 : 0, 0, 0),
+                    Margin = new Thickness(0, Children.Count == head ? 24 : 0, 0, 0),
                 });
             }
-            // Una aclaración apagada bajo una lista, un dato o un enlace va debajo de su etiqueta, como en el diseño.
-            if (row.Kind == RowKind.Note && row.Tone == RowTone.Muted && last is { Row.Kind: RowKind.Choice or RowKind.Info or RowKind.Link })
+            // Una aclaración apagada bajo una fila con etiqueta va debajo de esa etiqueta, como en el diseño.
+            if (row.Kind == RowKind.Note && row.Tone == RowTone.Muted
+                && last is { Row.Kind: RowKind.Choice or RowKind.Info or RowKind.Link or RowKind.Switch or RowKind.Page or RowKind.Input })
             {
                 last.AddHint(i, row, ink);
                 _rows.Add(last.Hints[^1]);
                 continue;
             }
-            var view = new RowView(i, row, ink, key => Action?.Invoke(key), divider: card.Children.Count > 0);
+            var view = new RowView(i, row, ink, actions, divider: card.Children.Count > 0);
             card.Children.Add(view.Root);
             _rows.Add(view);
             last = view;
         }
     }
 
+    /// <summary>Lo escrito en un cuadro se manda tal cual: no espera a que se toque otra cosa.</summary>
+    void Send(string key, string? value) => Action?.Invoke(key, value);
+
+    /// <summary>Antes de otra acción («Crear», «Instalar»…), lo que quedó escrito en los cuadros llega primero.</summary>
+    void Act(string key, string? value)
+    {
+        foreach (var row in _rows) row.Commit();
+        Send(key, value);
+    }
+
+    Control BackLink(string parent, string title, Ink ink)
+    {
+        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        content.Children.Add(RowView.Arrow(ink.Secondary, left: true));
+        content.Children.Add(Ui.Text(title, 13.5, ink.Secondary, FontWeight.Medium));
+        var back = Ui.Press(content, () => Navigate?.Invoke(parent), (b, on) => b.Background = on ? ink.Pill : Brushes.Transparent, L.T("Volver a {0}", title));
+        back.CornerRadius = new CornerRadius(999);
+        back.Height = 30;
+        back.Padding = new Thickness(8, 0, 12, 0);
+        back.Margin = new Thickness(-8, 0, 0, 10);
+        back.HorizontalAlignment = HorizontalAlignment.Left;
+        return back;
+    }
+
     /// <summary>La fila que pidió una lista, para mostrarla a su lado (su botón, si tiene); null si no está aquí.</summary>
     public Control? AnchorFor(string? key) =>
         _rows.FirstOrDefault(r => r.Row.Key == key && r.Pill is not null)?.Pill ?? _rows.FirstOrDefault(r => r.Row.Key == key)?.Root;
 }
+
+/// <summary>Lo que puede hacer una fila: pedir una acción (Act), mandar lo escrito (Send) o ir a otra página.</summary>
+sealed record RowActions(Action<string, string?> Act, Action<string, string?> Send, Action<string> Navigate);
 
 /// <summary>Una fila: su etiqueta (con aclaraciones debajo) y, a la derecha, lo que corresponde a su tipo.</summary>
 sealed class RowView
@@ -126,7 +157,8 @@ sealed class RowView
     readonly Border? _track;
     readonly TranslateTransform? _knob;
     readonly StackPanel? _links;
-    readonly Action<string> _act;
+    readonly TextBox? _box;
+    readonly RowActions _actions;
 
     /// <summary>Una aclaración bajo la etiqueta de otra fila: solo un texto.</summary>
     RowView(int index, SettingsRow row, TextBlock label)
@@ -135,22 +167,23 @@ sealed class RowView
         Row = row;
         Root = label;
         _label = label;
-        _act = _ => { };
+        _actions = new RowActions((_, _) => { }, (_, _) => { }, _ => { });
     }
 
-    public RowView(int index, SettingsRow row, Ink ink, Action<string> act, bool divider)
+    public RowView(int index, SettingsRow row, Ink ink, RowActions actions, bool divider)
     {
         Index = index;
         Row = row;
-        _act = act;
+        _actions = actions;
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), MinHeight = row.Kind == RowKind.Note ? 0 : 52 };
         grid.Children.Add(_left);
-        Root = new Border
+        var border = new Border
         {
             Child = grid,
             BorderBrush = ink.Hairline,
             BorderThickness = new Thickness(0, divider ? 1 : 0, 0, 0),
         };
+        Root = border;
 
         switch (row.Kind)
         {
@@ -203,7 +236,7 @@ sealed class RowView
                 {
                     // Se mueve ya; el estado que manda la bandeja lo confirma (o lo devuelve, si no se pudo).
                     SetSwitch(!Row.On, ink);
-                    _act(Row.Key);
+                    _actions.Act(Row.Key, null);
                 }, name: row.Text);
                 toggle.CornerRadius = new CornerRadius(13);
                 right = toggle;
@@ -214,7 +247,7 @@ sealed class RowView
                 if (row.Swatch) content.Children.Add(new Ellipse { Width = 12, Height = 12, Fill = ink.Accent, VerticalAlignment = VerticalAlignment.Center });
                 content.Children.Add(_value);
                 content.Children.Add(Ui.Chevron(ink.Secondary));
-                Pill = Ui.Press(content, () => _act(Row.Key), (b, on) => b.Opacity = on ? 0.85 : 1, name: row.Text);
+                Pill = Ui.Press(content, () => _actions.Act(Row.Key, null), (b, on) => b.Opacity = on ? 0.85 : 1, name: row.Text);
                 Pill.Background = ink.Pill;
                 Pill.CornerRadius = new CornerRadius(999);
                 Pill.Height = 32;
@@ -230,12 +263,36 @@ sealed class RowView
                 break;
             case RowKind.Link:
                 _value = Ui.Text(row.Value, 14, ink.For(row.Tone), FontWeight.SemiBold);
-                var link = Ui.Press(_value, () => _act(Row.Key), (b, on) => b.Background = on ? ink.Pill : Brushes.Transparent, name: row.Value);
+                var link = Ui.Press(_value, OnLink, (b, on) => b.Background = on ? ink.Pill : Brushes.Transparent, name: row.Value);
                 link.CornerRadius = new CornerRadius(999);
                 link.Height = 32;
                 link.Padding = new Thickness(12, 0);
                 link.IsVisible = row.Value.Length > 0;
                 right = link;
+                break;
+            case RowKind.Input:
+                _box = Box(row, ink);
+                var field = new Border
+                {
+                    Child = _box,
+                    Background = ink.Pill,
+                    CornerRadius = new CornerRadius(10),
+                    Height = 34,
+                    Width = 260,
+                    Padding = new Thickness(12, 0),
+                };
+                right = field;
+                break;
+            case RowKind.Page:
+                // Toda la fila lleva a la página: a la derecha, su dato y la flecha.
+                _value = Ui.Text(row.Value, 13.5, ink.Secondary);
+                var go = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+                go.Children.Add(_value);
+                go.Children.Add(Arrow(ink.Tertiary, left: false));
+                right = go;
+                var label = _label;
+                border.Child = null;
+                border.Child = Ui.Press(grid, () => _actions.Navigate(Row.Key), (_, on) => label.Foreground = on ? ink.Accent : ink.Text, row.Text);
                 break;
         }
         if (right is null) return;
@@ -254,6 +311,107 @@ sealed class RowView
         TextWrapping = TextWrapping.Wrap,
         Margin = new Thickness(0, 2, 0, 0),
     };
+
+    /// <summary>La flecha de las filas que llevan a otra página (o la de volver, hacia la izquierda).</summary>
+    public static Avalonia.Controls.Shapes.Path Arrow(IBrush brush, bool left) => new()
+    {
+        Data = Geometry.Parse(left ? "M8.1,3.25 L4.9,6.5 L8.1,9.75" : "M4.9,3.25 L8.1,6.5 L4.9,9.75"),
+        Stroke = brush,
+        StrokeThickness = 1.6,
+        StrokeLineCap = PenLineCap.Round,
+        StrokeJoin = PenLineJoin.Round,
+        Width = 13,
+        Height = 13,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    /// <summary>El cuadro para escribir, sin el marco de Fluent: el fondo es el de la píldora que lo rodea.</summary>
+    TextBox Box(SettingsRow row, Ink ink)
+    {
+        var box = new TextBox
+        {
+            Text = row.Secret ? "" : row.Value,
+            Watermark = row.Placeholder,
+            PasswordChar = row.Secret ? '•' : default,
+            FontFamily = Ink.Sans,
+            FontSize = 13.5,
+            Foreground = ink.Text,
+            CaretBrush = ink.Text,
+            Padding = new Thickness(0),
+            MinHeight = 0,
+            VerticalAlignment = VerticalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            AcceptsReturn = false,
+        };
+        Ui.AutomationName(box, row.Text);
+        foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused",
+                     "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused" })
+            box.Resources[key] = Brushes.Transparent;
+        box.Resources["TextControlBorderThemeThickness"] = new Thickness(0);
+        box.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
+        foreach (var key in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused" })
+            box.Resources[key] = ink.Text;
+        foreach (var key in new[] { "TextControlPlaceholderForeground", "TextControlPlaceholderForegroundPointerOver", "TextControlPlaceholderForegroundFocused" })
+            box.Resources[key] = ink.Tertiary;
+        // Intro guarda; Esc vuelve a lo que había. Al salir del cuadro también se guarda.
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                Commit();
+            }
+            else if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                box.Text = Row.Secret ? "" : Row.Value;
+            }
+        };
+        box.LostFocus += (_, _) => Commit();
+        return box;
+    }
+
+    /// <summary>Si en el cuadro hay algo nuevo, se manda (una clave, solo si se escribió algo).</summary>
+    public void Commit()
+    {
+        if (_box is null) return;
+        var text = _box.Text ?? "";
+        if (Row.Secret ? text.Length == 0 : text == Row.Value) return;
+        if (Row.Secret) _box.Text = "";
+        else Row = Row with { Value = text };
+        _actions.Send(Row.Key, text);
+    }
+
+    void OnLink()
+    {
+        if (Row.Copy is { } copy) _ = CopyAsync(copy);
+        else if (Row.File is { } pattern) _ = PickFileAsync(pattern);
+        else _actions.Act(Row.Key, null);
+    }
+
+    /// <summary>Lo copia la Console (el token recién creado): un momento dice «Copiado».</summary>
+    async Task CopyAsync(string text)
+    {
+        if (TopLevel.GetTopLevel(Root)?.Clipboard is not { } clipboard) return;
+        await clipboard.SetTextAsync(text);
+        if (_value is null) return;
+        _value.Text = L.T("Copiado");
+        await Task.Delay(1500);
+        _value.Text = Row.Value;
+    }
+
+    /// <summary>Primero el archivo (en la Console, con el selector del sistema); la acción lleva su ruta.</summary>
+    async Task PickFileAsync(string pattern)
+    {
+        if (TopLevel.GetTopLevel(Root)?.StorageProvider is not { CanOpen: true } storage) return;
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = Row.Value.TrimEnd('…'),
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType(Row.Text) { Patterns = [pattern] }],
+        });
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) _actions.Act(Row.Key, path);
+    }
 
     public void AddHint(int index, SettingsRow row, Ink ink)
     {
@@ -275,7 +433,7 @@ sealed class RowView
         foreach (var link in row.Links ?? [])
         {
             var key = link.Key;
-            var press = Ui.Press(Ui.Text(link.Text, 13.5, ink.Accent, FontWeight.SemiBold), () => _act(key),
+            var press = Ui.Press(Ui.Text(link.Text, 13.5, ink.Accent, FontWeight.SemiBold), () => _actions.Act(key, null),
                 (b, on) => b.Background = on ? ink.Pill : Brushes.Transparent, name: link.Text);
             press.CornerRadius = new CornerRadius(999);
             press.Height = 32;
@@ -286,12 +444,19 @@ sealed class RowView
 
     public void Update(SettingsRow row, Ink ink)
     {
+        var before = Row;
         Row = row;
         if (_label is not null) _label.Text = row.Text;
         if (_value is not null)
         {
             _value.Text = row.Value;
             if (_value.Parent is Border link && row.Kind == RowKind.Link) link.IsVisible = row.Value.Length > 0;
+        }
+        if (_box is not null)
+        {
+            _box.Watermark = row.Placeholder;
+            // Lo que se está escribiendo no se pisa: solo cambia si llegó otro valor y el cuadro no tiene el foco.
+            if (!row.Secret && !_box.IsFocused && row.Value != before.Value) _box.Text = row.Value;
         }
         if (row.Kind == RowKind.Switch) SetSwitch(row.On, ink);
         if (row.Kind == RowKind.Links) FillLinks(row, ink);

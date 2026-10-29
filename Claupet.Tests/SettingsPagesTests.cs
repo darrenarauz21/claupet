@@ -109,9 +109,12 @@ public sealed class SettingsPagesTests
     [Fact]
     public void ConTodoComoEnWindowsNoFaltaNada()
     {
-        var keys = SettingsPages.Build(Full).SelectMany(p => p.Rows).Select(r => r.Key).ToHashSet();
-        foreach (var key in new[] { "chat", "drops", "mic", "readaloud", "island", "extensions", "localmodel", "size", "startmenu" })
+        var pages = SettingsPages.Build(Full);
+        var keys = pages.SelectMany(p => p.Rows).Select(r => r.Key).ToHashSet();
+        foreach (var key in new[] { "chat", "drops", "mic", "readaloud", "island", "localmodel", "size", "startmenu" })
             Assert.Contains(key, keys);
+        // Las extensiones las arma ExtensionsPanel en la Console; aquí queda el resumen, no la nota de «todavía no».
+        Assert.DoesNotContain(pages.Single(p => p.Id == "extensiones").Rows, r => r.Kind == RowKind.Note);
     }
 
     [Fact]

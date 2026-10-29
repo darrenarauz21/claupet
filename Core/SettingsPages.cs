@@ -22,7 +22,9 @@ enum PlatformFeatures
     Shortcuts = 512,
     /// <summary>Soltar archivos sobre la mascota: los analiza o los encarga.</summary>
     FileDrops = 1024,
-    All = MascotChat | Actions | Mic | ReadAloud | Hotkeys | Island | Extensions | LocalModel | MascotSize | Shortcuts | FileDrops,
+    /// <summary>Buscar versiones nuevas en GitHub (Updates).</summary>
+    Updates = 2048,
+    All = MascotChat | Actions | Mic | ReadAloud | Hotkeys | Island | Extensions | LocalModel | MascotSize | Shortcuts | FileDrops | Updates,
 }
 
 /// <summary>Lo que muestra «Ajustes»; lo manda TrayApp cada vez que cambia algo. Los textos son los valores ya listos para mostrar.</summary>
@@ -103,6 +105,14 @@ sealed record SettingsState
     public IReadOnlyList<TopicState> TopicEngines { get; init; } = [];
     /// <summary>Cada capacidad y si tiene «Permitir siempre», para Claupet Console (en la bandeja van en un menú).</summary>
     public IReadOnlyList<GrantState> Grants { get; init; } = [];
+    /// <summary>Cada cuenta de Claude Code y su memoria (compartida con otra o propia), para Ajustes › Cuentas.</summary>
+    public IReadOnlyList<AccountState> AccountList { get; init; } = [];
+    /// <summary>Los otros agentes encontrados (Codex, Gemini, Copilot), si se siguen y qué se leyó de ellos.</summary>
+    public IReadOnlyList<AgentState> AgentList { get; init; } = [];
+    /// <summary>«Buscar actualizaciones» y la fila de la versión nueva (Updates.Row: lo que dice y su enlace; vacío, sin fila).</summary>
+    public bool CheckUpdates { get; init; } = true;
+    public string UpdateStatus { get; init; } = "";
+    public string UpdateAction { get; init; } = "";
 }
 
 /// <summary>Un tipo de pregunta y quién lo responde primero, para elegirlo uno por uno en Claupet Console.</summary>
@@ -111,7 +121,17 @@ sealed record TopicState(string Id, string Label, string Engine, bool Fixed);
 /// <summary>Una capacidad (captura, calendario, ventanas…) y si tiene «Permitir siempre».</summary>
 sealed record GrantState(string Id, string Label, bool Allowed);
 
-enum RowKind { Caption, Switch, Choice, Info, Note, Link, Links }
+/// <summary>Una cuenta de Claude Code y lo que se dice de su memoria («Compartida con «trabajo»», «Propia»).</summary>
+sealed record AccountState(string Label, string Memory);
+
+/// <summary>Otro agente: su tipo, su nombre, si se sigue y lo que se dice de él (su carpeta, su última sesión).</summary>
+sealed record AgentState(string Kind, string Label, bool Follow, string Detail);
+
+/// <summary>
+/// El tipo de una fila. Input: un cuadro para escribir (la acción lleva lo escrito en Value). Page: lleva a otra
+/// página (Key es su id) sin pedirle nada a la bandeja, como el detalle de una extensión.
+/// </summary>
+enum RowKind { Caption, Switch, Choice, Info, Note, Link, Links, Input, Page }
 
 /// <summary>El color de una nota o de un enlace: el de siempre, el apagado, el de cuidado, el acento o el de peligro.</summary>
 enum RowTone { Normal, Muted, Warn, Accent, Danger }
@@ -123,16 +143,21 @@ sealed record SettingsLink(string Text, string Key);
 
 /// <summary>
 /// Una fila de Ajustes. Text es la etiqueta; Value, lo que se muestra a la derecha (la opción elegida, el dato
-/// o el texto del enlace); Key, la acción que se le pide a la bandeja al tocarla.
+/// o el texto del enlace; en un cuadro para escribir, lo escrito); Key, la acción que se le pide a la bandeja al tocarla.
+/// En un cuadro para escribir, Secret oculta lo escrito y Placeholder es lo que se ve mientras está vacío. En un
+/// enlace, File (como «*.claupet») hace que la Console pida antes un archivo y mande su ruta en Value, y Copy hace que
+/// la Console copie ese texto sin pedirle nada a la bandeja.
 /// </summary>
 sealed record SettingsRow(RowKind Kind, string Text, string Key = "", string Value = "", bool On = false,
-    RowTone Tone = RowTone.Normal, bool Swatch = false, RowPlace Place = RowPlace.Both, IReadOnlyList<SettingsLink>? Links = null);
+    RowTone Tone = RowTone.Normal, bool Swatch = false, RowPlace Place = RowPlace.Both, IReadOnlyList<SettingsLink>? Links = null,
+    bool Secret = false, string? Placeholder = null, string? File = null, string? Copy = null);
 
 /// <summary>
 /// Una sección de Ajustes. Tab es la pestaña de los ajustes rápidos donde van sus filas (las que no son solo de
-/// la Console); null: la sección solo está en Claupet Console.
+/// la Console); null: la sección solo está en Claupet Console. Parent: es una página dentro de esa sección (el detalle
+/// de una extensión): no va en la lista de la izquierda y tiene un enlace para volver.
 /// </summary>
-sealed record SettingsPage(string Id, string Title, string Description, string? Tab, IReadOnlyList<SettingsRow> Rows);
+sealed record SettingsPage(string Id, string Title, string Description, string? Tab, IReadOnlyList<SettingsRow> Rows, string? Parent = null);
 
 /// <summary>
 /// Las secciones de Ajustes y sus filas, armadas una sola vez: con ellas se dibujan las pestañas de los ajustes
@@ -147,12 +172,14 @@ static class SettingsPages
         IslandPage(s), AccountsPage(s), MachinePage(s),
     ];
 
-    static SettingsRow Caption(string text) => new(RowKind.Caption, text, Place: RowPlace.Console);
-    static SettingsRow Switch(string text, string key, bool on) => new(RowKind.Switch, text, key, On: on);
-    static SettingsRow Choice(string text, string key, string value) => new(RowKind.Choice, text, key, value);
-    static SettingsRow Info(string text, string value) => new(RowKind.Info, text, Value: value);
-    static SettingsRow Note(string text, RowTone tone = RowTone.Muted) => new(RowKind.Note, text, Tone: tone);
-    static SettingsRow Link(string text, string link, string key, RowTone tone = RowTone.Accent) => new(RowKind.Link, text, key, link, Tone: tone);
+    internal static SettingsRow Caption(string text) => new(RowKind.Caption, text, Place: RowPlace.Console);
+    internal static SettingsRow Switch(string text, string key, bool on) => new(RowKind.Switch, text, key, On: on);
+    internal static SettingsRow Choice(string text, string key, string value) => new(RowKind.Choice, text, key, value);
+    internal static SettingsRow Info(string text, string value) => new(RowKind.Info, text, Value: value);
+    internal static SettingsRow Note(string text, RowTone tone = RowTone.Muted) => new(RowKind.Note, text, Tone: tone);
+    internal static SettingsRow Link(string text, string link, string key, RowTone tone = RowTone.Accent) => new(RowKind.Link, text, key, link, Tone: tone);
+    /// <summary>Una fila de enlaces juntos, sin etiqueta (como «Ver un aviso de ejemplo · Abrir carpeta de sonidos»).</summary>
+    internal static SettingsRow Links(params SettingsLink[] links) => new(RowKind.Links, "", Links: links);
 
     /// <summary>Solo en Claupet Console: no es de todos los días.</summary>
     static SettingsRow Full(SettingsRow row) => row with { Place = RowPlace.Console };
@@ -300,11 +327,13 @@ static class SettingsPages
         return new("respuestas", L.T("Respuestas"), L.T("Quién responde cada pregunta: sin IA, el modelo local o la nube."), null, rows);
     }
 
-    static SettingsPage ExtensionsPage(SettingsState s) => new("extensiones", L.T("Extensiones"),
+    /// <summary>
+    /// Sin extensiones en este sistema, la nota de siempre. Con ellas, Claupet Console la cambia por las páginas de
+    /// ExtensionsPanel (la lista, el detalle de cada una, la revisión antes de instalar…); aquí queda solo el resumen.
+    /// </summary>
+    static SettingsPage ExtensionsPage(SettingsState s) => new(ExtensionsPanel.PageId, L.T("Extensiones"),
         L.T("Habilidades, voces, mascotas y modelos de otros. También puede soltar un .claupet sobre la mascota."), null,
-        s.Has(PlatformFeatures.Extensions)
-            ? [Choice(L.T("Instaladas"), "extensions", s.Extensions), Link(L.T("Un paquete .claupet"), L.T("Instalar desde archivo…"), "extinstall")]
-            : [NotHere()]);
+        s.Has(PlatformFeatures.Extensions) ? [Info(L.T("Instaladas"), s.Extensions)] : [NotHere()]);
 
     static SettingsPage IslandPage(SettingsState s)
     {
@@ -326,16 +355,49 @@ static class SettingsPages
         return new("isla", L.T("Isla"), L.T("La isla del borde de arriba: el chat, los permisos y el resumen de la semana."), "Isla", rows);
     }
 
-    static SettingsPage AccountsPage(SettingsState s) => new("cuentas", L.T("Cuentas"), L.T("Las cuentas de Claude Code que sigue Claupet."), null,
-    [
-        Link(s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add"),
-    ]);
+    static SettingsPage AccountsPage(SettingsState s)
+    {
+        List<SettingsRow> rows = [];
+        if (s.AccountList.Count > 0 || s.AgentList.Count > 0) rows.Add(Caption(L.T("Claude Code")));
+        foreach (var account in s.AccountList) rows.Add(Info(account.Label, account.Memory));
+        rows.Add(Link(s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add"));
+        if (s.AccountList.Count > 0)
+            rows.Add(Note(L.T("Al agregar una cuenta se elige su memoria: compartida (su carpeta projects se enlaza con la de otra cuenta; CLAUDE.md, skills, agentes, ajustes y credenciales siguen siendo propios) o separada.")));
+        if (s.AgentList.Count > 0)
+        {
+            rows.Add(Caption(L.T("Otros agentes")));
+            foreach (var agent in s.AgentList)
+            {
+                rows.Add(Switch(agent.Label, "agent:" + agent.Kind, agent.Follow));
+                if (agent.Detail.Length > 0) rows.Add(Note(agent.Detail));
+            }
+            rows.Add(Note(L.T("Sus sesiones salen en Uso y Actividad. Solo se leen sus archivos en este equipo: no se usa su cuenta ni se gastan tokens."), RowTone.Normal));
+        }
+        return new("cuentas", L.T("Cuentas"), L.T("Las cuentas de Claude Code y los otros agentes que sigue Claupet."), null, rows);
+    }
 
-    static SettingsPage MachinePage(SettingsState s) => new("sistema", L.T("Sistema"), L.T("El hook de permisos y el diagnóstico."), "Sistema",
-    [
-        Full(Link(L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup")),
-        Link(L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag"),
-        Full(Link(OperatingSystem.IsWindows() ? L.T("Quitar hook e inicio con Windows") : L.T("Quitar hook e inicio con el sistema"),
-            L.T("Quitar…"), "unsetup", RowTone.Danger)),
-    ]);
+    static SettingsPage MachinePage(SettingsState s)
+    {
+        List<SettingsRow> rows =
+        [
+            Full(Link(L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup")),
+            Link(L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag"),
+            Full(Link(OperatingSystem.IsWindows() ? L.T("Quitar hook e inicio con Windows") : L.T("Quitar hook e inicio con el sistema"),
+                L.T("Quitar…"), "unsetup", RowTone.Danger)),
+        ];
+        if (s.Has(PlatformFeatures.Updates))
+        {
+            rows.Add(Caption(L.T("Actualizaciones")));
+            rows.Add(Full(Info(L.T("Versión instalada"), SemVersion.App.ToString())));
+            rows.Add(Full(Switch(L.T("Buscar actualizaciones"), "updates", s.CheckUpdates)));
+            rows.Add(Full(Note(L.T("Una vez al día, en las versiones publicadas en GitHub. Nada se instala sin preguntarle."))));
+            // Con una versión nueva (o bajándose), también en los rápidos: así se ve sin abrir la Console.
+            if (s.UpdateStatus.Length > 0)
+            {
+                var row = Link(s.UpdateStatus, s.UpdateAction, "update");
+                rows.Add(s.UpdateAction.Length > 0 ? row : Full(row));
+            }
+        }
+        return new("sistema", L.T("Sistema"), L.T("El hook de permisos, el diagnóstico y las versiones nuevas."), "Sistema", rows);
+    }
 }
