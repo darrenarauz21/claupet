@@ -97,6 +97,8 @@ sealed partial class TrayController : IConsoleApp
             AnswerCustom = preset == AnswerPresets.Custom,
             TopicEngines = AnswerTopics.All.Select(t => new TopicState(t.Id, L.T(t.Label),
                 t.Fixed ? L.T("Siempre la nube") : Engines.Label(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
+            AccountList = Agents.AccountStates(s),
+            AgentList = Agents.AgentStates(s, _agents),
             CheckUpdates = s.CheckUpdates,
             UpdateStatus = _updates?.Row().Status ?? "",
             UpdateAction = _updates?.Row().Action ?? "",
@@ -121,6 +123,12 @@ sealed partial class TrayController : IConsoleApp
         if (key.StartsWith("grant:", StringComparison.Ordinal))
         {
             ToggleGrant(key["grant:".Length..]);
+            PushSettings();
+            return;
+        }
+        if (key.StartsWith("agent:", StringComparison.Ordinal))
+        {
+            ToggleAgent(key["agent:".Length..]);
             PushSettings();
             return;
         }

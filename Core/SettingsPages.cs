@@ -105,6 +105,10 @@ sealed record SettingsState
     public IReadOnlyList<TopicState> TopicEngines { get; init; } = [];
     /// <summary>Cada capacidad y si tiene «Permitir siempre», para Claupet Console (en la bandeja van en un menú).</summary>
     public IReadOnlyList<GrantState> Grants { get; init; } = [];
+    /// <summary>Cada cuenta de Claude Code y su memoria (compartida con otra o propia), para Ajustes › Cuentas.</summary>
+    public IReadOnlyList<AccountState> AccountList { get; init; } = [];
+    /// <summary>Los otros agentes encontrados (Codex, Gemini, Copilot), si se siguen y qué se leyó de ellos.</summary>
+    public IReadOnlyList<AgentState> AgentList { get; init; } = [];
     /// <summary>«Buscar actualizaciones» y la fila de la versión nueva (Updates.Row: lo que dice y su enlace; vacío, sin fila).</summary>
     public bool CheckUpdates { get; init; } = true;
     public string UpdateStatus { get; init; } = "";
@@ -116,6 +120,12 @@ sealed record TopicState(string Id, string Label, string Engine, bool Fixed);
 
 /// <summary>Una capacidad (captura, calendario, ventanas…) y si tiene «Permitir siempre».</summary>
 sealed record GrantState(string Id, string Label, bool Allowed);
+
+/// <summary>Una cuenta de Claude Code y lo que se dice de su memoria («Compartida con «trabajo»», «Propia»).</summary>
+sealed record AccountState(string Label, string Memory);
+
+/// <summary>Otro agente: su tipo, su nombre, si se sigue y lo que se dice de él (su carpeta, su última sesión).</summary>
+sealed record AgentState(string Kind, string Label, bool Follow, string Detail);
 
 /// <summary>
 /// El tipo de una fila. Input: un cuadro para escribir (la acción lleva lo escrito en Value). Page: lleva a otra
@@ -344,10 +354,26 @@ static class SettingsPages
         return new("isla", L.T("Isla"), L.T("La isla del borde de arriba: el chat, los permisos y el resumen de la semana."), "Isla", rows);
     }
 
-    static SettingsPage AccountsPage(SettingsState s) => new("cuentas", L.T("Cuentas"), L.T("Las cuentas de Claude Code que sigue Claupet."), null,
-    [
-        Link(s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add"),
-    ]);
+    static SettingsPage AccountsPage(SettingsState s)
+    {
+        List<SettingsRow> rows = [];
+        if (s.AccountList.Count > 0 || s.AgentList.Count > 0) rows.Add(Caption(L.T("Claude Code")));
+        foreach (var account in s.AccountList) rows.Add(Info(account.Label, account.Memory));
+        rows.Add(Link(s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add"));
+        if (s.AccountList.Count > 0)
+            rows.Add(Note(L.T("Al agregar una cuenta se elige su memoria: compartida (su carpeta projects se enlaza con la de otra cuenta; CLAUDE.md, skills, agentes, ajustes y credenciales siguen siendo propios) o separada.")));
+        if (s.AgentList.Count > 0)
+        {
+            rows.Add(Caption(L.T("Otros agentes")));
+            foreach (var agent in s.AgentList)
+            {
+                rows.Add(Switch(agent.Label, "agent:" + agent.Kind, agent.Follow));
+                if (agent.Detail.Length > 0) rows.Add(Note(agent.Detail));
+            }
+            rows.Add(Note(L.T("Sus sesiones salen en Uso y Actividad. Solo se leen sus archivos en este equipo: no se usa su cuenta ni se gastan tokens."), RowTone.Normal));
+        }
+        return new("cuentas", L.T("Cuentas"), L.T("Las cuentas de Claude Code y los otros agentes que sigue Claupet."), null, rows);
+    }
 
     static SettingsPage MachinePage(SettingsState s)
     {

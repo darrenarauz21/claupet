@@ -223,7 +223,8 @@ nubecita, y las guardadas, agrupadas en Hoy, Ayer, Esta semana y Antes) y la con
 en voz alta, los bloques de código con «Copiar» y de dónde vino cada respuesta; Intro envía y Mayús+Intro hace otra
 línea. Las guardadas van una por archivo en `conversaciones\<id>.json`, junto a los ajustes, y no se escriben hasta
 su primer mensaje; responde el mismo asistente de la isla, con respuestas más completas. En **Ajustes**, las
-secciones (General, Avisos, Apariencia, Mascota, Asistente, Respuestas, Extensiones, Isla, Cuentas y Sistema).
+secciones (General, Avisos, Apariencia, Mascota, Asistente, Respuestas, Extensiones, Isla, Cuentas —las de Claude Code
+con su memoria y los otros agentes— y Sistema).
 Las barras de desplazamiento y los globos de ayuda son los del diseño (`Console/Themes.cs`); las listas para elegir y
 los menús, una tarjeta flotante dentro de la ventana con la elegida marcada y las acciones («Elegir otra carpeta…»)
 separadas abajo, que se maneja también con las flechas, Intro y Esc (`Console/DropList.cs`). Es el mismo `Claupet.exe`
@@ -325,6 +326,31 @@ uso, o de vuelta a la sesión mientras piensa) y el subagente; los últimos 5 pa
 «Nueva sesión aquí…», «Abrir carpeta» y «Copiar ID». Sale del mismo `.jsonl` que el estado de la sesión: cada `tool_use`
 es un paso y su `tool_result` lo cierra; del subagente se toman `agentType` y `totalToolUseCount`
 del resultado. La lógica común está en `Core/Flows.cs`.
+
+## Otros agentes y la memoria de las cuentas
+
+Además de las cuentas de Claude Code, la app Avalonia sigue a otros agentes de este equipo, en una lista aparte
+(`Agents` en `settings.json`, `Core/Agents.cs`): se agregan solos si está su carpeta de siempre y en **Ajustes ›
+Cuentas** (Claupet Console) se elige cuáles seguir. Se leen al actualizar, fuera del hilo de la interfaz, solo sus 30
+sesiones más recientes; nada se escribe en sus carpetas, no se usa su cuenta ni se gastan tokens. En **Uso**, debajo de
+la cuenta elegida, cada agente con sus límites (si los escribe) y lo de hoy; en **Actividad**, sus sesiones de las últimas
+24 horas, con la carpeta y el modelo si se saben.
+
+| Agente | Carpeta | Qué se lee |
+|---|---|---|
+| Codex CLI | `$CODEX_HOME` o `~/.codex` | `sessions/AAAA/MM/DD/rollout-*.jsonl`. Los límites, del último evento `event_msg` con `payload.type` `token_count`: `payload.rate_limits.primary` y `.secondary` (`used_percent`, `window_minutes`: 299 es la sesión de 5 h y 10079 la semana; `resets_in_seconds`, contado desde el `timestamp` del evento; si ya pasó, vuelve a 0). La carpeta (`cwd`) y el id de `session_meta` y el modelo de `turn_context`, si están. Los `.jsonl.zst` no se leen |
+| Gemini CLI | `~/.gemini` | `tmp/<proyecto>/chats/session-*.json`: `sessionId`, `projectHash`, `startTime`, `lastUpdated` y `messages` (se cuentan los `user` y `gemini`; el último `model`). La carpeta del proyecto, de `projects.json` si allí está su hash. No escribe límites |
+| GitHub Copilot CLI | `$COPILOT_HOME` o `~/.copilot` | `session-state/<id>/events.jsonl`: su formato no está documentado, así que solo se cuentan sus eventos (líneas JSON) y la hora del archivo |
+
+Los formatos salen de lo que documenta la comunidad y se probaron con archivos armados a mano (`Claupet.Tests/AgentsTests.cs`),
+no con los de un equipo real: lo que no se entiende se salta.
+
+**Memoria de una cuenta de Claude nueva.** Al agregarla (con el + de Uso o «Agregar cuenta…» en la Console), si todavía no
+tiene memoria propia y hay otra cuenta, se elige: **compartida** con la elegida en Uso (su carpeta `projects`, con las
+conversaciones y la memoria de cada proyecto, pasa a ser un enlace a la de la otra: un junction en Windows, que no pide
+administrador, o un enlace simbólico en Linux y macOS; `CLAUDE.md`, skills, agentes, ajustes y credenciales siguen siendo
+propios) o **separada**. Una cuenta con su carpeta `projects` llena no se enlaza, para no perderla. Ajustes › Cuentas dice
+de cada una si su memoria es propia o compartida (`AccountMemory`).
 
 ## Historial de uso
 
@@ -819,6 +845,8 @@ registradas y vivas, y el hook. Lo habitual:
 - Los atajos (el del chat y la tecla Copilot), las extensiones y el modelo local son solo de Windows por ahora. En
   Linux y macOS ya están Claupet Console, el chat con la mascota, la isla, la voz y las acciones en el equipo; lo
   demás, en las etapas siguientes.
+- Los otros agentes (Codex CLI, Gemini CLI, GitHub Copilot CLI) y la elección de la memoria al agregar una cuenta están
+  solo en la app Avalonia; la de Windows (WinForms) no los muestra. Sus formatos no se comprobaron con archivos reales.
 - Las acciones de Linux se probaron con `--accion` en WSL (Ubuntu, sin escritorio): estado, rechazos y avisos de
   programas que faltan. Con un escritorio real (GNOME, Plasma) y en macOS, sin probar todavía.
 - En Linux con Wayland, la isla y la tecla para hablar solo ven el cursor y el teclado mientras están sobre una app

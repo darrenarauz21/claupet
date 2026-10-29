@@ -188,6 +188,7 @@ sealed partial class TrayController
                 _updated = updated;
             };
             _ = CountActivityAsync(accounts);
+            _ = ReadAgentsAsync();
         }
         finally
         {
@@ -603,6 +604,7 @@ sealed partial class TrayController
                     return;
                 _settings.Ignored.RemoveAll(i => Account.SamePath(i, dir));
                 _settings.Accounts.Add(new Account { Label = Account.LabelFor(dir), ConfigDir = dir });
+                await AskMemoryAsync(dir); // compartida con otra cuenta o separada
                 _settings.Selected = dir;
             }
             SettingsStore.Save(_settings);

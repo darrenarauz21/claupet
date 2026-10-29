@@ -38,6 +38,8 @@ sealed class AppSettings
     /// <summary>El idioma de la app (L.Choices); null: el del sistema.</summary>
     public string? Language { get; set; }
     public List<Account> Accounts { get; set; } = new();
+    /// <summary>Los otros agentes que se siguen además de Claude Code (Codex CLI, Gemini CLI, GitHub Copilot CLI): aparte de las cuentas.</summary>
+    public List<AgentAccount> Agents { get; set; } = new();
     /// <summary>Carpetas quitadas a mano: la detección automática no las vuelve a agregar.</summary>
     public List<string> Ignored { get; set; } = new();
     public string? Selected { get; set; }
