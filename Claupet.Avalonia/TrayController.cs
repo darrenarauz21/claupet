@@ -104,8 +104,10 @@ sealed partial class TrayController
             SettingsStore.Save(_settings);
         };
         View.NewSessionRequested += session => _ = NewSessionAsync(session);
+        SetupExtensions();
         StartConsole();
         StartUpdates();
+        _ = StartExtensionsAsync();
         PushSettings();
         _toasts.Clicked += OpenNotice;
         _bubble.Clicked += OpenNotice;
@@ -240,6 +242,7 @@ sealed partial class TrayController
             View.SetSessions(sessions);
             _director.SetSessions(sessions);
             _lastSessions = sessions;
+            BroadcastSessions(sessions);
             IslandSessions(sessions);
             if (_settings.Notifications)
             {
@@ -299,6 +302,7 @@ sealed partial class TrayController
                     UpdateKeys();
                     break;
                 case "shortcuts": await ShowShortcutsAsync(); break;
+                case "extensions": await OpenConsoleAsync(ExtensionsPanel.PageId); break;
                 case "startmenu" when OwnsShortcuts && OperatingSystem.IsWindows():
                     _settings.StartMenuShortcut = !_settings.StartMenuShortcut;
                     SettingsStore.Save(_settings);
@@ -857,6 +861,7 @@ sealed partial class TrayController
         _island?.DropApproval();
         _island?.Close();
         StopKeys();
+        StopExtensions();
         StopVoice();
         _localServer.Dispose();
         _sounds.Dispose();

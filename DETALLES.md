@@ -723,8 +723,14 @@ lugar en las listas de modelos de la mascota y la isla, y su fila en el asistent
 escala de la pantalla) y soltarle un archivo encima, con la misma coreografía que en WinForms: lo atrapa, camina, lanza
 la caja a la isla (`BoxFlight.cs`, `TrayController.Drops.cs`) y cuenta lo esencial. Solo en Windows, los accesos
 directos del menú Inicio y del escritorio (`Core/Shortcuts.cs`, sin `System.Drawing`: la cabeza del ícono se pinta a
-mano y se guarda con `PngImage.Save`) y la ubicación de Windows para el clima (`Core/WindowsLocation.cs`). Un paquete
-`.claupet` soltado todavía no se instala: las extensiones llegan a esta app después.
+mano y se guarda con `PngImage.Save`) y la ubicación de Windows para el clima (`Core/WindowsLocation.cs`).
+
+**Extensiones** (`TrayController.Extensions.cs`), por ahora solo en Windows: el mismo gestor que la app WinForms, con
+Ajustes › Extensiones en Claupet Console (`ExtensionsPanel`), las ranuras, los comandos «/…» del chat de la mascota, los
+eventos de las sesiones, la API local y sus tokens, y las claves cifradas con DPAPI (`Core/Extensions/Secrets.cs`). Un
+paquete `.claupet` soltado sobre la mascota abre la revisión en la Console. Todavía no están la mascota de un paquete
+(queda elegida, pero esta app dibuja la de siempre) ni el audio para las que escuchan (`audio/subscribe` responde que
+aún no está).
 
 ## Versiones nuevas
 
@@ -869,7 +875,8 @@ registradas y vivas, y el hook. Lo habitual:
   habituales). En GNOME, el ícono de la bandeja necesita la extensión AppIndicator.
 - Windows 11 deja los íconos nuevos en el desbordamiento (^).
 - Las extensiones y el modelo local son solo de Windows por ahora, y los atajos (el del chat y la tecla Copilot) aún no
-  están en Linux ni en macOS (en la app Avalonia en Windows ya están el modelo local y los atajos). Ahí ya están Claupet
+  están en Linux ni en macOS (en la app Avalonia en Windows ya están el modelo local, los atajos y las extensiones, sin
+  la mascota de un paquete ni el audio para las que escuchan). Ahí ya están Claupet
   Console, el chat con la mascota, la isla, la voz y las acciones en el equipo; lo demás, en las etapas siguientes.
 - Los otros agentes (Codex CLI, Gemini CLI, GitHub Copilot CLI) y la elección de la memoria al agregar una cuenta están
   solo en la app Avalonia; la de Windows (WinForms) no los muestra. Sus formatos no se comprobaron con archivos reales.

@@ -94,6 +94,18 @@ sealed partial class TrayController
             bubble.Append(piece);
             _director.SetMood(ChibiMove.Talk);
         });
+        // «/comando …»: lo atiende la habilidad de una extensión, no el asistente.
+        if (SkillCommand(text) is { } command)
+        {
+            var reply = await RunSkillCommandAsync(command, Stream, cancel.Token);
+            if (cancel.IsCancellationRequested) return;
+            if (reply.Length == 0) reply = L.T("Listo. (^_^)");
+            _quick.Add(new ChatTurn(false, reply));
+            QuickUpdated();
+            bubble.Finish(reply, island: false);
+            _director.SetMood(null);
+            return;
+        }
         AssistantResult result;
         try { result = await Answers.AskAsync(request, _settings, Stream, cancel: cancel.Token); }
         catch (Exception ex)

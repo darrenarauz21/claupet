@@ -21,11 +21,12 @@ sealed partial class TrayController
         };
         mascot.FilesDropped += files =>
         {
-            // Un paquete de extensión no se analiza; las extensiones todavía no están en esta app.
+            // Un paquete de extensión no se analiza: se revisa en Claupet Console antes de instalarlo.
             if (Path.GetExtension(files[0]).Equals(".claupet", StringComparison.OrdinalIgnoreCase))
             {
                 _director.SetMood(null);
-                ChatBubbleFor().Say(mascot.ScreenBounds, L.T("Las extensiones todavía no están en esta app. (._.)"));
+                if (HasExtensions && IsPackage(files[0])) _ = InstallPackageAsync(files[0]);
+                else ChatBubbleFor().Say(mascot.ScreenBounds, L.T("Las extensiones todavía no están en esta app. (._.)"));
                 return;
             }
             _ = CarryAsync(files[0]);

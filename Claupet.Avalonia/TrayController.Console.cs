@@ -17,6 +17,7 @@ sealed partial class TrayController : IConsoleApp
         | PlatformFeatures.MascotSize | PlatformFeatures.FileDrops | PlatformFeatures.Updates
         | (SystemActions.Desktop is null ? PlatformFeatures.None : PlatformFeatures.Actions)
         | (OperatingSystem.IsWindows() ? PlatformFeatures.Hotkeys | PlatformFeatures.LocalModel : PlatformFeatures.None)
+        | (HasExtensions ? PlatformFeatures.Extensions : PlatformFeatures.None)
         | (OwnsShortcuts ? PlatformFeatures.Shortcuts : PlatformFeatures.None);
 
     /// <summary>Los accesos directos de Windows, salvo en una copia de prueba (los reapuntaría a ella).</summary>
@@ -111,6 +112,7 @@ sealed partial class TrayController : IConsoleApp
             SavedDetail = AnswerStats.ThisWeek() is var (n, l) && n + l > 0 ? L.T("{0} sin IA · {1} con el modelo local", n, l) : "",
             AnswerPreset = AnswerPresets.Label(preset),
             AnswerPresetHint = AnswerPresets.Describe(preset),
+            Extensions = ExtensionsSummary(),
             AnswerCustom = preset == AnswerPresets.Custom,
             TopicEngines = AnswerTopics.All.Select(t => new TopicState(t.Id, L.T(t.Label),
                 t.Fixed ? L.T("Siempre la nube") : EngineLabel(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
