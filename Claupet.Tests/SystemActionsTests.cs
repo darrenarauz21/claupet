@@ -159,3 +159,94 @@ public sealed class SystemActionsTests
         Assert.False(SystemActions.LooksLikeImage(html, ".png"));
     }
 }
+
+/// <summary>La captura de Windows sin WinForms: el PNG que se guarda, el recorte y las imágenes del portapapeles.</summary>
+public sealed class WindowsCaptureTests
+{
+    /// <summary>Una imagen de 3 × 2 con un color distinto en cada pixel, en BGRA.</summary>
+    static ScreenShot Sample()
+    {
+        var bgra = new byte[3 * 2 * 4];
+        for (var i = 0; i < 6; i++) (bgra[i * 4], bgra[i * 4 + 1], bgra[i * 4 + 2], bgra[i * 4 + 3]) = ((byte)(i * 10), (byte)(i * 20), (byte)(i * 40), 255);
+        return new ScreenShot(100, 50, 3, 2, bgra);
+    }
+
+    static uint Argb(ScreenShot shot, int x, int y)
+    {
+        var p = (y * shot.Width + x) * 4;
+        return 0xFF000000u | (uint)shot.Bgra[p + 2] << 16 | (uint)shot.Bgra[p + 1] << 8 | shot.Bgra[p];
+    }
+
+    [Fact]
+    public void ElPngGuardadoSeLeeIgual()
+    {
+        using var dir = new TempDir();
+        var shot = Sample();
+        shot.Save(dir["captura.png"]);
+        var png = PngImage.Read(dir["captura.png"]);
+        Assert.Equal((3, 2), (png.Width, png.Height));
+        for (var y = 0; y < 2; y++)
+            for (var x = 0; x < 3; x++) Assert.Equal(Argb(shot, x, y), png[x, y]);
+    }
+
+    [Fact]
+    public void ConAlfaLaTransparenciaSeGuarda()
+    {
+        using var dir = new TempDir();
+        byte[] bgra = [10, 20, 30, 255, 0, 0, 0, 0, 1, 2, 3, 128, 40, 50, 60, 255];
+        PngImage.Save(dir["icono.png"], 2, 2, bgra, alpha: true);
+        var png = PngImage.Read(dir["icono.png"]);
+        Assert.Equal(0xFF1E140Au, png[0, 0]);
+        Assert.Equal(0u, png[1, 0] >> 24);
+        Assert.Equal(0x80030201u, png[0, 1]);
+    }
+
+    [Fact]
+    public void LaCabezaDelIconoVaCentradaYConFondoTransparente()
+    {
+        var png = PngImage.Read(Shortcuts.HeadPng(64));
+        Assert.Equal((64, 64), (png.Width, png.Height));
+        Assert.Equal(0u, png[0, 0] >> 24);     // la esquina, transparente
+        Assert.Equal(255u, png[32, 32] >> 24); // el centro, la cara
+    }
+
+    [Fact]
+    public void ElRecorteTomaEsaParteYSuLugarEnLaPantalla()
+    {
+        var part = Sample().Crop(1, 0, 2, 2)!;
+        Assert.Equal((101, 50, 2, 2), (part.Left, part.Top, part.Width, part.Height));
+        Assert.Equal(Argb(Sample(), 1, 1), Argb(part, 0, 1));
+        Assert.Null(Sample().Crop(2, 0, 1, 2)); // de menos de 2 × 2
+    }
+
+    /// <summary>Un DIB como los del portapapeles: encabezado de 40 bytes y filas alineadas a 4 bytes.</summary>
+    static byte[] Dib(int bits, bool bottomUp)
+    {
+        var shot = Sample();
+        var stride = (shot.Width * bits / 8 + 3) & ~3;
+        var dib = new byte[40 + stride * shot.Height];
+        BitConverter.TryWriteBytes(dib.AsSpan(0), 40);
+        BitConverter.TryWriteBytes(dib.AsSpan(4), shot.Width);
+        BitConverter.TryWriteBytes(dib.AsSpan(8), bottomUp ? shot.Height : -shot.Height);
+        BitConverter.TryWriteBytes(dib.AsSpan(12), (short)1);
+        BitConverter.TryWriteBytes(dib.AsSpan(14), (short)bits);
+        for (var y = 0; y < shot.Height; y++)
+            for (var x = 0; x < shot.Width; x++)
+            {
+                var row = 40 + (bottomUp ? shot.Height - 1 - y : y) * stride;
+                Array.Copy(shot.Bgra, (y * shot.Width + x) * 4, dib, row + x * bits / 8, 3);
+            }
+        return dib;
+    }
+
+    [Theory]
+    [InlineData(24, true)]
+    [InlineData(32, false)]
+    public void UnaImagenCopiadaSeLeeDeArribaAbajo(int bits, bool bottomUp)
+    {
+        var read = WinClipboard.FromDib(Dib(bits, bottomUp))!;
+        Assert.Equal((3, 2), (read.Width, read.Height));
+        for (var y = 0; y < 2; y++)
+            for (var x = 0; x < 3; x++) Assert.Equal(Argb(Sample(), x, y), Argb(read, x, y));
+    }
+}

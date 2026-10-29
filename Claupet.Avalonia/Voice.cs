@@ -7,7 +7,9 @@ namespace Claupet;
 /// La tecla para hablar (Ctrl derecho, por defecto), como en Windows: mantenerla un cuarto de segundo empieza (Began)
 /// y soltarla termina (Ended); si mientras tanto se aprieta otra tecla, era un atajo y se cancela. Dos toques rápidos
 /// dejan el micrófono abierto hasta el toque siguiente, y Esc cancela. Aquí no hay gancho de teclado: se mira el teclado
-/// cada 30 ms (GlobalKeys). Si el sistema no deja mirarlo, solo queda el botón del micrófono.
+/// cada 30 ms (GlobalKeys). Si el sistema no deja mirarlo, solo queda el botón del micrófono. Una combinación grabada o
+/// la tecla Copilot (en Windows las vigila KeyHook, que avisa con ComboDown y ComboUp) no se usa para otra cosa: con un
+/// solo toque ya escucha sin mantenerla, y el toque siguiente envía.
 /// </summary>
 sealed class PushToTalk : IDisposable
 {
@@ -15,13 +17,40 @@ sealed class PushToTalk : IDisposable
 
     const int HoldMs = 250, DoubleTapMs = 400;
     readonly DispatcherTimer _poll = new() { Interval = TimeSpan.FromMilliseconds(30) };
-    bool _down, _other, _escape, _active, _handsFree;
+    readonly DispatcherTimer _hold = new() { Interval = TimeSpan.FromMilliseconds(HoldMs) };
+    bool _down, _other, _escape, _active, _handsFree, _comboDown, _comboSent;
     long _downAt, _lastTap;
 
     public PushToTalk()
     {
         _poll.Tick += (_, _) => Poll();
         _poll.Start();
+        _hold.Tick += (_, _) =>
+        {
+            _hold.Stop();
+            if (_comboDown && !_active) Start(handsFree: false);
+        };
+    }
+
+    /// <summary>Bajó la combinación: si ya escuchaba sin mantener, este toque envía; si no, se ve si la mantiene.</summary>
+    public void ComboDown()
+    {
+        if (_comboDown) return;
+        _comboDown = true;
+        _comboSent = _active && _handsFree;
+        if (_comboSent) Finish();
+        else if (!_active) _hold.Start();
+    }
+
+    /// <summary>Subió: si la mantuvo, envía; si fue un toque, escucha hasta el toque siguiente (o una pausa).</summary>
+    public void ComboUp()
+    {
+        if (!_comboDown) return;
+        _comboDown = false;
+        _hold.Stop();
+        if (_comboSent) return;
+        if (_active && !_handsFree) Finish();
+        else if (!_active) Start(handsFree: true);
     }
 
     /// <summary>Una de MicKeys.Choices.</summary>
@@ -117,7 +146,11 @@ sealed class PushToTalk : IDisposable
         _escape = keys.Escape;
     }
 
-    public void Dispose() => _poll.Stop();
+    public void Dispose()
+    {
+        _poll.Stop();
+        _hold.Stop();
+    }
 }
 
 /// <summary>
@@ -193,8 +226,13 @@ sealed class VoiceInput : IDisposable
     /// <summary>La tecla que se mantiene para hablar: una de MicKeys.Choices.</summary>
     public string Key { get => _key.Key; set => _key.Key = value; }
 
-    /// <summary>Escucha con la tecla; si no, solo con el botón del micrófono.</summary>
+    /// <summary>Escucha con la tecla; si no, solo con el botón del micrófono (o la combinación grabada).</summary>
     public bool WatchKey { get => _key.Watch; set => _key.Watch = value; }
+
+    /// <summary>Una combinación grabada o la tecla Copilot (KeyHook): un toque escucha sin mantenerla; mantenerla, hasta soltarla.</summary>
+    public void ComboDown() => _key.ComboDown();
+
+    public void ComboUp() => _key.ComboUp();
 
     public bool Listening => _mic.Recording;
 
@@ -315,6 +353,20 @@ sealed class VoiceInput : IDisposable
         }
         finally { _externalCancel = null; }
         _idle.Start();
+    }
+
+    /// <summary>
+    /// Para las pruebas (--hablar archivo.wav, de 16 kHz, mono y 16 bits): como si se mantuviera la tecla mientras suena
+    /// ese audio, que reemplaza al micrófono esa vez.
+    /// </summary>
+    public async Task DemoAsync(string wav)
+    {
+        if (Transcriber.ReadWav(await File.ReadAllBytesAsync(wav)) is not { } pcm) return;
+        _mic.Fake = pcm;
+        _key.Hold();
+        await Task.Delay(pcm.Length / 16 + 400);
+        _key.Finish();
+        _mic.Fake = null;
     }
 
     /// <summary>Deja de escuchar sin enviar nada.</summary>

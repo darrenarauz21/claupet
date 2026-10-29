@@ -16,8 +16,8 @@ sealed partial class TrayController
     CancellationTokenSource? _asking;
     TaskProposal? _pendingTask;
 
-    /// <summary>El modelo de la mascota: el local todavía no está en esta app, así que en su lugar responde el primero de Claude.</summary>
-    string MascotModel => _settings.MascotModel == AssistantModels.Local ? AssistantModels.Choices[0].Id : _settings.MascotModel;
+    /// <summary>El modelo de la mascota: donde esta app no tiene el modelo local, en su lugar responde el primero de Claude.</summary>
+    string MascotModel => _settings.MascotModel == AssistantModels.Local && !HasLocal ? AssistantModels.Choices[0].Id : _settings.MascotModel;
 
     /// <summary>Lo que la mascota sabe del momento (el uso y las sesiones abiertas), para responder sobre eso.</summary>
     string AssistantContext() => MascotContext.Build(_settings, _snapshots, _profiles, _lastSessions);
@@ -37,7 +37,7 @@ sealed partial class TrayController
         _bubble.Hide();
         _asking?.Cancel(); // si estaba respondiendo, deja de esperar esa respuesta
         _pendingTask = null;
-        ChatBubbleFor().AskInput(mascot.ScreenBounds, AssistantModels.Choices, MascotModel);
+        ChatBubbleFor().AskInput(mascot.ScreenBounds, MascotModelChoices(), MascotModel);
         _director.SetMood(ChibiMove.Listen);
     }
 
@@ -50,6 +50,7 @@ sealed partial class TrayController
         {
             _settings.MascotModel = id;
             SettingsStore.Save(_settings);
+            ModelPicked(id);
             PushSettings();
         };
         bubble.TaskChosen += here => _ = OnTaskChosenAsync(here);

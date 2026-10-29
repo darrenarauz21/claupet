@@ -12,9 +12,45 @@ namespace Claupet;
 /// </summary>
 static class ScreenCapture
 {
-    /// <summary>Donde Windows guarda las capturas (Imágenes\Capturas de pantalla, en OneDrive si está).</summary>
-    public static string Folder => KnownFolders.Get(KnownFolders.Screenshots)
-        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots");
+    public static string Folder => WindowsDesktop.Screenshots;
+
+    /// <summary>Lo de las acciones que hace la interfaz de esta app: capturar con su recorte y el portapapeles de WinForms.</summary>
+    public static DesktopUi Ui { get; } = new(
+        crop => Task.FromResult<(string?, string?)>((Run(crop), null)),
+        text =>
+        {
+            Sta(() => { Clipboard.SetText(text); return true; });
+            return Task.FromResult<string?>(null);
+        },
+        () =>
+        {
+            var (text, image) = Sta(() => (Clipboard.ContainsText() ? Clipboard.GetText() : null, Clipboard.ContainsImage() ? Clipboard.GetImage() : null));
+            if (text is { Length: > 0 })
+            {
+                image?.Dispose();
+                return Task.FromResult<(string?, string?)>((text, null));
+            }
+            if (image is null) return Task.FromResult<(string?, string?)>((null, null));
+            using (image) return Task.FromResult<(string?, string?)>((null, ForLook(image)));
+        });
+
+    /// <summary>El portapapeles pide un hilo STA: el de la app lo es; desde --accion, después de un await, quizá no.</summary>
+    static T Sta<T>(Func<T> work)
+    {
+        if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA) return work();
+        T result = default!;
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? error = null;
+        var thread = new Thread(() =>
+        {
+            try { result = work(); }
+            catch (Exception ex) { error = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex); }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        error?.Throw();
+        return result;
+    }
 
     /// <summary>La pantalla bajo el cursor o el recorte que se marque: el PNG guardado (y copiado), o null si se canceló.</summary>
     public static string? Run(bool crop)
@@ -26,7 +62,7 @@ static class ScreenCapture
         {
             var file = CaptureFiles.NewFile(Folder);
             image.Save(file, ImageFormat.Png);
-            WindowsDesktop.Sta(() => { Clipboard.SetImage(image); return true; });
+            Sta(() => { Clipboard.SetImage(image); return true; });
             return file;
         }
         finally { if (image != screen) image.Dispose(); }

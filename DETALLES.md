@@ -260,8 +260,8 @@ abrir Claupet otra vez). Lo que no depende del sistema (la tubería, las convers
 `Claupet.Avalonia/TrayController.Console.cs` en la app Avalonia): sus ajustes, sus acciones y el asistente del chat.
 Las filas de lo que un sistema todavía no tiene no aparecen (`PlatformFeatures` en `SettingsState`); una sección que
 queda sin nada dice «Todavía no está disponible en este sistema.». En la app Avalonia el chat responde como en
-Respuestas, con las acciones en el equipo en Linux y macOS (en Windows, esta app todavía no las hace: lo dice); con la
-isla, la conversación rápida es la suya (ver Asistente en Linux y macOS).
+Respuestas, con las acciones en el equipo; con la isla, la conversación rápida es la suya (ver Asistente en Linux y
+macOS).
 
 Una sola bandeja y una sola Console por persona, con mutex con nombre (`Core/ConsoleLink.cs`). En Windows van en
 `Local\` (la sesión de Windows). En Linux y macOS, .NET limita `Local\` a la sesión del proceso (cada terminal tiene
@@ -284,7 +284,8 @@ Como cualquier app, Claupet tiene su acceso directo en el menú Inicio (encendid
 el escritorio (Ajustes › General › Accesos directos; `StartMenuShortcut` y `DesktopShortcut`). Abren
 `Claupet.exe --console` con la cabeza del chibi como ícono (`claupet.ico`, junto a los ajustes); si Claupet no
 estaba abierto, la Console lo abre y se conecta cuando está listo. Al arrancar, la bandeja vuelve a crear los
-encendidos si faltan o apuntan a otra carpeta (`Shortcuts.cs`); una copia de prueba (`--preview`) no los toca.
+encendidos si faltan o apuntan a otra carpeta (`Core/Shortcuts.cs`, que usan las dos apps); una copia de prueba
+(`--preview`) no los toca.
 Abrir `Claupet.exe` otra vez, sin argumentos, con Claupet ya abierto, también trae la Console.
 
 ## Actividad
@@ -360,7 +361,8 @@ La primera línea de la respuesta puede traer una marca, que no se muestra:
 
 Las acciones son una lista cerrada (`Core/Actions/SystemActions.cs`), para que una frase mal entendida no pueda
 hacer otra cosa; lo demás se encarga a Claude Code. Lo que cambia de un sistema a otro está detrás de `IDesktop`
-(`Core/Actions/Desktop.cs`): en Windows, `WindowsDesktop.cs`; en Linux y macOS, ver Asistente en Linux y macOS. El
+(`Core/Actions/Desktop.cs`): en Windows, `Core/Actions/WindowsDesktop.cs`, que usan las dos apps (cada una pone su
+recorte y su portapapeles: `DesktopUi`); en Linux y macOS, ver Asistente en Linux y macOS. El
 prompt y las reglas sin IA solo ofrecen las acciones que el sistema sabe hacer (`SystemActions.Supports`):
 
 | Acción | Valor | Cómo |
@@ -420,8 +422,8 @@ abrirla («se le pasó»). La tarea se borra al avisar o cancelar y, si no, sola
 
 Las consultas dejan un `sessions/<pid>.json` mientras corren; la vista Actividad las ignora por su
 carpeta. El código está en `Core/Assistant.cs`; las acciones, en `Core/Actions/` (qué se pide, los permisos y los
-mensajes, igual en los tres sistemas), `WindowsDesktop.cs`, `ScreenCapture.cs`, `ReminderTasks.cs` y `Core/Agenda.cs`
-(notas, `.ics` y recordatorios, sin interfaz).
+mensajes, igual en los tres sistemas; en Windows, `WindowsDesktop.cs` y `ReminderTasks.cs`), `ScreenCapture.cs` (el
+recorte y el portapapeles de la app WinForms) y `Core/Agenda.cs` (notas, `.ics` y recordatorios, sin interfaz).
 
 **La isla** (`IslandForm.cs`) es una ventana siempre oscura, con el acento de la paleta. Oculta, una
 franja invisible de 320 × 6 px en el centro del borde de arriba la hace asomar compacta (300 × 36);
@@ -492,7 +494,7 @@ pasar a fonemas. La inferencia está adaptada de su ejemplo en C# (MIT); el mode
 
 Las caritas de texto, como `(^_^)`, no se leen.
 
-**Modelo local** (`LocalModel.cs`, `TrayApp.LocalModel.cs`). Responde en la mascota o la isla sin internet
+**Modelo local** (`Core/LocalModel.cs`; en las bandejas, `TrayApp.LocalModel.cs` y `TrayController.LocalModel.cs`). Responde en la mascota o la isla sin internet
 ni tokens cuando se elige «Local: …» como su modelo (`AssistantModels.Local`), o con «La mascota responde
 con un modelo local» en el asistente de configuración. Recibe el mismo prompt de sistema que Claude, sin
 las herramientas que no tiene, y su respuesta pasa por las mismas reglas (marcas, acciones y permisos),
@@ -647,9 +649,32 @@ permiso que pregunta el sistema no la congela. Si falta un programa, la respuest
 | carpeta | las de siempre en la carpeta de usuario | las de `xdg-user-dirs` («Descargas», «Imágenes»…) |
 
 Mientras se captura, la mascota, las nubecitas y la isla se vuelven transparentes. En Linux con Wayland no hay
-«ventana»: Wayland no deja que una app mueva las de otras. En Windows, esta app todavía no hace acciones (las hace la
-de siempre): se ofrece en el paso 4. `Claupet --accion <acción> <valor>` las prueba sin abrir ventanas, como en
-Windows (sin portapapeles de texto, que necesita la app abierta).
+«ventana»: Wayland no deja que una app mueva las de otras. `Claupet --accion <acción> <valor>` las prueba sin abrir
+ventanas, como en la app WinForms (sin recorte y, en Linux y macOS, sin portapapeles de texto, que necesitan la app
+abierta).
+
+En Windows, esta app hace las mismas acciones que la de WinForms con `Core/Actions/WindowsDesktop.cs`. Lo que en
+WinForms hacía la interfaz va sin ella: la captura con BitBlt en los pixeles reales del monitor (`WinScreen`), el PNG
+con `PngImage.Save` y el portapapeles con la API de Windows (`WinClipboard`, texto e imágenes); el recorte es una
+ventana de Avalonia como la de WinForms (`CropWindow.cs`).
+
+**Teclas** (`Hotkeys.cs`, `TrayController.Hotkeys.cs`), por ahora solo en Windows: los mismos atajos globales que la app
+WinForms (`RegisterHotKey` en una ventana solo de mensajes), la tecla Copilot y la combinación grabada para hablar con
+un gancho de teclado de bajo nivel, y «Grabar…» en una ventanita propia. Sin `System.Windows.Forms.Keys`, las teclas van
+por el nombre que guarda Ajustes («Ctrl+Alt+Space») y una tabla con su código (`VirtualKeys`, sacada de ese enum). Una
+copia con `--preview` no toma las teclas: las tiene la app de siempre. En Linux (X11) y macOS, los atajos globales
+quedan para después; ahí la tecla para hablar es la que se mantiene.
+
+**Modelo local** (`TrayController.LocalModel.cs`), por ahora solo en Windows, porque llama-server se baja compilado
+para Windows: el mismo de la app WinForms (`Core/LocalModel.cs`), con su descarga, su fila en Ajustes › Respuestas, su
+lugar en las listas de modelos de la mascota y la isla, y su fila en el asistente de configuración.
+
+**Lo demás de Windows**: en los tres sistemas, el tamaño de la mascota (pixeles reales enteros por casilla, con la
+escala de la pantalla) y soltarle un archivo encima, con la misma coreografía que en WinForms: lo atrapa, camina, lanza
+la caja a la isla (`BoxFlight.cs`, `TrayController.Drops.cs`) y cuenta lo esencial. Solo en Windows, los accesos
+directos del menú Inicio y del escritorio (`Core/Shortcuts.cs`, sin `System.Drawing`: la cabeza del ícono se pinta a
+mano y se guarda con `PngImage.Save`) y la ubicación de Windows para el clima (`Core/WindowsLocation.cs`). Un paquete
+`.claupet` soltado todavía no se instala: las extensiones llegan a esta app después.
 
 ## Avisos
 
@@ -706,7 +731,8 @@ En Linux la app lleva su propia ICU (no todas las distribuciones la traen). En m
 firmar desde Windows: `preparar-mac.sh` la firma solo para ese equipo (`codesign --sign -`) y le
 quita la cuarentena.
 
-Opciones de línea de comandos (las dos apps):
+Opciones de línea de comandos (las dos apps; en la de Avalonia, los modos de prueba sin ventanas están en
+`DevCommands.cs`, y `--modelo-local`, por ahora, solo en Windows):
 
 - `--show`: abre la ventana al arrancar; `--preview`: igual, aunque haya otra instancia.
 - `--sessions`, `--activity`: abre en esa vista. `--setup`: con `--preview`, muestra el asistente.
@@ -767,9 +793,9 @@ registradas y vivas, y el hook. Lo habitual:
 - Linux: Avalonia 11 necesita `libICE`, `libSM` y `fontconfig` (vienen en los escritorios
   habituales). En GNOME, el ícono de la bandeja necesita la extensión AppIndicator.
 - Windows 11 deja los íconos nuevos en el desbordamiento (^).
-- Los atajos (el del chat y la tecla Copilot), las extensiones y el modelo local son solo de Windows por ahora. En
-  Linux y macOS ya están Claupet Console, el chat con la mascota, la isla, la voz y las acciones en el equipo; lo
-  demás, en las etapas siguientes.
+- Las extensiones y el modelo local son solo de Windows por ahora, y los atajos (el del chat y la tecla Copilot) aún no
+  están en Linux ni en macOS (en la app Avalonia en Windows ya están el modelo local y los atajos). Ahí ya están Claupet Console, el chat con la mascota, la isla, la voz y las acciones en
+  el equipo; lo demás, en las etapas siguientes.
 - Las acciones de Linux se probaron con `--accion` en WSL (Ubuntu, sin escritorio): estado, rechazos y avisos de
   programas que faltan. Con un escritorio real (GNOME, Plasma) y en macOS, sin probar todavía.
 - En Linux con Wayland, la isla y la tecla para hablar solo ven el cursor y el teclado mientras están sobre una app

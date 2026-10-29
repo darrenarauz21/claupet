@@ -26,6 +26,77 @@ sealed class PngImage
 
     public static PngImage Read(string path) => Read(File.ReadAllBytes(path));
 
+    /// <summary>
+    /// Guarda pixeles BGRA (de arriba abajo, como los da Windows) como PNG de 8 bits por canal: RGB, salvo que se pida
+    /// el alfa (un ícono; una captura de pantalla no tiene transparencia). Cada fila va con el filtro «Sub», que en las
+    /// capturas comprime bien.
+    /// </summary>
+    public static void Save(string path, int width, int height, ReadOnlySpan<byte> bgra, bool alpha = false)
+    {
+        using var file = File.Create(path);
+        Save(file, width, height, bgra, alpha);
+    }
+
+    public static void Save(Stream output, int width, int height, ReadOnlySpan<byte> bgra, bool alpha = false)
+    {
+        if (bgra.Length < width * height * 4) throw new ArgumentException("bgra", nameof(bgra));
+        var channels = alpha ? 4 : 3;
+        var stride = width * channels;
+        var raw = new byte[(stride + 1) * height];
+        for (var y = 0; y < height; y++)
+        {
+            var row = y * (stride + 1);
+            raw[row] = 1; // Sub: cada byte, menos el del pixel de su izquierda
+            for (var x = 0; x < width; x++)
+            {
+                var s = (y * width + x) * 4;
+                var d = row + 1 + x * channels;
+                raw[d] = bgra[s + 2];
+                raw[d + 1] = bgra[s + 1];
+                raw[d + 2] = bgra[s];
+                if (alpha) raw[d + 3] = bgra[s + 3];
+            }
+            for (var i = stride; i > channels; i--) raw[row + i] -= raw[row + i - channels]; // los datos van desde row + 1
+        }
+        using var compressed = new MemoryStream();
+        using (var z = new ZLibStream(compressed, CompressionLevel.Optimal, leaveOpen: true)) z.Write(raw);
+
+        output.Write(Signature);
+        var header = new byte[13];
+        BinaryPrimitives.WriteInt32BigEndian(header, width);
+        BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4), height);
+        header[8] = 8; // bits por canal
+        header[9] = (byte)(alpha ? 6 : 2); // RGBA o RGB
+        Chunk(output, "IHDR", header);
+        Chunk(output, "IDAT", compressed.ToArray());
+        Chunk(output, "IEND", []);
+    }
+
+    static void Chunk(Stream output, string type, byte[] body)
+    {
+        Span<byte> number = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32BigEndian(number, body.Length);
+        output.Write(number);
+        var name = System.Text.Encoding.ASCII.GetBytes(type);
+        output.Write(name);
+        output.Write(body);
+        BinaryPrimitives.WriteUInt32BigEndian(number, Crc(Crc(0xFFFFFFFF, name), body) ^ 0xFFFFFFFF);
+        output.Write(number);
+    }
+
+    static readonly uint[] CrcTable = Enumerable.Range(0, 256).Select(n =>
+    {
+        var c = (uint)n;
+        for (var k = 0; k < 8; k++) c = (c & 1) != 0 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
+        return c;
+    }).ToArray();
+
+    static uint Crc(uint crc, ReadOnlySpan<byte> bytes)
+    {
+        foreach (var b in bytes) crc = CrcTable[(crc ^ b) & 0xFF] ^ (crc >> 8);
+        return crc;
+    }
+
     public static PngImage Read(byte[] png)
     {
         if (png.Length < 8 || !png.AsSpan(0, 8).SequenceEqual(Signature)) throw new InvalidDataException(L.T("No es un PNG."));

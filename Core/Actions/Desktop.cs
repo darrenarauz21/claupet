@@ -68,6 +68,15 @@ interface IDesktop
     void CancelReminder(string id);
 }
 
+/// <summary>
+/// Lo de las acciones de Windows que necesita la interfaz de cada app: capturar (con su recorte, que es una ventana, y
+/// sus ventanas escondidas) y el portapapeles. La app WinForms pone lo suyo; la de Avalonia, lo de ella.
+/// </summary>
+sealed record DesktopUi(
+    Func<bool, Task<(string? File, string? Problem)>> CaptureAsync,
+    Func<string, Task<string?>> CopyTextAsync,
+    Func<Task<(string? Text, string? ImageFile)>> ReadClipboardAsync);
+
 /// <summary>Las capturas guardadas: el archivo nuevo y la copia que mira Claude, sola en …/Claupet/capturas.</summary>
 static class CaptureFiles
 {

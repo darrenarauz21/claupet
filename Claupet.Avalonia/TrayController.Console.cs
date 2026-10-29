@@ -14,7 +14,13 @@ sealed partial class TrayController : IConsoleApp
     /// equipo, donde hay un escritorio que las haga (macOS y Linux).
     /// </summary>
     static PlatformFeatures Features => PlatformFeatures.MascotChat | PlatformFeatures.Island | PlatformFeatures.Mic | PlatformFeatures.ReadAloud
-        | (SystemActions.Desktop is null ? PlatformFeatures.None : PlatformFeatures.Actions);
+        | PlatformFeatures.MascotSize | PlatformFeatures.FileDrops
+        | (SystemActions.Desktop is null ? PlatformFeatures.None : PlatformFeatures.Actions)
+        | (OperatingSystem.IsWindows() ? PlatformFeatures.Hotkeys | PlatformFeatures.LocalModel : PlatformFeatures.None)
+        | (OwnsShortcuts ? PlatformFeatures.Shortcuts : PlatformFeatures.None);
+
+    /// <summary>Los accesos directos de Windows, salvo en una copia de prueba (los reapuntaría a ella).</summary>
+    static bool OwnsShortcuts => OperatingSystem.IsWindows() && !Program.Args.Contains("--preview");
 
     ConsoleHost? _consoleHost;
     ConsoleHost ConsoleHost => _consoleHost ??= new ConsoleHost(this);
@@ -49,6 +55,7 @@ sealed partial class TrayController : IConsoleApp
             Palette = Theme.PaletteLabel(s.Palette),
             Mascot = Mascots.Label(Mascots.ChoiceOf(s)),
             DesktopMascot = s.DesktopMascot,
+            MascotSize = MascotSizes.Label(s.MascotSize),
             MascotAllDesktops = s.MascotAllDesktops,
             Speak = s.Speak,
             FlowGestures = s.FlowGestures,
@@ -58,18 +65,26 @@ sealed partial class TrayController : IConsoleApp
             AngryOnClicks = s.AngryOnClicks,
             SleepWithoutSessions = s.SleepWithoutSessions,
             Chat = s.Chat,
-            MascotModel = AssistantModels.Label(MascotModel),
+            MascotModel = ModelLabel(MascotModel),
             AssistantAccount = AssistantAccounts.Label(s),
             TaskFolder = TaskFolders.Label(s),
+            AnalyzeDrops = s.AnalyzeDrops,
             Mic = s.Mic,
             MicKey = TalkKeyLabel,
+            ChatKey = KeyNames.Label(s.ChatKey),
+            CopilotKey = s.CopilotKey,
             VoiceStatus = VoiceStatusText().Status,
             VoiceAction = VoiceStatusText().Action,
             ReadAloud = s.ReadAloud,
             ReadAloudVoice = VoiceLabel(s.ReadAloudVoice),
             SpeechStatus = SpeechStatusText().Status,
             SpeechAction = SpeechStatusText().Action,
-            IslandModel = AssistantModels.Label(s.IslandModel),
+            IslandModel = ModelLabel(s.IslandModel),
+            LocalModel = L.T("{0} · unos {1} de RAM", LocalChoice.Name, LocalChoice.Ram),
+            LocalStatus = LocalStatusText().Status,
+            LocalAction = LocalStatusText().Action,
+            LocalReady = LocalModel.Ready(LocalChoice),
+            LocalIdle = L.T("{0} min", s.LocalIdleMinutes),
             Island = s.Island,
             IslandHover = s.IslandHover,
             IslandWhileBusy = s.IslandWhileBusy,
@@ -77,6 +92,8 @@ sealed partial class TrayController : IConsoleApp
             Approvals = ApprovalsText(),
             Grants = Capabilities.Available.Select(c => new GrantState(c.Id, c.Label, Capabilities.Allowed(s, c.Id))).ToList(),
             StartWithWindows = StartupRegistration.IsEnabled,
+            StartMenuShortcut = s.StartMenuShortcut,
+            DesktopShortcut = s.DesktopShortcut,
             Accounts = s.Accounts.Count,
             Language = L.Label,
             CloudModel = "Claude · " + AssistantModels.Label(s.IslandModel),
@@ -89,14 +106,14 @@ sealed partial class TrayController : IConsoleApp
                 _ => L.T("Si el primero no entiende, Claupet pide decirlo de otra forma."),
             },
             ShowWho = s.ShowWhoAnswered,
-            City = string.IsNullOrWhiteSpace(s.WeatherCity) || s.WeatherPlace != WeatherService.ByCity ? L.T("Automática (por la IP)") : s.WeatherCity,
+            City = CityLabel(),
             Saved = AnswerStats.ThisWeek() is var (none, local) && none + local == 1 ? L.T("1 respuesta") : L.T("{0} respuestas", none + local),
             SavedDetail = AnswerStats.ThisWeek() is var (n, l) && n + l > 0 ? L.T("{0} sin IA · {1} con el modelo local", n, l) : "",
             AnswerPreset = AnswerPresets.Label(preset),
             AnswerPresetHint = AnswerPresets.Describe(preset),
             AnswerCustom = preset == AnswerPresets.Custom,
             TopicEngines = AnswerTopics.All.Select(t => new TopicState(t.Id, L.T(t.Label),
-                t.Fixed ? L.T("Siempre la nube") : Engines.Label(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
+                t.Fixed ? L.T("Siempre la nube") : EngineLabel(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
         };
     }
 
@@ -124,7 +141,7 @@ sealed partial class TrayController : IConsoleApp
         if (key.StartsWith("topic:", StringComparison.Ordinal))
         {
             var topic = AnswerTopics.Find(key["topic:".Length..]);
-            Choose(AnswerTopics.Choices(topic).Select(e => (e.ToString(), Engines.Label(e))), AnswerTopics.First(_settings, topic.Id).ToString(), v =>
+            Choose(AnswerTopics.Choices(topic).Select(e => (e.ToString(), EngineLabel(e))), AnswerTopics.First(_settings, topic.Id).ToString(), v =>
             {
                 var engine = Enum.Parse<Engine>(v);
                 if (engine == topic.Default) _settings.AnswerEngines.Remove(topic.Id);
@@ -158,13 +175,14 @@ sealed partial class TrayController : IConsoleApp
                 SettingsStore.Save(_settings);
                 PushSettings();
                 break;
-            case "city": _ = AskCityAsync(); break;
+            case "city": PickCity(); break;
             case "mmodel":
-                Choose(AssistantModels.Choices, MascotModel, m =>
+                Choose(MascotModelChoices(), MascotModel, m =>
                 {
                     _settings.MascotModel = m;
                     SettingsStore.Save(_settings);
                     _chatBubble?.SetModel(m);
+                    ModelPicked(m);
                 });
                 break;
             case "account":
@@ -176,15 +194,43 @@ sealed partial class TrayController : IConsoleApp
                 break;
             case "folder": Choose(TaskFolders.Choices(_settings, _lastSessions), _settings.TaskFolder ?? "", f => _ = PickTaskFolderAsync(f)); break;
             case "imodel":
-                Choose(AssistantModels.IslandChoices, _settings.IslandModel ?? "", m =>
+                Choose(IslandModelChoices(), _settings.IslandModel ?? "", m =>
                 {
                     _settings.IslandModel = m.Length == 0 ? null : m;
                     SettingsStore.Save(_settings);
+                    ModelPicked(m);
                     PushIslandModel();
                 });
                 break;
-            // Aquí no se graban combinaciones: solo las teclas que se mantienen.
-            case "mickey": Choose(MicKeys.Choices, MicKeys.IsHold(_settings.MicKey) ? _settings.MicKey : MicKeys.Choices[0].Id, SetMicKey); break;
+            case "size": Choose(MascotSizes.Choices, _settings.MascotSize, SetMascotSize); break;
+            case "localmodel": PickLocalModel(); break;
+            case "localidle": PickLocalIdle(); break;
+            case "local": LocalModelAction(); break;
+            // En Windows se puede grabar otra tecla o combinación; en Linux y macOS, solo las que se mantienen.
+            case "mickey":
+                Choose(KeyChoices(MicKeys.Choices, OperatingSystem.IsWindows() ? _settings.MicKey : "", L.T("Grabar otra tecla…")),
+                    MicKeys.IsHold(_settings.MicKey) || TalkIsCombo ? _settings.MicKey : MicKeys.Choices[0].Id, k =>
+                    {
+                        if (k != RecordChoice) SetMicKey(k);
+                        else _ = RecordKeyAsync(talk: true, combo =>
+                        {
+                            SetMicKey(combo);
+                            PushSettings();
+                        });
+                    });
+                break;
+            case "chatkey":
+                Choose(KeyChoices([(KeyNames.DefaultChat, KeyNames.Label(KeyNames.DefaultChat))], _settings.ChatKey, L.T("Grabar otra combinación…")),
+                    _settings.ChatKey, k =>
+                    {
+                        if (k != RecordChoice) SetChatKey(k);
+                        else _ = RecordKeyAsync(talk: false, combo =>
+                        {
+                            SetChatKey(combo);
+                            PushSettings();
+                        });
+                    });
+                break;
             case "readvoice": Choose(VoiceChoices(), _settings.ReadAloudVoice, SetReadAloudVoice); break;
             default: _ = OnSettingAsync(key); break;
         }
@@ -205,12 +251,50 @@ sealed partial class TrayController : IConsoleApp
         else ConsoleHost.Offer(options, selected, Picked, null);
     }
 
-    async Task AskCityAsync()
+    string CityLabel() => _settings.WeatherPlace switch
     {
-        var city = await Dialogs.Ask(L.T("Mi ciudad"), L.T("Ciudad para el clima (vacía: automática, por la IP):"), _settings.WeatherCity ?? "", _theme);
-        if (city is null) return;
-        _settings.WeatherCity = city.Trim().Length == 0 ? null : city.Trim();
-        _settings.WeatherPlace = _settings.WeatherCity is null ? WeatherService.ByIp : WeatherService.ByCity;
+        WeatherService.ByCity when !string.IsNullOrWhiteSpace(_settings.WeatherCity) => _settings.WeatherCity,
+        WeatherService.ByWindows => L.T("Ubicación de Windows"),
+        _ => L.T("Automática (por la IP)"),
+    };
+
+    /// <summary>Mi ciudad: por la IP, la ubicación de Windows (solo ahí) o una escrita.</summary>
+    void PickCity()
+    {
+        List<(string, string)> choices = [(WeatherService.ByIp, L.T("Automática (por la IP)"))];
+        if (OperatingSystem.IsWindows()) choices.Add((WeatherService.ByWindows, L.T("Ubicación de Windows")));
+        choices.Add((WeatherService.ByCity, L.T("Escribir una ciudad…")));
+        Choose(choices, _settings.WeatherPlace, id => _ = SetCityAsync(id));
+    }
+
+    /// <summary>
+    /// La escrita se busca en Open-Meteo (y queda con su nombre); la de Windows se prueba antes de elegirla, porque puede
+    /// estar apagada en Configuración › Privacidad.
+    /// </summary>
+    async Task SetCityAsync(string id)
+    {
+        if (id == WeatherService.ByCity)
+        {
+            var name = await Dialogs.Ask(L.T("Mi ciudad"), L.T("Su ciudad, para el clima:"), _settings.WeatherCity ?? "", _theme);
+            if (name is null) return;
+            if (await WeatherService.GeocodeAsync(name, CancellationToken.None) is not { } place)
+            {
+                await Dialogs.Info(L.T("No encontré «{0}». Pruebe con otro nombre o sin abreviaturas.", name), _theme);
+                return;
+            }
+            _settings.WeatherPlace = WeatherService.ByCity;
+            _settings.WeatherCity = place.Name;
+        }
+        else if (id == WeatherService.ByWindows && OperatingSystem.IsWindows())
+        {
+            if (await WindowsLocation.GetAsync(CancellationToken.None) is null)
+            {
+                await Dialogs.Info(L.T("Windows no dio la ubicación. Revise Configuración › Privacidad y seguridad › Ubicación, y que las apps de escritorio puedan usarla."), _theme);
+                return;
+            }
+            _settings.WeatherPlace = WeatherService.ByWindows;
+        }
+        else _settings.WeatherPlace = WeatherService.ByIp;
         SettingsStore.Save(_settings);
         PushSettings();
     }

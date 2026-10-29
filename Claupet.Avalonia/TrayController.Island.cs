@@ -58,6 +58,7 @@ sealed partial class TrayController
             {
                 _settings.IslandModel = m.Length == 0 ? null : m;
                 SettingsStore.Save(_settings);
+                ModelPicked(m);
                 PushIslandModel();
                 PushSettings();
             };
@@ -104,10 +105,10 @@ sealed partial class TrayController
 
     void PushIslandModel()
     {
-        var label = _settings.IslandModel is { } model ? AssistantModels.Label(model) : _defaultModel ?? AssistantModels.Label(null);
+        var label = _settings.IslandModel is { } model ? ModelLabel(model) : _defaultModel ?? AssistantModels.Label(null);
         var account = AssistantAccounts.ConfigDir(_settings) is { } dir
             ? _settings.Accounts.FirstOrDefault(a => Account.SamePath(a.ConfigDir, dir))?.Label ?? "" : "";
-        _island?.SetModel(label, account, AssistantModels.IslandChoices, _settings.IslandModel ?? "");
+        _island?.SetModel(label, account, IslandModelChoices(), _settings.IslandModel ?? "");
     }
 
     void PushIslandUsage()

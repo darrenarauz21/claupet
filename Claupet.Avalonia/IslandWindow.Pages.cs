@@ -111,6 +111,7 @@ sealed partial class IslandWindow
     {
         if (_approval is { } pending) return pending.IsQuestion ? L.T("Una pregunta le espera · clic para verla") : L.T("Un permiso le espera · clic para verlo");
         if (_choiceTask is not null) return L.T("Claupet le pregunta algo · clic para verlo");
+        if (_receiving) return L.T("Recibiendo archivo…");
         if (Analyzing) return L.T("Analizando {0}…", Path.GetFileName(_file));
         if (_asking) return L.T("Respondiendo…");
         if (_file is not null && !_analysisSeen) return _analysisError is null ? L.T("Análisis listo · clic para ver") : L.T("No pude analizarlo · clic para ver");

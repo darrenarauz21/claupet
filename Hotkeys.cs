@@ -167,30 +167,6 @@ sealed class KeyHook : IDisposable
     [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, int flags, IntPtr extra);
 }
 
-/// <summary>
-/// Pasar al frente para escribir en el chat: Windows solo deja ponerse delante a la app que recibió la última
-/// tecla, y una que se quedó KeyHook quizá no cuente; sin eso, lo que se escribe iría a otra ventana. Se une un
-/// momento a la cola de entrada de la ventana del frente, que sí puede.
-/// </summary>
-static class Foreground
-{
-    public static void Take(IntPtr window)
-    {
-        var front = GetForegroundWindow();
-        var theirs = GetWindowThreadProcessId(front, IntPtr.Zero);
-        var mine = GetCurrentThreadId();
-        var attached = theirs != 0 && theirs != mine && AttachThreadInput(mine, theirs, true);
-        try { SetForegroundWindow(window); }
-        finally { if (attached) AttachThreadInput(mine, theirs, false); }
-    }
-
-    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, IntPtr process);
-    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
-    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
-    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
-}
-
 /// <summary>El gancho de teclado de bajo nivel (WH_KEYBOARD_LL), compartido por KeyHook y KeyRecorder.</summary>
 static class LowLevelKeyboard
 {

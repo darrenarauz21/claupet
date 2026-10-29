@@ -143,10 +143,27 @@ sealed partial class TrayController
             Render();
             if (showOnStart) ShowForm();
             if (demo) ShowSamples();
+            // --settings: abre en Ajustes; --soltar <archivo>: como si se lo soltaran a la mascota; --hablar <wav>: la voz
+            // entera con ese audio en vez del micrófono (con «Micrófono» encendido).
+            if (Program.Args.Contains("--settings"))
+            {
+                View.ShowSettings();
+                ShowForm();
+            }
+            if (ArgAfter("--soltar") is { } drop) _ = DemoDropAsync(drop);
             StartActions();
+            StartLocalModel();
+            if (OperatingSystem.IsWindows()) WeatherService.WindowsLocation = WindowsLocation.GetAsync;
+            if (OwnsShortcuts && OperatingSystem.IsWindows())
+            {
+                // Los encendidos se crean si faltan y se corrigen si apuntan a otro .exe (se movió la carpeta).
+                if (_settings.StartMenuShortcut) Shortcuts.Ensure(Shortcuts.StartMenu);
+                if (_settings.DesktopShortcut) Shortcuts.Ensure(Shortcuts.Desktop);
+            }
             UpdateMascotWindow();
             UpdateIsland();
             UpdateVoice();
+            if (ArgAfter("--hablar") is { } wav && _voice is { } voice) _ = Task.Delay(1500).ContinueWith(_ => Dispatcher.UIThread.Post(() => _ = voice.DemoAsync(wav)));
             if (autoSetup && NeedsSetup()) await ShowSetupAsync();
             await RefreshAsync();
         });
@@ -273,6 +290,23 @@ sealed partial class TrayController
                 case "desk": ToggleDesktopMascot(); break;
                 case "speak": ToggleSpeak(); break;
                 case "chat": ToggleChat(); break;
+                case "drops": Flip(s => s.AnalyzeDrops = !s.AnalyzeDrops); break;
+                case "copilot":
+                    _settings.CopilotKey = !_settings.CopilotKey;
+                    SettingsStore.Save(_settings);
+                    UpdateKeys();
+                    break;
+                case "shortcuts": await ShowShortcutsAsync(); break;
+                case "startmenu" when OwnsShortcuts && OperatingSystem.IsWindows():
+                    _settings.StartMenuShortcut = !_settings.StartMenuShortcut;
+                    SettingsStore.Save(_settings);
+                    Shortcuts.Set(Shortcuts.StartMenu, _settings.StartMenuShortcut);
+                    break;
+                case "desktoplink" when OwnsShortcuts && OperatingSystem.IsWindows():
+                    _settings.DesktopShortcut = !_settings.DesktopShortcut;
+                    SettingsStore.Save(_settings);
+                    Shortcuts.Set(Shortcuts.Desktop, _settings.DesktopShortcut);
+                    break;
                 case "island": FlipIsland(s => s.Island = !s.Island); break;
                 case "hover": FlipIsland(s => s.IslandHover = !s.IslandHover); break;
                 case "busy": FlipIsland(s => s.IslandWhileBusy = !s.IslandWhileBusy); break;
@@ -389,6 +423,18 @@ sealed partial class TrayController
         _ = RefreshAsync(); // muestra de la animación elegida, como la del estilo de sonido
     }
 
+    /// <summary>El argumento que sigue a ese (--soltar archivo); null si no está.</summary>
+    static string? ArgAfter(string flag) => Array.IndexOf(Program.Args, flag) is var i and >= 0 && i + 1 < Program.Args.Length ? Program.Args[i + 1] : null;
+
+    /// <summary>Otro tamaño para la mascota del escritorio (MascotSizes).</summary>
+    void SetMascotSize(string size)
+    {
+        _settings.MascotSize = size;
+        SettingsStore.Save(_settings);
+        _mascotWindow?.SetSize(size);
+        if (_chatBubble?.IsVisible == true && _mascotWindow is { } mascot) _chatBubble.Follow(mascot.ScreenBounds);
+    }
+
     void ToggleDesktopMascot()
     {
         _settings.DesktopMascot = !_settings.DesktopMascot;
@@ -428,7 +474,7 @@ sealed partial class TrayController
         }
         if (!wanted || _mascotWindow is not null) return;
         PixelPoint? saved = _settings.DesktopMascotX is { } x && _settings.DesktopMascotY is { } y ? new PixelPoint(x, y) : null;
-        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _theme.Accent, _settings.MascotAllDesktops);
+        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _theme.Accent, _settings.MascotAllDesktops, _settings.MascotSize);
         _mascotWindow.PositionChanged += (_, _) =>
         {
             if (_mascotWindow is not { } moved) return;
@@ -436,6 +482,7 @@ sealed partial class TrayController
             if (_chatBubble?.IsVisible == true) _chatBubble.Follow(moved.ScreenBounds);
         };
         _mascotWindow.Poked += OnMascotPoked;
+        WireDrops(_mascotWindow);
         _mascotWindow.OpenRequested += ShowForm;
         _mascotWindow.HideRequested += () => { ToggleDesktopMascot(); PushSettings(); };
         _mascotWindow.Moved += at =>
@@ -694,13 +741,23 @@ sealed partial class TrayController
         // Modelos y voz: como encenderlos en Ajustes, que baja lo que falte.
         var relaunch = setup.Language != language;
         var voiceMissing = setup.Mic && !VoiceModel.Ready;
+        // El modelo local: la mascota responde con él; al apagarlo vuelve a Haiku.
+        if (HasLocal && (setup.LocalModelId != LocalChoice.Id || setup.LocalModelOn && _settings.LocalModel is null))
+        {
+            _localDownload?.Cancel();
+            _localServer.Stop();
+            _settings.LocalModel = setup.LocalModelId;
+        }
+        if (HasLocal && setup.LocalModelOn != (_settings.MascotModel == AssistantModels.Local))
+            _settings.MascotModel = setup.LocalModelOn ? AssistantModels.Local : "haiku";
+        var localMissing = HasLocal && setup.LocalModelOn && !LocalModel.Ready(LocalChoice);
         var speechMissing = setup.ReadAloud && NeedsSupertonic(_settings.ReadAloudVoice) && !ClaupetVoiceModel.Ready;
         _settings.Mic = setup.Mic;
         _settings.ReadAloud = setup.ReadAloud;
         SettingsStore.Save(_settings);
         UpdateVoice();
         if (!_settings.ReadAloud) _readAloud?.Stop();
-        if (relaunch && (voiceMissing || speechMissing))
+        if (relaunch && (voiceMissing || speechMissing || localMissing))
             lines.Add(L.T("Al reiniciar, descargue los modelos en Ajustes › Asistente."));
         else
         {
@@ -713,6 +770,11 @@ sealed partial class TrayController
             {
                 _ = DownloadSpeechAsync();
                 lines.Add(L.T("La voz de Claupet se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+            }
+            if (localMissing)
+            {
+                _ = DownloadLocalModelAsync();
+                lines.Add(L.T("El modelo local se descarga en segundo plano; el avance está en Claupet Console › Respuestas."));
             }
         }
         PushSettings();
@@ -784,7 +846,9 @@ sealed partial class TrayController
         _approvals?.Dispose();
         _island?.DropApproval();
         _island?.Close();
+        StopKeys();
         StopVoice();
+        _localServer.Dispose();
         _sounds.Dispose();
         _refresh.Dispose();
         _consoleHost?.Dispose();

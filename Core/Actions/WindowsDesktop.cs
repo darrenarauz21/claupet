@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
-using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text;
 using Microsoft.Win32;
 
@@ -10,32 +10,19 @@ namespace Claupet;
 
 /// <summary>
 /// Las acciones de la mascota en Windows (SystemActions entiende el pedido; aquí se hace): el registro, Core Audio,
-/// las teclas multimedia, el menú Inicio, las ventanas, WMI para el brillo, el Programador de tareas para los
-/// recordatorios y el portapapeles de WinForms.
+/// las teclas multimedia, el menú Inicio, las ventanas, WMI para el brillo y el Programador de tareas para los
+/// recordatorios. Capturar (con el recorte, que es una ventana) y el portapapeles los pone cada app (DesktopUi).
 /// </summary>
-sealed class WindowsDesktop : IDesktop
+[SupportedOSPlatform("windows")]
+sealed class WindowsDesktop(DesktopUi ui) : IDesktop
 {
     static readonly HashSet<string> AllKinds = [.. SystemActions.All];
 
     public IReadOnlySet<string> Kinds => AllKinds;
 
-    /// <summary>El portapapeles pide un hilo STA: el de la app lo es; desde --accion, después de un await, quizá no.</summary>
-    internal static T Sta<T>(Func<T> work)
-    {
-        if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA) return work();
-        T result = default!;
-        ExceptionDispatchInfo? error = null;
-        var thread = new Thread(() =>
-        {
-            try { result = work(); }
-            catch (Exception ex) { error = ExceptionDispatchInfo.Capture(ex); }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        error?.Throw();
-        return result;
-    }
+    /// <summary>Donde Windows guarda las capturas (Imágenes\Capturas de pantalla, en OneDrive si está).</summary>
+    public static string Screenshots => KnownFolders.Get(KnownFolders.Screenshots)
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots");
 
     // ── Fondo y modo claro u oscuro ─────────────────────────────────────────────────────────
 
@@ -170,9 +157,9 @@ sealed class WindowsDesktop : IDesktop
         return null;
     }
 
-    public Task<(string? File, string? Problem)> CaptureAsync(bool crop) => Task.FromResult<(string?, string?)>((ScreenCapture.Run(crop), null));
+    public Task<(string? File, string? Problem)> CaptureAsync(bool crop) => ui.CaptureAsync(crop);
 
-    public string ScreenshotsFolder => ScreenCapture.Folder;
+    public string ScreenshotsFolder => Screenshots;
 
     public void ScheduleReminder(Reminder reminder) => ReminderTasks.Create(reminder);
 
@@ -333,23 +320,9 @@ sealed class WindowsDesktop : IDesktop
 
     // ── Portapapeles y carpetas ─────────────────────────────────────────────────────────────
 
-    public Task<string?> CopyTextAsync(string text)
-    {
-        Sta(() => { Clipboard.SetText(text); return true; });
-        return Task.FromResult<string?>(null);
-    }
+    public Task<string?> CopyTextAsync(string text) => ui.CopyTextAsync(text);
 
-    public Task<(string? Text, string? ImageFile)> ReadClipboardAsync()
-    {
-        var (text, image) = Sta(() => (Clipboard.ContainsText() ? Clipboard.GetText() : null, Clipboard.ContainsImage() ? Clipboard.GetImage() : null));
-        if (text is { Length: > 0 })
-        {
-            image?.Dispose();
-            return Task.FromResult<(string?, string?)>((text, null));
-        }
-        if (image is null) return Task.FromResult<(string?, string?)>((null, null));
-        using (image) return Task.FromResult<(string?, string?)>((null, ScreenCapture.ForLook(image)));
-    }
+    public Task<(string? Text, string? ImageFile)> ReadClipboardAsync() => ui.ReadClipboardAsync();
 
     public string? Folder(KnownFolder folder) => folder switch
     {
@@ -457,7 +430,32 @@ sealed class WindowsDesktop : IDesktop
     }
 }
 
+/// <summary>
+/// Pasar al frente para escribir en el chat: Windows solo deja ponerse delante a la app que recibió la última
+/// tecla, y una que se quedó KeyHook quizá no cuente; sin eso, lo que se escribe iría a otra ventana. Se une un
+/// momento a la cola de entrada de la ventana del frente, que sí puede.
+/// </summary>
+static class Foreground
+{
+    public static void Take(IntPtr window)
+    {
+        var front = GetForegroundWindow();
+        var theirs = GetWindowThreadProcessId(front, IntPtr.Zero);
+        var mine = GetCurrentThreadId();
+        var attached = theirs != 0 && theirs != mine && AttachThreadInput(mine, theirs, true);
+        try { SetForegroundWindow(window); }
+        finally { if (attached) AttachThreadInput(mine, theirs, false); }
+    }
+
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, IntPtr process);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
+}
+
 /// <summary>Las carpetas de Windows que no están en Environment.SpecialFolder (Descargas, Capturas de pantalla).</summary>
+[SupportedOSPlatform("windows")]
 static class KnownFolders
 {
     public static readonly Guid Downloads = new("374DE290-123F-4565-9164-39C4925E467B");

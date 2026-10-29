@@ -250,13 +250,14 @@ static class SettingsPages
             if (s.SpeechStatus.Length > 0) rows.Add(Link(s.SpeechStatus, s.SpeechAction, "speech"));
         }
         if ((s.Chat || s.Island) && s.Has(PlatformFeatures.Hotkeys))
-            rows.AddRange(new[]
-            {
-                Caption(L.T("Teclas")),
-                Choice(L.T("Atajo del chat"), "chatkey", s.ChatKey),
-                Switch(s.Mic ? L.T("Tecla Copilot: chat y voz") : L.T("Tecla Copilot: abre el chat"), "copilot", s.CopilotKey),
-                Link(L.T("Atajos de teclado"), L.T("Ver…"), "shortcuts"),
-            }.Select(Full));
+        {
+            rows.Add(Full(Caption(L.T("Teclas"))));
+            rows.Add(Full(Choice(L.T("Atajo del chat"), "chatkey", s.ChatKey)));
+            // La tecla Copilot es de los teclados con Windows.
+            if (OperatingSystem.IsWindows())
+                rows.Add(Full(Switch(s.Mic ? L.T("Tecla Copilot: chat y voz") : L.T("Tecla Copilot: abre el chat"), "copilot", s.CopilotKey)));
+            rows.Add(Full(Link(L.T("Atajos de teclado"), L.T("Ver…"), "shortcuts")));
+        }
         if (rows.Count == 0) rows.Add(NotHere());
         return new("asistente", L.T("Asistente"), L.T("El chat con la mascota, la voz y las teclas."), "Asistente", rows);
     }

@@ -1,4 +1,3 @@
-using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
@@ -10,12 +9,13 @@ namespace Claupet;
 /// (y Claupet, si no estaba abierto). Llevan la cabeza del chibi, la misma de la ventana. Al arrancar, los encendidos
 /// se crean si faltan y se corrigen si apuntan a otro .exe (se movió la carpeta).
 /// </summary>
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 static class Shortcuts
 {
     public static string StartMenu => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Claupet.lnk");
     public static string Desktop => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Claupet.lnk");
     static string IconFile => DataFolder.In("claupet.ico");
-    static string Exe => Environment.ProcessPath ?? Application.ExecutablePath;
+    static string Exe => Environment.ProcessPath ?? "";
 
     /// <summary>Crea o quita el acceso directo de ese lugar.</summary>
     public static void Set(string file, bool on)
@@ -98,30 +98,40 @@ static class Shortcuts
         File.WriteAllBytes(IconFile, stream.ToArray());
     }
 
-    /// <summary>La cabeza del chibi, recortada a lo que pinta y centrada, con cuadritos enteros (nítida).</summary>
-    static byte[] HeadPng(int size)
+    /// <summary>
+    /// La cabeza del chibi, recortada a lo que pinta y centrada, con cuadritos enteros (nítida). Se pinta a mano sobre
+    /// los pixeles (BGRA): los cuadritos caen en pixeles enteros y no hace falta una biblioteca de imágenes.
+    /// </summary>
+    internal static byte[] HeadPng(int size)
     {
-        var pixels = new List<(Color Color, RectangleF Rect)>();
-        ChibiSprite.PaintHead((color, x, y, w, h) => pixels.Add((color, new RectangleF(x, y, w, h))), MascotFrame.Open);
-        using var bitmap = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+        var pixels = new List<(System.Drawing.Color Color, float X, float Y, float W, float H)>();
+        ChibiSprite.PaintHead((color, x, y, w, h) => pixels.Add((color, x, y, w, h)), MascotFrame.Open);
+        var bgra = new byte[size * size * 4];
         if (pixels.Count > 0)
         {
-            var left = pixels.Min(p => p.Rect.Left);
-            var top = pixels.Min(p => p.Rect.Top);
-            var width = pixels.Max(p => p.Rect.Right) - left;
-            var height = pixels.Max(p => p.Rect.Bottom) - top;
+            var left = pixels.Min(p => p.X);
+            var top = pixels.Min(p => p.Y);
+            var width = pixels.Max(p => p.X + p.W) - left;
+            var height = pixels.Max(p => p.Y + p.H) - top;
             var unit = Math.Max(1, (int)(size / Math.Max(width, height)));
             var x0 = (size - width * unit) / 2;
             var y0 = (size - height * unit) / 2;
-            using var g = Graphics.FromImage(bitmap);
-            foreach (var (color, rect) in pixels)
+            foreach (var (color, x, y, w, h) in pixels)
             {
-                using var brush = new SolidBrush(color);
-                g.FillRectangle(brush, x0 + (rect.X - left) * unit, y0 + (rect.Y - top) * unit, rect.Width * unit, rect.Height * unit);
+                var fromX = Math.Clamp((int)Math.Round(x0 + (x - left) * unit), 0, size);
+                var fromY = Math.Clamp((int)Math.Round(y0 + (y - top) * unit), 0, size);
+                var toX = Math.Clamp((int)Math.Round(x0 + (x - left + w) * unit), 0, size);
+                var toY = Math.Clamp((int)Math.Round(y0 + (y - top + h) * unit), 0, size);
+                for (var py = fromY; py < toY; py++)
+                    for (var px = fromX; px < toX; px++)
+                    {
+                        var i = (py * size + px) * 4;
+                        (bgra[i], bgra[i + 1], bgra[i + 2], bgra[i + 3]) = (color.B, color.G, color.R, color.A);
+                    }
             }
         }
         using var png = new MemoryStream();
-        bitmap.Save(png, ImageFormat.Png);
+        PngImage.Save(png, size, size, bgra, alpha: true);
         return png.ToArray();
     }
 

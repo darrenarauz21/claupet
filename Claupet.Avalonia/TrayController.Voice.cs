@@ -51,15 +51,21 @@ sealed partial class TrayController
                 ? L.T("El modelo de voz se está descargando ({0} %).", _modelPercent ?? 0)
                 : L.T("Falta el modelo de voz: se descarga en Ajustes › Asistente."));
             voice.Failed += VoiceNote;
-            // Una copia de prueba (--preview) en Windows no mira la tecla: la mira la app de siempre, con los mismos ajustes.
-            voice.WatchKey = !(OperatingSystem.IsWindows() && Program.Args.Contains("--preview"));
         }
-        // Aquí no se graban combinaciones (eso es de la app de Windows): una grabada vuelve a Ctrl derecho.
-        if (_voice is not null) _voice.Key = MicKeys.IsHold(_settings.MicKey) ? _settings.MicKey : MicKeys.Choices[0].Id;
+        if (_voice is { } current)
+        {
+            // Fuera de Windows no se graban combinaciones: una grabada vuelve a Ctrl derecho.
+            current.Key = MicKeys.IsHold(_settings.MicKey) ? _settings.MicKey : MicKeys.Choices[0].Id;
+            // Una combinación grabada la vigila KeyHook; una copia de prueba (--preview) en Windows no mira la tecla: la
+            // mira la app de siempre, con los mismos ajustes.
+            current.WatchKey = !(OperatingSystem.IsWindows() && Program.Args.Contains("--preview")) && !TalkIsCombo;
+        }
         if (_island is { } island) island.MicEnabled = _voice is not null;
+        UpdateKeys();
     }
 
-    string TalkKeyLabel => MicKeys.Label(MicKeys.IsHold(_settings.MicKey) ? _settings.MicKey : MicKeys.Choices[0].Id);
+    /// <summary>La tecla para hablar, como se dice en Ajustes.</summary>
+    string TalkKeyLabel => MicKeys.Label(MicKeys.IsHold(_settings.MicKey) || TalkIsCombo ? _settings.MicKey : MicKeys.Choices[0].Id);
 
     /// <summary>A quién se le habla: a la isla si está abierta, si se usó su micrófono o si no hay mascota con chat; si no, a la mascota.</summary>
     bool VoiceToIsland() =>
@@ -71,7 +77,8 @@ sealed partial class TrayController
         _readAloud?.Stop();
         _voiceToIsland = VoiceToIsland();
         _micFromIsland = false;
-        var hint = voice.Hint(TalkKeyLabel);
+        var hint = voice.Hint(_voiceTrigger ?? TalkKeyLabel);
+        _voiceTrigger = null;
         if (_voiceToIsland && _island is { } island)
         {
             island.Listen(hint);

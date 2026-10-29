@@ -41,7 +41,7 @@ sealed partial class IslandWindow : Window
     static readonly UiFont Spinner = new(Gfx.Spinner.Typeface, 14);
 
     // Medidas (en unidades de la interfaz, como a 96 ppp en Windows).
-    const double CompactW = 300, CompactH = 36, OpenW = 560, ShadowMargin = 14, HotWidth = 320, HotHeight = 6;
+    const double CompactW = 300, CompactH = 36, MouthW = 336, MouthH = 44, OpenW = 560, ShadowMargin = 14, HotWidth = 320, HotHeight = 6;
     const int OpenDelay = 250, CloseDelay = 700, HideDelay = 1200;
 
     // ── Eventos ─────────────────────────────────────────────────────────────────────────────
@@ -85,6 +85,8 @@ sealed partial class IslandWindow : Window
     /// <summary>Se plegó con un clic fuera mientras respondía: al llegar la respuesta, se abre para mostrarla.</summary>
     bool _reopenForAnswer;
     long _swallowAt = -10_000;
+    /// <summary>La mascota viene con un archivo (la isla espera asomada) y la boca abierta para recibir la caja.</summary>
+    bool _receiving, _mouth;
     string? _hoverKey;
     bool _focusPending;
 
@@ -365,6 +367,41 @@ sealed partial class IslandWindow : Window
     /// <summary>Llegó un archivo: la isla rebota y se abre en «Analizando».</summary>
     public void Swallow() => _swallowAt = Environment.TickCount64;
 
+    /// <summary>La mascota viene caminando con un archivo: la isla asoma y espera.</summary>
+    public void Receive(Screen? screen)
+    {
+        if (screen is not null) _screen = screen;
+        _receiving = true;
+        if (_shape == Shape.Hidden) ShowShape(Shape.Compact);
+        Redraw();
+    }
+
+    /// <summary>Abre la boca para recibir la caja (más grande y redonda).</summary>
+    public void OpenMouth()
+    {
+        _mouth = true;
+        if (_shape == Shape.Compact) Animate(MouthW, MouthH, 0, 200);
+    }
+
+    /// <summary>Dónde está la boca, en pixeles de la pantalla: hacia ahí vuela la caja.</summary>
+    public PixelPoint Mouth
+    {
+        get
+        {
+            if (Here is not { } screen) return default;
+            var area = screen.WorkingArea;
+            return new PixelPoint(area.X + area.Width / 2, area.Y + (int)Math.Round(((_mouth ? MouthH : CompactH) - 4) * screen.Scaling));
+        }
+    }
+
+    /// <summary>Dónde queda la isla compacta (con la boca abierta) en esa pantalla, en pixeles: para planear el lanzamiento.</summary>
+    public static PixelRect MouthArea(Screen screen)
+    {
+        var area = screen.WorkingArea;
+        var width = (int)Math.Round(MouthW * screen.Scaling);
+        return new PixelRect(area.X + (area.Width - width) / 2, area.Y, width, (int)Math.Round(MouthH * screen.Scaling));
+    }
+
     public void BeginAnalysis(string file)
     {
         _file = file;
@@ -373,6 +410,8 @@ sealed partial class IslandWindow : Window
         _analysisError = null;
         _analysisDone = false;
         _analysisSeen = false;
+        _receiving = false;
+        _mouth = false;
         _analysisAt = Environment.TickCount64;
         _analysisModel = _model;
         ShowPage(Page.Analysis);
@@ -563,7 +602,7 @@ sealed partial class IslandWindow : Window
                 break;
             case Shape.Compact:
                 HideInput();
-                Animate(CompactW, CompactH, 0, _y < -1 ? 180 : 240);
+                Animate(_mouth ? MouthW : CompactW, _mouth ? MouthH : CompactH, 0, _y < -1 ? 180 : 240);
                 break;
             case Shape.Open:
                 Animate(OpenW, MeasureOpen(), 0, 240);
@@ -692,7 +731,7 @@ sealed partial class IslandWindow : Window
     {
         get
         {
-            if (Analyzing || Pending || _choiceTask is not null || _asking || (_file is not null && !_analysisSeen)) return Shape.Compact;
+            if (Analyzing || _receiving || Pending || _choiceTask is not null || _asking || (_file is not null && !_analysisSeen)) return Shape.Compact;
             if (WhileBusy && _sessions.Any(s => s.State is SessionState.Working or SessionState.Waiting)) return Shape.Compact;
             return Shape.Hidden;
         }
@@ -748,7 +787,7 @@ sealed partial class IslandWindow : Window
         {
             _outSince = 0;
             if (_overSince == 0) _overSince = now;
-            if (_shape == Shape.Compact && OpenOnHover && now - _overSince >= OpenDelay)
+            if (_shape == Shape.Compact && OpenOnHover && now - _overSince >= OpenDelay && !_mouth)
             {
                 _clickOpened = false;
                 ShowShape(Shape.Open);
@@ -762,7 +801,7 @@ sealed partial class IslandWindow : Window
             var away = now - _outSince;
             if (_shape == Shape.Open && away >= CloseDelay && CanFold && !(_clickOpened && away < CloseDelay * 3))
                 Collapse(force: false);
-            else if (_shape == Shape.Compact && Resting == Shape.Hidden && away >= HideDelay && !hot)
+            else if (_shape == Shape.Compact && Resting == Shape.Hidden && !_mouth && away >= HideDelay && !hot)
                 ShowShape(Shape.Hidden);
         }
 

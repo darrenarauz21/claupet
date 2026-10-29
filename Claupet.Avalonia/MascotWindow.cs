@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
 namespace Claupet;
@@ -10,10 +11,17 @@ namespace Claupet;
 /// <summary>
 /// La mascota sobre el escritorio (el chibi o la clásica), sin marco ni fondo y siempre encima (igual
 /// que en Windows). Hace lo que diga ChibiDirector; se arrastra para cambiarla de lugar (sin salirse
-/// de la pantalla), un clic la hace saludar (y muchos, enojarse) y el clic derecho abre su menú.
+/// de la pantalla), un clic la hace saludar (y muchos, enojarse) y el clic derecho abre su menú. Se le pueden soltar
+/// archivos encima: los atrapa (FileHover) y los lleva a la isla (FilesDropped, WalkToAsync).
 /// </summary>
 sealed class MascotWindow : Window
 {
+    /// <summary>Un archivo pasa por encima (true) o se va (false): la mascota lo espera con los brazos abiertos.</summary>
+    public event Action<bool>? FileHover;
+    public event Action<string[]>? FilesDropped;
+
+    /// <summary>Lleva un archivo: no se arrastra ni atrapa otro.</summary>
+    public bool Busy { get; set; }
 
     public event Action? OpenRequested;
     public event Action? HideRequested;
@@ -40,9 +48,14 @@ sealed class MascotWindow : Window
     /// <summary>Dónde está en la pantalla, en pixeles (para la nubecita).</summary>
     public PixelRect ScreenBounds => new(Position, PixelSize.FromSize(Bounds.Size, RenderScaling));
 
-    public MascotWindow(ChibiDirector director, PixelPoint? saved, bool chibi, Func<System.Drawing.Color> accent, bool allDesktops = true)
+    /// <summary>Su tamaño (MascotSizes).</summary>
+    string _size;
+
+    public MascotWindow(ChibiDirector director, PixelPoint? saved, bool chibi, Func<System.Drawing.Color> accent, bool allDesktops = true,
+        string size = MascotSizes.Normal)
     {
         _director = director;
+        _size = size;
         Chibi = chibi;
         AllDesktops = allDesktops;
         _saved = saved;
@@ -54,11 +67,23 @@ sealed class MascotWindow : Window
         Topmost = true;
         Background = Brushes.Transparent;
         TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
-        var unit = chibi ? 3 : 4;
-        Width = (chibi ? ChibiSprite.Columns : ToastSprite.Columns) * unit;
-        Height = (chibi ? ChibiSprite.Rows : ToastSprite.Rows) * unit;
-        _view = new MascotView(director, chibi, unit, accent) { Cursor = new Cursor(StandardCursorType.Hand) };
+        _view = new MascotView(director, chibi, chibi ? 3 : 4, accent) { Cursor = new Cursor(StandardCursorType.Hand) };
         Content = _view;
+        Resize(Screens.Primary?.Scaling ?? 1);
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragEnterEvent, (_, e) =>
+        {
+            if (Busy || FilesOf(e).Length == 0) { e.DragEffects = DragDropEffects.None; return; }
+            e.DragEffects = DragDropEffects.Copy;
+            FileHover?.Invoke(true);
+        });
+        AddHandler(DragDrop.DragLeaveEvent, (_, _) => FileHover?.Invoke(false));
+        AddHandler(DragDrop.DropEvent, (_, e) =>
+        {
+            var files = FilesOf(e);
+            if (!Busy && files.Length > 0) FilesDropped?.Invoke(files);
+            else FileHover?.Invoke(false);
+        });
 
         var menu = new ContextMenu();
         var open = new MenuItem { Header = L.T("Abrir Claupet") };
@@ -73,6 +98,7 @@ sealed class MascotWindow : Window
         _timer.Tick += (_, _) => _view.Tick();
         Opened += (_, _) =>
         {
+            Resize(RenderScaling); // la escala de la pantalla en que quedó
             Position = Fit(_saved ?? DefaultPosition());
             if (AllDesktops) JoinAllSpaces();
             // Al apagarse o desconectarse un monitor, vuelve a su lugar (o al más cercano que se vea).
@@ -81,6 +107,52 @@ sealed class MascotWindow : Window
             _timer.Start();
         };
         Closed += (_, _) => _timer.Stop();
+    }
+
+    /// <summary>Las rutas de lo que se arrastra (solo archivos del equipo), como en la isla.</summary>
+    static string[] FilesOf(DragEventArgs e) =>
+#pragma warning disable CS0618 // DataTransfer recién llega en 11.3 y todavía no la usa el resto de la app
+        e.Data.GetFiles()?.Select(f => f.TryGetLocalPath()).OfType<string>().ToArray() ?? [];
+#pragma warning restore CS0618
+
+    /// <summary>Lo que mide cada casilla en pixeles reales (para planear el lanzamiento de la caja).</summary>
+    public int PixelUnit => MascotSizes.Unit(_size, Chibi, (float)RenderScaling);
+
+    /// <summary>Camina hasta x (a su misma altura, en pixeles) en ms milisegundos, con un arranque y una llegada suaves.</summary>
+    public async Task WalkToAsync(int x, int ms)
+    {
+        var from = Position.X;
+        var start = Environment.TickCount64;
+        while (true)
+        {
+            var k = Math.Clamp((Environment.TickCount64 - start) / (double)Math.Max(1, ms), 0, 1);
+            var ease = k < 0.1 ? k * k * 5 : k > 0.9 ? 1 - (1 - k) * (1 - k) * 5 : k - 0.05; // casi constante, sin tirones
+            Position = new PixelPoint((int)Math.Round(from + (x - from) * Math.Clamp(ease, 0, 1)), Position.Y);
+            if (k >= 1) break;
+            await Task.Delay(15);
+        }
+        Position = new PixelPoint(x, Position.Y);
+    }
+
+    /// <summary>Otro tamaño: crece o se achica sin moverse de su esquina de arriba (salvo para no salirse de la pantalla).</summary>
+    public void SetSize(string size)
+    {
+        _size = size;
+        Resize(RenderScaling);
+        Position = Fit(Position);
+    }
+
+    /// <summary>
+    /// Cada casilla mide un número entero de pixeles reales (MascotSizes, con la escala de la pantalla), para que los
+    /// pixeles no se deformen; en la interfaz, eso dividido por la escala.
+    /// </summary>
+    void Resize(double scale)
+    {
+        var unit = MascotSizes.Unit(_size, Chibi, (float)scale) / scale;
+        _view.Unit = unit;
+        Width = (Chibi ? ChibiSprite.Columns : ToastSprite.Columns) * unit;
+        Height = (Chibi ? ChibiSprite.Rows : ToastSprite.Rows) * unit;
+        _view.InvalidateVisual();
     }
 
     /// <summary>La posición más cercana con la ventana entera dentro de la pantalla en que cae: nunca se pierde por un borde.</summary>
@@ -133,7 +205,7 @@ sealed class MascotWindow : Window
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || Busy) return;
         _pressAt = this.PointToScreen(e.GetPosition(this));
         _startPosition = Position;
         _dragging = false;
@@ -169,6 +241,9 @@ sealed class MascotWindow : Window
 
     sealed class MascotView(ChibiDirector director, bool chibi, double unit, Func<System.Drawing.Color> accent) : Control
     {
+        /// <summary>Lo que mide cada casilla, en unidades de la interfaz.</summary>
+        public double Unit { get; set; } = unit;
+
         (ChibiMove Move, int Frame, long Beat) _shown = (ChibiMove.Sleep, -1, -1);
 
         /// <summary>Repinta solo cuando cambia el cuadro o, con música, el tiempo del compás (la clásica se anima con el tiempo: cada vuelta del reloj).</summary>
@@ -184,8 +259,8 @@ sealed class MascotWindow : Window
         public override void Render(DrawingContext dc)
         {
             var (move, t, music) = director.Now();
-            if (chibi) Gfx.Pixels(dc, 0, 0, unit, fill => ChibiSprite.Paint(fill, move, t, music));
-            else Gfx.Pixels(dc, 0, 0, unit, fill => ToastSprite.PaintMove(fill, move, t, accent(), music));
+            if (chibi) Gfx.Pixels(dc, 0, 0, Unit, fill => ChibiSprite.Paint(fill, move, t, music));
+            else Gfx.Pixels(dc, 0, 0, Unit, fill => ToastSprite.PaintMove(fill, move, t, accent(), music));
         }
     }
 }
