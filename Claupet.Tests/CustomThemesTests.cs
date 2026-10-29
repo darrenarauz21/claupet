@@ -2,8 +2,11 @@ using System.Drawing;
 
 namespace Claupet.Tests;
 
-/// <summary>Los temas propios: leer lo que responde el modelo, corregir el diseño y volver a la terracota si algo falla.</summary>
-[Collection("Theme.SelectedPalette")]
+/// <summary>
+/// Los temas propios: leer lo que responde el modelo, corregir el diseño y volver a la terracota si algo falla. Cambian
+/// Theme.SelectedPalette, CustomThemes.Folder y Assistant.External, que son estáticos: no corren en paralelo con las del asistente.
+/// </summary>
+[Collection("Assistant.External")]
 public sealed class CustomThemesTests
 {
     const string Beach = """
@@ -172,6 +175,32 @@ public sealed class CustomThemesTests
             Assert.Equal(Theme.Palettes[0].Label, Theme.PaletteLabel("tema:roto"));
         }
         finally { (CustomThemes.Folder, Theme.SelectedPalette) = (folder, palette); }
+    }
+
+    [Fact]
+    public async Task CreaElTemaConLaRespuestaDeClaudeYLoGuarda()
+    {
+        using var dir = new TempDir();
+        var folder = CustomThemes.Folder;
+        CustomThemes.Folder = dir.Path;
+        var brain = new FakeBrain(Beach[..Beach.IndexOf('{')], Beach[Beach.IndexOf('{')..]);
+        Assistant.External = () => brain;
+        try
+        {
+            var (theme, error) = await CustomThemes.CreateAsync("algo de playa", new AppSettings());
+            Assert.Null(error);
+            Assert.Equal("playa-dorada", theme?.Id);
+            Assert.True(File.Exists(dir["playa-dorada.json"]));
+            var asked = string.Join("\n", brain.Received?.Messages.Select(m => m.Text) ?? []);
+            Assert.Contains("algo de playa", asked);
+            Assert.Contains("luciernagas", asked);
+
+            Assistant.External = () => new FakeBrain("Hoy no tengo ganas de colores.");
+            var (none, problem) = await CustomThemes.CreateAsync("otro", new AppSettings());
+            Assert.Null(none);
+            Assert.NotNull(problem);
+        }
+        finally { (CustomThemes.Folder, Assistant.External) = (folder, null); }
     }
 
     static double Chroma(Color c) => (Math.Max(c.R, Math.Max(c.G, c.B)) - Math.Min(c.R, Math.Min(c.G, c.B))) / 255.0;

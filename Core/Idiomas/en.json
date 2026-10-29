@@ -1351,5 +1351,8 @@
   "Al agregar una cuenta se elige su memoria: compartida (su carpeta projects se enlaza con la de otra cuenta; CLAUDE.md, skills, agentes, ajustes y credenciales siguen siendo propios) o separada.": "When adding an account you choose its memory: shared (its projects folder is linked to another account's; CLAUDE.md, skills, agents, settings and credentials stay its own) or separate.",
   "Sus sesiones salen en Uso y Actividad. Solo se leen sus archivos en este equipo: no se usa su cuenta ni se gastan tokens.": "Their sessions show up in Usage and Activity. Only their files on this computer are read: their account isn't used and no tokens are spent.",
   "Las cuentas de Claude Code y los otros agentes que sigue Claupet.": "The Claude Code accounts and the other agents Claupet follows.",
-  "Tema propio": "Custom theme"
+  "Tema propio": "Custom theme",
+  "Claude no respondió.": "Claude didn't answer.",
+  "La respuesta no traía un tema que se pudiera leer.": "The answer didn't include a theme that could be read.",
+  "No se pudo guardar el tema: {0}": "Couldn't save the theme: {0}"
 }
