@@ -1,5 +1,6 @@
 using System.Formats.Tar;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Claupet.Tests;
@@ -295,5 +296,15 @@ public sealed class UpdatesTests
         var without = SettingsPages.Build(new SettingsState { Features = PlatformFeatures.All & ~PlatformFeatures.Updates }).Single(p => p.Id == "sistema");
         Assert.DoesNotContain(without.Rows, r => r.Key is "updates" or "update");
         Assert.True(new AppSettings().CheckUpdates); // encendido de entrada
+    }
+
+    [Fact]
+    public void LaClaveDeLasReleasesEsUnaP256()
+    {
+        // La pública (SubjectPublicKeyInfo en base64) de una clave P-256, como las que crea --extension-keygen.
+        using var key = ECDsa.Create();
+        key.ImportSubjectPublicKeyInfo(Convert.FromBase64String(Updates.ReleaseKey), out var read);
+        Assert.Equal(Convert.FromBase64String(Updates.ReleaseKey).Length, read);
+        Assert.Equal(ECCurve.NamedCurves.nistP256.Oid.Value, key.ExportParameters(false).Curve.Oid.Value);
     }
 }

@@ -151,7 +151,7 @@ sealed class Updates : IDisposable
     /// «Claupet --extension-keygen», sin las líneas BEGIN y END. La privada nunca va en el repositorio: la usa
     /// empaquetar.py (--clave). Vacía: todavía no hay clave, y la app solo avisa y abre la página de la Release.
     /// </summary>
-    public const string ReleaseKey = "";
+    public const string ReleaseKey = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2oZ9yQnv2+jIp6/Ho8QK6SE9v6HSIVe2HOb+jlo7BC7CXYjRVR8iQfPQJpiTx4FWWzws9tI2M/fQ82s7gmnGIg==";
 
     static readonly TimeSpan Every = TimeSpan.FromDays(1);
 
