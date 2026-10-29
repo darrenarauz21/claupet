@@ -6,17 +6,17 @@ namespace Claupet;
 
 /// <summary>
 /// Las extensiones en la app de Windows: el gestor, lo que Claupet les ofrece (IExtensionHostApi), los
-/// eventos que escuchan las habilidades, los comandos «/…» del chat, la API local y la ventana de
-/// Ajustes › Extensiones. Sin extensiones instaladas nada de esto cambia cómo se comporta la app.
+/// eventos que escuchan las habilidades, los comandos «/…» del chat y la API local. Se ven y se manejan en
+/// Claupet Console (Ajustes › Extensiones, ExtensionsPanel); aquí va lo que es de esta app (IExtensionsHost).
+/// Sin extensiones instaladas nada de esto cambia cómo se comporta la app.
 /// </summary>
-sealed partial class TrayApp : IExtensionsPanelHost
+sealed partial class TrayApp : IExtensionsHost
 {
     ExtensionManager _extensions = null!;
     readonly SharedAudio _audio = new();
     LocalApiServer? _localApi;
     string? _localApiError;
     SynchronizationContext? _ui;
-    ExtensionsForm? _extensionsForm;
     PetSheet? _pet;
     readonly Dictionary<string, (SessionState State, string? Action)> _seenSessions = new();
 
@@ -35,6 +35,8 @@ sealed partial class TrayApp : IExtensionsPanelHost
         }), new DpapiSecretStore(DpapiSecretStore.DefaultPath)) { HostApi = new HostApi(this) };
         _extensions.Changed += () => PostUi(OnExtensionsChanged);
         _extensions.Disabled += (name, reason) => PostUi(() => ShowExtensionNotice(name, L.T("Se apagó: {0}", reason)));
+        // Ajustes › Extensiones de Claupet Console las muestra y las maneja.
+        ConsoleHost.UseExtensions(this);
 
         // Las ranuras exclusivas: si una extensión las ocupa, el integrado (Claude Code, Whisper, la voz de
         // Claupet o la de Windows) no corre; si no, todo es como siempre.
@@ -91,7 +93,6 @@ sealed partial class TrayApp : IExtensionsPanelHost
     void OnExtensionsChanged()
     {
         PushSettings();
-        _extensionsForm?.Reload();
         _ = _extensions.VerifyPacksAsync();
         // La mascota de un paquete que se apagó o se quitó: vuelve la de siempre.
         var petId = _settings.CustomPet is { } id && _extensions.Pets().Any(p => p.Id == id) ? id : null;
@@ -187,31 +188,21 @@ sealed partial class TrayApp : IExtensionsPanelHost
 
     static bool IsPackage(string file) => file.EndsWith(".claupet", StringComparison.OrdinalIgnoreCase) && File.Exists(file);
 
-    /// <summary>Abre el paquete, muestra lo que es (firma, permisos, ranuras) y lo instala si la persona acepta.</summary>
-    public async Task InstallPackageAsync(string path, IWin32Window? owner = null)
+    /// <summary>
+    /// Un paquete soltado (o elegido en el asistente de configuración): Claupet Console se abre en la revisión (qué es,
+    /// la firma, los permisos, las ranuras) y se instala solo si la persona lo acepta allí.
+    /// </summary>
+    public Task InstallPackageAsync(string path) => ConsoleHost.Extensions?.ReviewAsync(path) ?? Task.CompletedTask;
+
+    /// <summary>Ajustes › Extensiones en Claupet Console; con un id, la página de esa extensión.</summary>
+    void ShowExtensions(string? id = null) => OpenConsole(id is null ? ExtensionsPanel.PageId : ExtensionsPanel.DetailPage(id));
+
+    async Task IExtensionsHost.InstalledAsync(InstalledExtension installed, bool update, bool useAsPet)
     {
-        InstallReview review;
-        try { review = await Task.Run(() => _extensions.Store.Prepare(path)); }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+        await _extensions.VerifyPacksAsync();
+        await OnUiAsync(async () =>
         {
-            MessageBox.Show(owner, L.T("No se puede instalar «{0}»:", Path.GetFileName(path)) + Environment.NewLine + Environment.NewLine + ex.Message,
-                "Claupet", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        var occupied = ExtensionSlots.Exclusive.ToDictionary(s => s, s => _extensions.ProviderFor(s)?.Manifest.Name.Text);
-        using var dialog = new InstallReviewForm(review, occupied, _form.Theme);
-        _form.HoldOpen = true;
-        try
-        {
-            if (dialog.ShowDialog(owner) != DialogResult.OK)
-            {
-                review.Package.Dispose();
-                return;
-            }
-            var installed = await _extensions.InstallAsync(review, dialog.UseForSlots);
-            review.Package.Dispose();
-            await _extensions.VerifyPacksAsync();
-            if (installed.Manifest.Pet is not null && dialog.UseAsPet)
+            if (useAsPet)
             {
                 _settings.CustomPet = installed.Id;
                 SettingsStore.Save(_settings);
@@ -220,43 +211,10 @@ sealed partial class TrayApp : IExtensionsPanelHost
             if (installed.Manifest.Events.Count > 0)
                 try { await _extensions.ChannelAsync(installed.Id); }
                 catch (ExtensionUnavailableException ex) { ShowExtensionNotice(installed.Manifest.Name.Text, ex.Message); }
-            ShowExtensionNotice(installed.Manifest.Name.Text, review.IsUpdate ? L.T("Actualizada a la versión {0}.", installed.Manifest.Version) : L.T("Instalada."));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            review.Package.Dispose();
-            ErrorLog.Write(ex);
-            MessageBox.Show(owner, L.T("No se pudo instalar: {0}", ex.Message), "Claupet", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        }
-        finally
-        {
-            _form.HoldOpen = false;
+            ShowExtensionNotice(installed.Manifest.Name.Text, update ? L.T("Actualizada a la versión {0}.", installed.Manifest.Version) : L.T("Instalada."));
             OnExtensionsChanged();
-        }
-    }
-
-    void ShowExtensions()
-    {
-        if (_extensionsForm is { IsDisposed: false } open)
-        {
-            open.Activate();
-            return;
-        }
-        _extensionsForm = new ExtensionsForm(this, _form.Theme);
-        _extensionsForm.FormClosed += (_, _) => _extensionsForm = null;
-        _extensionsForm.Show();
-    }
-
-    async Task PickPackageAsync()
-    {
-        using var dialog = new OpenFileDialog { Filter = L.T("Paquetes de Claupet") + " (*.claupet)|*.claupet", Title = L.T("Instalar una extensión") };
-        _form.HoldOpen = true;
-        try
-        {
-            if (dialog.ShowDialog() != DialogResult.OK) return;
-        }
-        finally { _form.HoldOpen = false; }
-        await InstallPackageAsync(dialog.FileName);
+            return true;
+        }).Unwrap();
     }
 
     // ── La API local ────────────────────────────────────────────────────────────────────────
@@ -299,7 +257,7 @@ sealed partial class TrayApp : IExtensionsPanelHost
             _localApi = null;
             _ = running.DisposeAsync();
         }
-        _extensionsForm?.Reload();
+        PushSettings();
     }
 
     public IReadOnlyList<ApiToken> ApiTokens => _settings.Extensions.ApiTokens;

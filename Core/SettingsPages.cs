@@ -111,7 +111,11 @@ sealed record TopicState(string Id, string Label, string Engine, bool Fixed);
 /// <summary>Una capacidad (captura, calendario, ventanas…) y si tiene «Permitir siempre».</summary>
 sealed record GrantState(string Id, string Label, bool Allowed);
 
-enum RowKind { Caption, Switch, Choice, Info, Note, Link, Links }
+/// <summary>
+/// El tipo de una fila. Input: un cuadro para escribir (la acción lleva lo escrito en Value). Page: lleva a otra
+/// página (Key es su id) sin pedirle nada a la bandeja, como el detalle de una extensión.
+/// </summary>
+enum RowKind { Caption, Switch, Choice, Info, Note, Link, Links, Input, Page }
 
 /// <summary>El color de una nota o de un enlace: el de siempre, el apagado, el de cuidado, el acento o el de peligro.</summary>
 enum RowTone { Normal, Muted, Warn, Accent, Danger }
@@ -123,16 +127,21 @@ sealed record SettingsLink(string Text, string Key);
 
 /// <summary>
 /// Una fila de Ajustes. Text es la etiqueta; Value, lo que se muestra a la derecha (la opción elegida, el dato
-/// o el texto del enlace); Key, la acción que se le pide a la bandeja al tocarla.
+/// o el texto del enlace; en un cuadro para escribir, lo escrito); Key, la acción que se le pide a la bandeja al tocarla.
+/// En un cuadro para escribir, Secret oculta lo escrito y Placeholder es lo que se ve mientras está vacío. En un
+/// enlace, File (como «*.claupet») hace que la Console pida antes un archivo y mande su ruta en Value, y Copy hace que
+/// la Console copie ese texto sin pedirle nada a la bandeja.
 /// </summary>
 sealed record SettingsRow(RowKind Kind, string Text, string Key = "", string Value = "", bool On = false,
-    RowTone Tone = RowTone.Normal, bool Swatch = false, RowPlace Place = RowPlace.Both, IReadOnlyList<SettingsLink>? Links = null);
+    RowTone Tone = RowTone.Normal, bool Swatch = false, RowPlace Place = RowPlace.Both, IReadOnlyList<SettingsLink>? Links = null,
+    bool Secret = false, string? Placeholder = null, string? File = null, string? Copy = null);
 
 /// <summary>
 /// Una sección de Ajustes. Tab es la pestaña de los ajustes rápidos donde van sus filas (las que no son solo de
-/// la Console); null: la sección solo está en Claupet Console.
+/// la Console); null: la sección solo está en Claupet Console. Parent: es una página dentro de esa sección (el detalle
+/// de una extensión): no va en la lista de la izquierda y tiene un enlace para volver.
 /// </summary>
-sealed record SettingsPage(string Id, string Title, string Description, string? Tab, IReadOnlyList<SettingsRow> Rows);
+sealed record SettingsPage(string Id, string Title, string Description, string? Tab, IReadOnlyList<SettingsRow> Rows, string? Parent = null);
 
 /// <summary>
 /// Las secciones de Ajustes y sus filas, armadas una sola vez: con ellas se dibujan las pestañas de los ajustes
@@ -147,12 +156,14 @@ static class SettingsPages
         IslandPage(s), AccountsPage(s), MachinePage(s),
     ];
 
-    static SettingsRow Caption(string text) => new(RowKind.Caption, text, Place: RowPlace.Console);
-    static SettingsRow Switch(string text, string key, bool on) => new(RowKind.Switch, text, key, On: on);
-    static SettingsRow Choice(string text, string key, string value) => new(RowKind.Choice, text, key, value);
-    static SettingsRow Info(string text, string value) => new(RowKind.Info, text, Value: value);
-    static SettingsRow Note(string text, RowTone tone = RowTone.Muted) => new(RowKind.Note, text, Tone: tone);
-    static SettingsRow Link(string text, string link, string key, RowTone tone = RowTone.Accent) => new(RowKind.Link, text, key, link, Tone: tone);
+    internal static SettingsRow Caption(string text) => new(RowKind.Caption, text, Place: RowPlace.Console);
+    internal static SettingsRow Switch(string text, string key, bool on) => new(RowKind.Switch, text, key, On: on);
+    internal static SettingsRow Choice(string text, string key, string value) => new(RowKind.Choice, text, key, value);
+    internal static SettingsRow Info(string text, string value) => new(RowKind.Info, text, Value: value);
+    internal static SettingsRow Note(string text, RowTone tone = RowTone.Muted) => new(RowKind.Note, text, Tone: tone);
+    internal static SettingsRow Link(string text, string link, string key, RowTone tone = RowTone.Accent) => new(RowKind.Link, text, key, link, Tone: tone);
+    /// <summary>Una fila de enlaces juntos, sin etiqueta (como «Ver un aviso de ejemplo · Abrir carpeta de sonidos»).</summary>
+    internal static SettingsRow Links(params SettingsLink[] links) => new(RowKind.Links, "", Links: links);
 
     /// <summary>Solo en Claupet Console: no es de todos los días.</summary>
     static SettingsRow Full(SettingsRow row) => row with { Place = RowPlace.Console };
@@ -299,11 +310,13 @@ static class SettingsPages
         return new("respuestas", L.T("Respuestas"), L.T("Quién responde cada pregunta: sin IA, el modelo local o la nube."), null, rows);
     }
 
-    static SettingsPage ExtensionsPage(SettingsState s) => new("extensiones", L.T("Extensiones"),
+    /// <summary>
+    /// Sin extensiones en este sistema, la nota de siempre. Con ellas, Claupet Console la cambia por las páginas de
+    /// ExtensionsPanel (la lista, el detalle de cada una, la revisión antes de instalar…); aquí queda solo el resumen.
+    /// </summary>
+    static SettingsPage ExtensionsPage(SettingsState s) => new(ExtensionsPanel.PageId, L.T("Extensiones"),
         L.T("Habilidades, voces, mascotas y modelos de otros. También puede soltar un .claupet sobre la mascota."), null,
-        s.Has(PlatformFeatures.Extensions)
-            ? [Choice(L.T("Instaladas"), "extensions", s.Extensions), Link(L.T("Un paquete .claupet"), L.T("Instalar desde archivo…"), "extinstall")]
-            : [NotHere()]);
+        s.Has(PlatformFeatures.Extensions) ? [Info(L.T("Instaladas"), s.Extensions)] : [NotHere()]);
 
     static SettingsPage IslandPage(SettingsState s)
     {

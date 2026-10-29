@@ -45,6 +45,8 @@ sealed class ConsoleWindow : Window
     IReadOnlyList<SettingsPage> _pages = [];
     IReadOnlyList<ChatSummary> _chats = [];
     string _section;
+    /// <summary>La sección de la página que se muestra, si es una de adentro (el detalle de una extensión).</summary>
+    string? _sectionParent;
     /// <summary>La conversación que se muestra: los mensajes de otra que lleguen tarde se ignoran.</summary>
     string _chatId = ConsoleLink.QuickChat;
     bool _connected;
@@ -70,7 +72,8 @@ sealed class ConsoleWindow : Window
         _scroll.Content = new Border { Child = _view, Padding = new Thickness(32, 28, 32, 32) };
         // La columna ocupa lo que haya, hasta 700 (las tarjetas no se encogen a lo que dicen sus filas).
         _scroll.SizeChanged += (_, e) => _view.Width = Math.Clamp(e.NewSize.Width - 64, 0, 700);
-        _view.Action += key => _client.Send(new ConsoleMessage { Type = ConsoleLink.Action, Key = key });
+        _view.Action += (key, value) => _client.Send(new ConsoleMessage { Type = ConsoleLink.Action, Key = key, Value = value });
+        _view.Navigate += Select;
         _chat.Request += OnChatRequest;
         _editor.FilesToggled += () =>
         {
@@ -167,9 +170,11 @@ sealed class ConsoleWindow : Window
             case ConsoleLink.Show:
                 if (message.Key is { Length: > 0 } section && _pages.Any(p => p.Id == section))
                 {
+                    var moved = section != _section;
                     _mode = Mode.Settings;
                     _section = section;
                     Render(rebuild: true);
+                    if (moved) _scroll.Offset = default;
                 }
                 else if (message.Key == "editor" && _mode != Mode.Editor) SetMode(Mode.Editor);
                 else if (message.Key is null or ConsoleLink.Chat && _mode != Mode.Chat)
@@ -254,12 +259,15 @@ sealed class ConsoleWindow : Window
             if (_main.Child != _chat) _main.Child = _chat;
             return;
         }
-        if (_pages.All(p => p.Id != _section)) _section = _pages[0].Id;
+        // Una página de adentro que ya no está (la extensión se desinstaló, la revisión terminó) vuelve a su sección.
+        if (_pages.All(p => p.Id != _section)) _section = _sectionParent is { } up && _pages.Any(p => p.Id == up) ? up : _pages[0].Id;
+        var shown = _pages.First(p => p.Id == _section);
+        _sectionParent = shown.Parent;
         _sections.Children.Clear();
-        foreach (var page in _pages)
+        foreach (var page in _pages.Where(p => p.Parent is null))
         {
             var id = page.Id;
-            var current = id == _section;
+            var current = id == (shown.Parent ?? _section);
             var item = Ui.Press(Ui.Text(page.Title, 14.5, current ? _ink.Text : _ink.Secondary), () => Select(id),
                 current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name: page.Title);
             item.MinHeight = 38;
@@ -268,13 +276,13 @@ sealed class ConsoleWindow : Window
             if (current) item.Background = _ink.Pill;
             _sections.Children.Add(item);
         }
-        _view.Show(_pages.First(p => p.Id == _section), _ink, rebuild);
+        _view.Show(shown, _ink, rebuild, _pages.FirstOrDefault(p => p.Id == shown.Parent)?.Title);
         if (_main.Child != _scroll) _main.Child = _scroll;
     }
 
     void Select(string id)
     {
-        if (id == _section) return;
+        if (id == _section || _pages.All(p => p.Id != id)) return;
         _section = id;
         Render(rebuild: true);
         _scroll.Offset = default;

@@ -67,7 +67,7 @@ static class Ui
     /// </summary>
     public static void ShowOptions(ConsoleMessage message, Control anchor, Ink ink, Action<string?> reply) =>
         DropList.Show(anchor, ink,
-            (message.Options ?? []).Select(o => new DropList.Entry(o.Id, o.Label, Selected: o.Id == message.Value, Action: o.Label.EndsWith('…'))).ToList(),
+            (message.Options ?? []).Select(o => new DropList.Entry(o.Id, o.Label, Selected: o.Id == message.Value, Action: o.Label.EndsWith('…'), Danger: o.Danger)).ToList(),
             reply);
 
     public static Avalonia.Controls.Shapes.Path Chevron(IBrush brush) => new()

@@ -3,15 +3,15 @@ using System.Text.Json.Serialization;
 
 namespace Claupet;
 
-/// <summary>Una opción de una lista que la bandeja le pide elegir a Claupet Console.</summary>
-sealed record ConsoleOption(string Id, string Label);
+/// <summary>Una opción de una lista que la bandeja le pide elegir a Claupet Console. Danger: en rojo (desinstalar, revocar).</summary>
+sealed record ConsoleOption(string Id, string Label, bool Danger = false);
 
 /// <summary>
 /// Un mensaje entre Claupet (la bandeja) y Claupet Console, una línea de JSON cada uno.
 /// De la bandeja: «estado» (las secciones ya armadas, el idioma y los colores), «opciones» (una lista para
 /// elegir, con su número), «mostrar» (traer la ventana al frente, en una sección o en «chat»), «chats» (la lista
 /// de conversaciones) y «chat» (la conversación abierta, con lo que va llegando).
-/// De la Console: «accion» (se tocó la fila Key), «elegir» (Value de la lista Token; sin Value, se cerró sin
+/// De la Console: «accion» (se tocó la fila Key; Value: lo escrito en un cuadro o el archivo elegido), «elegir» (Value de la lista Token; sin Value, se cerró sin
 /// elegir) y los del chat, con la conversación en Key: «chat-abrir», «chat-nuevo» (con el id que elige la
 /// Console), «chat-enviar» (Value: el mensaje), «chat-parar», «chat-borrar» y «chat-limpiar» (vacía la
 /// conversación rápida).

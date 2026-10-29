@@ -238,7 +238,7 @@ que solo abre el mismo usuario de Windows (`PipeOptions.CurrentUserOnly`), con u
 | Mensaje | De | Qué lleva |
 |---|---|---|
 | `estado` | bandeja | las secciones ya armadas, el idioma y la paleta; se manda al conectarse y con cada cambio |
-| `accion` | Console | la acción de la fila que se tocó (la misma de los ajustes rápidos) |
+| `accion` | Console | la acción de la fila que se tocó (la misma de los ajustes rápidos); con lo escrito en un cuadro o el archivo elegido |
 | `opciones` | bandeja | la lista que esa acción mostraría como menú, con la elegida y un número |
 | `elegir` | Console | la opción elegida de la lista con ese número; sin valor, se cerró sin elegir |
 | `mostrar` | bandeja | traer la ventana al frente, en una sección o, sin ella, en el chat |
@@ -248,11 +248,34 @@ que solo abre el mismo usuario de Windows (`PipeOptions.CurrentUserOnly`), con u
 | `chat-enviar`, `chat-parar` | Console | mandar un mensaje o detener la respuesta |
 | `chat-borrar`, `chat-limpiar` | Console | borrar una guardada o vaciar la rápida |
 
-Lo que todavía abre una ventana de la bandeja (grabar una tecla, escribir la ciudad, las extensiones, el
-hook) se abre desde Claupet, al frente. Si Claupet no está abierto, la Console lo dice y ofrece abrirlo.
+Lo que todavía abre una ventana de la bandeja (grabar una tecla, escribir la ciudad, el hook) se abre desde
+Claupet, al frente. Si Claupet no está abierto, la Console lo dice y ofrece abrirlo.
 `Claupet.exe --console` abre en el chat (también la entrada «Claupet Console» del menú del ícono) y
 `Claupet.exe --console --seccion=<id>`, en esa sección de Ajustes (`general`, `avisos`, `apariencia`, `mascota`,
-`asistente`, `respuestas`, `isla`, `cuentas` o `sistema`).
+`asistente`, `respuestas`, `extensiones`, `isla`, `cuentas` o `sistema`) o en una página de adentro (`ext:<id>`, el
+detalle de una extensión).
+
+Además de interruptores, listas, datos, notas y enlaces, una fila puede ser un cuadro para escribir (`Input`: se manda
+con Intro o al salir del cuadro, y antes de cualquier otra acción de la página; `Secret` no muestra lo escrito) o llevar
+a otra página (`Page`: la Console va sola, sin pedirle nada a la bandeja). Una página con `Parent` es de adentro de
+esa sección: no va en la lista de la izquierda y arriba tiene «‹ sección» para volver; si deja de existir (se
+desinstaló la extensión), la Console vuelve a la sección. Un enlace con `File` pide primero un archivo con el selector
+del sistema (en el proceso de la Console) y manda su ruta; uno con `Copy` copia ese texto sin pasar por la bandeja.
+
+**Extensiones** (`Core/Extensions/ConsolePanel.cs`). Ajustes › Extensiones las muestra y las maneja todas en la Console,
+igual en cualquier bandeja que tenga un `ExtensionManager`: la bandeja implementa `IExtensionsHost` (el gestor, lo que
+hace después de instalar y la API local) y llama una vez a `ConsoleHost.UseExtensions`; `ConsoleHost` cambia la sección
+de resumen por las páginas de `ExtensionsPanel` y le pasa las acciones que empiezan con `ext-`.
+
+| Página | Qué tiene |
+|---|---|
+| `extensiones` | las instaladas (cada una lleva a su página, con su versión, qué trae, su firma y su estado), «Instalar desde archivo…», los paquetes que no se pueden leer y los comandos repetidos, las ranuras exclusivas (si alguna instalada puede ocupar una) y la API local con sus tokens («Revocar» pide confirmarlo) |
+| `ext:<id>` | encendida o apagada (y por qué se apagó), versión, autor, firma, qué trae, estado, comandos, de qué se entera, licencia, sitio, permisos, sus ajustes (interruptor, lista o cuadro según el tipo; la clave nunca vuelve a la Console: se escribe otra o se borra), su registro, su carpeta de datos y «Desinstalar…» (borrando o guardando sus datos) |
+| `ext-revision` | antes de instalar: versión (o si actualiza, vuelve atrás o reinstala), autor, qué trae, la firma y lo que significa, si corre un programa, los permisos (en una actualización, solo los nuevos), las ranuras y la mascota a usar, e «Instalar»; una firma inválida, revocada o de otra clave solo se explica |
+| `ext-token` | un token nuevo de la API local: para qué programa y qué puede pedir; ya creado, se muestra una vez con «Copiar» |
+
+Soltar un `.claupet` sobre la mascota o la isla, o elegirlo en el asistente de configuración, abre la Console en la
+revisión (la abre si estaba cerrada); nada se instala sin «Instalar». La ventana de extensiones de WinForms ya no existe.
 
 **En Linux y macOS** la Console es la misma (`Claupet --console`, la entrada «Claupet Console» del menú del ícono o
 abrir Claupet otra vez). Lo que no depende del sistema (la tubería, las conversaciones, las listas para elegir) lo hace
