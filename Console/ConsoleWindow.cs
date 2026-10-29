@@ -39,6 +39,9 @@ sealed class ConsoleWindow : Window
     /// <summary>Ya se preguntó por los cambios sin guardar: ahora sí se cierra.</summary>
     bool _closing;
     readonly Border _main = new() { CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(1), ClipToBounds = true };
+    /// <summary>El fondo animado del tema propio, si trae: debajo de _main, que entonces queda transparente.</summary>
+    readonly SceneLayer _scene = new();
+    readonly Border _sceneBox = new() { CornerRadius = new CornerRadius(14), ClipToBounds = true, IsHitTestVisible = false };
     readonly TextBlock _heading = new() { FontFamily = Ink.Display, FontSize = 19, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
     Ink _ink;
     Mode _mode;
@@ -111,6 +114,9 @@ sealed class ConsoleWindow : Window
         _aside.Children.Add(_asideScroll);
         Grid.SetColumn(_aside, 1);
         _body.Children.Add(_aside);
+        _sceneBox.Child = _scene;
+        Grid.SetColumn(_sceneBox, 2);
+        _body.Children.Add(_sceneBox);
         Grid.SetColumn(_main, 2);
         _body.Children.Add(_main);
         _root.Children.Add(_body);
@@ -123,6 +129,9 @@ sealed class ConsoleWindow : Window
         {
             // Maximizada, Windows deja una parte fuera de la pantalla: se compensa para que no se corte.
             if (e.Property == WindowStateProperty) _root.Margin = WindowState == WindowState.Maximized ? OffScreenMargin : default;
+            // El fondo animado no se mueve si no se ve.
+            if (e.Property == WindowStateProperty || e.Property == IsVisibleProperty)
+                _scene.Paused = WindowState == WindowState.Minimized || !IsVisible;
         };
         ActualThemeVariantChanged += (_, _) =>
         {
@@ -220,7 +229,9 @@ sealed class ConsoleWindow : Window
             Themes.Paint(Resources, _ink);
             _header.Child = Header();
             _rail.Child = Rail();
-            _main.Background = _ink.Surface;
+            _scene.Show(CustomThemes.Selected?.Scene);
+            _sceneBox.Background = _ink.Surface;
+            _main.Background = _scene.Active ? Brushes.Transparent : _ink.Surface;
             _main.BorderBrush = _ink.Hairline;
             _chat.SetInk(_ink);
             _editor.SetInk(_ink);
