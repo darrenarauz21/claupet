@@ -772,7 +772,7 @@ static class Assistant
                 prompt.AppendLine(L.T("Los textos que escribas dentro de una acción (títulos, notas, recordatorios, eventos) van en el idioma de la persona; solo los nombres de las acciones y sus valores fijos van como están."));
                 Offer("fondo", L.T("- fondo: el fondo de pantalla. valor: la ruta de una imagen del equipo o la URL https directa de una imagen .jpg o .png."));
                 Offer("tema", windows ? L.T("- tema: «claro» u «oscuro» (el modo de Windows).") : L.T("- tema: «claro» u «oscuro» (el modo del sistema)."));
-                Offer("color", L.T("- color: el color de esta app: {0}.", string.Join(", ", Theme.Palettes.Select(p => p.Label))));
+                Offer("color", L.T("- color: el color de esta app: {0}.", string.Join(", ", Theme.Choices().Select(p => p.Label))));
                 Offer("volumen", L.T("- volumen: un número de 0 a 100, «subir», «bajar», «silenciar» o «activar»."));
                 Offer("musica", windows ? L.T("- musica: «reproducir», «pausar», «siguiente» o «anterior» (lo que suene en Windows).")
                     : L.T("- musica: «reproducir», «pausar», «siguiente» o «anterior» (lo que suene en el equipo)."));

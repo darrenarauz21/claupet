@@ -224,9 +224,11 @@ static class SystemActions
 
     static string? Palette(string value, Action<string> setPalette)
     {
-        var palette = Theme.Palettes.FirstOrDefault(p => Same(p.Label, value) || Same(p.Id, value));
+        // Las paletas y los temas propios, por su nombre o su id.
+        var choices = Theme.Choices().ToList();
+        var palette = choices.FirstOrDefault(p => Same(p.Label, value) || Same(p.Id, value));
         if (palette.Id is null)
-            return L.T("Ese color no lo tengo: hay {0}.", string.Join(", ", Theme.Palettes.Select(p => p.Label)));
+            return L.T("Ese color no lo tengo: hay {0}.", string.Join(", ", choices.Select(p => p.Label)));
         setPalette(palette.Id);
         return null;
     }

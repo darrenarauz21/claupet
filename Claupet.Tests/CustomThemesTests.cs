@@ -221,5 +221,22 @@ public sealed class CustomThemesTests
         finally { (CustomThemes.Folder, Theme.SelectedPalette) = (folder, palette); }
     }
 
+    [Fact]
+    public async Task LaMascotaEligeUnTemaPropioPorSuNombre()
+    {
+        using var dir = new TempDir();
+        var folder = CustomThemes.Folder;
+        CustomThemes.Folder = dir.Path;
+        try
+        {
+            CustomThemes.Save(CustomThemes.Parse(Beach)!);
+            string? chosen = null;
+            var outcome = await SystemActions.RunAsync(new AssistantAction("color", "playa dorada"), id => chosen = id);
+            Assert.Null(outcome.Problem);
+            Assert.Equal("tema:playa-dorada", chosen);
+        }
+        finally { CustomThemes.Folder = folder; }
+    }
+
     static double Chroma(Color c) => (Math.Max(c.R, Math.Max(c.G, c.B)) - Math.Min(c.R, Math.Min(c.G, c.B))) / 255.0;
 }
