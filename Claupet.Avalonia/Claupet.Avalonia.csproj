@@ -23,6 +23,8 @@
     <Compile Include="..\Console\**\*.cs" Link="Console\%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Las traducciones (L.T), dentro del ejecutable. -->
     <EmbeddedResource Include="..\Core\Idiomas\*.json" LogicalName="idiomas/%(Filename)%(Extension)" />
+    <!-- Los términos y condiciones del asistente (Terms), en cada idioma. -->
+    <EmbeddedResource Include="..\Core\Terminos\*.txt" LogicalName="terminos/%(Filename)%(Extension)" />
     <!-- Las pruebas (Claupet.Tests) ven lo interno de la app. -->
     <InternalsVisibleTo Include="Claupet.Tests" />
   </ItemGroup>

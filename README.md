@@ -66,9 +66,13 @@ installed and signed in. Older versions are in [Releases](https://github.com/dar
 
 ## Install
 
-**Windows.** Save the `.exe` in a folder of its own and double-click it. If Windows says it
-protected your PC, choose **More info › Run anyway** (the app isn't signed). Look for the orange
-icon by the clock, or under the **^** arrow.
+**Windows.** Double-click the `.exe` you downloaded. If Windows says it protected your PC, choose
+**More info › Run anyway** (the app isn't signed). The assistant shows the terms and conditions
+and installs Claupet in its own folder, like any app: by default
+`%LOCALAPPDATA%\Programs\Claupet` (no administrator rights needed), or the one you choose with
+**Change…**. It shows up in the Start menu and in **Settings › Apps**, where you can uninstall it.
+After that you can delete the file you downloaded. Look for the orange icon by the clock, or under
+the **^** arrow.
 
 **macOS.** Unzip, open **Terminal**, type `sh ` (with a space), drag `preparar-mac.sh` into the
 window and press Enter. Claupet moves to **Applications** and opens in the menu bar. If macOS asks
@@ -78,8 +82,9 @@ to read "Claude Code-credentials", choose **Always Allow**.
 It also shows up in your applications menu. On GNOME, the tray icon needs the AppIndicator
 extension (Ubuntu ships with it).
 
-The first time, Claupet offers to set up permission alerts, start with your computer and
-notifications. **Apply** takes them all.
+The first time, Claupet asks you to accept its [terms and conditions](Core/Terminos/en.txt) and
+offers to set up permission alerts, start with your computer and notifications. **Apply** takes
+them all.
 
 ## Good to know
 

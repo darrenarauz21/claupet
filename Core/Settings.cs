@@ -138,6 +138,8 @@ sealed class AppSettings
     public DateOnly? RecapShown { get; set; }
     /// <summary>El asistente de configuración ya se mostró una vez.</summary>
     public bool SetupDone { get; set; }
+    /// <summary>La versión de los términos y condiciones que la persona aceptó (Terms.Version); null: ninguna.</summary>
+    public string? TermsAccepted { get; set; }
     /// <summary>El acceso directo «Claupet» del menú Inicio, que abre Claupet Console (en Windows).</summary>
     public bool StartMenuShortcut { get; set; } = true;
     /// <summary>El mismo acceso directo en el escritorio.</summary>

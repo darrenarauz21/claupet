@@ -69,9 +69,13 @@ anteriores están en [Releases](https://github.com/darrenarauz21/claupet/release
 
 ## Instalar
 
-**Windows.** Guarde el `.exe` en una carpeta fija y ábralo con doble clic. Si Windows dice que
-protegió su PC, elija **Más información › Ejecutar de todas formas** (la app no está firmada).
-Busque el ícono naranja junto al reloj o en la flechita **^**.
+**Windows.** Abra con doble clic el `.exe` que descargó. Si Windows dice que protegió su PC,
+elija **Más información › Ejecutar de todas formas** (la app no está firmada). El asistente le
+muestra los términos y condiciones e instala Claupet en una carpeta propia, como cualquier app: por
+defecto, `%LOCALAPPDATA%\Programs\Claupet` (sin permisos de administrador), o la que usted elija con
+**Cambiar…**. Queda en el menú Inicio y en **Configuración › Aplicaciones**, desde donde se
+desinstala. Después puede borrar el archivo que descargó. Busque el ícono naranja junto al reloj o
+en la flechita **^**.
 
 **macOS.** Descomprima, abra **Terminal**, escriba `sh ` (con un espacio), arrastre
 `preparar-mac.sh` a la ventana y pulse Enter. Claupet queda en **Aplicaciones** y se abre en la
@@ -81,8 +85,9 @@ barra de menús. Si macOS pide leer «Claude Code-credentials», elija **Permiti
 `sh instalar.sh`. También queda en el menú de aplicaciones. En GNOME, el ícono de la bandeja
 necesita la extensión AppIndicator (Ubuntu ya la trae).
 
-La primera vez, Claupet ofrece configurar los avisos de permisos, el inicio con el sistema y las
-notificaciones. **Aplicar** acepta todo.
+La primera vez, Claupet le pide aceptar sus [términos y condiciones](Core/Terminos/es.txt) y
+ofrece configurar los avisos de permisos, el inicio con el sistema y las notificaciones.
+**Aplicar** acepta todo.
 
 ## Bueno saber
 

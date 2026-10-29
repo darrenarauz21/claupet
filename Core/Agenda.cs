@@ -235,6 +235,9 @@ static class ReminderStore
         Save(list);
     }
 
+    /// <summary>Los que todavía no se avisaron (sus tareas del Programador de tareas siguen ahí).</summary>
+    public static List<string> PendingIds() => Load().Where(r => !r.Done).Select(r => r.Id).ToList();
+
     /// <summary>Los que ya llegaron y no se avisaron: quedan avisados.</summary>
     public static List<Reminder> TakeDue(DateTime now)
     {
