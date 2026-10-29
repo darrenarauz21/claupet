@@ -102,8 +102,8 @@ sesión iniciada. Python 3 solo hace falta para armar los paquetes.
 ```powershell
 git clone https://github.com/darrenarauz21/claupet.git
 cd claupet
-dotnet run --project Claupet.csproj                # Windows (WinForms)
-dotnet run --project Claupet.Avalonia              # Linux y macOS (también corre en Windows)
+dotnet run --project Claupet.Avalonia              # Windows, Linux y macOS
+dotnet test Claupet.Tests                          # pruebas (en Windows)
 python herramientas/empaquetar.py                  # paquetes autocontenidos en paquetes/
 ```
 
@@ -111,8 +111,9 @@ python herramientas/empaquetar.py                  # paquetes autocontenidos en 
 
 ```text
 Core/                     lógica común: uso, sesiones, actividad, avisos, asistente y red
-*.cs                      app de Windows (WinForms)
-Claupet.Avalonia/         app de Linux y macOS (Avalonia)
+Console/                  Claupet Console, la ventana grande
+Claupet.Avalonia/         la app en Windows, Linux y macOS: bandeja, mascota, isla y voz
+Claupet.Tests/            pruebas
 herramientas/             empaquetado y scripts de instalación
 ```
 
@@ -121,8 +122,7 @@ herramientas/             empaquetado y scripts de instalación
 | | |
 |---|---|
 | Plataforma | .NET 8 (C#) |
-| Interfaz en Windows | WinForms |
-| Interfaz en Linux y macOS | Avalonia 11 |
+| Interfaz | Avalonia 11, la misma en Windows, Linux y macOS |
 | Voz a texto | Whisper.net (whisper.cpp) |
 | Texto a voz | ONNX Runtime, y System.Speech para las voces de Windows |
 | Claude | CLI de Claude Code (`claude -p`), con su propia cuenta |

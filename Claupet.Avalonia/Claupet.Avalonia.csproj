@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Claupet para Linux y macOS (también corre en Windows, para probar). Comparte Core/ y Claupet Console
-       (Console/) con la app de Windows (WinForms); el resto de la interfaz es propia, hasta que todo sea Avalonia. -->
+  <!-- Claupet, la misma app en Windows, Linux y macOS: Core/ (lo que no es interfaz), Claupet Console (Console/) y
+       la interfaz de la bandeja, la mascota y la isla (esta carpeta). Lo de cada sistema va con OperatingSystem.Is…(). -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0</TargetFramework>

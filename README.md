@@ -99,8 +99,8 @@ in. Python 3 is only needed to build the release packages.
 ```powershell
 git clone https://github.com/darrenarauz21/claupet.git
 cd claupet
-dotnet run --project Claupet.csproj                # Windows (WinForms)
-dotnet run --project Claupet.Avalonia              # Linux and macOS (also runs on Windows)
+dotnet run --project Claupet.Avalonia              # Windows, Linux and macOS
+dotnet test Claupet.Tests                          # tests (on Windows)
 python herramientas/empaquetar.py                  # self-contained packages in paquetes/
 ```
 
@@ -108,8 +108,9 @@ python herramientas/empaquetar.py                  # self-contained packages in 
 
 ```text
 Core/                     shared logic: usage, sessions, activity, notices, assistant, network
-*.cs                      Windows app (WinForms)
-Claupet.Avalonia/         Linux and macOS app (Avalonia)
+Console/                  Claupet Console, the big window
+Claupet.Avalonia/         the app on Windows, Linux and macOS: tray, mascot, island, voice
+Claupet.Tests/            tests
 herramientas/             packaging and install scripts
 ```
 
@@ -118,8 +119,7 @@ herramientas/             packaging and install scripts
 | | |
 |---|---|
 | Runtime | .NET 8 (C#) |
-| Windows UI | WinForms |
-| Linux and macOS UI | Avalonia 11 |
+| UI | Avalonia 11, the same on Windows, Linux and macOS |
 | Speech to text | Whisper.net (whisper.cpp) |
 | Text to speech | ONNX Runtime, plus System.Speech for Windows voices |
 | Claude | Claude Code CLI (`claude -p`), with your own account |
