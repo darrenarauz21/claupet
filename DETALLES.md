@@ -313,6 +313,39 @@ encendidos si faltan o apuntan a otra carpeta (`Core/Shortcuts.cs`, que usan las
 (`--preview`) no los toca.
 Abrir `Claupet.exe` otra vez, sin argumentos, con Claupet ya abierto, también trae la Console.
 
+## Temas propios
+
+Además de las seis paletas, en Ajustes › Apariencia de la Console se escribe un prompt en **Crear un tema…** («un tema
+de playa con el fondo animado», «algo otoñal con una letra más redonda») y Claude arma un tema para todo Claupet, con
+la cuenta y el modelo de la mascota (si la mascota usa el modelo local, el de la cuenta). Al terminar queda elegido;
+**Borrar el tema** lo quita y vuelve a la terracota. Cada tema es un JSON en `temas\<id>.json`, junto a los ajustes,
+y se elige en la lista **Color** como una paleta más, con el id `tema:<id>`: la bandeja y la Console lo leen del disco
+por ese id (`Core/CustomThemes.cs`). Si el archivo falta o está roto, `Theme.ForDark` e `Ink.For` vuelven a la
+terracota, sin error.
+
+El JSON lleva el id, el nombre, los colores de `Theme` para el modo claro y el oscuro, una familia de letra opcional y
+un fondo animado opcional. El diseño se respeta por código y no por confianza en el modelo:
+
+- Se lee con tolerancia (el primer objeto JSON de la respuesta, aunque venga en un bloque de código o con comas de más); lo que no
+  es un color se queda con el de Claupet.
+- Superficies sobrias: el fondo, Raised, Hover, el borde y la pista, con la luz de su modo y poco color (croma ≤ 0,10).
+- Contraste WCAG contra el fondo y contra Raised: 4,5:1 el texto, 3:1 los secundarios, el acento y los de estado; si
+  no llega, se oscurece (claro) o se aclara (oscuro) hasta que llegue. Peligro, aviso y éxito fuera de su tono (rojo,
+  ámbar, verde) vuelven a los de Claupet.
+- La letra es solo un nombre de familia; si está instalada (`FontManager`), va delante de la cadena de `Ink.Sans` y
+  `Ink.Display`. Mono no cambia.
+- El id se limpia (minúsculas, cifras y guiones; nada de barras, puntos ni nombres reservados) y la ruta siempre
+  queda dentro de `temas\`.
+
+El fondo animado sale de un catálogo cerrado de escenas en pixel art (`playa`, `lluvia`, `nieve`, `estrellas`, `hojas`,
+`burbujas`, `luciernagas`); el modelo elige la escena, sus colores, la densidad (0,1–1) y la velocidad (0,25–2). Se
+dibuja solo en la Console, detrás del contenido y con poca opacidad, a 12 cuadros por segundo, y se pausa con la
+ventana minimizada u oculta (`Console/SceneLayer.cs`). La isla, las burbujas y la mascota solo toman los colores.
+
+Para probar sin ventanas: `Claupet.exe --tema "<prompt>"` crea el tema, lo guarda e imprime el JSON validado (no lo
+elige). Por ahora se crean desde la bandeja Avalonia; la de WinForms usa sus colores si hay uno elegido,
+pero todavía no los ofrece en su lista ni los crea.
+
 ## Actividad
 
 Un carril por sesión activa (los nodos los dibuja `LaneNodes.cs`, que usa también la isla): «Pedido», «+N» con lo anterior y los últimos grupos de pasos del
