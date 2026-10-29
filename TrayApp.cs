@@ -395,7 +395,7 @@ sealed partial class TrayApp : ApplicationContext
             AnswerCustom = AnswerPresets.Current(s) == AnswerPresets.Custom,
             TopicEngines = AnswerTopics.All.Select(t => new TopicState(t.Id, L.T(t.Label),
                 t.Fixed ? L.T("Siempre la nube") : EngineLabel(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
-            Grants = Capabilities.All.Select(c => new GrantState(c.Id, c.Label, Capabilities.Allowed(s, c.Id))).ToList(),
+            Grants = Capabilities.Available.Select(c => new GrantState(c.Id, c.Label, Capabilities.Allowed(s, c.Id))).ToList(),
         };
     }
 

@@ -118,8 +118,13 @@ sealed partial class TrayController
             _director.SetMood(ChibiMove.Think);
             return;
         }
-        // Las acciones en el equipo (captura, calendario, volumen…) llegan a esta app en una etapa siguiente.
-        var answer = result.Action is not null ? L.T("Eso todavía no lo puedo hacer en este sistema. (・_・;)") : result.Text;
+        // Si pidió algo en el equipo, lo hace (con su permiso); si trajo datos, la nubecita vuelve a pensar con ellos.
+        var answer = await RunActionAsync(result, request, island: false, Stream, () =>
+        {
+            bubble.Think(mascot.ScreenBounds);
+            _director.SetMood(ChibiMove.Think);
+        }, cancel.Token);
+        if (cancel.IsCancellationRequested) return;
         _quick.Add(new ChatTurn(false, answer, WhoAnswered(result)));
         QuickUpdated();
         ReadAloudIfOn(result, answer, () =>

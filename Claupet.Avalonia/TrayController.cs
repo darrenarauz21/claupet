@@ -143,6 +143,7 @@ sealed partial class TrayController
             Render();
             if (showOnStart) ShowForm();
             if (demo) ShowSamples();
+            StartActions();
             UpdateMascotWindow();
             UpdateIsland();
             UpdateVoice();
@@ -772,6 +773,7 @@ sealed partial class TrayController
     {
         _timer.Stop();
         _sessionTimer.Stop();
+        _reminderTimer.Stop();
         _toasts.CloseAll();
         _mascotWindow?.Close();
         _bubble.Close();

@@ -322,7 +322,19 @@ static class Dialogs
         return result == 0 && !string.IsNullOrEmpty(text) ? text : null;
     }
 
-    static Task<int> Show(string text, Theme theme, string[] buttons, Control? extra = null, string title = "Claupet")
+    /// <summary>
+    /// Una pregunta con varias respuestas: el Id elegido, o null si se cerró sin elegir. primary va resaltada, pero
+    /// Enter no elige nada: una tecla suelta no da un permiso para siempre ni reinicia el equipo.
+    /// </summary>
+    public static async Task<string?> Choose(string text, Theme theme, IReadOnlyList<(string Id, string Label)> options, string primary)
+    {
+        var accent = Math.Max(0, options.ToList().FindIndex(o => o.Id == primary));
+        var chosen = await Show(text, theme, options.Select(o => o.Label).ToArray(), accent: accent, enter: false);
+        return chosen >= 0 ? options[chosen].Id : null;
+    }
+
+    /// <summary>accent: el botón resaltado; enter: si Enter lo elige (si no, ninguno es el de por defecto).</summary>
+    static Task<int> Show(string text, Theme theme, string[] buttons, Control? extra = null, string title = "Claupet", int accent = 0, bool enter = true)
     {
         var done = new TaskCompletionSource<int>();
         var window = new Window
@@ -338,8 +350,8 @@ static class Dialogs
         {
             var index = i;
             var button = new Button { Content = buttons[i], MinWidth = 84, HorizontalContentAlignment = HorizontalAlignment.Center };
-            if (i == 0) { button.Background = Gfx.B(theme.Accent); button.Foreground = Brushes.White; button.IsDefault = true; }
-            else button.IsCancel = true;
+            if (i == accent) { button.Background = Gfx.B(theme.Accent); button.Foreground = Brushes.White; button.IsDefault = enter; }
+            else if (enter) button.IsCancel = true;
             button.Click += (_, _) => { done.TrySetResult(index); window.Close(); };
             row.Children.Add(button);
         }

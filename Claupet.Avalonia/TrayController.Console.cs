@@ -9,8 +9,12 @@ namespace Claupet;
 /// </summary>
 sealed partial class TrayController : IConsoleApp
 {
-    /// <summary>Lo que esta app ya sabe hacer; al traer algo de Windows, se agrega aquí y aparecen sus filas.</summary>
-    const PlatformFeatures Features = PlatformFeatures.MascotChat | PlatformFeatures.Island | PlatformFeatures.Mic | PlatformFeatures.ReadAloud;
+    /// <summary>
+    /// Lo que esta app ya sabe hacer; al traer algo de Windows, se agrega aquí y aparecen sus filas. Las acciones en el
+    /// equipo, donde hay un escritorio que las haga (macOS y Linux).
+    /// </summary>
+    static PlatformFeatures Features => PlatformFeatures.MascotChat | PlatformFeatures.Island | PlatformFeatures.Mic | PlatformFeatures.ReadAloud
+        | (SystemActions.Desktop is null ? PlatformFeatures.None : PlatformFeatures.Actions);
 
     ConsoleHost? _consoleHost;
     ConsoleHost ConsoleHost => _consoleHost ??= new ConsoleHost(this);
@@ -71,6 +75,7 @@ sealed partial class TrayController : IConsoleApp
             IslandWhileBusy = s.IslandWhileBusy,
             WeeklyRecap = s.WeeklyRecap,
             Approvals = ApprovalsText(),
+            Grants = Capabilities.Available.Select(c => new GrantState(c.Id, c.Label, Capabilities.Allowed(s, c.Id))).ToList(),
             StartWithWindows = StartupRegistration.IsEnabled,
             Accounts = s.Accounts.Count,
             Language = L.Label,
@@ -110,6 +115,12 @@ sealed partial class TrayController : IConsoleApp
     /// </summary>
     void IConsoleApp.Act(string key)
     {
+        if (key.StartsWith("grant:", StringComparison.Ordinal))
+        {
+            ToggleGrant(key["grant:".Length..]);
+            PushSettings();
+            return;
+        }
         if (key.StartsWith("topic:", StringComparison.Ordinal))
         {
             var topic = AnswerTopics.Find(key["topic:".Length..]);
@@ -273,7 +284,7 @@ sealed partial class TrayController : IConsoleApp
             ErrorLog.Write(ex);
             result = new AssistantResult("", null, null, null, ex.Message);
         }
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        await Dispatcher.UIThread.InvokeAsync(async () =>
         {
             chat.Streaming = null;
             if (cancel.IsCancellationRequested)
@@ -283,8 +294,18 @@ sealed partial class TrayController : IConsoleApp
             }
             var reply = result.Failed ? $"{result.Error} (._.)"
                 : result.Task is not null ? result.Text.Length > 0 ? result.Text : L.T("Eso es una tarea para Claude Code.")
-                : result.Action is not null ? L.T("Eso todavía no lo puedo hacer en este sistema. (・_・;)")
-                : result.Text;
+                // Si pidió algo en el equipo, lo hace (con su permiso); si trajo datos, la respuesta empieza de nuevo con ellos.
+                : await RunActionAsync(result, request, chat.Island, Stream, () =>
+                {
+                    chat.Streaming = "";
+                    chat.Show(true);
+                }, cancel);
+            chat.Streaming = null;
+            if (cancel.IsCancellationRequested)
+            {
+                chat.Show(false);
+                return;
+            }
             ReadAloudIfOn(result, reply, () =>
             {
                 if (cancel.IsCancellationRequested) return;

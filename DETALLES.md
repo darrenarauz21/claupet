@@ -260,8 +260,8 @@ abrir Claupet otra vez). Lo que no depende del sistema (la tubería, las convers
 `Claupet.Avalonia/TrayController.Console.cs` en la app Avalonia): sus ajustes, sus acciones y el asistente del chat.
 Las filas de lo que un sistema todavía no tiene no aparecen (`PlatformFeatures` en `SettingsState`); una sección que
 queda sin nada dice «Todavía no está disponible en este sistema.». En la app Avalonia el chat responde como en
-Respuestas, sin acciones en el equipo (si se le pide una, lo dice); con la isla, la conversación rápida es la suya
-(ver Asistente en Linux y macOS).
+Respuestas, con las acciones en el equipo en Linux y macOS (en Windows, esta app todavía no las hace: lo dice); con la
+isla, la conversación rápida es la suya (ver Asistente en Linux y macOS).
 
 Una sola bandeja y una sola Console por persona, con mutex con nombre (`Core/ConsoleLink.cs`). En Windows van en
 `Local\` (la sesión de Windows). En Linux y macOS, .NET limita `Local\` a la sesión del proceso (cada terminal tiene
@@ -358,8 +358,10 @@ La primera línea de la respuesta puede traer una marca, que no se muestra:
 | `[ACCION] {"accion":"…","valor":"…"}` | la app hace esa acción en el equipo (tabla de abajo) y la mascota dice la frase que sigue, o lo que falló |
 | `[TAREA] <pedido>` | lo que Claude no puede hacer con sus herramientas ni con las acciones: se ofrece abrir una sesión de Claude Code con ese pedido, en `TaskFolder` (si no se eligió otra, la propia del asistente, `~\Claupet\Tareas`, que se crea al abrir la primera tarea; no va en Documentos porque suele estar en OneDrive) o, si vino de un archivo soltado que no pudo abrir (un Excel, por ejemplo), en la carpeta del archivo |
 
-Las acciones son una lista cerrada (`SystemActions.cs`), para que una frase mal entendida no pueda
-hacer otra cosa; lo demás se encarga a Claude Code:
+Las acciones son una lista cerrada (`Core/Actions/SystemActions.cs`), para que una frase mal entendida no pueda
+hacer otra cosa; lo demás se encarga a Claude Code. Lo que cambia de un sistema a otro está detrás de `IDesktop`
+(`Core/Actions/Desktop.cs`): en Windows, `WindowsDesktop.cs`; en Linux y macOS, ver Asistente en Linux y macOS. El
+prompt y las reglas sin IA solo ofrecen las acciones que el sistema sabe hacer (`SystemActions.Supports`):
 
 | Acción | Valor | Cómo |
 |---|---|---|
@@ -417,9 +419,9 @@ abierta, la nueva se cierra enseguida y avisa la otra. Los que pasaron con la ap
 abrirla («se le pasó»). La tarea se borra al avisar o cancelar y, si no, sola un día después.
 
 Las consultas dejan un `sessions/<pid>.json` mientras corren; la vista Actividad las ignora por su
-carpeta. El código está en `Core/Assistant.cs`; las acciones, en `SystemActions.cs`, `ScreenCapture.cs`,
-`ReminderTasks.cs` y `Core/Agenda.cs` (notas, `.ics` y recordatorios, sin interfaz). Son solo de Windows,
-como el chat.
+carpeta. El código está en `Core/Assistant.cs`; las acciones, en `Core/Actions/` (qué se pide, los permisos y los
+mensajes, igual en los tres sistemas), `WindowsDesktop.cs`, `ScreenCapture.cs`, `ReminderTasks.cs` y `Core/Agenda.cs`
+(notas, `.ics` y recordatorios, sin interfaz).
 
 **La isla** (`IslandForm.cs`) es una ventana siempre oscura, con el acento de la paleta. Oculta, una
 franja invisible de 320 × 6 px en el centro del borde de arriba la hace asomar compacta (300 × 36);
@@ -594,7 +596,7 @@ en el asistente de configuración; lo demás sigue bajo «Próximamente».
 
 **Chat con la mascota** (`ChatBubbleWindow.cs`, `TrayController.Chat.cs`). La nubecita, con el selector de modelo,
 la respuesta mientras llega y las tareas para Claude Code. Es la conversación rápida de Claupet Console y la del chat
-de la isla. Las acciones en el equipo todavía no: si se le pide una, lo dice.
+de la isla. Si se le pide algo en el equipo, lo hace como en Windows (ver Acciones, más abajo).
 
 **Isla** (`IslandWindow.cs`, `IslandWindow.Pages.cs`, `TrayController.Island.cs`). Las mismas páginas (sesiones,
 chat, análisis de un archivo, permisos, preguntas, cambios y resumen de la semana), en una ventana transparente que
@@ -621,6 +623,33 @@ descargas son las de Windows (`Core/Voice/`, que compilan las dos apps); cambian
 
 Para macOS, `empaquetar.py` deja fuera del `.app` las bibliotecas de Whisper y de ONNX Runtime para otros sistemas
 (unos 24 MB), que los paquetes copian siempre.
+
+**Acciones** (`MacDesktop.cs`, `LinuxDesktop.cs`, `UnixDesktop.cs`, `TrayController.Actions.cs`). Lo que se pide, los
+permisos por capacidad y la confirmación de reiniciar o apagar son los de Windows (`Core/Actions/`); cambia cómo se
+hace cada cosa. Se hacen con los programas del sistema, sin shell (cada argumento va aparte, y lo que dice la persona
+llega a AppleScript como dato, nunca dentro del script), y fuera del hilo de la interfaz: un programa que tarda o un
+permiso que pregunta el sistema no la congela. Si falta un programa, la respuesta dice cuál instalar.
+
+| Acción | macOS | Linux |
+|---|---|---|
+| fondo, tema | AppleScript a System Events | `gsettings` (GNOME, Cinnamon, MATE) o las herramientas de Plasma |
+| volumen | AppleScript (`set volume`) | `wpctl` (PipeWire) o `pactl` |
+| musica | Spotify o Música, el que esté abierto | MPRIS: `playerctl` o `dbus-send` (Spotify, navegadores…) |
+| abrir | `open`; las apps, de `/Applications` y las del sistema | `xdg-open`; las apps, de sus `.desktop` (con `gio` o `gtk-launch`) |
+| captura | `screencapture` (la pantalla principal, o el recorte con la herramienta de macOS) | `spectacle`, `gnome-screenshot`, `grim` y `slurp`, `maim`, `scrot` o `import`; al portapapeles con `wl-copy` o `xclip` |
+| agendar | el `.ics` se abre en Calendario | el `.ics` se abre con `xdg-open` |
+| recordar | un LaunchAgent que abre la app a esa hora (se quita al avisar) | `systemd-run --user --on-calendar` (no sobrevive a un reinicio: avisa la app al abrirse) |
+| ventana | AppleScript; maximizar y ocultar piden Accesibilidad | `wmctrl` (y `xdotool` para minimizar), solo en X11 |
+| equipo | `pmset` para bloquear y suspender; reiniciar y apagar por System Events | `loginctl`, `systemctl`; reiniciar y apagar por GNOME o Plasma (cada app puede pedir guardar), si no `systemctl` |
+| brillo | no (no hay forma sin bibliotecas privadas): no se ofrece | `brightnessctl` o el servicio de energía de GNOME |
+| estado | `pmset -g batt`, `vm_stat` y `sysctl` | `/sys/class/power_supply` y `/proc/meminfo` |
+| portapapeles | el de Avalonia; una imagen copiada, con AppleScript | el de Avalonia; una imagen, con `wl-paste` o `xclip` |
+| carpeta | las de siempre en la carpeta de usuario | las de `xdg-user-dirs` («Descargas», «Imágenes»…) |
+
+Mientras se captura, la mascota, las nubecitas y la isla se vuelven transparentes. En Linux con Wayland no hay
+«ventana»: Wayland no deja que una app mueva las de otras. En Windows, esta app todavía no hace acciones (las hace la
+de siempre): se ofrece en el paso 4. `Claupet --accion <acción> <valor>` las prueba sin abrir ventanas, como en
+Windows (sin portapapeles de texto, que necesita la app abierta).
 
 ## Avisos
 
@@ -738,9 +767,11 @@ registradas y vivas, y el hook. Lo habitual:
 - Linux: Avalonia 11 necesita `libICE`, `libSM` y `fontconfig` (vienen en los escritorios
   habituales). En GNOME, el ícono de la bandeja necesita la extensión AppIndicator.
 - Windows 11 deja los íconos nuevos en el desbordamiento (^).
-- Las acciones en el equipo, los atajos (el del chat y la tecla Copilot), las extensiones y el modelo local son
-  solo de Windows por ahora. En Linux y macOS ya están Claupet Console, el chat con la mascota, la isla y la voz;
-  lo demás, en las etapas siguientes.
+- Los atajos (el del chat y la tecla Copilot), las extensiones y el modelo local son solo de Windows por ahora. En
+  Linux y macOS ya están Claupet Console, el chat con la mascota, la isla, la voz y las acciones en el equipo; lo
+  demás, en las etapas siguientes.
+- Las acciones de Linux se probaron con `--accion` en WSL (Ubuntu, sin escritorio): estado, rechazos y avisos de
+  programas que faltan. Con un escritorio real (GNOME, Plasma) y en macOS, sin probar todavía.
 - En Linux con Wayland, la isla y la tecla para hablar solo ven el cursor y el teclado mientras están sobre una app
   de X11 (X11 no ve las demás): puede que la isla no asome al acercar el cursor y que la tecla no responda. Se sigue
   hablando con el botón del micrófono de la isla. Sin probar todavía en un escritorio Linux.
@@ -774,3 +805,8 @@ Lo que no se pudo probar sin una Mac. Para quien la pruebe por primera vez:
    la tecla no responde, dar a Claupet el permiso de **Monitoreo de entrada** en Privacidad y seguridad.
 10. Con «Leer las respuestas en voz alta» y la voz de Claupet descargada, la respuesta suena; con «La del
     sistema», la lee `say`.
+11. Acciones, desde la terminal y sin abrir la app: `Claupet.app/Contents/MacOS/Claupet --accion estado todo`
+    (batería, disco y memoria), `--accion volumen 30`, `--accion tema oscuro` (macOS pregunta por la
+    Automatización de System Events la primera vez) y `--accion captura recorte` (pide Grabación de pantalla).
+12. Con la app abierta, «recuérdame en 2 minutos tomar agua» avisa a los 2 minutos; cerrando la app antes, el
+    LaunchAgent la abre y avisa.

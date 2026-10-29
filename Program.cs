@@ -14,6 +14,9 @@ static class Program
         // --idioma <es|en>: ese idioma solo en esta ejecución (para probar las traducciones sin tocar los ajustes).
         L.Use(Array.IndexOf(args, "--idioma") is var li and >= 0 && li + 1 < args.Length ? args[li + 1] : SettingsStore.Load().Language);
 
+        // Lo que hacen las acciones de la mascota en este sistema (también --accion y --preguntar --hacer).
+        SystemActions.Desktop = new WindowsDesktop();
+
         // Las extensiones: el anfitrión de una DLL y las herramientas para autores (ExtensionCli).
         if (ExtensionCli.TryRun(args) is { } extensionCode) return extensionCode;
 

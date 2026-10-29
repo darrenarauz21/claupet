@@ -140,9 +140,13 @@ static class Answers
         }
     }
 
-    /// <summary>La acción lista para hacer: «abrir» solo si existe lo que se abre (si no, null: que la entienda otro).</summary>
+    /// <summary>
+    /// La acción lista para hacer: una que este sistema sabe hacer, y «abrir» solo si existe lo que se abre (si no,
+    /// null: que la entienda otro).
+    /// </summary>
     static AssistantAction? Checked(AssistantAction action)
     {
+        if (!SystemActions.Supports(action.Kind)) return null;
         if (action.Kind != "abrir") return action;
         return OpenTarget?.Invoke(action.Value) is { } target ? action with { Value = target } : null;
     }

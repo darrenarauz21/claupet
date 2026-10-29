@@ -159,7 +159,7 @@ sealed class VoiceInput : IDisposable
     CancellationTokenSource? _externalCancel;
     CancellationTokenSource? _partialCancel;
     Task? _partial;
-    int _partialSamples, _take;
+    int _partialSamples, _take, _loud;
     bool _buttonPending, _byButton, _spoke;
     long _listenAt, _voiceAt;
 
@@ -173,7 +173,11 @@ sealed class VoiceInput : IDisposable
             Level?.Invoke(level);
             if (!_key.HandsFree || !_mic.Recording) return;
             var now = Environment.TickCount64;
-            if (level > SpeechLevel) { _spoke = true; _voiceAt = now; }
+            if (level > SpeechLevel)
+            {
+                _voiceAt = now;
+                _spoke |= ++_loud >= Transcriber.VoiceChunks; // un pico suelto (el micrófono al abrirse) no es que habló
+            }
             else if (_spoke ? now - _voiceAt > PauseMs : now - _listenAt > WaitMs) _key.Finish();
         };
         _partialTimer.Tick += (_, _) => MaybePartial();
@@ -237,6 +241,7 @@ sealed class VoiceInput : IDisposable
         _take++;
         _partialSamples = 0;
         _spoke = false;
+        _loud = 0;
         _listenAt = Environment.TickCount64;
         _idle.Stop();
         if (_external is null)

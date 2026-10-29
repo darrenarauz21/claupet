@@ -350,3 +350,30 @@ public class DataPackTests
         Assert.Contains("[claupet]", File.ReadAllText(log));
     }
 }
+
+public class VoiceDetectionTests
+{
+    /// <summary>Audio de 16 kHz: silencio con trozos de 100 ms de un tono, en esas posiciones (en trozos).</summary>
+    static short[] WithTone(int chunks, params int[] loud)
+    {
+        var pcm = new short[chunks * 1600];
+        foreach (var chunk in loud)
+            for (var i = 0; i < 1600; i++) pcm[chunk * 1600 + i] = (short)(3000 * Math.Sin(2 * Math.PI * 220 * i / 16000));
+        return pcm;
+    }
+
+    [Fact]
+    public void Un_pico_al_abrir_el_microfono_no_es_voz()
+    {
+        // Algunos micrófonos dan un pico en su primer medio segundo: con eso, Whisper inventaba una frase.
+        Assert.False(Transcriber.HasVoice(WithTone(30, 0, 1)));
+        Assert.False(Transcriber.HasVoice(WithTone(30)));
+    }
+
+    [Fact]
+    public void Trescientos_milisegundos_de_voz_si()
+    {
+        Assert.True(Transcriber.HasVoice(WithTone(30, 10, 11, 12)));
+        Assert.True(Transcriber.HasVoice(WithTone(30, 0, 1, 20)));
+    }
+}

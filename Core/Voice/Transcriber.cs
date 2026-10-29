@@ -209,14 +209,21 @@ sealed class Transcriber : IDisposable
         }
     }
 
-    static bool HasVoice(short[] pcm)
+    /// <summary>
+    /// Trozos de 100 ms sobre Quiet que hacen falta para que haya voz: uno o dos sueltos son un golpe o el micrófono que
+    /// se acomoda al abrirse (algunos dan un pico en su primer medio segundo), y con eso Whisper inventa frases.
+    /// </summary>
+    public const int VoiceChunks = 3;
+
+    internal static bool HasVoice(short[] pcm)
     {
+        var loud = 0;
         for (var start = 0; start < pcm.Length; start += 1600)
         {
             var end = Math.Min(pcm.Length, start + 1600);
             double sum = 0;
             for (var i = start; i < end; i++) sum += (double)pcm[i] * pcm[i];
-            if (Math.Sqrt(sum / (end - start)) > Quiet) return true;
+            if (Math.Sqrt(sum / (end - start)) > Quiet && ++loud >= VoiceChunks) return true;
         }
         return false;
     }

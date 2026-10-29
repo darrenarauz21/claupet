@@ -760,32 +760,49 @@ static class Assistant
                 prompt.AppendLine(L.T("Solo conversas. Si te piden hacer algo en el equipo o buscar en internet, di con tu estilo, en una frase, que eso ahora no lo puedes hacer; no hables de ajustes ni de modelos."));
                 return Context(prompt, r);
             }
-            prompt.AppendLine(L.T("Acciones en este equipo: si te piden una de esta lista, empieza la respuesta con una línea exacta «{0} {{\"accion\":\"…\",\"valor\":\"…\"}}» (el JSON en una sola línea) y, en la línea siguiente, una frase corta diciendo lo que hiciste. Una acción por respuesta.", ActionMark));
-            prompt.AppendLine(L.T("Los textos que escribas dentro de una acción (títulos, notas, recordatorios, eventos) van en el idioma de la persona; solo los nombres de las acciones y sus valores fijos van como están."));
-            prompt.AppendLine(L.T("- fondo: el fondo de pantalla. valor: la ruta de una imagen del equipo o la URL https directa de una imagen .jpg o .png."));
-            prompt.AppendLine(L.T("- tema: «claro» u «oscuro» (el modo de Windows)."));
-            prompt.AppendLine(L.T("- color: el color de esta app: {0}.", string.Join(", ", Theme.Palettes.Select(p => p.Label))));
-            prompt.AppendLine(L.T("- volumen: un número de 0 a 100, «subir», «bajar», «silenciar» o «activar»."));
-            prompt.AppendLine(L.T("- musica: «reproducir», «pausar», «siguiente» o «anterior» (lo que suene en Windows)."));
-            prompt.AppendLine(tools
-                ? L.T("- abrir: una URL (https, spotify: o ms-settings:) o el nombre de una app del menú Inicio. Para poner una canción o un artista, busca el video con WebSearch y abre su URL de YouTube; si piden Spotify, abre spotify:search:<lo que pidan>.")
-                : L.T("- abrir: una URL (https, spotify: o ms-settings:) o el nombre de una app del menú Inicio. Para poner una canción o un artista, abre https://www.youtube.com/results?search_query=<lo que pidan>; si piden Spotify, abre spotify:search:<lo que pidan>."));
-            prompt.AppendLine(L.T("- captura: «pantalla» (la pantalla donde está el cursor) o «recorte» (la persona marca con el mouse la parte que quiere). Se guarda en Capturas de pantalla y se copia al portapapeles. Si además quieren que la mires o preguntan por lo que se ve, agrega al JSON \"pregunta\":\"<lo que quieren saber>\": después la verás y responderás."));
-            prompt.AppendLine(L.T("- agendar: un evento en su calendario. valor: un objeto {\"titulo\":\"…\",\"inicio\":\"AAAA-MM-DDTHH:MM\",\"fin\":\"AAAA-MM-DDTHH:MM\",\"lugar\":\"…\",\"nota\":\"…\"}; fin, lugar y nota solo si los dijeron, y para todo el día, \"inicio\":\"AAAA-MM-DD\". Se abre su calendario para que lo guarde: díselo."));
-            prompt.AppendLine(L.T("- nota: guardar una nota. valor: {\"titulo\":\"<corto, lo pones tú>\",\"texto\":\"<lo que dictaron, tal cual>\"}."));
-            prompt.AppendLine(L.T("- notas: «leer» (las últimas), «abrir» (su carpeta) o las palabras que buscan."));
-            prompt.AppendLine(L.T("- recordar: valor {\"texto\":\"…\",\"cuando\":\"AAAA-MM-DDTHH:MM\"}; «en 20 minutos» es la hora de ahora más 20 minutos."));
-            prompt.AppendLine(L.T("- recordatorios: «leer» (los pendientes) o «cancelar <palabras>»."));
-            prompt.AppendLine(L.T("- ventana: «cerrar <app>», «minimizar <app>», «maximizar <app>», «traer <app>» o «escritorio» (minimiza todo para mostrar el escritorio; la acción sigue siendo «ventana»)."));
-            prompt.AppendLine(L.T("- equipo: «bloquear», «suspender», «reiniciar» o «apagar»."));
-            prompt.AppendLine(L.T("- brillo: un número de 0 a 100, «subir» o «bajar»."));
-            prompt.AppendLine(L.T("- estado: «bateria», «disco», «memoria» o «todo»."));
-            prompt.AppendLine(L.T("- copiar: el texto que hay que dejar en el portapapeles."));
-            prompt.AppendLine(L.T("- portapapeles: «leer», cuando pregunten qué copiaron o pidan algo con lo copiado (traducirlo, resumirlo…)."));
-            prompt.AppendLine(L.T("- carpeta: «descargas», «documentos», «escritorio», «imagenes», «musica», «videos», «capturas», «notas» o la ruta de una carpeta. Para abrir una carpeta usa esta acción, no «abrir»."));
-            prompt.AppendLine(L.T("Con notas (leer o buscar), recordatorios «leer», estado y portapapeles «leer» todavía no sabes la respuesta: empieza igual con la línea de la acción y, en la siguiente, pon solo «Un momento… (^_^)»; la app te pasará lo que encontró y entonces respondes."));
+            // Solo las que este sistema sabe hacer (SystemActions.Desktop); sin ninguna, igual puede encargar tareas.
+            var windows = OperatingSystem.IsWindows();
+            void Offer(string kind, string line)
+            {
+                if (SystemActions.Supports(kind)) prompt.AppendLine(line);
+            }
+            if (SystemActions.All.Any(SystemActions.Supports))
+            {
+                prompt.AppendLine(L.T("Acciones en este equipo: si te piden una de esta lista, empieza la respuesta con una línea exacta «{0} {{\"accion\":\"…\",\"valor\":\"…\"}}» (el JSON en una sola línea) y, en la línea siguiente, una frase corta diciendo lo que hiciste. Una acción por respuesta.", ActionMark));
+                prompt.AppendLine(L.T("Los textos que escribas dentro de una acción (títulos, notas, recordatorios, eventos) van en el idioma de la persona; solo los nombres de las acciones y sus valores fijos van como están."));
+                Offer("fondo", L.T("- fondo: el fondo de pantalla. valor: la ruta de una imagen del equipo o la URL https directa de una imagen .jpg o .png."));
+                Offer("tema", windows ? L.T("- tema: «claro» u «oscuro» (el modo de Windows).") : L.T("- tema: «claro» u «oscuro» (el modo del sistema)."));
+                Offer("color", L.T("- color: el color de esta app: {0}.", string.Join(", ", Theme.Palettes.Select(p => p.Label))));
+                Offer("volumen", L.T("- volumen: un número de 0 a 100, «subir», «bajar», «silenciar» o «activar»."));
+                Offer("musica", windows ? L.T("- musica: «reproducir», «pausar», «siguiente» o «anterior» (lo que suene en Windows).")
+                    : L.T("- musica: «reproducir», «pausar», «siguiente» o «anterior» (lo que suene en el equipo)."));
+                Offer("abrir", (tools, windows) switch
+                {
+                    (true, true) => L.T("- abrir: una URL (https, spotify: o ms-settings:) o el nombre de una app del menú Inicio. Para poner una canción o un artista, busca el video con WebSearch y abre su URL de YouTube; si piden Spotify, abre spotify:search:<lo que pidan>."),
+                    (false, true) => L.T("- abrir: una URL (https, spotify: o ms-settings:) o el nombre de una app del menú Inicio. Para poner una canción o un artista, abre https://www.youtube.com/results?search_query=<lo que pidan>; si piden Spotify, abre spotify:search:<lo que pidan>."),
+                    (true, false) => L.T("- abrir: una URL (https o spotify:) o el nombre de una app instalada. Para poner una canción o un artista, busca el video con WebSearch y abre su URL de YouTube; si piden Spotify, abre spotify:search:<lo que pidan>."),
+                    _ => L.T("- abrir: una URL (https o spotify:) o el nombre de una app instalada. Para poner una canción o un artista, abre https://www.youtube.com/results?search_query=<lo que pidan>; si piden Spotify, abre spotify:search:<lo que pidan>."),
+                });
+                Offer("captura", L.T("- captura: «pantalla» (la pantalla donde está el cursor) o «recorte» (la persona marca con el mouse la parte que quiere). Se guarda en Capturas de pantalla y se copia al portapapeles. Si además quieren que la mires o preguntan por lo que se ve, agrega al JSON \"pregunta\":\"<lo que quieren saber>\": después la verás y responderás."));
+                Offer("agendar", L.T("- agendar: un evento en su calendario. valor: un objeto {\"titulo\":\"…\",\"inicio\":\"AAAA-MM-DDTHH:MM\",\"fin\":\"AAAA-MM-DDTHH:MM\",\"lugar\":\"…\",\"nota\":\"…\"}; fin, lugar y nota solo si los dijeron, y para todo el día, \"inicio\":\"AAAA-MM-DD\". Se abre su calendario para que lo guarde: díselo."));
+                Offer("nota", L.T("- nota: guardar una nota. valor: {\"titulo\":\"<corto, lo pones tú>\",\"texto\":\"<lo que dictaron, tal cual>\"}."));
+                Offer("notas", L.T("- notas: «leer» (las últimas), «abrir» (su carpeta) o las palabras que buscan."));
+                Offer("recordar", L.T("- recordar: valor {\"texto\":\"…\",\"cuando\":\"AAAA-MM-DDTHH:MM\"}; «en 20 minutos» es la hora de ahora más 20 minutos."));
+                Offer("recordatorios", L.T("- recordatorios: «leer» (los pendientes) o «cancelar <palabras>»."));
+                Offer("ventana", L.T("- ventana: «cerrar <app>», «minimizar <app>», «maximizar <app>», «traer <app>» o «escritorio» (minimiza todo para mostrar el escritorio; la acción sigue siendo «ventana»)."));
+                Offer("equipo", L.T("- equipo: «bloquear», «suspender», «reiniciar» o «apagar»."));
+                Offer("brillo", L.T("- brillo: un número de 0 a 100, «subir» o «bajar»."));
+                Offer("estado", L.T("- estado: «bateria», «disco», «memoria» o «todo»."));
+                Offer("copiar", L.T("- copiar: el texto que hay que dejar en el portapapeles."));
+                Offer("portapapeles", L.T("- portapapeles: «leer», cuando pregunten qué copiaron o pidan algo con lo copiado (traducirlo, resumirlo…)."));
+                Offer("carpeta", L.T("- carpeta: «descargas», «documentos», «escritorio», «imagenes», «musica», «videos», «capturas», «notas» o la ruta de una carpeta. Para abrir una carpeta usa esta acción, no «abrir»."));
+                if (new[] { "notas", "recordatorios", "estado", "portapapeles" }.Any(SystemActions.Supports))
+                    prompt.AppendLine(L.T("Con notas (leer o buscar), recordatorios «leer», estado y portapapeles «leer» todavía no sabes la respuesta: empieza igual con la línea de la acción y, en la siguiente, pon solo «Un momento… (^_^)»; la app te pasará lo que encontró y entonces respondes."));
+            }
             prompt.AppendLine();
-            prompt.AppendLine(L.T("Lo demás, encárgaselo a Claude Code: si te piden algo que no puedes hacer con tus herramientas ni con esas acciones (abrir o editar archivos, otros ajustes de Windows, instalar algo, programar, revisar un proyecto…), no lo intentes ni digas que no puedes. Empieza la respuesta con una línea exacta «{0} <la instrucción completa y clara para Claude Code, en español>» y, en la línea siguiente, una frase corta para la persona. La sesión se abrirá en la carpeta que elija la persona: no inventes rutas, pero si la persona nombró un archivo o una carpeta, ponlo tal cual. Si solo preguntan algo, responde normal.", TaskMark));
+            prompt.AppendLine(windows
+                ? L.T("Lo demás, encárgaselo a Claude Code: si te piden algo que no puedes hacer con tus herramientas ni con esas acciones (abrir o editar archivos, otros ajustes de Windows, instalar algo, programar, revisar un proyecto…), no lo intentes ni digas que no puedes. Empieza la respuesta con una línea exacta «{0} <la instrucción completa y clara para Claude Code, en español>» y, en la línea siguiente, una frase corta para la persona. La sesión se abrirá en la carpeta que elija la persona: no inventes rutas, pero si la persona nombró un archivo o una carpeta, ponlo tal cual. Si solo preguntan algo, responde normal.", TaskMark)
+                : L.T("Lo demás, encárgaselo a Claude Code: si te piden algo que no puedes hacer con tus herramientas ni con esas acciones (abrir o editar archivos, otros ajustes del sistema, instalar algo, programar, revisar un proyecto…), no lo intentes ni digas que no puedes. Empieza la respuesta con una línea exacta «{0} <la instrucción completa y clara para Claude Code, en español>» y, en la línea siguiente, una frase corta para la persona. La sesión se abrirá en la carpeta que elija la persona: no inventes rutas, pero si la persona nombró un archivo o una carpeta, ponlo tal cual. Si solo preguntan algo, responde normal.", TaskMark));
         }
         return Context(prompt, r);
     }
