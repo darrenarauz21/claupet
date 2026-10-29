@@ -2,7 +2,7 @@ namespace Claupet;
 
 /// <summary>
 /// Los modos de línea de comandos para probar sin abrir ventanas, los mismos que la app WinForms: hacer una acción,
-/// preguntarle a la mascota, repartir una pregunta como en Respuestas, el modelo local, la voz de Claupet y Whisper.
+/// preguntarle a la mascota, repartir una pregunta como en Respuestas, crear un tema, el modelo local, la voz de Claupet y Whisper.
 /// Escriben a la salida estándar y devuelven el código de salida; null si los argumentos no piden ninguno.
 /// </summary>
 static class DevCommands
@@ -117,6 +117,17 @@ static class DevCommands
             if (answer.Task is { } task) Console.WriteLine($"[TAREA] {task.Prompt}");
             Console.WriteLine(answer.Error ?? answer.Text);
             return answer.Failed ? 1 : 0;
+        }
+
+        // --tema <prompt>: le pide a Claude un tema propio (con la cuenta y el modelo de la mascota), lo guarda en temas/ y
+        // escribe el JSON ya validado y corregido. No lo elige: eso queda para Ajustes.
+        if (Array.IndexOf(args, "--tema") is var th and >= 0 && th + 1 < args.Length)
+        {
+            var (theme, error) = CustomThemes.CreateAsync(args[th + 1], SettingsStore.Load()).GetAwaiter().GetResult();
+            if (theme is null) { Console.WriteLine(error); return 1; }
+            Console.WriteLine(CustomThemes.PathFor(theme.Id));
+            Console.WriteLine(CustomThemes.ToJson(theme));
+            return 0;
         }
 
         // --descargar-voz: baja la voz de Claupet como desde Ajustes, con el avance a la salida estándar.

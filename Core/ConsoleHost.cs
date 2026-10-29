@@ -14,6 +14,8 @@ interface IConsoleApp
     string Palette { get; }
     /// <summary>Hace la acción de una fila; si muestra una lista para elegir, la pasa por ConsoleHost.Offer.</summary>
     void Act(string key);
+    /// <summary>Lo escrito en un cuadro de Ajustes que no es de una extensión; false si esa clave no espera texto.</summary>
+    bool Typed(string key, string value) => false;
     /// <summary>La conversación rápida: la de la isla y la nubecita donde las hay.</summary>
     ChatTarget QuickChat { get; }
     /// <summary>Lo que se ve debajo de «Conversación rápida» mientras está vacía.</summary>
@@ -83,7 +85,7 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
                 try
                 {
                     if (_extensions is { } extensions && ExtensionsPanel.Handles(key)) extensions.Act(key, message.Value);
-                    else app.Act(key);
+                    else if (message.Value is not { } typed || !app.Typed(key, typed)) app.Act(key);
                 }
                 finally { _key = null; }
                 break;

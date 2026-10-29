@@ -1352,5 +1352,14 @@
   "Sus sesiones salen en Uso y Actividad. Solo se leen sus archivos en este equipo: no se usa su cuenta ni se gastan tokens.": "Their sessions show up in Usage and Activity. Only their files on this computer are read: their account isn't used and no tokens are spent.",
   "Las cuentas de Claude Code y los otros agentes que sigue Claupet.": "The Claude Code accounts and the other agents Claupet follows.",
   "Su mascota todavía no se ve en esta app.": "Its pet doesn't show in this app yet.",
-  "Escuchar el audio todavía no está en esta app.": "Listening to audio isn't in this app yet."
+  "Escuchar el audio todavía no está en esta app.": "Listening to audio isn't in this app yet.",
+  "Tema propio": "Custom theme",
+  "Claude no respondió.": "Claude didn't answer.",
+  "La respuesta no traía un tema que se pudiera leer.": "The answer didn't include a theme that could be read.",
+  "No se pudo guardar el tema: {0}": "Couldn't save the theme: {0}",
+  "Crear un tema…": "Create a theme…",
+  "Por ejemplo, «otoñal, con una letra redonda»": "For example, “autumn, with a rounder font”",
+  "Borrar el tema «{0}»": "Delete the theme “{0}”",
+  "Creando el tema con Claude…": "Creating the theme with Claude…",
+  "No se pudo crear el tema: {0}": "Couldn't create the theme: {0}"
 }
