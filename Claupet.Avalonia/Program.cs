@@ -46,7 +46,7 @@ static class Program
 
         // --preview: abre la ventana aunque ya haya otra instancia (para probar cambios).
         var preview = args.Contains("--preview");
-        using var mutex = new Mutex(true, ConsoleLink.AvaloniaTrayMutex, out var created);
+        using var mutex = new Mutex(true, ConsoleLink.TrayMutex, out var created);
         // --reiniciar: la abrió la anterior al cambiar el idioma; espera a que termine de cerrarse.
         if (!created && args.Contains("--reiniciar")) created = WaitFor(mutex);
         if (!created && !preview)
@@ -64,6 +64,8 @@ static class Program
             try { StartupRegistration.Migrate(); } catch (Exception) { }
         }
 
+        // Un error inesperado queda anotado: sirve para el diagnóstico (los de la interfaz, además, no cierran la app: App).
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => ErrorLog.Write(e.ExceptionObject as Exception);
         return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args, ShutdownMode.OnExplicitShutdown);
     }
 
@@ -110,6 +112,12 @@ sealed class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Un error en la interfaz queda en el registro de errores y la app sigue, como en Claupet Console.
+        Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) =>
+        {
+            ErrorLog.Write(e.Exception);
+            e.Handled = true;
+        };
         var args = Program.Args;
         var preview = args.Contains("--preview");
         _controller = new TrayController(this,

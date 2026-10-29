@@ -173,27 +173,29 @@ sealed partial class TrayController
     /// <summary>La respuesta se leerá con la voz de Claupet: Claude puede ponerle risas o suspiros.</summary>
     bool Expressive => _settings.ReadAloud && NeedsSupertonic(_settings.ReadAloudVoice);
 
-    /// <summary>Una voz que necesita el modelo de Supertonic (las de los paquetes llegan con las extensiones).</summary>
-    static bool NeedsSupertonic(string voice) => ClaupetVoices.IsClaupet(voice);
+    /// <summary>Una voz que necesita el modelo de Supertonic: la de Claupet o la de un paquete.</summary>
+    static bool NeedsSupertonic(string voice) => ClaupetVoices.IsClaupet(voice) || voice.StartsWith(ExtensionManager.PackPrefix, StringComparison.Ordinal);
 
-    /// <summary>Las voces para elegir: en Linux y macOS, la tercera es la del sistema.</summary>
-    static IEnumerable<(string Id, string Label)> VoiceChoices() => ClaupetVoices.Choices
-        .Select(c => c.Id == ClaupetVoices.Windows && !OperatingSystem.IsWindows() ? (c.Id, L.T("La del sistema")) : c);
+    /// <summary>Las voces para elegir: en Linux y macOS, la tercera es la del sistema; detrás, las de los paquetes.</summary>
+    IEnumerable<(string Id, string Label)> VoiceChoices() => ClaupetVoices.Choices
+        .Select(c => c.Id == ClaupetVoices.Windows && !OperatingSystem.IsWindows() ? (c.Id, L.T("La del sistema")) : c)
+        .Concat(_extensions?.PackVoices() ?? []);
 
-    static string VoiceLabel(string id) => VoiceChoices().FirstOrDefault(v => v.Id == id).Label ?? ClaupetVoices.Label(id);
+    string VoiceLabel(string id) => VoiceChoices().FirstOrDefault(v => v.Id == id).Label ?? ClaupetVoices.Label(id);
 
     // ── Los modelos ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>La fila del modelo de voz en Ajustes: qué dice y qué enlace lleva.</summary>
     (string Status, string Action) VoiceStatusText() =>
-        VoiceModel.Ready ? (L.T("Modelo de voz: listo, en este equipo"), "")
+        _extensions?.ProviderFor(ExtensionSlots.SpeechToText) is { } stt ? (L.T("Voz a texto: {0} (extensión)", stt.Manifest.Name.Text), "")
+        : VoiceModel.Ready ? (L.T("Modelo de voz: listo, en este equipo"), "")
         : _modelDownload is not null ? (L.T("Descargando el modelo de voz… {0} %", _modelPercent ?? 0), L.T("Cancelar"))
         : _modelError is not null ? (L.T("No se pudo descargar ({0})", _modelError), L.T("Reintentar"))
         : (L.T("Modelo de voz (488 MB, una sola vez)"), L.T("Descargar"));
 
     /// <summary>La fila de la voz de Claupet en Ajustes; vacía si no hace falta (ya está, o se eligió la del sistema).</summary>
     (string Status, string Action) SpeechStatusText() =>
-        !NeedsSupertonic(_settings.ReadAloudVoice) || ClaupetVoiceModel.Ready ? ("", "")
+        !NeedsSupertonic(_settings.ReadAloudVoice) || ClaupetVoiceModel.Ready || _extensions?.ProviderFor(ExtensionSlots.TextToSpeech) is not null ? ("", "")
         : _speechDownload is not null ? (L.T("Descargando la voz… {0} %", _speechPercent ?? 0), L.T("Cancelar"))
         : _speechError is not null ? (L.T("No se pudo descargar ({0})", _speechError), L.T("Reintentar"))
         : (L.T("Voz de Claupet ({0} MB, una sola vez)", ClaupetVoiceModel.Size / 1_000_000), L.T("Descargar"));
@@ -267,7 +269,8 @@ sealed partial class TrayController
         _settings.Mic = !_settings.Mic;
         SettingsStore.Save(_settings);
         UpdateVoice();
-        if (_settings.Mic) _ = DownloadVoiceModelAsync(); // se descarga una vez, al encenderlo
+        // Se descarga una vez, al encenderlo; con una extensión de voz a texto no hace falta.
+        if (_settings.Mic && _extensions?.ProviderFor(ExtensionSlots.SpeechToText) is null) _ = DownloadVoiceModelAsync();
     }
 
     void ToggleReadAloud()

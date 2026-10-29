@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 
 namespace Claupet;
 
@@ -7,7 +8,8 @@ namespace Claupet;
 /// El audio que escuchan las extensiones (audio/subscribe): el micrófono o lo que suena en el equipo, en
 /// trozos de 100 ms a 16 kHz, mono, 16 bits. Una sola captura por fuente, compartida por todas las que
 /// escuchan: empieza con la primera y se detiene con la última. InUse avisa cuando una fuente empieza o
-/// deja de usarse (para mostrarlo), en el hilo de la captura.
+/// deja de usarse (para mostrarlo), en el hilo de la captura. El micrófono es el de la voz (PortAudio); lo que
+/// suena en el equipo, por ahora, solo en Windows.
 /// </summary>
 sealed class SharedAudio : IDisposable
 {
@@ -55,6 +57,7 @@ sealed class SharedAudio : IDisposable
             }
             return mic;
         }
+        if (!OperatingSystem.IsWindows()) throw new InvalidOperationException(L.T("Escuchar lo que suena en el equipo todavía es solo de Windows."));
         var loopback = new LoopbackCapture();
         loopback.Chunk += deliver;
         loopback.Start();
@@ -116,6 +119,7 @@ sealed class SharedAudio : IDisposable
 /// (MTA), en el formato de mezcla de Windows, pasado a mono y a 16 kHz. Cuando no suena nada, Windows no
 /// entrega audio: se completa con silencio para que el tiempo no se corra.
 /// </summary>
+[SupportedOSPlatform("windows")]
 sealed class LoopbackCapture : IDisposable
 {
     const int ChunkSamples = 1600; // 100 ms

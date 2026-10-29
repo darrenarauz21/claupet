@@ -42,6 +42,9 @@ sealed class MascotWindow : Window
     /// <summary>El chibi (true) o la clásica, que se pinta con el acento de la paleta.</summary>
     public bool Chibi { get; }
 
+    /// <summary>La mascota de un paquete de extensión, si se eligió una: se pinta en vez del chibi o la clásica.</summary>
+    public PetSheet? Pet { get; }
+
     /// <summary>Se ve en todos los Espacios de macOS (si no, solo en el que se abrió).</summary>
     public bool AllDesktops { get; }
 
@@ -52,11 +55,12 @@ sealed class MascotWindow : Window
     string _size;
 
     public MascotWindow(ChibiDirector director, PixelPoint? saved, bool chibi, Func<System.Drawing.Color> accent, bool allDesktops = true,
-        string size = MascotSizes.Normal)
+        string size = MascotSizes.Normal, PetSheet? pet = null)
     {
         _director = director;
         _size = size;
-        Chibi = chibi;
+        Chibi = chibi && pet is null;
+        Pet = pet;
         AllDesktops = allDesktops;
         _saved = saved;
         Title = "Claupet";
@@ -67,8 +71,9 @@ sealed class MascotWindow : Window
         Topmost = true;
         Background = Brushes.Transparent;
         TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
-        _view = new MascotView(director, chibi, chibi ? 3 : 4, accent) { Cursor = new Cursor(StandardCursorType.Hand) };
+        _view = new MascotView(director, chibi, pet, chibi ? 3 : 4, accent) { Cursor = new Cursor(StandardCursorType.Hand) };
         Content = _view;
+        WinStyles.Float(this);
         Resize(Screens.Primary?.Scaling ?? 1);
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragEnterEvent, (_, e) =>
@@ -116,7 +121,24 @@ sealed class MascotWindow : Window
 #pragma warning restore CS0618
 
     /// <summary>Lo que mide cada casilla en pixeles reales (para planear el lanzamiento de la caja).</summary>
-    public int PixelUnit => MascotSizes.Unit(_size, Chibi, (float)RenderScaling);
+    public int PixelUnit => UnitFor(RenderScaling);
+
+    /// <summary>Pixeles reales por casilla con esa escala; la de un paquete mide en pantalla lo mismo que el chibi.</summary>
+    int UnitFor(double scale) =>
+        Pet is { } pet ? MascotSizes.PetUnit(_size, pet.Height, (float)scale) : MascotSizes.Unit(_size, Chibi, (float)scale);
+
+    /// <summary>
+    /// Después de bloquear, suspender o apagar la pantalla, Windows puede haberla movido (al desconectarse un monitor) o
+    /// dejado debajo de otras: vuelve a su lugar (o al más cercano que se vea), arriba de todo y repintada.
+    /// </summary>
+    public void Recover()
+    {
+        if (!IsVisible) Show();
+        if (!_dragging) Position = Fit(_saved ?? Position);
+        Topmost = false;
+        Topmost = true;
+        _view.InvalidateVisual();
+    }
 
     /// <summary>Camina hasta x (a su misma altura, en pixeles) en ms milisegundos, con un arranque y una llegada suaves.</summary>
     public async Task WalkToAsync(int x, int ms)
@@ -148,10 +170,10 @@ sealed class MascotWindow : Window
     /// </summary>
     void Resize(double scale)
     {
-        var unit = MascotSizes.Unit(_size, Chibi, (float)scale) / scale;
+        var unit = UnitFor(scale) / scale;
         _view.Unit = unit;
-        Width = (Chibi ? ChibiSprite.Columns : ToastSprite.Columns) * unit;
-        Height = (Chibi ? ChibiSprite.Rows : ToastSprite.Rows) * unit;
+        Width = (Pet?.Width ?? (Chibi ? ChibiSprite.Columns : ToastSprite.Columns)) * unit;
+        Height = (Pet?.Height ?? (Chibi ? ChibiSprite.Rows : ToastSprite.Rows)) * unit;
         _view.InvalidateVisual();
     }
 
@@ -239,7 +261,7 @@ sealed class MascotWindow : Window
         }
     }
 
-    sealed class MascotView(ChibiDirector director, bool chibi, double unit, Func<System.Drawing.Color> accent) : Control
+    sealed class MascotView(ChibiDirector director, bool chibi, PetSheet? pet, double unit, Func<System.Drawing.Color> accent) : Control
     {
         /// <summary>Lo que mide cada casilla, en unidades de la interfaz.</summary>
         public double Unit { get; set; } = unit;
@@ -250,7 +272,7 @@ sealed class MascotWindow : Window
         public void Tick()
         {
             var (move, t, music) = director.Now();
-            var shown = (move, chibi ? ChibiSprite.FrameIndex(move, t) : (int)(t / 40), music ? t / ChibiSprite.Beat : -1);
+            var shown = (move, chibi && pet is null ? ChibiSprite.FrameIndex(move, t) : (int)(t / 40), music ? t / ChibiSprite.Beat : -1);
             if (shown == _shown) return;
             _shown = shown;
             InvalidateVisual();
@@ -259,7 +281,8 @@ sealed class MascotWindow : Window
         public override void Render(DrawingContext dc)
         {
             var (move, t, music) = director.Now();
-            if (chibi) Gfx.Pixels(dc, 0, 0, Unit, fill => ChibiSprite.Paint(fill, move, t, music));
+            if (pet is not null) Gfx.Pixels(dc, 0, 0, Unit, fill => pet.Paint(fill, move, t));
+            else if (chibi) Gfx.Pixels(dc, 0, 0, Unit, fill => ChibiSprite.Paint(fill, move, t, music));
             else Gfx.Pixels(dc, 0, 0, Unit, fill => ToastSprite.PaintMove(fill, move, t, accent(), music));
         }
     }

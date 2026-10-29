@@ -29,6 +29,7 @@ sealed class BoxFlightWindow : Window
         Width = ChibiSprite.BoxColumns * _unit;
         Height = ChibiSprite.BoxRows * _unit;
         Content = _view = new BoxView(this);
+        WinStyles.Float(this);
     }
 
     /// <summary>

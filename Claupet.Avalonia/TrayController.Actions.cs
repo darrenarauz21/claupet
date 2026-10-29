@@ -21,6 +21,7 @@ sealed partial class TrayController
             : OperatingSystem.IsLinux() ? new LinuxDesktop(() => _popup.Clipboard, WithoutClaupetAsync)
             : null;
         Answers.OpenTarget = SystemActions.OpenTarget;
+        Answers.Usage = UsageAnswer;
         // Una copia de prueba no avisa los recordatorios: los avisa la app de siempre (y los daría por avisados).
         if (SystemActions.Desktop is null || Program.Args.Contains("--preview")) return;
         _reminderTimer.Tick += (_, _) => CheckReminders();
@@ -104,14 +105,15 @@ sealed partial class TrayController
     }
 
     /// <summary>
-    /// Esconde (sin cerrarlas) las ventanas de Claupet mientras corre work: la captura no las muestra. Se hacen
+    /// Esconde (sin cerrarlas) las ventanas de Claupet, con los avisos, mientras corre work: la captura no las muestra. Se hacen
     /// transparentes en vez de ocultarse, para que no se muevan ni vuelvan a saludar.
     /// </summary>
     async Task WithoutClaupetAsync(Func<Task> work)
     {
         var shown = await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            var windows = new Window?[] { _mascotWindow, _chatBubble, _bubble, _island }.OfType<Window>().Where(w => w.IsVisible).ToList();
+            var windows = new Window?[] { _mascotWindow, _chatBubble, _bubble, _island }.Concat(_toasts.Windows)
+                .OfType<Window>().Where(w => w.IsVisible).ToList();
             foreach (var window in windows) window.Opacity = 0;
             return windows;
         });
@@ -129,6 +131,9 @@ sealed partial class TrayController
         }
     }
 
+    /// <summary>El recordatorio cuya tarea programada abrió la app (--recordatorio &lt;id&gt;, ReminderTasks).</summary>
+    static string? LaunchedReminder => ArgAfter("--recordatorio");
+
     /// <summary>
     /// Los recordatorios que llegaron (también los que pasaron con la app cerrada): un aviso, la mascota lo dice y, con
     /// la voz, lo lee. Lo que el sistema tenía programado para abrir la app ya no hace falta.
@@ -144,7 +149,9 @@ sealed partial class TrayController
             ShowNotice(new Notice(NoticeKind.Reminder, late ? L.T("Recordatorio (se le pasó)") : L.T("Recordatorio"), reminder.Text,
                 late ? L.T("Era para el {0:dddd d, HH:mm}.", reminder.At) : reminder.At.ToString("t")));
             ReadAloudIfOn(L.T("Te recuerdo: {0}", reminder.Text));
+            // La tarea de Windows que abrió esta app (--recordatorio) está corriendo: se borra sola.
             var id = reminder.Id;
+            if (id == LaunchedReminder) continue;
             _ = Task.Run(() =>
             {
                 try { SystemActions.Desktop?.CancelReminder(id); }

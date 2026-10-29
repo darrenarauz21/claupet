@@ -32,7 +32,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "paquetes")
 WORK = os.path.join(OUT, "_trabajo")
 AVALONIA = os.path.join(ROOT, "Claupet.Avalonia", "Claupet.Avalonia.csproj")
-WINDOWS = os.path.join(ROOT, "Claupet.csproj")
 VERSION = "2.3.0"
 
 # ── Íconos: la misma mascota que app.ico, en pixeles ─────────────────────────────────────────
@@ -112,7 +111,7 @@ def add_zip(archive, name, data, mode):
 def windows():
     staging = os.path.join(WORK, "win-x64")
     shutil.rmtree(staging, ignore_errors=True)
-    publish(WINDOWS, "win-x64", staging, single_file=True)
+    publish(AVALONIA, "win-x64", staging, single_file=True)
     shutil.copyfile(os.path.join(staging, "Claupet.exe"), os.path.join(OUT, "Claupet-windows-x64.exe"))
     print("  listo: paquetes/Claupet-windows-x64.exe")
 

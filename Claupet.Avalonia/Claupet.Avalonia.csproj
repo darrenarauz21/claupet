@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Claupet para Linux y macOS (también corre en Windows, para probar). Comparte Core/ y Claupet Console
-       (Console/) con la app de Windows (WinForms); el resto de la interfaz es propia, hasta que todo sea Avalonia. -->
+  <!-- Claupet, la misma app en Windows, Linux y macOS: Core/ (lo que no es interfaz), Claupet Console (Console/) y
+       la interfaz de la bandeja, la mascota y la isla (esta carpeta). Lo de cada sistema va con OperatingSystem.Is…(). -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
@@ -23,6 +23,8 @@
     <Compile Include="..\Console\**\*.cs" Link="Console\%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Las traducciones (L.T), dentro del ejecutable. -->
     <EmbeddedResource Include="..\Core\Idiomas\*.json" LogicalName="idiomas/%(Filename)%(Extension)" />
+    <!-- Las pruebas (Claupet.Tests) ven lo interno de la app. -->
+    <InternalsVisibleTo Include="Claupet.Tests" />
   </ItemGroup>
 
   <!-- En Linux, .NET necesita ICU para las fechas en español y no todas las distribuciones la traen:
@@ -37,6 +39,8 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.3.0" />
+    <!-- En Windows, avisa al desbloquear, al volver de suspender y al cambiar las pantallas (la mascota vuelve a verse). -->
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="8.0.0" />
     <!-- La voz: Whisper (voz a texto), Supertonic con ONNX Runtime (texto a voz) y PortAudio (el micrófono y los
          parlantes), con sus bibliotecas nativas para Windows, Linux y macOS. System.Speech solo sirve en Windows. -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
