@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 
 namespace Claupet;
@@ -593,15 +592,5 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
         _review = null;
     }
 
-    /// <summary>Abre un archivo, una carpeta o una dirección web con el programa del sistema.</summary>
-    static void Open(string target)
-    {
-        try
-        {
-            var start = OperatingSystem.IsWindows() ? new ProcessStartInfo(target) { UseShellExecute = true }
-                : new ProcessStartInfo(OperatingSystem.IsMacOS() ? "open" : "xdg-open") { ArgumentList = { target }, UseShellExecute = false };
-            Process.Start(start)?.Dispose();
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException or InvalidOperationException) { ErrorLog.Write(ex); }
-    }
+    static void Open(string target) => Shell.Open(target);
 }

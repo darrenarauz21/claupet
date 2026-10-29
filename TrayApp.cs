@@ -82,6 +82,7 @@ sealed partial class TrayApp : ApplicationContext
         _settings.Selected ??= _settings.Accounts.FirstOrDefault()?.ConfigDir;
         Sounds.EnsureDefaults();
         SetupExtensions();
+        SetupUpdates(start: !preview);
         // La ventana se creó con la paleta por defecto: toma la elegida.
         Theme.SelectedPalette = _settings.Palette;
         _form.ApplyTheme();
@@ -396,6 +397,9 @@ sealed partial class TrayApp : ApplicationContext
             TopicEngines = AnswerTopics.All.Select(t => new TopicState(t.Id, L.T(t.Label),
                 t.Fixed ? L.T("Siempre la nube") : EngineLabel(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
             Grants = Capabilities.Available.Select(c => new GrantState(c.Id, c.Label, Capabilities.Allowed(s, c.Id))).ToList(),
+            CheckUpdates = s.CheckUpdates,
+            UpdateStatus = _updates?.Row().Status ?? "",
+            UpdateAction = _updates?.Row().Action ?? "",
         };
     }
 
@@ -737,6 +741,8 @@ sealed partial class TrayApp : ApplicationContext
             case "add": AddAccount(); break;
             case "setup": ShowSetup(); break;
             case "diag": CopyDiagnostics(); break;
+            case "updates": ToggleUpdates(); break;
+            case "update": OnUpdate(); break;
             case "unsetup":
                 _form.HoldOpen = true;
                 try { RemoveSetup(); }
@@ -2445,6 +2451,9 @@ sealed partial class TrayApp : ApplicationContext
         _localDownload?.Cancel();
         _localServer.Dispose();
         _consoleHost?.Dispose();
+        // Una versión nueva ya comprobada toma el lugar de esta: la próxima vez abre la nueva.
+        _updates?.Apply(ExePath);
+        _updates?.Dispose();
         _voice?.Dispose();
         _readAloud?.Dispose();
         _island?.Dispose();

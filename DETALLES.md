@@ -49,6 +49,7 @@ mascota (`[ACCION]`) son del protocolo y van siempre en español. Para otro idio
 | Capturas de pantalla | la carpeta Capturas de pantalla de Windows; la que mira Claude, sola en `…\Claupet\capturas` | — |
 | Credenciales de Claude Code (solo se leen) | `.credentials.json` de cada carpeta | Linux: igual; macOS: el Llavero |
 | Iniciar con el sistema | registro, `HKCU\…\Run` | Linux: `~/.config/autostart/claupet.desktop`; macOS: `~/Library/LaunchAgents/local.claupet.plist` |
+| Versión nueva bajada (hasta instalarla) | `…\Claupet\actualizacion\<versión>` | `…/Claupet/actualizacion/<versión>` |
 
 En macOS, Claude Code guarda las credenciales en el Llavero: «Claude Code-credentials» para
 `~/.claude` y, desde Claude Code 2.1.144, «Claude Code-credentials-» seguido de los 8 primeros
@@ -198,7 +199,7 @@ La línea «Modelo» sale de la última respuesta del `.jsonl`: `message.model`,
 La cabecera muestra 3 vistas: **Uso** (los límites de la cuenta elegida), **Actividad** (las sesiones, cada
 una con su carril) e **Historial** (el mapa de calor de 6 meses). El engranaje del pie abre los **Ajustes rápidos**, en cinco pestañas: Avisos (notificaciones y sonido), Apariencia
 (color, mascota y su tamaño), Asistente (chat, micrófono y leer en voz alta), Isla y Sistema (idioma, inicio con
-Windows y diagnóstico); la última abierta queda en `SettingsTab`. Todas miden lo que la más alta (con lo que esté
+Windows, diagnóstico y la versión nueva, si hay); la última abierta queda en `SettingsTab`. Todas miden lo que la más alta (con lo que esté
 encendido), así que al cambiar de pestaña el cuadro no cambia de tamaño. El menú del ícono queda en abrir, actualizar, nueva
 sesión, ajustes y salir.
 
@@ -674,6 +675,29 @@ Mientras se captura, la mascota, las nubecitas y la isla se vuelven transparente
 de siempre): se ofrece en el paso 4. `Claupet --accion <acción> <valor>` las prueba sin abrir ventanas, como en
 Windows (sin portapapeles de texto, que necesita la app abierta).
 
+## Versiones nuevas
+
+Con **Ajustes › Sistema › Buscar actualizaciones** (`CheckUpdates`, encendido de entrada), una vez al día la app lee
+`https://api.github.com/repos/darrenarauz21/claupet/releases/latest`, sin sesión, y compara su etiqueta (`vX.Y.Z`) con
+la versión que corre (`Core/Updates.cs`). Mira cada hora si toca (`UpdatesChecked`), la primera vez al minuto de abrirse;
+sin conexión no dice nada y lo intenta la hora siguiente. De cada versión nueva avisa una vez (`UpdateNotified`) y la
+fila «Claupet X está disponible» queda en Ajustes › Sistema (también en los rápidos). Una copia de prueba (`--preview`)
+no busca.
+
+| Paso | Qué pasa |
+|---|---|
+| Sin la clave de las Releases (`Updates.ReleaseKey` vacía, como ahora) o sin archivo para este sistema | la fila lleva a la página de la Release; no se instala nada |
+| Con la clave, «Descargar e instalar…» | pregunta (con el tamaño); baja `<archivo>.firma` y comprueba que la firma sea de esa clave, de ese archivo y de esa versión; baja el archivo de este sistema (retomando si se corta) y comprueba su tamaño y su SHA-256; si algo no coincide, lo borra y no instala |
+| Lista | del `.tar.gz` de Linux saca `Claupet`; del `.zip` de macOS, `Claupet.app`; el `.exe` de Windows va tal cual. «Reiniciar ahora» o salir de la app la cambia |
+| Cambiarla | la que corre pasa a `<nombre>.anterior` y la nueva toma su lugar (Windows, Linux y macOS dejan renombrar lo que corre); si falla, vuelve la de antes. En macOS se cambia el `.app` entero y se le quita la cuarentena y se firma para el equipo (`codesign --sign -`), como `preparar-mac.sh`. Al abrir la nueva se borran la anterior y lo bajado |
+
+La firma de las Releases es la de los paquetes de extensiones (ES256, `ExtensionSigner`/`ExtensionKeys`) sobre el
+nombre del archivo, la versión, el tamaño y el SHA-256 (`ReleaseSignature`): una firma vieja no sirve para otra versión.
+La clave se crea con `Claupet --extension-keygen <clave.pem>` y su privada nunca va en el repositorio; la pública (el
+`.pub.pem` sin las líneas BEGIN y END) va en `Updates.ReleaseKey`. `empaquetar.py --clave <clave.pem>` firma cada
+paquete (`Claupet --release-sign <clave.pem> <versión> <archivo>…`, que deja `<archivo>.firma`): las firmas se suben a la
+Release junto a los paquetes.
+
 ## Avisos
 
 | Aviso | Cuándo | Se va solo |
@@ -718,13 +742,15 @@ Requiere el SDK de .NET 8.
 dotnet build Claupet.csproj -c Release                   # Windows (WinForms)
 dotnet build Claupet.Avalonia -c Release                # Linux y macOS (corre también en Windows)
 python herramientas/empaquetar.py                       # los paquetes de los tres sistemas en paquetes/
+python herramientas/empaquetar.py --clave <clave.pem>   # y la firma de cada uno (<paquete>.firma), ver Versiones nuevas
 ```
 
 `empaquetar.py` (solo biblioteca estándar) genera en `paquetes/` `Claupet-windows-x64.exe`,
 `Claupet-linux-x64.tar.gz` y `Claupet-macos-{arm64,x64}.zip`, con los permisos de ejecución
 y el ícono de cada sistema. Todos son autocontenidos: no piden instalar .NET. Los nombres no llevan
 versión porque el README enlaza a `releases/latest/download/<archivo>`: en cada versión se crea una
-Release en GitHub (etiqueta `vX.Y.Z`) y se adjuntan esos cuatro archivos con el mismo nombre.
+Release en GitHub (etiqueta `vX.Y.Z`) y se adjuntan esos cuatro archivos con el mismo nombre (y, con `--clave`, sus
+cuatro `.firma`, que la app necesita para instalarse sola).
 En Linux la app lleva su propia ICU (no todas las distribuciones la traen). En macOS no se puede
 firmar desde Windows: `preparar-mac.sh` la firma solo para ese equipo (`codesign --sign -`) y le
 quita la cuarentena.

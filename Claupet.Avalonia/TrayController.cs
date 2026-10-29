@@ -105,6 +105,7 @@ sealed partial class TrayController
         };
         View.NewSessionRequested += session => _ = NewSessionAsync(session);
         StartConsole();
+        StartUpdates();
         PushSettings();
         _toasts.Clicked += OpenNotice;
         _bubble.Clicked += OpenNotice;
@@ -308,6 +309,8 @@ sealed partial class TrayController
                 case "add": await AddAccountAsync(); break;
                 case "setup": await ShowSetupAsync(); break;
                 case "diag": await CopyDiagnosticsAsync(); break;
+                case "updates": ToggleUpdates(); break;
+                case "update": await OnUpdateAsync(); break;
                 case "unsetup":
                     _popup.HoldOpen = true;
                     try { await RemoveSetupAsync(); }
@@ -481,6 +484,11 @@ sealed partial class TrayController
 
     void OpenNotice(Notice notice)
     {
+        if (notice == _updateNotice)
+        {
+            _ = OpenConsoleAsync("sistema");
+            return;
+        }
         if (notice.SessionId is { } id) View.FocusSession(id);
         else if (notice.AccountDir is { } dir)
         {
@@ -788,6 +796,7 @@ sealed partial class TrayController
         _sounds.Dispose();
         _refresh.Dispose();
         _consoleHost?.Dispose();
+        ApplyUpdateOnExit();
         _tray.IsVisible = false;
         _tray.Dispose();
         if (_app.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime lifetime) lifetime.Shutdown();

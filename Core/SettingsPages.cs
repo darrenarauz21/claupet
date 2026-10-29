@@ -22,7 +22,9 @@ enum PlatformFeatures
     Shortcuts = 512,
     /// <summary>Soltar archivos sobre la mascota: los analiza o los encarga.</summary>
     FileDrops = 1024,
-    All = MascotChat | Actions | Mic | ReadAloud | Hotkeys | Island | Extensions | LocalModel | MascotSize | Shortcuts | FileDrops,
+    /// <summary>Buscar versiones nuevas en GitHub (Updates).</summary>
+    Updates = 2048,
+    All = MascotChat | Actions | Mic | ReadAloud | Hotkeys | Island | Extensions | LocalModel | MascotSize | Shortcuts | FileDrops | Updates,
 }
 
 /// <summary>Lo que muestra «Ajustes»; lo manda TrayApp cada vez que cambia algo. Los textos son los valores ya listos para mostrar.</summary>
@@ -103,6 +105,10 @@ sealed record SettingsState
     public IReadOnlyList<TopicState> TopicEngines { get; init; } = [];
     /// <summary>Cada capacidad y si tiene «Permitir siempre», para Claupet Console (en la bandeja van en un menú).</summary>
     public IReadOnlyList<GrantState> Grants { get; init; } = [];
+    /// <summary>«Buscar actualizaciones» y la fila de la versión nueva (Updates.Row: lo que dice y su enlace; vacío, sin fila).</summary>
+    public bool CheckUpdates { get; init; } = true;
+    public string UpdateStatus { get; init; } = "";
+    public string UpdateAction { get; init; } = "";
 }
 
 /// <summary>Un tipo de pregunta y quién lo responde primero, para elegirlo uno por uno en Claupet Console.</summary>
@@ -343,11 +349,28 @@ static class SettingsPages
         Link(s.Accounts == 1 ? L.T("1 cuenta") : L.T("{0} cuentas", s.Accounts), L.T("Agregar cuenta…"), "add"),
     ]);
 
-    static SettingsPage MachinePage(SettingsState s) => new("sistema", L.T("Sistema"), L.T("El hook de permisos y el diagnóstico."), "Sistema",
-    [
-        Full(Link(L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup")),
-        Link(L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag"),
-        Full(Link(OperatingSystem.IsWindows() ? L.T("Quitar hook e inicio con Windows") : L.T("Quitar hook e inicio con el sistema"),
-            L.T("Quitar…"), "unsetup", RowTone.Danger)),
-    ]);
+    static SettingsPage MachinePage(SettingsState s)
+    {
+        List<SettingsRow> rows =
+        [
+            Full(Link(L.T("Avisos de permisos (hook)"), L.T("Configurar…"), "setup")),
+            Link(L.T("Si algo no funciona"), L.T("Copiar diagnóstico"), "diag"),
+            Full(Link(OperatingSystem.IsWindows() ? L.T("Quitar hook e inicio con Windows") : L.T("Quitar hook e inicio con el sistema"),
+                L.T("Quitar…"), "unsetup", RowTone.Danger)),
+        ];
+        if (s.Has(PlatformFeatures.Updates))
+        {
+            rows.Add(Caption(L.T("Actualizaciones")));
+            rows.Add(Full(Info(L.T("Versión instalada"), SemVersion.App.ToString())));
+            rows.Add(Full(Switch(L.T("Buscar actualizaciones"), "updates", s.CheckUpdates)));
+            rows.Add(Full(Note(L.T("Una vez al día, en las versiones publicadas en GitHub. Nada se instala sin preguntarle."))));
+            // Con una versión nueva (o bajándose), también en los rápidos: así se ve sin abrir la Console.
+            if (s.UpdateStatus.Length > 0)
+            {
+                var row = Link(s.UpdateStatus, s.UpdateAction, "update");
+                rows.Add(s.UpdateAction.Length > 0 ? row : Full(row));
+            }
+        }
+        return new("sistema", L.T("Sistema"), L.T("El hook de permisos, el diagnóstico y las versiones nuevas."), "Sistema", rows);
+    }
 }

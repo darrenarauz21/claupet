@@ -14,7 +14,7 @@ sealed partial class TrayController : IConsoleApp
     /// equipo, donde hay un escritorio que las haga (macOS y Linux).
     /// </summary>
     static PlatformFeatures Features => PlatformFeatures.MascotChat | PlatformFeatures.Island | PlatformFeatures.Mic | PlatformFeatures.ReadAloud
-        | (SystemActions.Desktop is null ? PlatformFeatures.None : PlatformFeatures.Actions);
+        | PlatformFeatures.Updates | (SystemActions.Desktop is null ? PlatformFeatures.None : PlatformFeatures.Actions);
 
     ConsoleHost? _consoleHost;
     ConsoleHost ConsoleHost => _consoleHost ??= new ConsoleHost(this);
@@ -97,6 +97,9 @@ sealed partial class TrayController : IConsoleApp
             AnswerCustom = preset == AnswerPresets.Custom,
             TopicEngines = AnswerTopics.All.Select(t => new TopicState(t.Id, L.T(t.Label),
                 t.Fixed ? L.T("Siempre la nube") : Engines.Label(AnswerTopics.First(s, t.Id)), t.Fixed)).ToList(),
+            CheckUpdates = s.CheckUpdates,
+            UpdateStatus = _updates?.Row().Status ?? "",
+            UpdateAction = _updates?.Row().Action ?? "",
         };
     }
 

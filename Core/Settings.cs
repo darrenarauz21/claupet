@@ -148,6 +148,13 @@ sealed class AppSettings
 
     /// <summary>La mascota del escritorio de un paquete (su id); null: la elegida en Mascot. Los avisos siguen con la de Mascot.</summary>
     public string? CustomPet { get; set; }
+
+    /// <summary>Buscar una versión nueva en las Releases de GitHub una vez al día (Ajustes › Sistema).</summary>
+    public bool CheckUpdates { get; set; } = true;
+    /// <summary>Cuándo se buscó por última vez (null: nunca).</summary>
+    public DateTimeOffset? UpdatesChecked { get; set; }
+    /// <summary>La última versión nueva de la que se avisó: de cada una se avisa una sola vez.</summary>
+    public string? UpdateNotified { get; set; }
 }
 
 /// <summary>
