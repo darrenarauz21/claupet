@@ -36,7 +36,9 @@ static class Answers
         var intent = AnswerRules.Match(request.Prompt);
         var local = Assistant.Local?.Invoke();
         var understood = false;
-        if (intent is null && local is IStructuredBrain structured)
+        // Entender la pregunta arranca llama-server (de 1 a 3,5 GB por unos minutos): solo si el modelo local se usa,
+        // no para una pregunta que de todos modos responde la nube.
+        if (intent is null && local is IStructuredBrain structured && (onlyLocal || UsesLocal(settings)))
         {
             onStage?.Invoke(AssistantStage.Opening);
             intent = await ClassifyAsync(structured, request.Prompt, cancel);
@@ -73,6 +75,10 @@ static class Answers
         if (!result.Failed && result.By is { } by) AnswerStats.Add(by.Engine);
         return result;
     }
+
+    /// <summary>El reparto manda algún tipo de pregunta al modelo local (primero o si los anteriores no entienden).</summary>
+    static bool UsesLocal(AppSettings settings) =>
+        settings.AnswerFallback == Engine.Local || AnswerTopics.All.Any(t => !t.Fixed && AnswerTopics.First(settings, t.Id) == Engine.Local);
 
     /// <summary>La segunda vuelta de una acción que trajo datos (la batería, las notas): responde quien la pidió.</summary>
     static async Task<AssistantResult> WithDataAsync(AssistantRequest request, Action<string>? onText, Action<AssistantStage>? onStage, CancellationToken cancel)

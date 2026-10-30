@@ -192,7 +192,7 @@ sealed class VoiceInput : IDisposable
     CancellationTokenSource? _externalCancel;
     CancellationTokenSource? _partialCancel;
     Task? _partial;
-    int _partialSamples, _take, _loud;
+    int _partialSamples, _take, _loud, _warmLoud;
     bool _buttonPending, _byButton, _spoke;
     long _listenAt, _voiceAt;
 
@@ -204,6 +204,10 @@ sealed class VoiceInput : IDisposable
         _mic.Level += level =>
         {
             Level?.Invoke(level);
+            // Whisper (unos 850 MB) se carga al oír voz, no al apretar la tecla: mantener Ctrl derecho para un atajo, sin
+            // hablar, ya no lo carga. Dos trozos con voz: un pico suelto (el micrófono al abrirse) no cuenta.
+            if (_mic.Recording && _external is null && level > SpeechLevel && ++_warmLoud == 2)
+                _ = Transcriber.WarmAsync().ContinueWith(t => ErrorLog.Write(t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
             if (!_key.HandsFree || !_mic.Recording) return;
             var now = Environment.TickCount64;
             if (level > SpeechLevel)
@@ -279,14 +283,10 @@ sealed class VoiceInput : IDisposable
         _take++;
         _partialSamples = 0;
         _spoke = false;
-        _loud = 0;
+        _loud = _warmLoud = 0;
         _listenAt = Environment.TickCount64;
         _idle.Stop();
-        if (_external is null)
-        {
-            _partialTimer.Start();
-            _ = Transcriber.WarmAsync().ContinueWith(t => ErrorLog.Write(t.Exception!), TaskContinuationOptions.OnlyOnFaulted);
-        }
+        if (_external is null) _partialTimer.Start(); // Whisper se carga al oír voz (ver Level)
         Started?.Invoke();
     }
 

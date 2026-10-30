@@ -100,20 +100,29 @@ sealed record ActivityStats(long Tokens, int ActiveDays, int CurrentStreak, int 
 /// </summary>
 sealed class ActivityTracker
 {
-    static string FilePath => DataFolder.In("history.json");
+    /// <summary>history.json, junto a los ajustes (las pruebas usan otro).</summary>
+    readonly string _file;
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
     readonly Dictionary<string, long> _offsets = new(StringComparer.OrdinalIgnoreCase);
     readonly HashSet<string> _seen = new(StringComparer.Ordinal);
     readonly Dictionary<DateOnly, Day> _computed = new();
-    Dictionary<DateOnly, DayRecord> _stored = Load();
+    Dictionary<DateOnly, DayRecord> _stored;
+
+    public ActivityTracker(string? file = null)
+    {
+        _file = file ?? DataFolder.In("history.json");
+        _stored = Load();
+    }
 
     sealed class Day
     {
-        public long Tokens, Output, CacheRead;
+        public long Tokens, Output, CacheRead, Input, CacheWrite;
         public int Responses, Prompts, ToolCalls;
         public readonly HashSet<string> Sessions = new(StringComparer.Ordinal);
         public readonly Dictionary<string, long> Models = new();
+        /// <summary>La salida por modelo (Models lleva el total de tokens): para el pie de la ventana, solo la de hoy.</summary>
+        public readonly Dictionary<string, long> OutputByModel = new();
 
         public DayRecord ToRecord() => new()
         {
@@ -154,6 +163,24 @@ sealed class ActivityTracker
         return new ActivitySummary { Days = merged };
     }
 
+    /// <summary>
+    /// Los tokens de hoy en este equipo, para el pie de la ventana: lo mismo que contaría LocalUsage.ScanToday (las mismas
+    /// respuestas sin repetir, sin las «synthetic», por fecha local), pero de lo que Scan ya leyó, solo lo nuevo de cada
+    /// conversación. Antes se volvían a leer enteras las de hoy en cada actualización. Se llama después de Scan.
+    /// </summary>
+    public LocalTotals Today(IEnumerable<string> configDirs)
+    {
+        var totals = new LocalTotals { Shared = LocalUsage.ProjectRoots(configDirs).Shared };
+        if (!_computed.TryGetValue(DateOnly.FromDateTime(DateTime.Now), out var day)) return totals;
+        totals.Input = day.Input;
+        totals.Output = day.Output;
+        totals.CacheWrite = day.CacheWrite;
+        totals.CacheRead = day.CacheRead;
+        totals.Responses = day.Responses;
+        foreach (var (model, output) in day.OutputByModel) totals.OutputByModel[model] = output;
+        return totals;
+    }
+
     void ReadNew(string path)
     {
         try
@@ -164,31 +191,21 @@ sealed class ActivityTracker
             if (fs.Length == offset) return;
 
             fs.Seek(offset, SeekOrigin.Begin);
-            var buffer = new byte[fs.Length - offset];
-            var read = 0;
-            while (read < buffer.Length)
+            // Línea por línea y en UTF-8 (JsonLines): las conversaciones pesan cientos de MB y al abrir la app se leen todas.
+            var used = JsonLines.ForEach(fs, line =>
             {
-                var n = fs.Read(buffer, read, buffer.Length - read);
-                if (n == 0) break;
-                read += n;
-            }
-            var end = read == 0 ? -1 : Array.LastIndexOf(buffer, (byte)'\n', read - 1);
-            if (end < 0) return;
-            _offsets[path] = offset + end + 1;
-
-            foreach (var line in Encoding.UTF8.GetString(buffer, 0, end).Split('\n'))
-            {
-                if (line.Contains("\"type\":\"assistant\"", StringComparison.Ordinal)) Apply(line, assistant: true);
+                var bytes = line.Span;
+                if (bytes.IndexOf("\"type\":\"assistant\""u8) >= 0) Apply(line, assistant: true);
                 // Los resultados de herramientas pesan mucho y no son pedidos: ni se analizan.
-                else if (line.Contains("\"type\":\"user\"", StringComparison.Ordinal)
-                    && !line.Contains("\"tool_result\"", StringComparison.Ordinal)) Apply(line, assistant: false);
-            }
+                else if (bytes.IndexOf("\"type\":\"user\""u8) >= 0 && bytes.IndexOf("\"tool_result\""u8) < 0) Apply(line, assistant: false);
+            });
+            if (used > 0) _offsets[path] = offset + used;
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
 
-    void Apply(string line, bool assistant)
+    void Apply(ReadOnlyMemory<byte> line, bool assistant)
     {
         JsonDocument doc;
         try { doc = JsonDocument.Parse(line); }
@@ -225,13 +242,18 @@ sealed class ActivityTracker
         if (key != "m::" && !_seen.Add(key)) return;
 
         var output = (long)Json.Num(u, "output_tokens");
-        var tokens = (long)Json.Num(u, "input_tokens") + (long)Json.Num(u, "cache_creation_input_tokens") + output;
+        var input = (long)Json.Num(u, "input_tokens");
+        var cacheWrite = (long)Json.Num(u, "cache_creation_input_tokens");
+        var tokens = input + cacheWrite + output;
         day.Tokens += tokens;
         day.Output += output;
+        day.Input += input;
+        day.CacheWrite += cacheWrite;
         day.CacheRead += (long)Json.Num(u, "cache_read_input_tokens");
         day.Responses++;
         var shortName = model.StartsWith("claude-", StringComparison.Ordinal) ? model[7..] : model;
         day.Models[shortName] = day.Models.GetValueOrDefault(shortName) + tokens;
+        day.OutputByModel[shortName] = day.OutputByModel.GetValueOrDefault(shortName) + output;
         if (session is not null) day.Sessions.Add(session);
     }
 
@@ -251,12 +273,12 @@ sealed class ActivityTracker
         if (session is not null) day.Sessions.Add(session);
     }
 
-    static Dictionary<DateOnly, DayRecord> Load()
+    Dictionary<DateOnly, DayRecord> Load()
     {
         try
         {
-            if (!File.Exists(FilePath)) return new();
-            var raw = JsonSerializer.Deserialize<Dictionary<string, DayRecord>>(File.ReadAllText(FilePath), Options);
+            if (!File.Exists(_file)) return new();
+            var raw = JsonSerializer.Deserialize<Dictionary<string, DayRecord>>(File.ReadAllText(_file), Options);
             var result = new Dictionary<DateOnly, DayRecord>();
             foreach (var (key, value) in raw ?? new())
                 if (DateOnly.TryParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
@@ -266,15 +288,15 @@ sealed class ActivityTracker
         catch (Exception) { return new(); }
     }
 
-    static void Save(Dictionary<DateOnly, DayRecord> days)
+    void Save(Dictionary<DateOnly, DayRecord> days)
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(_file)!);
             var raw = days.OrderBy(kv => kv.Key).ToDictionary(kv => kv.Key.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), kv => kv.Value);
-            var temp = FilePath + ".tmp";
+            var temp = _file + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(raw, Options));
-            File.Move(temp, FilePath, overwrite: true);
+            File.Move(temp, _file, overwrite: true);
         }
         catch (Exception) { }
     }

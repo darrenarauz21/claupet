@@ -606,7 +606,8 @@ asistente). `Answers.AskAsync` (`Core/Answers.Router.cs`) decide en cada pregunt
    «¿cuánto me queda de Claude?», «sube el volumen», «pon el brillo al 40», «modo oscuro», «abre Spotify»,
    «recuérdame X en 20 minutos», «anota X», «25 × 4 + 10», «15 % de 200», «10 km a millas», «hola», «gracias».
    Si sobra algo («sube el volumen y abre Spotify»), no adivinan: pasa al siguiente.
-2. **Si ninguna regla sirve y el modelo local está descargado**, él entiende la pregunta: responde un JSON con
+2. **Si ninguna regla sirve y el modelo local está descargado y se usa** (es el modelo elegido, o el reparto manda
+   algún tipo de pregunta al local), él entiende la pregunta; si todo va a la nube, no se arranca solo para esto. Responde un JSON con
    el tipo, la acción, el lugar y el día, restringido por un esquema (`response_format` con `json_schema`, que
    llama-server convierte en gramática). Solo puede elegir tipos y acciones de la lista; las que llevan un
    JSON propio (notas, recordatorios, agendar) no las elige él.
@@ -828,6 +829,12 @@ donde un `.wav` o `.mp3` con el mismo nombre (`terminado`, `pregunta`, `permiso`
 
 Requiere el SDK de .NET 8.
 
+La app vive todo el día en la bandeja, así que cuida la memoria: lee las conversaciones de Claude Code línea por
+línea y en UTF-8 (`Core/JsonLines.cs`), sin cargar un archivo entero (al abrirse las recorre todas para Actividad y el
+historial), y el recolector de basura va con `System.GC.ConserveMemory` en 7 (`Claupet.Avalonia.csproj`). Medido en
+Windows con 1,7 GB de conversaciones: unos 185 MB privados estables y 220 MB de pico al abrirse (antes, 2 GB al abrirse
+y unos 680 MB después).
+
 ```powershell
 dotnet build Claupet.Avalonia -c Release                # la app, para Windows, Linux y macOS
 dotnet test Claupet.Tests                               # las pruebas (en Windows)
@@ -911,8 +918,9 @@ registradas y vivas, y el hook. Lo habitual:
   están en Linux ni en macOS. Ahí ya están Claupet Console, el chat con la mascota, la isla, la voz y las acciones en el
   equipo; lo demás, en las etapas siguientes.
 - Comparada con la app WinForms de hasta la 2.3.0, la de Windows no tiene todavía: las transiciones de la ventana de la
-  bandeja, las esquinas y la sombra de Windows 11 en ella y en los avisos, el menú del ícono con los colores del tema, ni
-  abrir la ventana en la pantalla del cursor (abre en la principal).
+  bandeja, el menú del ícono con los colores del tema, ni abrir la ventana en la pantalla del cursor (abre en la
+  principal). La ventana de la bandeja y los avisos sí son tarjetas como antes: sombra y, en Windows 11, esquinas
+  redondeadas con el borde del tema (`WinStyles.Card`).
 - Los formatos de los otros agentes (Codex CLI, Gemini CLI, GitHub Copilot CLI) no se comprobaron con archivos reales.
 - Las acciones de Linux se probaron con `--accion` en WSL (Ubuntu, sin escritorio): estado, rechazos y avisos de
   programas que faltan. Con un escritorio real (GNOME, Plasma) y en macOS, sin probar todavía.

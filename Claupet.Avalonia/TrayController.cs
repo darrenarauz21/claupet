@@ -105,6 +105,7 @@ sealed partial class TrayController
         };
         View.NewSessionRequested += session => _ = NewSessionAsync(session);
         SetupExtensions();
+        WatchMascotScreens(); // también sin mascota: con la sesión bloqueada se pausa la isla
         StartConsole();
         StartUpdates();
         _ = StartExtensionsAsync();
@@ -188,7 +189,6 @@ sealed partial class TrayController
                 || (renewSelected && _settings.Selected is { } selected && Account.SamePath(a.ConfigDir, selected)));
             if (!offline) _renewAtStart = false;
             var profiles = await Task.Run(() => accounts.Select(UsageClient.ReadProfile).ToList());
-            var local = await Task.Run(() => LocalUsage.ScanToday(accounts.Select(a => a.ConfigDir)));
             var updated = DateTime.Now;
 
             // Los datos nuevos se aplican cuando la animación termina, no antes.
@@ -203,7 +203,6 @@ sealed partial class TrayController
                     _snapshots[dir] = fresh;
                     _profiles[dir] = profiles[i];
                 }
-                _local = local;
                 _updated = updated;
             };
             _ = CountActivityAsync(accounts);
@@ -223,9 +222,13 @@ sealed partial class TrayController
         _counting = true;
         try
         {
-            var summary = await Task.Run(() => _activity.Scan(accounts.Select(a => a.ConfigDir)));
+            var dirs = accounts.Select(a => a.ConfigDir).ToList();
+            // Los tokens de hoy (el pie de la ventana) salen del mismo recorrido, que solo lee lo nuevo.
+            var (summary, today) = await Task.Run(() => (_activity.Scan(dirs), _activity.Today(dirs)));
             View.SetActivity(summary);
             _activitySummary = summary;
+            _local = today;
+            View.Render(_settings.Accounts, _settings.Selected, _snapshots, _profiles, _local, _updated);
             MaybeShowRecap(false);
         }
         finally { _counting = false; }
@@ -239,11 +242,18 @@ sealed partial class TrayController
         {
             var accounts = _settings.Accounts.ToList();
             var sessions = await Task.Run(() => _monitor.Scan(accounts));
-            View.SetSessions(sessions);
-            _director.SetSessions(sessions);
+            // Casi siempre nada cambió: entonces no se repinta (la ventana sí, si está abierta, por los tiempos que muestra).
+            var key = SessionsKey(sessions);
+            var changed = key != _sessionsKey;
+            _sessionsKey = key;
             _lastSessions = sessions;
-            BroadcastSessions(sessions);
-            IslandSessions(sessions);
+            if (changed || _popup.IsVisible) View.SetSessions(sessions);
+            if (changed)
+            {
+                _director.SetSessions(sessions);
+                BroadcastSessions(sessions);
+                IslandSessions(sessions);
+            }
             if (_settings.Notifications)
             {
                 _detector.Sessions(sessions).ForEach(ShowNotice);
@@ -251,6 +261,36 @@ sealed partial class TrayController
             }
         }
         finally { _scanning = false; }
+    }
+
+    int _sessionsKey;
+
+    /// <summary>Lo que se ve de las sesiones, resumido: si es igual que en el tick anterior, nada cambió.</summary>
+    static int SessionsKey(IReadOnlyList<SessionInfo> sessions)
+    {
+        var hash = new HashCode();
+        foreach (var s in sessions)
+        {
+            hash.Add(s.SessionId);
+            hash.Add(s.State);
+            hash.Add(s.Steps);
+            hash.Add(s.Turns);
+            hash.Add(s.Action);
+            hash.Add(s.Title);
+            hash.Add(s.StatusAt);
+            hash.Add(s.TurnStartedAt);
+            hash.Add(s.TurnEndedAt);
+            hash.Add(s.TodoDone);
+            hash.Add(s.TodoTotal);
+            hash.Add(s.ErrorAt);
+            hash.Add(s.RetryAt);
+            hash.Add(s.AwaitingAnswer);
+            hash.Add(s.Flow.Count);
+            hash.Add(s.Edits.Count);
+            hash.Add(s.LastAnswer);
+            hash.Add(s.Model);
+        }
+        return hash.ToHashCode();
     }
 
     void ShowNotice(Notice notice)

@@ -58,7 +58,7 @@ sealed partial class TrayController
             current.Key = MicKeys.IsHold(_settings.MicKey) ? _settings.MicKey : MicKeys.Choices[0].Id;
             // Una combinación grabada la vigila KeyHook; una copia de prueba (--preview) en Windows no mira la tecla: la
             // mira la app de siempre, con los mismos ajustes.
-            current.WatchKey = !(OperatingSystem.IsWindows() && Program.Args.Contains("--preview")) && !TalkIsCombo;
+            current.WatchKey = !(OperatingSystem.IsWindows() && Program.Args.Contains("--preview")) && !TalkIsCombo && !_locked;
         }
         if (_island is { } island) island.MicEnabled = _voice is not null;
         UpdateKeys();

@@ -100,7 +100,7 @@ sealed class MascotWindow : Window
         menu.Items.Add(hide);
         ContextMenu = menu;
 
-        _timer.Tick += (_, _) => _view.Tick();
+        _timer.Tick += (_, _) => Wake();
         Opened += (_, _) =>
         {
             Resize(RenderScaling); // la escala de la pantalla en que quedó
@@ -257,7 +257,26 @@ sealed class MascotWindow : Window
         else
         {
             _director.Poke(); // saluda; si lo siguen molestando, se enoja
+            Wake();
             Poked?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// Mira si cambió el cuadro y programa la próxima vez para cuando cambie el siguiente: el chibi cambia de dibujo un par
+    /// de veces por segundo, y despertar 25 veces por segundo todo el día gastaba batería. Como mucho espera 200 ms, para que
+    /// un gesto nuevo (un aviso, una sesión que termina) no tarde en verse.
+    /// </summary>
+    void Wake() => _timer.Interval = TimeSpan.FromMilliseconds(_view.Tick());
+
+    /// <summary>Con la sesión bloqueada no se ve: deja de despertarse hasta que vuelva.</summary>
+    public void SetPaused(bool paused)
+    {
+        if (paused) _timer.Stop();
+        else if (IsVisible)
+        {
+            _timer.Start();
+            Wake();
         }
     }
 
@@ -268,14 +287,28 @@ sealed class MascotWindow : Window
 
         (ChibiMove Move, int Frame, long Beat) _shown = (ChibiMove.Sleep, -1, -1);
 
-        /// <summary>Repinta solo cuando cambia el cuadro o, con música, el tiempo del compás (la clásica se anima con el tiempo: cada vuelta del reloj).</summary>
-        public void Tick()
+        const int MaxWait = 200, Step = 10;
+
+        /// <summary>
+        /// Repinta solo cuando cambia el cuadro o, con música, el tiempo del compás, y dice en cuántos ms mirar de nuevo. La
+        /// clásica y las de paquete se animan con el tiempo: siguen cada 40 ms.
+        /// </summary>
+        public int Tick()
         {
             var (move, t, music) = director.Now();
-            var shown = (move, chibi && pet is null ? ChibiSprite.FrameIndex(move, t) : (int)(t / 40), music ? t / ChibiSprite.Beat : -1);
-            if (shown == _shown) return;
-            _shown = shown;
-            InvalidateVisual();
+            var drawsChibi = chibi && pet is null;
+            var shown = (move, drawsChibi ? ChibiSprite.FrameIndex(move, t) : (int)(t / 40), music ? t / ChibiSprite.Beat : -1);
+            if (shown != _shown)
+            {
+                _shown = shown;
+                InvalidateVisual();
+            }
+            if (!drawsChibi) return 40;
+            var next = MaxWait;
+            for (var dt = Step; dt < MaxWait; dt += Step)
+                if (ChibiSprite.FrameIndex(move, t + dt) != shown.Item2) { next = dt; break; }
+            if (music) next = Math.Min(next, (int)(ChibiSprite.Beat - t % ChibiSprite.Beat));
+            return Math.Max(16, next);
         }
 
         public override void Render(DrawingContext dc)

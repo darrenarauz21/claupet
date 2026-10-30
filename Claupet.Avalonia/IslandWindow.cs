@@ -42,6 +42,8 @@ sealed partial class IslandWindow : Window
 
     // Medidas (en unidades de la interfaz, como a 96 ppp en Windows).
     const double CompactW = 300, CompactH = 36, MouthW = 336, MouthH = 44, OpenW = 560, ShadowMargin = 14, HotWidth = 320, HotHeight = 6;
+    /// <summary>A esta distancia del borde de arriba (en unidades de la interfaz), el cursor se mira cada 50 ms.</summary>
+    const double NearHeight = 160;
     const int OpenDelay = 250, CloseDelay = 700, HideDelay = 1200;
 
     // ── Eventos ─────────────────────────────────────────────────────────────────────────────
@@ -178,6 +180,21 @@ sealed partial class IslandWindow : Window
         _poll.Tick += (_, _) => Poll();
         _frame.Tick += (_, _) => Render();
         _poll.Start();
+    }
+
+    /// <summary>Con la sesión bloqueada no se ve: deja de mirar el cursor y de dibujar hasta que vuelva.</summary>
+    public void SetPaused(bool paused)
+    {
+        if (paused)
+        {
+            _poll.Stop();
+            _frame.Stop();
+        }
+        else
+        {
+            _poll.Start();
+            Redraw();
+        }
     }
 
     /// <summary>Se sabe dónde está el cursor fuera de la isla (GlobalPointer respondió alguna vez).</summary>
@@ -681,7 +698,8 @@ sealed partial class IslandWindow : Window
     {
         if (relayout) { Relayout(); return; }
         if (!IsVisible) return;
-        if (!_frame.IsEnabled)
+        // También si espera un cambio lejano (en compacta, el próximo parpadeo): lo nuevo se dibuja ya.
+        if (!_frame.IsEnabled || _frame.Interval > TimeSpan.FromMilliseconds(50))
         {
             _frame.Interval = TimeSpan.FromMilliseconds(16);
             _frame.Start();
@@ -692,8 +710,7 @@ sealed partial class IslandWindow : Window
     bool Animating =>
         AnimProgress < 1 || Environment.TickCount64 - _swallowAt < 260 || Environment.TickCount64 - _pageAt < 220
         || _shape == Shape.Open && (_sessions.Any(s => s.State is SessionState.Working or SessionState.Waiting) || _asking || Analyzing || Typing
-            || _turnAt.Values.Any(t => Environment.TickCount64 - t < 260) || VoiceInField || _focusPending)
-        || _shape == Shape.Compact; // en compacta, la cabeza parpadea
+            || _turnAt.Values.Any(t => Environment.TickCount64 - t < 260) || VoiceInField || _focusPending);
 
     void Render()
     {
@@ -710,9 +727,28 @@ sealed partial class IslandWindow : Window
         _view.InvalidateVisual();
         PlaceInput();
 
-        if (!Animating) _frame.Stop();
-        else _frame.Interval = TimeSpan.FromMilliseconds(AnimProgress < 1 || Environment.TickCount64 - _pageAt < 220 || Environment.TickCount64 - _swallowAt < 260
-            ? 16 : _listening ? 33 : 50);
+        if (Animating)
+            _frame.Interval = TimeSpan.FromMilliseconds(AnimProgress < 1 || Environment.TickCount64 - _pageAt < 220 || Environment.TickCount64 - _swallowAt < 260
+                ? 16 : _listening ? 33 : 50);
+        else if (_shape == Shape.Compact) _frame.Interval = TimeSpan.FromMilliseconds(CompactNext());
+        else _frame.Stop();
+    }
+
+    /// <summary>
+    /// En compacta, cuándo cambia algo de verdad: el pulso de lo que espera se mueve siempre; si no, solo la cabeza
+    /// (parpadea 120 ms cada 3,6 s, mira a los lados mientras analiza, sonríe un rato al terminar). Lo demás cambia con
+    /// los datos, que piden su propio redibujado. Antes se redibujaba 20 veces por segundo para un parpadeo.
+    /// </summary>
+    int CompactNext()
+    {
+        if (_sessions.Any(s => s.State == SessionState.Waiting) || _choiceTask is not null) return 50;
+        var tick = Environment.TickCount64;
+        if (Analyzing) return (int)(600 - tick % 600);
+        var blink = tick % 3600;
+        var next = blink < 3480 ? 3480 - blink : 3600 - blink;
+        var happy = 3000 - (tick - _analysisEnd);
+        if (_analysisDone && happy > 0) next = Math.Min(next, happy);
+        return (int)Math.Clamp(next, 16, 1000);
     }
 
     (double Bar, double Body) ContentAlpha(bool open)
@@ -761,6 +797,7 @@ sealed partial class IslandWindow : Window
         var now = Environment.TickCount64;
         var hot = false;
         var over = IsVisible && _pointerInside;
+        var near = false;
         if (GlobalPointer.Read(Primary) is { } pointer)
         {
             _pointerKnown = true;
@@ -768,6 +805,7 @@ sealed partial class IslandWindow : Window
             if (Screens.ScreenFromPoint(pointer.At) is { } under)
             {
                 var area = under.WorkingArea;
+                near = pointer.At.Y <= area.Y + NearHeight * under.Scaling;
                 hot = pointer.At.Y <= area.Y + HotHeight * under.Scaling
                     && Math.Abs(pointer.At.X - (area.X + area.Width / 2.0)) <= HotWidth * under.Scaling / 2;
                 if (hot && _shape == Shape.Hidden) _screen = under;
@@ -806,6 +844,9 @@ sealed partial class IslandWindow : Window
         }
 
         if (_hoverKey is not null && !over) { _hoverKey = null; Redraw(); }
+
+        // Con la isla escondida y el cursor lejos del borde de arriba, se mira menos seguido: casi todo el día es así.
+        _poll.Interval = TimeSpan.FromMilliseconds(IsVisible || near ? 50 : 150);
     }
 
     /// <summary>Se puede plegar: nada la retiene abierta (escribiendo, analizando o con el resultado recién llegado).</summary>
