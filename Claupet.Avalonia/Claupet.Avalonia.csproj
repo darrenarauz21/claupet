@@ -23,6 +23,9 @@
     <Compile Include="..\Console\**\*.cs" Link="Console\%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Las traducciones (L.T), dentro del ejecutable. -->
     <EmbeddedResource Include="..\Core\Idiomas\*.json" LogicalName="idiomas/%(Filename)%(Extension)" />
+    <!-- El recolector de basura que ahorra memoria: compacta más seguido, y la app (que vive todo el día en la bandeja)
+         queda en unos 180 MB en vez de unos 500. El concurrente sigue encendido, para que las animaciones no se traben. -->
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
     <!-- Las pruebas (Claupet.Tests) ven lo interno de la app. -->
     <InternalsVisibleTo Include="Claupet.Tests" />
   </ItemGroup>

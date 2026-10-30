@@ -164,31 +164,21 @@ sealed class ActivityTracker
             if (fs.Length == offset) return;
 
             fs.Seek(offset, SeekOrigin.Begin);
-            var buffer = new byte[fs.Length - offset];
-            var read = 0;
-            while (read < buffer.Length)
+            // Línea por línea y en UTF-8 (JsonLines): las conversaciones pesan cientos de MB y al abrir la app se leen todas.
+            var used = JsonLines.ForEach(fs, line =>
             {
-                var n = fs.Read(buffer, read, buffer.Length - read);
-                if (n == 0) break;
-                read += n;
-            }
-            var end = read == 0 ? -1 : Array.LastIndexOf(buffer, (byte)'\n', read - 1);
-            if (end < 0) return;
-            _offsets[path] = offset + end + 1;
-
-            foreach (var line in Encoding.UTF8.GetString(buffer, 0, end).Split('\n'))
-            {
-                if (line.Contains("\"type\":\"assistant\"", StringComparison.Ordinal)) Apply(line, assistant: true);
+                var bytes = line.Span;
+                if (bytes.IndexOf("\"type\":\"assistant\""u8) >= 0) Apply(line, assistant: true);
                 // Los resultados de herramientas pesan mucho y no son pedidos: ni se analizan.
-                else if (line.Contains("\"type\":\"user\"", StringComparison.Ordinal)
-                    && !line.Contains("\"tool_result\"", StringComparison.Ordinal)) Apply(line, assistant: false);
-            }
+                else if (bytes.IndexOf("\"type\":\"user\""u8) >= 0 && bytes.IndexOf("\"tool_result\""u8) < 0) Apply(line, assistant: false);
+            });
+            if (used > 0) _offsets[path] = offset + used;
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
 
-    void Apply(string line, bool assistant)
+    void Apply(ReadOnlyMemory<byte> line, bool assistant)
     {
         JsonDocument doc;
         try { doc = JsonDocument.Parse(line); }

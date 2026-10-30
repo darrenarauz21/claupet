@@ -25,6 +25,7 @@ sealed class PopupWindow : Window
     public DateTime LastHidden { get; private set; }
 
     readonly Border _frame;
+    Theme? _theme;
 
     public PopupWindow()
     {
@@ -41,13 +42,18 @@ sealed class PopupWindow : Window
         KeyDown += (_, e) => { if (e.Key == Key.Escape) HidePopup(); };
         // Al cambiar de alto (otra vista, una sesión desplegada) se vuelve a pegar al borde.
         SizeChanged += (_, _) => { if (IsVisible) Reposition(); };
+        Opened += (_, _) => { if (_theme is { } theme) WinStyles.Card(this, theme); };
     }
 
     public void ApplyTheme(Theme theme)
     {
+        _theme = theme;
         View.Palette = theme;
+        // En Windows 11 el borde (redondeado) lo dibuja el sistema, como en la app WinForms.
+        _frame.BorderThickness = new Thickness(WinStyles.Rounded ? 0 : 1);
         _frame.BorderBrush = Gfx.B(theme.Border);
         Background = Gfx.B(theme.Background);
+        WinStyles.Card(this, theme);
     }
 
     public void ShowNear()
@@ -109,9 +115,11 @@ sealed class ToastWindow : Window
         Width = ToastWidth;
         Height = ToastHeight;
         WinStyles.Float(this);
+        WinStyles.Card(this, theme); // sombra y, en Windows 11, esquinas redondeadas con su borde
+        Opened += (_, _) => WinStyles.Card(this, theme);
         Background = Gfx.B(theme.Raised);
         _view = new ToastView(notice, theme);
-        Content = new Border { BorderThickness = new Thickness(1), BorderBrush = Gfx.B(theme.Border), Child = _view };
+        Content = new Border { BorderThickness = new Thickness(WinStyles.Rounded ? 0 : 1), BorderBrush = Gfx.B(theme.Border), Child = _view };
         _view.Clicked += () => { Clicked?.Invoke(this); Dismiss(); };
         _view.CloseClicked += Dismiss;
         _timer.Tick += (_, _) => Tick();

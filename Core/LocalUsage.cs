@@ -66,21 +66,20 @@ static class LocalUsage
         try
         {
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var reader = new StreamReader(fs);
-            string? line;
-            while ((line = reader.ReadLine()) is not null)
+            // Línea por línea y en UTF-8 (JsonLines): solo se analizan las respuestas con su uso.
+            JsonLines.ForEach(fs, line =>
             {
-                if (!line.Contains("\"usage\"", StringComparison.Ordinal) || !line.Contains("\"assistant\"", StringComparison.Ordinal))
-                    continue;
+                var bytes = line.Span;
+                if (bytes.IndexOf("\"usage\""u8) < 0 || bytes.IndexOf("\"assistant\""u8) < 0) return;
                 try { Add(line, since, seen, totals); }
                 catch (Exception) { }
-            }
+            });
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
 
-    static void Add(string line, DateTime since, HashSet<string> seen, LocalTotals totals)
+    static void Add(ReadOnlyMemory<byte> line, DateTime since, HashSet<string> seen, LocalTotals totals)
     {
         using var doc = JsonDocument.Parse(line);
         var r = doc.RootElement;

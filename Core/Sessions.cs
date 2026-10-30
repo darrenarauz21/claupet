@@ -274,21 +274,11 @@ sealed class SessionMonitor
                 if (fs.Length == _offset) return;
 
                 fs.Seek(_offset, SeekOrigin.Begin);
-                var buffer = new byte[fs.Length - _offset];
-                var read = 0;
-                while (read < buffer.Length)
+                // Solo líneas completas (la última puede estar a medio escribir), una a una y en UTF-8 (JsonLines).
+                _offset += JsonLines.ForEach(fs, line =>
                 {
-                    var n = fs.Read(buffer, read, buffer.Length - read);
-                    if (n == 0) break;
-                    read += n;
-                }
-                // Solo líneas completas: la última puede estar a medio escribir.
-                var end = read == 0 ? -1 : Array.LastIndexOf(buffer, (byte)'\n', read - 1);
-                if (end < 0) return;
-                _offset += end + 1;
-
-                foreach (var line in Encoding.UTF8.GetString(buffer, 0, end).Split('\n'))
                     if (line.Length > 1) Apply(line);
+                });
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
@@ -309,7 +299,7 @@ sealed class SessionMonitor
             LastAnswer = null;
         }
 
-        void Apply(string line)
+        void Apply(ReadOnlyMemory<byte> line)
         {
             JsonDocument doc;
             try { doc = JsonDocument.Parse(line); }
