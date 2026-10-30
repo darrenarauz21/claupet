@@ -22,12 +22,13 @@ sealed record Ink(bool Dark, IBrush Window, IBrush Surface, IBrush Raised, IBrus
     /// <summary>Sin ligaduras (Cascadia Mono y no Code): «&lt;=» se ve como se escribe, no como «≤».</summary>
     public static readonly FontFamily Mono = new("Cascadia Mono, Consolas, SF Mono, Menlo, Ubuntu Mono, DejaVu Sans Mono, monospace");
 
-    public static Ink For(bool dark)
+    public static Ink For(bool dark) => Of(CustomThemes.Selected, dark);
+
+    /// <summary>Los colores de ese tema propio o, con null, los de Claupet con la paleta elegida (las vistas previas de los temas).</summary>
+    public static Ink Of(CustomTheme? custom, bool dark)
     {
-        if (CustomThemes.Selected is { } custom) return From(dark ? custom.Dark : custom.Light, dark);
-        var palette = Theme.Palettes.FirstOrDefault(p => p.Id == Theme.SelectedPalette);
-        if (palette.Id is null) palette = Theme.Palettes[0];
-        var accent = dark ? palette.Dark : palette.Light;
+        if (custom is not null) return From(dark ? custom.Dark : custom.Light, dark);
+        var accent = Theme.PaletteAccent(dark);
         var accentBrush = new ImmutableSolidColorBrush(Color.FromRgb(accent.R, accent.G, accent.B));
         return dark
             ? new(true, B("#1E1E1C"), B("#262624"), B("#2F2F2C"), B("#3A3A37"), B("#12FFFFFF"), B("#F5F4EF"),
@@ -35,6 +36,19 @@ sealed record Ink(bool Dark, IBrush Window, IBrush Surface, IBrush Raised, IBrus
             : new(false, B("#F3F1EB"), B("#F8F6F1"), B("#FFFFFF"), B("#ECE9E1"), B("#14000000"), B("#1F1E1D"),
                 B("#5E5D59"), B("#6B6963"), B("#D9D6CC"), accentBrush, B("#8A5A12"), B("#A33A2A"), B("#B4532F"), B("#3F6B3A"));
     }
+
+    /// <summary>
+    /// Lo que va escrito sobre un relleno de color (un botón del acento o del peligro): blanco, como en el diseño, si
+    /// llega a 3:1; si no (el acento claro de un tema propio), casi negro.
+    /// </summary>
+    public static IBrush On(IBrush fill)
+    {
+        if (fill is not ISolidColorBrush { Color: var c }) return Brushes.White;
+        var color = System.Drawing.Color.FromArgb(255, c.R, c.G, c.B);
+        return CustomThemes.Ratio(color, System.Drawing.Color.White) >= 3 ? Brushes.White : NearBlack;
+    }
+
+    static readonly IBrush NearBlack = new ImmutableSolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13));
 
     public IBrush For(RowTone tone) => tone switch
     {
@@ -66,11 +80,32 @@ sealed record Ink(bool Dark, IBrush Window, IBrush Surface, IBrush Raised, IBrus
         return _themed;
     }
 
+    /// <summary>La letra de los títulos con esa familia delante (la vista previa de un tema); sin familia, la de siempre.</summary>
+    public static FontFamily DisplayWith(string? font) =>
+        font is not null && Installed(font) ? new FontFamily(font + ", " + DisplayChain) : DisplayDefault;
+
     /// <summary>¿Está instalada la familia? Con FontManager de Avalonia; sin él (sin la app iniciada), no.</summary>
     public static bool Installed(string font)
     {
         try { return FontManager.Current.SystemFonts.Any(f => string.Equals(f.Name, font, StringComparison.OrdinalIgnoreCase)); }
         catch (Exception) { return false; }
+    }
+
+    /// <summary>
+    /// Las familias instaladas que sirven para leer (sin las de símbolos ni íconos) y que un tema acepta (letras, cifras,
+    /// espacios y guiones), por nombre y hasta 150: las que se le ofrecen a Claude al crear un tema. Vacía si no se pueden leer.
+    /// </summary>
+    public static IReadOnlyList<string> Families()
+    {
+        string[] skip = ["symbol", "wingdings", "webdings", "marlett", "emoji", "mdl2", "icons", "holomdl", "dings", "math"];
+        try
+        {
+            return FontManager.Current.SystemFonts.Select(f => f.Name)
+                .Where(n => n.Length is > 0 and <= 48 && n.All(ch => char.IsLetterOrDigit(ch) || ch is ' ' or '-')
+                    && !skip.Any(s => n.Contains(s, StringComparison.OrdinalIgnoreCase)))
+                .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).Take(150).ToList();
+        }
+        catch (Exception) { return []; }
     }
 
     static ImmutableSolidColorBrush C(System.Drawing.Color c) => new(Color.FromRgb(c.R, c.G, c.B));

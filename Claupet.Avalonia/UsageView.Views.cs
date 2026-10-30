@@ -159,7 +159,7 @@ sealed partial class UsageView
                 {
                     RowKind.Caption => SettingsCaption(dc, row.Text, y),
                     RowKind.Switch => SwitchRow(dc, row.Text, row.Key, row.On, y),
-                    RowKind.Choice => ChoiceRow(dc, row.Text, row.Key, row.Value, y, swatch: row.Swatch ? _t.Accent : null),
+                    RowKind.Choice => ChoiceRow(dc, row.Text, row.Key, row.Value, y, swatch: row.Swatch ? Claupet.Theme.PaletteAccent(_t.Dark) : null),
                     RowKind.Info => InfoRow(dc, row.Text, row.Value, y),
                     RowKind.Note => NoteRow(dc, row.Text, ToneColor(row.Tone), y),
                     RowKind.Link => LinkRow(dc, row.Text, row.Value, row.Key, ToneColor(row.Tone), y),

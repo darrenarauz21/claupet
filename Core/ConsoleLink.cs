@@ -24,6 +24,8 @@ sealed record ConsoleMessage
     public int Token { get; init; }
     public string? Language { get; init; }
     public string? Palette { get; init; }
+    /// <summary>Con «estado»: el tema propio elegido (su id en temas/); sin él, ninguno.</summary>
+    public string? CustomTheme { get; init; }
     public IReadOnlyList<SettingsPage>? Pages { get; init; }
     public IReadOnlyList<ConsoleOption>? Options { get; init; }
     public IReadOnlyList<ChatSummary>? Chats { get; init; }

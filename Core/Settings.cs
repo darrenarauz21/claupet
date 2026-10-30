@@ -47,9 +47,24 @@ sealed class AppSettings
     public bool Notifications { get; set; } = true;
     public bool Sound { get; set; } = true;
     public string SoundPack { get; set; } = "clasico";
-    /// <summary>Paleta del acento (Theme.Palettes). «claude» es como se llamaba antes «terracota».</summary>
-    public string Palette { get => _palette; set => _palette = value == "claude" ? "terracota" : value; }
+    /// <summary>
+    /// Paleta del acento (Theme.Palettes). «claude» es como se llamaba antes «terracota»; «tema:&lt;id&gt;», como se
+    /// elegía antes un tema propio: pasa a CustomTheme.
+    /// </summary>
+    public string Palette
+    {
+        get => _palette;
+        set
+        {
+            if (CustomThemes.IdOf(value) is { } theme) (CustomTheme, _palette) = (theme, "terracota");
+            else _palette = value == "claude" ? "terracota" : value;
+        }
+    }
     string _palette = "terracota";
+    /// <summary>El tema propio elegido (CustomThemes: el id de su archivo en temas/); null, ninguno y manda Palette.</summary>
+    public string? CustomTheme { get; set; }
+    /// <summary>Con qué calidad se crean los temas propios (CustomThemes.Qualities).</summary>
+    public string ThemeQuality { get; set; } = CustomThemes.Qualities[0].Id;
     /// <summary>Animación al actualizar (RefreshSprite.Styles). Se elige junto con Mascot, en la opción «Mascota» (Mascots).</summary>
     public string Animation { get; set; } = "mascota";
     /// <summary>Mascota de los avisos y de la animación «mascota»: Mascots.Classic o Mascots.Chibi.</summary>

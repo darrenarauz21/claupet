@@ -56,6 +56,7 @@ sealed partial class TrayController
         Sounds.EnsureDefaults();
 
         Theme.SelectedPalette = _settings.Palette;
+        Theme.SelectedCustom = _settings.CustomTheme;
         Mascots.Choose(_settings, Mascots.ChoiceOf(_settings)); // deja en orden lo guardado por versiones anteriores
         Mascots.Selected = _settings.Mascot;
         _refresh.Style = RefreshSprite.Resolve(_settings.Animation, _settings.Mascot);
@@ -412,11 +413,19 @@ sealed partial class TrayController
         _sounds.Play(NoticeKind.Done, pack, force: true);
     }
 
+    /// <summary>Elige la paleta y quita el tema propio; la mascota también nombra así los temas («tema:&lt;id&gt;»).</summary>
     void SetPalette(string palette)
     {
+        if (CustomThemes.IdOf(palette) is { } theme)
+        {
+            SetCustomTheme(theme);
+            return;
+        }
         _settings.Palette = palette;
+        _settings.CustomTheme = null;
         SettingsStore.Save(_settings);
         Theme.SelectedPalette = palette;
+        Theme.SelectedCustom = null;
         ApplyTheme();
     }
 
