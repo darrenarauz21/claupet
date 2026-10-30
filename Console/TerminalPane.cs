@@ -653,9 +653,9 @@ sealed class TerminalPane : Grid
         if (block.Answer is { } answer)
             panel.Children.Add(Ui.Text(answer switch
             {
-                PermissionAnswer.Deny => L.T("Rechazado"),
+                PermissionAnswer.Deny => block.FromIsland ? L.T("Rechazado en la isla") : L.T("Rechazado"),
                 PermissionAnswer.AllowAlways => L.T("Permitido siempre en este proyecto"),
-                _ => L.T("Permitido"),
+                _ => block.FromIsland ? L.T("Permitido en la isla") : L.T("Permitido"),
             }, 12, answer == PermissionAnswer.Deny ? _ink.Danger : _ink.Tertiary));
         else
         {
@@ -1020,7 +1020,8 @@ sealed class TerminalPane : Grid
         var account = accounts.FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, _form.Account ?? ""));
         var options = new AgentOptions(_form.Folder, account?.ConfigDir, _form.Model, _form.Effort, _form.Mode);
         TerminalRecents.Remember(options);
-        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action));
+        // Una copia de prueba (--preview) no le pasa los permisos a la isla de la app de siempre.
+        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview") };
         var tab = new Tab(agent, account?.Label ?? L.T("cuenta por defecto"));
         agent.Changed += changed => OnChanged(tab, changed);
         _tabs.Add(tab);

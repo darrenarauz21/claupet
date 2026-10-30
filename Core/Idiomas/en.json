@@ -1495,5 +1495,7 @@
   "usó una herramienta": "used a tool",
   "{0:0.0} s": "{0:0.0} s",
   "{0} min {1} s": "{0} min {1} s",
-  "{0} turnos": "{0} turns"
+  "{0} turnos": "{0} turns",
+  "Permitido en la isla": "Allowed on the island",
+  "Rechazado en la isla": "Rejected on the island"
 }

@@ -46,6 +46,8 @@ sealed class AgentBlock
     public JsonNode? Input { get; init; }
     public JsonNode? Suggestions { get; init; }
     public PermissionAnswer? Answer { get; set; }
+    /// <summary>Se respondió en la isla, no en el bloque.</summary>
+    public bool FromIsland { get; set; }
 
     // El cierre del turno.
     public double Cost { get; init; }
@@ -487,6 +489,38 @@ static class AgentProtocol
         });
     }
 
+    /// <summary>El permiso como lo manda el hook PermissionRequest, para que la isla lo muestre igual que los demás.</summary>
+    public static string IslandRequest(AgentBlock permission, string? sessionId, string cwd) => Line(new JsonObject
+    {
+        ["hook_event_name"] = "PermissionRequest",
+        ["session_id"] = sessionId ?? "",
+        ["cwd"] = cwd,
+        ["tool_name"] = permission.Tool,
+        ["tool_input"] = permission.Input?.DeepClone() ?? new JsonObject(),
+    });
+
+    /// <summary>
+    /// La respuesta de la isla (la del hook: hookSpecificOutput.decision) como respuesta al permiso. Se pasa tal cual,
+    /// con las respuestas de una pregunta en updatedInput; si no trae updatedInput, va el pedido sin cambios.
+    /// </summary>
+    public static (string Line, PermissionAnswer Answer)? FromIsland(AgentBlock permission, string reply)
+    {
+        try
+        {
+            if (JsonNode.Parse(reply)?["hookSpecificOutput"]?["decision"] is not JsonObject decision) return null;
+            var allow = (string?)decision["behavior"] == "allow";
+            if (!allow && (string?)decision["behavior"] != "deny") return null;
+            var response = (JsonObject)decision.DeepClone();
+            if (allow && response["updatedInput"] is null) response["updatedInput"] = permission.Input?.DeepClone() ?? new JsonObject();
+            return (Line(new JsonObject
+            {
+                ["type"] = "control_response",
+                ["response"] = new JsonObject { ["subtype"] = "success", ["request_id"] = permission.RequestId, ["response"] = response },
+            }), allow ? PermissionAnswer.Allow : PermissionAnswer.Deny);
+        }
+        catch (Exception) { return null; }
+    }
+
     static string Line(JsonObject o) => o.ToJsonString();
 }
 
@@ -495,17 +529,22 @@ sealed record AgentOptions(string Folder, string? ConfigDir = null, string? Mode
 
 /// <summary>
 /// Una sesión de Claude Code de la Terminal: el proceso en modo estructurado, con la cuenta (CLAUDE_CONFIG_DIR), el
-/// modelo y el esfuerzo de esa sesión. Los permisos los contesta el anfitrión (la app) desde su bloque; si el hook de
-/// aprobaciones de Claupet está instalado, contesta él antes. Cada línea se aplica con post, en el hilo de la vista:
-/// los bloques solo cambian ahí.
+/// modelo y el esfuerzo de esa sesión. Los permisos se contestan en su bloque y, si la isla está, también en ella: el
+/// hook de Claupet se aparta (Approvals.TerminalVariable) y la sesión le pasa el pedido a la isla; vale lo que se
+/// responda primero. Cada línea se aplica con post, en el hilo de la vista: los bloques solo cambian ahí.
 /// </summary>
 sealed class TerminalAgent : IDisposable
 {
     readonly AgentOptions _options;
     readonly Action<Action> _post;
     readonly object _write = new();
+    /// <summary>Los permisos que esperan también en la isla; al cancelarlos, la isla quita la tarjeta.</summary>
+    readonly Dictionary<AgentBlock, CancellationTokenSource> _island = [];
     Process? _process;
     int _requests;
+
+    /// <summary>Los permisos también se preguntan en la isla de la app (si está). Una copia de prueba no la usa.</summary>
+    public bool AskIsland { get; init; }
 
     public TerminalAgent(AgentOptions options, Action<Action> post)
     {
@@ -544,6 +583,7 @@ sealed class TerminalAgent : IDisposable
         }
         var start = Assistant.ClaudeStart(claude, _options.ConfigDir, Arguments(_options));
         start.WorkingDirectory = _options.Folder;
+        start.Environment[Approvals.TerminalVariable] = "1";
         var process = new Process { StartInfo = start, EnableRaisingEvents = true };
         try { process.Start(); }
         catch (Exception ex)
@@ -570,18 +610,47 @@ sealed class TerminalAgent : IDisposable
         if (Running && Transcript.Busy) Write(AgentProtocol.Interrupt(NextId()));
     }
 
+    /// <summary>Lo respondió en el bloque: va a Claude Code y la isla, si también lo mostraba, lo quita.</summary>
     public void Answer(AgentBlock permission, PermissionAnswer answer)
     {
         if (permission.Kind != AgentBlockKind.Permission || permission.Answer is not null || !Running) return;
+        Resolve(permission, answer, AgentProtocol.Answer(permission, answer));
+    }
+
+    void Resolve(AgentBlock permission, PermissionAnswer answer, string line)
+    {
         permission.Answer = answer;
+        StopIsland(permission);
         var changed = new List<AgentBlock> { permission };
         if (Transcript.Blocks.LastOrDefault(b => b.Kind == AgentBlockKind.Step && b.Id == permission.StepId) is { } step)
         {
             step.State = answer == PermissionAnswer.Deny ? StepState.Denied : StepState.Running;
             changed.Add(step);
         }
-        Write(AgentProtocol.Answer(permission, answer));
+        Write(line);
         Changed?.Invoke(changed);
+    }
+
+    /// <summary>Le pasa el permiso a la isla; si lo responde ahí antes que en el bloque, vale esa respuesta.</summary>
+    async Task AskIslandAsync(AgentBlock permission)
+    {
+        var cancel = _island[permission] = new CancellationTokenSource();
+        var request = AgentProtocol.IslandRequest(permission, Transcript.SessionId, Transcript.Cwd ?? _options.Folder);
+        var reply = await Task.Run(() => Approvals.AskAppAsync(request, cancel.Token));
+        _post(() =>
+        {
+            if (cancel.IsCancellationRequested || reply is null || permission.Answer is not null || !Running) return;
+            if (AgentProtocol.FromIsland(permission, reply) is not { } answer) return;
+            permission.FromIsland = true;
+            Resolve(permission, answer.Answer, answer.Line);
+        });
+    }
+
+    void StopIsland(AgentBlock permission)
+    {
+        if (!_island.Remove(permission, out var cancel)) return;
+        cancel.Cancel();
+        cancel.Dispose();
     }
 
     async Task ReadAsync(Process process)
@@ -591,7 +660,14 @@ sealed class TerminalAgent : IDisposable
         {
             while (await process.StandardOutput.ReadLineAsync() is { } line)
                 // Se avisa aunque no cambie un bloque: puede cambiar el modelo, el uso o el contexto.
-                _post(() => Changed?.Invoke(Transcript.Apply(line)));
+                _post(() =>
+                {
+                    var changed = Transcript.Apply(line);
+                    if (AskIsland)
+                        foreach (var permission in changed.Where(b => b.Kind == AgentBlockKind.Permission && b.Answer is null && !_island.ContainsKey(b)))
+                            _ = AskIslandAsync(permission);
+                    Changed?.Invoke(changed);
+                });
         }
         catch (Exception) { }
         await process.WaitForExitAsync();
@@ -600,6 +676,7 @@ sealed class TerminalAgent : IDisposable
         _post(() =>
         {
             if (!ReferenceEquals(_process, process)) return;
+            foreach (var permission in _island.Keys.ToList()) StopIsland(permission);
             var reason = code == 0 || problem.Length == 0 ? L.T("La sesión terminó.") : problem.Split('\n')[0].Trim();
             Notice(reason);
         });
@@ -625,6 +702,7 @@ sealed class TerminalAgent : IDisposable
 
     public void Dispose()
     {
+        foreach (var permission in _island.Keys.ToList()) StopIsland(permission);
         var process = _process;
         _process = null;
         if (process is null) return;

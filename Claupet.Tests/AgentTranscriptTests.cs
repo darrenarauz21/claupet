@@ -116,6 +116,72 @@ public sealed class AgentTranscriptTests
         Assert.Equal("deny", (string?)deny["response"]!["response"]!["behavior"]);
     }
 
+    static AgentBlock Permission()
+    {
+        var t = Started();
+        t.Apply("""{"type":"control_request","request_id":"r-9","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"file_path":"C:\\proyecto\\nota.txt","content":"hola"},"tool_use_id":"tu1"}}""");
+        return t.Blocks[^1];
+    }
+
+    [Fact]
+    public void ElPermisoVaALaIslaComoElDelHook()
+    {
+        var request = Approvals.Parse(AgentProtocol.IslandRequest(Permission(), "s-1", Cwd))!;
+
+        Assert.Equal("s-1", request.SessionId);
+        Assert.Equal(Cwd, request.Cwd);
+        Assert.Equal("Write", request.Tool);
+        Assert.Equal(@"C:\proyecto\nota.txt", request.Target);
+    }
+
+    [Fact]
+    public void LaRespuestaDeLaIslaContestaElPermiso()
+    {
+        var permission = Permission();
+
+        var allow = AgentProtocol.FromIsland(permission, Approvals.Allow())!.Value;
+        Assert.Equal(PermissionAnswer.Allow, allow.Answer);
+        var line = JsonNode.Parse(allow.Line)!["response"]!;
+        Assert.Equal("r-9", (string?)line["request_id"]);
+        Assert.Equal("allow", (string?)line["response"]!["behavior"]);
+        Assert.Equal("hola", (string?)line["response"]!["updatedInput"]!["content"]);
+
+        var deny = AgentProtocol.FromIsland(permission, Approvals.Deny())!.Value;
+        Assert.Equal(PermissionAnswer.Deny, deny.Answer);
+        Assert.Equal("deny", (string?)JsonNode.Parse(deny.Line)!["response"]!["response"]!["behavior"]);
+
+        Assert.Null(AgentProtocol.FromIsland(permission, "no es json"));
+        Assert.Null(AgentProtocol.FromIsland(permission, """{"hookSpecificOutput":{"decision":{"behavior":"ask"}}}"""));
+    }
+
+    [Fact]
+    public async Task LaIslaRespondeORetiraLaTarjetaSiSeContestoEnElBloque()
+    {
+        var pipe = "Claupet-prueba-" + Guid.NewGuid().ToString("N");
+        var withdrawn = new TaskCompletionSource();
+        using var server = new ApprovalServer(async (request, cancel) =>
+        {
+            if (request.Tool == "Write") return Approvals.Allow();
+            try { await Task.Delay(Timeout.Infinite, cancel); }
+            catch (OperationCanceledException) { withdrawn.TrySetResult(); }
+            return null;
+        }, pipe);
+        var line = AgentProtocol.IslandRequest(Permission(), "s-1", Cwd);
+
+        Assert.Equal(Approvals.Allow(), await Approvals.AskAppAsync(line, CancellationToken.None, pipe));
+
+        using var answered = new CancellationTokenSource();
+        var waiting = Approvals.AskAppAsync(line.Replace("\"Write\"", "\"Bash\""), answered.Token, pipe);
+        await Task.Delay(300);
+        answered.Cancel();
+        Assert.Null(await waiting);
+        await withdrawn.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task SinLaAppElPermisoQuedaSoloEnElBloque() =>
+        Assert.Null(await Approvals.AskAppAsync("{}", CancellationToken.None, "Claupet-prueba-" + Guid.NewGuid().ToString("N")));
+
     [Fact]
     public void UnPermisoNegadoPorLaConfiguracionMarcaElPaso()
     {
