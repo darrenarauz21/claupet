@@ -75,4 +75,18 @@ static partial class ChibiSprite
 
     /// <summary>El personaje de ese id, o null si no es uno de ellos (la clásica, otra animación).</summary>
     public static ChibiSkin? SkinOf(string? id) => Skins.FirstOrDefault(s => s.Id == id);
+
+    /// <summary>
+    /// Los gestos propios del personaje que se está armando: reemplazan algunos movimientos de la base (saludar,
+    /// festejar, dormir…) y duran lo suyo. El chibi no tiene: los de la base son los suyos.
+    /// </summary>
+    static void AddSignature(Dictionary<ChibiMove, Frame[]> moves, Func<Pose, int, Frame> F)
+    {
+        switch (Skin.Id)
+        {
+            case "dokki": DokkiArt.Moves(moves, F); break;
+            case "gemma": GemmaArt.Moves(moves, F); break;
+            case "ciel": CielArt.Moves(moves, F); break;
+        }
+    }
 }

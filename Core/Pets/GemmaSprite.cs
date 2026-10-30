@@ -201,6 +201,45 @@ static partial class ChibiSprite
             Stamp(canvas, x + 28, y + TailTop, [.. Tail.Select(Reverse)]);
         }
 
+        /// <summary>
+        /// Sus gestos, tsundere: quieta, a ratos se cruza de brazos, mira para otro lado con los cachetes rojos y resopla
+        /// («¡hmph!»); festeja con un salto y enseguida disimula igual, y saluda de mala gana, mirando a otro lado.
+        /// </summary>
+        public static void Moves(Dictionary<ChibiMove, Frame[]> moves, Func<Pose, int, Frame> F)
+        {
+            var open = new Pose();
+            var hmph = new Pose { Eyes = Eyes.AnnoyedRight, Mouth = Mouth.Pout, Head = 1, Folded = true, Cheeks = true, Crab = (2, 1) };
+            Frame[] Hmph(int hold) =>
+            [
+                F(hmph, hold), F(hmph with { Fx = [(SmallSteam, 26, 25)] }, 220), F(hmph with { Fx = [(Steam, 27, 23)] }, 220),
+                F(hmph with { Eyes = Eyes.Closed }, 500),
+            ];
+            moves[ChibiMove.Idle] =
+            [
+                F(open, 1500), F(open with { Crab = (0, 1) }, 450), F(open, 300), F(open with { Eyes = Eyes.Closed }, 110), F(open, 900),
+                .. Hmph(700),
+                F(open with { Eyes = Eyes.LookLeft, Head = -1 }, 400), F(open, 700), F(open with { Eyes = Eyes.Closed }, 110), F(open, 400),
+            ];
+
+            var cheer = new Pose { Eyes = Eyes.Happy, Mouth = Mouth.Open, Crab = (1, 0), Left = Arm.Up, Right = Arm.Up };
+            moves[ChibiMove.Cheer] =
+            [
+                F(cheer with { Fx = [(Spark, -1, 14), (Spark, 30, 14)] }, 110),
+                F(cheer with { Dy = -2, Fx = [(Star, -3, 10), (Star, 29, 10)] }, 120),
+                F(cheer with { Dy = -1, Fx = [(Spark, -2, 4), (Spark, 31, 4)] }, 120),
+                F(cheer with { Mouth = Mouth.Smile, Breathe = true }, 160),
+                F(cheer with { Eyes = Eyes.Open, Mouth = Mouth.Oh, Fx = [(Exclaim, 30, 8)] }, 260), // se da cuenta
+                .. Hmph(500),
+            ];
+
+            var wave = new Pose { Eyes = Eyes.AnnoyedRight, Mouth = Mouth.Pout, Head = 1, Cheeks = true, Crab = (2, 1), Right = Arm.Up };
+            moves[ChibiMove.Wave] =
+            [
+                F(wave, 320), F(wave with { Right = Arm.Wave }, 260), F(wave, 320), F(wave with { Right = Arm.Wave }, 260),
+                F(wave with { Eyes = Eyes.Closed }, 300),
+            ];
+        }
+
         /// <summary>Las cejas sobre la frente: fruncidas (tsundere), arriba al mirar hacia arriba y relajadas con los ojos cerrados.</summary>
         public static void Brows(char[][] g, (int X, int Y)? look)
         {

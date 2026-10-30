@@ -245,5 +245,62 @@ static partial class ChibiSprite
             Stamp(g, 11, 36, ["........KK", ".KKKKK.KxK", "KxxxxxKxK.", "KxWxxxxxK.", ".KXXXXKK.."]);
 
         public static void SmallOverlay(char[][] g) => Stamp(g, 7, 0, ["KKK", "K.K", ".KR"]);
+
+        // El chorrito de ballena: sube, se abre en abanico y cae en gotas. Las burbujas, al dormir.
+        static readonly string[] SpoutUp = ["..B..", "..B.."];
+        static readonly string[] SpoutOpen = ["B.B.B", ".BBB.", "..B..", "..B.."];
+        static readonly string[] SpoutFan = ["B...B", ".B.B.", "B.B.B", ".BBB.", "..B.."];
+        static readonly string[] Drop = ["B"];
+        static readonly string[] Bubble = [".BB.", "B..B", "B..B", ".BB."];
+        static readonly string[] SmallBubble = [".B.", "B.B", ".B."];
+
+        /// <summary>
+        /// Sus gestos: saluda y termina con una reverencia de sirvienta (las manos en la falda, los ojos cerrados y la
+        /// cabeza baja); festeja tranquila, con un saltito y el chorrito de ballena; duerme soltando burbujas en vez de
+        /// zetas, y quieta, a veces bosteza.
+        /// </summary>
+        public static void Moves(Dictionary<ChibiMove, Frame[]> moves, Func<Pose, int, Frame> F)
+        {
+            var open = new Pose();
+            var yawn = open with { Eyes = Eyes.Closed, Mouth = Mouth.Oh, Crab = (1, 2) };
+            moves[ChibiMove.Idle] =
+            [
+                F(open, 1400), F(open with { Crab = (0, 1) }, 500), F(open, 250), F(open with { Crab = (2, 1) }, 500),
+                F(open, 900), F(open with { Eyes = Eyes.Closed }, 110), F(open, 1200),
+                F(yawn, 500), F(yawn with { Breathe = true, Fx = [(SmallBubble, 24, 21)] }, 500), F(yawn with { Fx = [(SmallBubble, 26, 16)] }, 300),
+                F(open with { Eyes = Eyes.Closed }, 200), F(open, 600),
+            ];
+
+            var wave = new Pose { Head = 1, Right = Arm.Up };
+            var waving = wave with { Right = Arm.Wave, Mouth = Mouth.Open };
+            var curtsy = new Pose { Eyes = Eyes.Happy, Mouth = Mouth.Small, Crab = (1, 2), Left = Arm.Angry, Right = Arm.Angry, Breathe = true, Nod = true };
+            moves[ChibiMove.Wave] =
+            [
+                F(wave, 220), F(waving, 220), F(wave, 220), F(waving, 220),
+                F(curtsy, 450), F(curtsy with { Fx = [(Spark, -1, 24), (Spark, 30, 24)] }, 300), F(open with { Eyes = Eyes.Happy }, 300),
+            ];
+
+            var cheer = new Pose { Eyes = Eyes.Happy, Mouth = Mouth.Open, Crab = (1, 0), Left = Arm.Up, Right = Arm.Up };
+            moves[ChibiMove.Cheer] =
+            [
+                F(cheer with { Fx = [(SpoutUp, 14, -3)] }, 130),
+                F(cheer with { Dy = -1, Fx = [(SpoutOpen, 14, -4)] }, 150),
+                F(cheer with { Dy = -1, Fx = [(SpoutFan, 14, -4), (Drop, 10, 2), (Drop, 22, 2)] }, 170),
+                F(cheer with { Fx = [(Drop, 9, 6), (Drop, 23, 6), (Drop, 12, 1), (Drop, 20, 1)] }, 150),
+                F(cheer with { Mouth = Mouth.Smile, Breathe = true, Fx = [(Drop, 8, 10), (Drop, 24, 10)] }, 150),
+                F(new() { Eyes = Eyes.Happy, Left = Arm.Out, Right = Arm.Out }, 320),
+            ];
+
+            var sleep = new Pose { Eyes = Eyes.Sleep, Mouth = Mouth.Small, Crab = null };
+            moves[ChibiMove.Sleep] =
+            [
+                F(sleep with { Fx = [(SmallBubble, 24, 21)] }, 450),
+                F(sleep with { Breathe = true, Fx = [(SmallBubble, 26, 15)] }, 450),
+                F(sleep with { Fx = [(Bubble, 27, 9), (SmallBubble, 24, 21)] }, 450),
+                F(sleep with { Breathe = true, Fx = [(Bubble, 28, 3), (SmallBubble, 26, 15)] }, 450),
+                F(sleep with { Fx = [(Bubble, 29, -3)] }, 450),
+                F(sleep with { Breathe = true }, 450),
+            ];
+        }
     }
 }

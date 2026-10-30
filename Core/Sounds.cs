@@ -14,7 +14,11 @@ sealed class Sounds : IDisposable
     public static string Folder => DataFolder.In("sonidos");
     public static string CustomFolder => Path.Combine(Folder, "propios");
 
-    public static readonly (string Id, string Label)[] Packs = [("clasico", L.T("Clásico")), ("risitas", L.T("Risitas")), ("chibi", L.T("Chibi"))];
+    public static readonly (string Id, string Label)[] Packs =
+        [("clasico", L.T("Clásico")), ("risitas", L.T("Risitas")), ("chibi", "Chibi"), ("dokki", "Dokki"), ("gemma", "Gemma"), ("ciel", "Ciel")];
+
+    /// <summary>Los estilos que son la voz de un personaje (el chibi y los de ChibiSprite.Skins), con el mismo id.</summary>
+    public static bool IsVoice(string pack) => pack is "chibi" or "dokki" or "gemma" or "ciel";
     static readonly string[] Names = ["terminado", "pregunta", "permiso", "fallo", "uso", "aviso"];
 
     enum Voice { Happy, Question, Knock, Sad, Neutral, Short }
@@ -36,13 +40,14 @@ sealed class Sounds : IDisposable
 
     static string PackFolder(string pack) => Path.Combine(Folder, pack);
 
-    static byte[] Generate(string pack, string name)
+    internal static byte[] Generate(string pack, string name)
     {
         var index = Array.IndexOf(Names, name);
         return pack switch
         {
             "risitas" => SynthesizeGiggle(index),
             "chibi" => name == "fallo" ? SynthesizeUwa() : SynthesizeOi(index),
+            "dokki" or "gemma" or "ciel" => SynthesizeVoice(pack, index),
             _ => Synthesize((Voice)index),
         };
     }
@@ -73,7 +78,7 @@ sealed class Sounds : IDisposable
                 + "terminado: terminó o límite reiniciado\r\npregunta: le está preguntando\r\n"
                 + "permiso: necesita su permiso\r\nfallo: falló, se cerró o sesión vencida\r\n"
                 + "uso: uso al 80 o 95 %\r\naviso: reintentando\r\n\r\n"
-                + "clasico, risitas y chibi: los estilos de la app; se elige en Ajustes (Estilo de sonido).\r\n"
+                + "clasico, risitas, chibi, dokki, gemma y ciel: los estilos de la app; se elige en Ajustes (Estilo de sonido).\r\n"
                 + "propios: ponga aquí un archivo con el mismo nombre (.wav o .mp3) y sonará ese en lugar del estilo.\r\n"
                 + "Si borra un sonido de un estilo, la app lo vuelve a crear.\r\n");
             if (!File.Exists(readme) || File.ReadAllText(readme) != text) File.WriteAllText(readme, text, Encoding.UTF8);
@@ -277,7 +282,10 @@ sealed class Sounds : IDisposable
     // ── Síntesis de las risitas: «jejeje» / «jijiji» ────────────────────────────────────────
 
     /// <summary>Versión de cada estilo: si cambia, la app vuelve a escribir sus archivos.</summary>
-    static readonly Dictionary<string, string> PackVersions = new() { ["clasico"] = "1", ["risitas"] = "3", ["chibi"] = "7" };
+    static readonly Dictionary<string, string> PackVersions = new()
+    {
+        ["clasico"] = "1", ["risitas"] = "3", ["chibi"] = "7", ["dokki"] = "1", ["gemma"] = "1", ["ciel"] = "1",
+    };
 
     /// <summary>
     /// Una risa: sílabas «je» o «ji» (Vowel 0 = e, 1 = i), una cada Period segundos, con el tono
@@ -501,6 +509,110 @@ sealed class Sounds : IDisposable
         var peak = samples.Max(Math.Abs);
         var gain = peak > 0 ? 0.6f / peak : 1f;
         return Wav(samples.Select(v => v * gain).ToArray());
+
+        static double Smooth(double x) => x * x * (3 - 2 * x);
+    }
+
+    /// <summary>Una vocal, por sus tres formantes.</summary>
+    readonly record struct Vowel(double F1, double F2, double F3);
+
+    static readonly Vowel A = new(850, 1300, 2800), E = new(520, 1950, 2800), I = new(330, 2600, 3200),
+        O = new(520, 900, 2700), U = new(360, 820, 2550), N = new(280, 1150, 2600);
+
+    /// <summary>
+    /// Un llamado de la voz de un personaje, como el «oi» del chibi: dura Duration segundos, la altura empieza en
+    /// Start, sube a Peak en el primer cuarto y termina en End, y la vocal pasa de From a To a partir de Share.
+    /// </summary>
+    sealed record Call(double Duration, double Start, double Peak, double End, Vowel From, Vowel To, double Share = 0.6, double Gap = 0);
+
+    /// <summary>Cómo suena la voz: vibrato (veces por segundo y cuánto), aire (soplo) y ataque, en segundos.</summary>
+    sealed record Timbre(double VibratoHz, double Vibrato, double Breath, double Attack);
+
+    /// <summary>
+    /// Las voces de Dokki, Gemma y Ciel, con la entonación del chibi (sube a un pico y cae, o sube al preguntar) y su
+    /// propio timbre. Mismo orden que Names: terminado, pregunta, permiso, fallo, uso y aviso.
+    /// </summary>
+    static byte[] SynthesizeVoice(string pack, int index)
+    {
+        var (timbre, calls) = pack switch
+        {
+            // Dokki: grave, suave y con aire, con un vibrato lento de ballena.
+            "dokki" => (new Timbre(4.5, 0.03, 0.10, 0.04), index switch
+            {
+                0 => new[] { new Call(0.75, 250, 310, 230, U, I) },                                          // fuu~i, contenta
+                1 => [new Call(0.65, 240, 245, 360, U, U)],                                                  // ¿uu?, sube
+                2 => [new Call(0.26, 260, 300, 250, U, U), new Call(0.45, 270, 320, 240, U, I, Gap: 0.08)],  // pu, puu~i
+                3 => [new Call(1.0, 280, 290, 180, U, O, 0.5)],                                              // muuu…, se apaga
+                4 => [new Call(0.95, 250, 320, 220, U, I, 0.7)],                                             // fuuuui, llamando
+                _ => [new Call(0.30, 270, 300, 250, U, U)],                                                  // pu
+            }),
+            // Gemma: aguda, cortante y sin vibrato: tsundere.
+            "gemma" => (new Timbre(0, 0, 0.02, 0.008), index switch
+            {
+                0 => new[] { new Call(0.34, 430, 490, 360, U, N, 0.55) },                                    // ¡fun!
+                1 => [new Call(0.36, 390, 400, 570, A, A)],                                                  // ¿ha?
+                2 => [new Call(0.18, 440, 480, 420, E, E), new Call(0.24, 450, 510, 400, E, E, Gap: 0.06)],  // ne, ne
+                3 => [new Call(0.22, 460, 500, 440, O, O), new Call(0.55, 480, 490, 330, O, U, 0.3)],        // ¡mou~!
+                4 => [new Call(0.55, 420, 480, 320, U, N, 0.6)],                                             // fuun
+                _ => [new Call(0.22, 450, 490, 420, E, E)],                                                  // ¡ne!
+            }),
+            // Ciel: clara y serena, a media altura.
+            _ => (new Timbre(5.5, 0.008, 0.015, 0.015), index switch
+            {
+                0 => new[] { new Call(0.42, 320, 360, 300, A, I, 0.55) },                                    // hai
+                1 => [new Call(0.42, 310, 312, 420, E, E)],                                                  // ¿e?
+                2 => [new Call(0.20, 320, 340, 310, A, A), new Call(0.36, 310, 330, 280, O, O, Gap: 0.05)],  // a-no
+                3 => [new Call(0.85, 330, 340, 230, A, A)],                                                  // aa…
+                4 => [new Call(0.50, 320, 360, 300, E, E)],                                                  // ne
+                _ => [new Call(0.26, 330, 350, 310, A, I, 0.5)],                                             // hai, cortito
+            }),
+        };
+
+        var random = new Random(pack switch { "dokki" => 31, "gemma" => 37, _ => 41 } + index); // el mismo sonido para el mismo caso
+        var samples = new List<float>();
+        foreach (var call in calls)
+        {
+            samples.AddRange(new float[(int)(call.Gap * Rate)]);
+            samples.AddRange(RenderCall(call, timbre, random));
+        }
+        samples.AddRange(new float[(int)(0.04 * Rate)]);
+
+        var peak = samples.Max(Math.Abs);
+        var gain = peak > 0 ? 0.6f / peak : 1f;
+        return Wav(samples.Select(v => v * gain).ToArray());
+    }
+
+    /// <summary>Un llamado: fuente armónica con la altura del llamado y su vibrato, aire y tres formantes de una vocal a otra.</summary>
+    static float[] RenderCall(Call call, Timbre timbre, Random random)
+    {
+        var n = (int)(call.Duration * Rate);
+        var output = new float[n];
+        var phase = 0.0;
+        var (r1, r2, r3) = (new Resonator(), new Resonator(), new Resonator());
+        for (var i = 0; i < n; i++)
+        {
+            var t = i / (double)n;
+            var pitch = t < 0.25
+                ? call.Start + (call.Peak - call.Start) * Smooth(t / 0.25)
+                : call.Peak + (call.End - call.Peak) * Smooth((t - 0.25) / 0.75);
+            pitch *= 1 + timbre.Vibrato * Math.Sin(2 * Math.PI * timbre.VibratoHz * i / Rate);
+            phase += 2 * Math.PI * pitch / Rate;
+
+            var source = 0.0;
+            for (var k = 1; k * pitch < 9000 && k <= 30; k++) source += Math.Sin(k * phase) / k;
+            source += timbre.Breath * (random.NextDouble() * 2 - 1);
+
+            var v = Smooth(Math.Clamp((t - call.Share) / 0.2, 0, 1));
+            var f1 = call.From.F1 + (call.To.F1 - call.From.F1) * v;
+            var f2 = call.From.F2 + (call.To.F2 - call.From.F2) * v;
+            var f3 = call.From.F3 + (call.To.F3 - call.From.F3) * v;
+            var voiced = r1.Next(source, f1, 80) + 0.5 * r2.Next(source, f2, 100) + 0.25 * r3.Next(source, f3, 150);
+
+            var attack = Math.Min(1, i / (timbre.Attack * Rate));
+            var release = t > 0.8 ? Math.Cos((t - 0.8) / 0.2 * Math.PI / 2) : 1;
+            output[i] = (float)(voiced * attack * release);
+        }
+        return output;
 
         static double Smooth(double x) => x * x * (3 - 2 * x);
     }

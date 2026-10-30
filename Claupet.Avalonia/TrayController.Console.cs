@@ -57,6 +57,7 @@ sealed partial class TrayController : IConsoleApp
             ThemeStatus = _themeStatus, CustomThemesHere = true,
             Mascot = _pet is { } pet ? pet.Name : Mascots.Label(Mascots.ChoiceOf(s)),
             DesktopMascot = s.DesktopMascot,
+            AgentPets = s.AgentPets,
             MascotSize = MascotSizes.Label(s.MascotSize),
             MascotAllDesktops = s.MascotAllDesktops,
             Speak = s.Speak,
@@ -144,6 +145,11 @@ sealed partial class TrayController : IConsoleApp
         {
             ToggleGrant(key["grant:".Length..]);
             PushSettings();
+            return;
+        }
+        if (key.StartsWith("agentpet:", StringComparison.Ordinal))
+        {
+            ChooseAgentPet(key["agentpet:".Length..]);
             return;
         }
         if (key.StartsWith("agent:", StringComparison.Ordinal))

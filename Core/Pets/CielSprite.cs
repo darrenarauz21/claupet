@@ -162,6 +162,43 @@ static partial class ChibiSprite
 
         public static void SmallClip(char[][] g) => Stamp(g, 11, 4, [".KKK.", "KuKuK", "KKuKK", "KuKuK", ".KKK."]);
 
+        // Un «</>» verde (lo que piensa: código) y el visto bueno al festejar.
+        static readonly string[] Code =
+        [
+            "..u...u.u..",
+            ".u....u..u.",
+            "u....u....u",
+            ".u..u....u.",
+            "..u.u...u..",
+        ];
+        static readonly string[] Check = ["......u", ".....uu", "u...uu.", "uu.uu..", ".uuu...", "..u...."];
+
+        /// <summary>
+        /// Sus gestos, serenos: piensa con un «</>» verde que flota en lugar del signo de pregunta, y festeja sin
+        /// saltar: un brazo arriba, el visto bueno y el brillo del gancho.
+        /// </summary>
+        public static void Moves(Dictionary<ChibiMove, Frame[]> moves, Func<Pose, int, Frame> F)
+        {
+            var think = new Pose { Eyes = Eyes.Up, Mouth = Mouth.Oh, Crab = (1, 0), Left = Arm.Think };
+            moves[ChibiMove.Think] =
+            [
+                F(think with { Fx = [(Code, 21, 1)] }, 400),
+                F(think with { Fx = [(Code, 21, 0)] }, 400),
+                F(think with { Fx = [(Code, 21, 1)] }, 400),
+                F(think with { Eyes = Eyes.Closed, Fx = [(Code, 21, 0)] }, 120),
+            ];
+
+            var cheer = new Pose { Eyes = Eyes.Happy, Mouth = Mouth.Smile, Crab = (1, 0), Right = Arm.Up };
+            moves[ChibiMove.Cheer] =
+            [
+                F(cheer with { Fx = [(Check, -3, 6)] }, 160),
+                F(cheer with { Dy = -1, Fx = [(Check, -3, 5), (Spark, 5, 1)] }, 180),
+                F(cheer with { Fx = [(Check, -3, 5)] }, 320),
+                F(cheer with { Mouth = Mouth.Small, Fx = [(Check, -3, 5)] }, 320),
+                F(new() { Eyes = Eyes.Happy }, 300),
+            ];
+        }
+
         /// <summary>El brillo del gancho: arriba a la izquierda, al medio o a la derecha según hacia dónde mira; nada con los ojos cerrados.</summary>
         public static void Glint(char[][] g, (int X, int Y)? look)
         {

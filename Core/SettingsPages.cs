@@ -52,6 +52,8 @@ sealed record SettingsState
     public bool GreetOnAppear { get; init; }
     public bool AngryOnClicks { get; init; }
     public bool SleepWithoutSessions { get; init; }
+    /// <summary>Una mascota por cada otro agente que se sigue (AgentList dice cuál lleva cada uno).</summary>
+    public bool AgentPets { get; init; }
     public bool Chat { get; init; }
     public string MascotModel { get; init; } = "";
     public string AssistantAccount { get; init; } = "";
@@ -128,8 +130,8 @@ sealed record GrantState(string Id, string Label, bool Allowed);
 /// <summary>Una cuenta de Claude Code y lo que se dice de su memoria («Compartida con «trabajo»», «Propia»).</summary>
 sealed record AccountState(string Label, string Memory);
 
-/// <summary>Otro agente: su tipo, su nombre, si se sigue y lo que se dice de él (su carpeta, su última sesión).</summary>
-sealed record AgentState(string Kind, string Label, bool Follow, string Detail);
+/// <summary>Otro agente: su tipo, su nombre, si se sigue, lo que se dice de él (su carpeta, su última sesión) y su mascota.</summary>
+sealed record AgentState(string Kind, string Label, bool Follow, string Detail, string Pet = "");
 
 /// <summary>
 /// El tipo de una fila. Input: un cuadro para escribir (la acción lleva lo escrito en Value). Page: lleva a otra
@@ -252,6 +254,17 @@ static class SettingsPages
                 Switch(L.T("Dormir sin sesiones"), "sleep", s.SleepWithoutSessions),
                 Switch(L.T("Hablar (los avisos en una nubecita)"), "speak", s.Speak),
             }.Select(Full));
+        // Una mascota por cada otro agente (Codex, Gemini, Copilot): solo si hay alguno que se sigue.
+        var agents = s.AgentList.Where(a => a.Follow).ToList();
+        if (s.DesktopMascot && agents.Count > 0)
+        {
+            rows.Add(Caption(L.T("Otros agentes")));
+            rows.Add(Full(Switch(L.T("Una mascota por cada agente"), "agentpets", s.AgentPets)));
+            rows.Add(Full(Note(L.T("Junto a la de Claude Code, cada agente con la suya: teclea mientras el agente trabaja, queda quieta si trabajó hace poco y si no, duerme. Cualquier personaje sirve para cualquier agente."))));
+            if (s.AgentPets)
+                foreach (var agent in agents)
+                    rows.Add(Full(Choice(L.T("Mascota de {0}", agent.Label), "agentpet:" + agent.Kind, agent.Pet)));
+        }
         return new("mascota", L.T("Mascota"), L.T("Lo que hace la mascota en el escritorio."), "Apariencia", rows);
     }
 

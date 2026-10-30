@@ -347,6 +347,10 @@ sealed partial class TrayController
                     Flip(s => s.MascotAllDesktops = !s.MascotAllDesktops);
                     UpdateMascotWindow(); // se rehace con el nuevo comportamiento
                     break;
+                case "agentpets":
+                    Flip(s => s.AgentPets = !s.AgentPets);
+                    UpdateAgentPets();
+                    break;
                 case "sleep":
                     Flip(s => s.SleepWithoutSessions = !s.SleepWithoutSessions);
                     _ = ScanSessionsAsync(); // para que se duerma o se despierte ya
@@ -428,8 +432,12 @@ sealed partial class TrayController
     {
         var before = _settings.Mascot;
         Mascots.Choose(_settings, choice);
-        // Un personaje nuevo (el chibi, Dokki, Gemma, Ciel) sale al escritorio.
-        if (_settings.Mascot != before && Mascots.IsCharacter(_settings.Mascot)) _settings.DesktopMascot = true;
+        // Un personaje nuevo (el chibi, Dokki, Gemma, Ciel) sale al escritorio y, si sonaba la voz de otro, suena la suya.
+        if (_settings.Mascot != before && Mascots.IsCharacter(_settings.Mascot))
+        {
+            _settings.DesktopMascot = true;
+            if (Sounds.IsVoice(_settings.SoundPack)) _settings.SoundPack = _settings.Mascot;
+        }
         SettingsStore.Save(_settings);
         Mascots.Selected = _settings.Mascot; // los avisos la leen al dibujarse
         _director.Skin = Mascots.Skin;
@@ -450,6 +458,7 @@ sealed partial class TrayController
         _settings.MascotSize = size;
         SettingsStore.Save(_settings);
         _mascotWindow?.SetSize(size);
+        foreach (var pet in _agentPets.Values) pet.Window.SetSize(size);
         if (_chatBubble?.IsVisible == true && _mascotWindow is { } mascot) _chatBubble.Follow(mascot.ScreenBounds);
     }
 
@@ -491,7 +500,11 @@ sealed partial class TrayController
             current.Close();
             _mascotWindow = null;
         }
-        if (!wanted || _mascotWindow is not null) return;
+        if (!wanted || _mascotWindow is not null)
+        {
+            UpdateAgentPets();
+            return;
+        }
         PixelPoint? saved = _settings.DesktopMascotX is { } x && _settings.DesktopMascotY is { } y ? new PixelPoint(x, y) : null;
         _mascotWindow = new MascotWindow(_director, saved, Mascots.Skin, () => _theme.Accent, _settings.MascotAllDesktops, _settings.MascotSize, _pet);
         WatchMascotScreens();
@@ -512,6 +525,7 @@ sealed partial class TrayController
         };
         _mascotWindow.Show();
         _ = ScanSessionsAsync(); // para que empiece haciendo lo que corresponde
+        UpdateAgentPets(); // las de los otros agentes, a su lado
     }
 
     /// <summary>Toma el tema del momento (modo del sistema y paleta elegida): ventana, ícono y animación.</summary>
@@ -869,6 +883,7 @@ sealed partial class TrayController
         _reminderTimer.Stop();
         _toasts.CloseAll();
         _mascotWindow?.Close();
+        CloseAgentPets();
         _bubble.Close();
         _asking?.Cancel();
         _chatBubble?.Close();

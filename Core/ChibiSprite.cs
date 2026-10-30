@@ -810,6 +810,7 @@ static partial class ChibiSprite
             ],
         };
         AddFlowMoves(moves, F);
+        AddSignature(moves, F); // los gestos propios del personaje (Core/Pets)
         return moves;
     }
 
@@ -1156,6 +1157,23 @@ sealed class ChibiDirector
             var (move, _, step) = working.Select(Wish).OrderBy(w => Level(w.Move)).ThenByDescending(w => w.At).First();
             _wish = (move, false, step);
         }
+    }
+
+    /// <summary>Hasta cuánto después de escribir en sus sesiones la mascota de otro agente teclea, y hasta cuánto queda despierta.</summary>
+    public static readonly TimeSpan AgentBusy = TimeSpan.FromSeconds(45), AgentAwake = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// La mascota de otro agente (Codex, Gemini, Copilot), que solo sabe cuándo escribió por última vez en sus sesiones:
+    /// teclea en la laptop mientras escribe, queda quieta si trabajó hace poco y si no, duerme (o queda quieta, sin
+    /// «Dormir sin sesiones»). Con música baila, como la de Claude Code.
+    /// </summary>
+    public void SetActivity(DateTimeOffset? last, DateTimeOffset now)
+    {
+        _sessions = [];
+        var ago = last is { } at ? now - at : TimeSpan.MaxValue;
+        _wish = ago < AgentBusy ? (Settings.FlowGestures ? ChibiMove.Run : ChibiMove.Dance, false, null)
+            : ago < AgentAwake || !Settings.SleepWithoutSessions ? (ChibiMove.Idle, false, null)
+            : (ChibiMove.Sleep, false, null);
     }
 
     /// <summary>El gesto de una sesión que trabaja: su último paso, mientras corre o si todavía no se vio; si no, pensando.</summary>

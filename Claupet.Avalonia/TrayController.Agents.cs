@@ -20,6 +20,7 @@ sealed partial class TrayController
             var list = _settings.Agents.ToList();
             _agents = await Task.Run(() => Agents.ReadAll(list, DateTimeOffset.Now));
             View.SetAgents(_agents);
+            UpdateAgentPets(); // las mascotas de los agentes que están en el equipo
             PushSettings();
         }
         finally { _readingAgents = false; }

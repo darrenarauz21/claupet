@@ -195,6 +195,26 @@ piernas en las mismas casillas, así que hace todos los movimientos de arriba. L
 Todavía no tienen las vistas de perfil y de espaldas de la casita: en «otra herramienta» escriben en la libreta y al
 terminar festejan. Los cuadros se arman la primera vez que se pinta cada personaje y quedan guardados.
 
+**Gestos propios** (`Moves` de cada uno, que reemplazan los de la base):
+
+| Personaje | Gestos |
+|---|---|
+| Dokki | saluda y termina con una reverencia (las manos en la falda); festeja con el chorrito de ballena; duerme soltando burbujas; quieta, a veces bosteza |
+| Gemma | quieta, a ratos se cruza de brazos, mira a otro lado con los cachetes rojos y resopla («¡hmph!»); festeja y enseguida disimula; saluda de mala gana |
+| Ciel | piensa con un «</>» verde; festeja sin saltar, con un brazo arriba y el visto bueno |
+
+**Voces.** Cada uno tiene su estilo de sonido (`Sounds`, «dokki», «gemma» y «ciel»), sintetizado como el «oi» del
+chibi: la altura sube a un pico y cae, y la vocal pasa de una a otra. Cambia el timbre: Dokki, grave y con aire, con un
+vibrato lento; Gemma, aguda y cortante; Ciel, clara y serena. Si suena la voz de un personaje y se elige otro, pasa a
+sonar la suya. El asistente también toma su personalidad (`AssistantRequest.Mascot`).
+
+**Una mascota por agente** (`TrayController.AgentPets.cs`, Ajustes › Apariencia › Mascota en la Console): junto a la de
+Claude Code, una por cada otro agente que se sigue y está en el equipo, con el personaje elegido (`AgentPet`; si no,
+Ciel para Codex y Gemma para Gemini, y Copilot sin mascota). De esos agentes solo se sabe cuándo escribieron en sus
+sesiones: cada 15 s se mira la fecha del archivo más nuevo (`Agents.LastWrite`, sin leerlo). La mascota teclea si fue
+hace menos de 45 s, queda quieta hasta los 10 min y después duerme (`ChibiDirector.SetActivity`). Cada una guarda dónde
+quedó (`AgentPetSpots`); «Ocultar del escritorio» deja a ese agente sin mascota.
+
 ## Sesiones
 
 | Estado | Señal | De dónde sale |
