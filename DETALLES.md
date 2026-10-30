@@ -901,6 +901,11 @@ registradas y vivas, y el hook. Lo habitual:
 - Los porcentajes salen de `https://api.anthropic.com/api/oauth/usage`, el mismo endpoint que usa
   `/usage` en Claude Code. **No está documentado**: si cambia, la cuenta muestra el error y se
   mantienen los últimos datos buenos.
+- Ese endpoint limita mucho las consultas (las de `/usage` de Claude Code cuentan también) y su `retry-after` llega
+  en 0 o no llega. La app pregunta como mucho una vez por minuto por cuenta y, si responde «demasiadas consultas»
+  (429), no lo muestra: sigue con los últimos datos buenos (la hora del pie es la de esos datos) y espera 2, 4, 8, 16
+  y luego 30 minutos. La espera y la última respuesta quedan en `uso.json`, así que reiniciar la app no vuelve a
+  preguntar antes de tiempo. Sin datos previos, la cuenta dice «Consultando…» hasta que se pueda.
 - La app **no renueva** el token, para no pisar la sesión de Claude Code: si una cuenta no se usa
   en horas, su token vence y la ventana pide abrir Claude Code con esa cuenta.
 - El estado de las sesiones sale de archivos internos de Claude Code, que no están documentados.

@@ -17,6 +17,8 @@ sealed class UsageSnapshot
     /// <summary>El token venció o el servicio lo rechazó: se puede renovar (SessionRenewal).</summary>
     public bool SessionExpired { get; init; }
     public DateTimeOffset? FetchedAt { get; init; }
+    /// <summary>Sin datos todavía: el servicio pidió esperar y se vuelve a preguntar a esta hora. No es un error (UsageGate).</summary>
+    public DateTimeOffset? WaitingUntil { get; init; }
 
     public LimitRow? Session => Limits.FirstOrDefault(l => l.Kind == "session");
     public LimitRow? Weekly => Limits.FirstOrDefault(l => l.Kind == "weekly_all");
@@ -61,6 +63,10 @@ static class UsageClient
         if (expiresAt > 0 && DateTimeOffset.FromUnixTimeMilliseconds(expiresAt) < DateTimeOffset.UtcNow)
             return ExpiredSession();
 
+        // El servicio limita mucho: si todavía no toca preguntar, los últimos datos buenos (UsageGate).
+        var asked = DateTimeOffset.Now;
+        if (UsageGate.Hold(account.ConfigDir, asked) is { } held) return held;
+
         using var request = new HttpRequestMessage(HttpMethod.Get, Url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Add("anthropic-beta", "oauth-2025-04-20");
@@ -70,9 +76,14 @@ static class UsageClient
         {
             using var response = await Http.SendAsync(request, ct);
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) return ExpiredSession();
-            if (response.StatusCode == HttpStatusCode.TooManyRequests) return Fail(L.T("Demasiadas consultas; se reintentará."));
+            // Un 429 no es un error para quien mira: se espera y se siguen mostrando los últimos datos.
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                return UsageGate.Limited(account.ConfigDir, RetryAfter(response), DateTimeOffset.Now);
             if (!response.IsSuccessStatusCode) return Fail(L.T("Error {0} del servicio.", (int)response.StatusCode));
-            return Parse(await response.Content.ReadAsStringAsync(ct));
+            var body = await response.Content.ReadAsStringAsync(ct);
+            var snapshot = Parse(body);
+            UsageGate.Success(account.ConfigDir, body, asked);
+            return snapshot;
         }
         catch (TaskCanceledException) { return Fail(L.T("Sin respuesta del servicio.")); }
         catch (HttpRequestException) { return Fail(L.T("Sin conexión.")); }
@@ -80,6 +91,13 @@ static class UsageClient
     }
 
     static UsageSnapshot Fail(string message) => new() { Error = message };
+
+    static TimeSpan? RetryAfter(HttpResponseMessage response) => response.Headers.RetryAfter switch
+    {
+        { Delta: { } delta } => delta,
+        { Date: { } date } => date - DateTimeOffset.UtcNow,
+        _ => null,
+    };
 
     static UsageSnapshot ExpiredSession() => new() { Error = Expired, SessionExpired = true };
 
