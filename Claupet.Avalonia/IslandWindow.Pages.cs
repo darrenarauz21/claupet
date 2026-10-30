@@ -914,10 +914,12 @@ sealed partial class IslandWindow
         var cellW = (inner - 8) / cols;
         var cells = new List<(Rect Rect, string Label, string Description)>();
         var rowY = gridY;
+        // La descripción es lo que explica cada opción: se ve entera, hasta cinco líneas (más, con «…»).
+        var described = Small.LineHeight * 5;
         for (var i = 0; i < q.Options.Count; i += cols)
         {
             var heights = Enumerable.Range(i, Math.Min(cols, q.Options.Count - i)).Select(k =>
-                18 + (q.Options[k].Description.Length > 0 ? Math.Min(MeasureWrapped(q.Options[k].Description, Small, cellW - 22).Height, 34) : 0) + 16).ToList();
+                18 + (q.Options[k].Description.Length > 0 ? Math.Min(MeasureWrapped(q.Options[k].Description, Small, cellW - 22).Height, described) : 0) + 16).ToList();
             var h = heights.Max();
             for (var c = 0; c < heights.Count; c++)
                 cells.Add((new Rect(x + pad + c * (cellW + 8), rowY, cellW, h), q.Options[i + c].Label, q.Options[i + c].Description));
