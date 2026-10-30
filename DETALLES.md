@@ -88,7 +88,7 @@ muestra al elegir.
   sistema): Terracota (`#D97757`, la predeterminada), Océano, Bosque, Lavanda, Rosa y Grafito. Cambia
   el acento: barras, interruptores, enlaces, el número del ícono y la mascota del ícono, del pie y
   de los avisos. Fondos, textos y colores de estado (peligro, aviso, éxito) no cambian. Están en
-  `Theme.Palettes` (`Core/Theme.cs`).
+  `Theme.Palettes` (`Core/Theme.cs`). Elegir una quita el tema propio, si había (ver «Temas propios»).
 - **Mascota:** junta la mascota y la animación al actualizar en una sola lista (`Mascots`, en
   `Core/ChibiSprite.cs`). Clásica (de un color, el acento) o Chibi (ver abajo): esa mascota anima el
   ícono y sale en los avisos. Asterisco (el ✻ de Claude Code, que crece y se encoge), Puntos (una ola
@@ -316,16 +316,29 @@ Abrir `Claupet.exe` otra vez, sin argumentos, con Claupet ya abierto, también t
 
 ## Temas propios
 
-Además de las seis paletas, en Ajustes › Apariencia de la Console se escribe un prompt en **Crear un tema…** («un tema
-de playa con el fondo animado», «algo otoñal con una letra más redonda») y Claude arma un tema para todo Claupet, con
-la cuenta y el modelo de la mascota (si la mascota usa el modelo local, el de la cuenta). Al terminar queda elegido;
-**Borrar el tema** lo quita y vuelve a la terracota. Cada tema es un JSON en `temas\<id>.json`, junto a los ajustes,
-y se elige en la lista **Color** como una paleta más, con el id `tema:<id>`: la bandeja y la Console lo leen del disco
-por ese id (`Core/CustomThemes.cs`). Si el archivo falta o está roto, `Theme.ForDark` e `Ink.For` vuelven a la
-terracota, sin error.
+Los temas van aparte de las seis paletas, en Ajustes › Apariencia › **Temas** de la Console: una tarjeta por tema, con
+bordes redondeados y la vista previa de ese tema en el modo de la Console (sus colores, «Aa» en su letra y su escena
+animada), y la tarjeta **Claupet**, que es no usar ninguno. Tocar una tarjeta la elige y la elegida lleva el borde del
+acento y su marca; el menú «⋯» de cada tema propio lo exporta a un `.json` o lo elimina, con confirmación en la misma
+tarjeta (`Console/ThemeGallery.cs`). Elegir una paleta en **Color** quita el tema; el tema sigue guardado en su tarjeta.
 
-El JSON lleva el id, el nombre, los colores de `Theme` para el modo claro y el oscuro, una familia de letra opcional y
-un fondo animado opcional. El diseño se respeta por código y no por confianza en el modelo:
+En **Tema nuevo** se escribe un prompt («un tema de playa con el fondo animado», «algo otoñal con una letra más
+redonda») y **Crear** (o Intro) se lo pide a Claude con la cuenta del asistente. Mientras tanto aparece su tarjeta, con
+un brillo que la cruza y chispas en pixel art, y se puede cancelar; al terminar, el tema queda elegido. **Calidad**
+elige el modelo: rápida, Sonnet; media, Opus, y alta, Fable. Si la cuenta no tiene permiso para ese modelo, se prueba
+con el siguiente y se avisa con cuál se hizo; con el asistente de una extensión, va con el modelo de ese proveedor.
+**Importar un tema** trae un `.json` exportado (o escrito a mano), que pasa por la misma lectura y las mismas
+correcciones que uno creado con Claude y se guarda con un id libre.
+
+Cada tema es un JSON en `temas\<id>.json`, junto a los ajustes, y el elegido está en `CustomTheme` de los ajustes
+(antes se guardaba en `Palette` como `tema:<id>`, y al leer se pasa solo); la bandeja y la Console lo leen del disco por
+ese id (`Core/CustomThemes.cs`). La mascota los sigue nombrando junto a las paletas, como `tema:<id>`. Si el archivo
+falta o está roto, `Theme.ForDark` e `Ink.For` vuelven a la paleta, sin error.
+
+El JSON lleva el formato (`claupet-theme/1`), el id, el nombre, una línea sobre su ambiente, los colores de `Theme` para
+el modo claro y el oscuro, una familia de letra opcional y un fondo animado opcional. Al pedirlo, Claude recibe qué pinta
+cada color, los rangos de luz de cada superficie, las letras instaladas en el equipo, el catálogo de escenas con lo que
+pinta cada color y un ejemplo completo. Igual, el diseño se respeta por código y no por confianza en el modelo:
 
 - Se lee con tolerancia (el primer objeto JSON de la respuesta, aunque venga en un bloque de código o con comas de más); lo que no
   es un color se queda con el de Claupet.
@@ -338,10 +351,12 @@ un fondo animado opcional. El diseño se respeta por código y no por confianza 
 - El id se limpia (minúsculas, cifras y guiones; nada de barras, puntos ni nombres reservados) y la ruta siempre
   queda dentro de `temas\`.
 
-El fondo animado sale de un catálogo cerrado de escenas en pixel art (`playa`, `lluvia`, `nieve`, `estrellas`, `hojas`,
-`burbujas`, `luciernagas`); el modelo elige la escena, sus colores, la densidad (0,1–1) y la velocidad (0,25–2). Se
-dibuja solo en la Console, detrás del contenido y con poca opacidad, a 12 cuadros por segundo, y se pausa con la
-ventana minimizada u oculta (`Console/SceneLayer.cs`). La isla, las burbujas y la mascota solo toman los colores.
+El fondo animado sale de un catálogo cerrado de escenas en pixel art (`playa`, `atardecer`, `lluvia`, `nieve`,
+`estrellas`, `hojas`, `sakura`, `burbujas`, `luciernagas`, `aurora`, `ciudad` y `brasas`); el modelo elige la escena,
+sus colores, la densidad (0,1–1) y la velocidad (0,25–2). Las partículas van en dos planos (las lejanas, más chicas,
+lentas y tenues). Se dibuja solo en la Console, detrás del contenido y con poca opacidad, a 12 cuadros por segundo, y se
+pausa con la ventana minimizada u oculta (`Console/SceneLayer.cs`); las vistas previas usan la misma escena con un
+píxel más chico. La isla, las burbujas y la mascota solo toman los colores.
 
 Para probar sin ventanas: `Claupet.exe --tema "<prompt>"` crea el tema, lo guarda e imprime el JSON validado (no lo
 elige).

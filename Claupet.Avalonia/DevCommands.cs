@@ -119,12 +119,13 @@ static class DevCommands
             return answer.Failed ? 1 : 0;
         }
 
-        // --tema <prompt>: le pide a Claude un tema propio (con la cuenta y el modelo de la mascota), lo guarda en temas/ y
-        // escribe el JSON ya validado y corregido. No lo elige: eso queda para Ajustes.
+        // --tema <prompt>: le pide a Claude un tema propio (con la cuenta del asistente y la calidad de Ajustes), lo guarda
+        // en temas/ y escribe el JSON ya validado y corregido. No lo elige: eso queda para Ajustes.
         if (Array.IndexOf(args, "--tema") is var th and >= 0 && th + 1 < args.Length)
         {
-            var (theme, error) = CustomThemes.CreateAsync(args[th + 1], SettingsStore.Load()).GetAwaiter().GetResult();
+            var (theme, error, note) = CustomThemes.CreateAsync(args[th + 1], SettingsStore.Load()).GetAwaiter().GetResult();
             if (theme is null) { Console.WriteLine(error); return 1; }
+            if (note is not null) Console.WriteLine(note);
             Console.WriteLine(CustomThemes.PathFor(theme.Id));
             Console.WriteLine(CustomThemes.ToJson(theme));
             return 0;

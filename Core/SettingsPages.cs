@@ -35,8 +35,16 @@ sealed record SettingsState
     public bool Has(PlatformFeatures feature) => (Features & feature) == feature;
     public bool Notifications { get; init; } = true;
     public bool Sound { get; init; } = true;
-    /// <summary>Cómo va la creación de un tema propio («Creando…» o el error); null, nada que decir.</summary>
+    /// <summary>Cómo terminó lo último con los temas propios (un error, el modelo que se usó); null, nada que decir.</summary>
     public string? ThemeStatus { get; init; }
+    /// <summary>ThemeStatus es un error (va en el color de cuidado) y no un aviso.</summary>
+    public bool ThemeProblem { get; init; }
+    /// <summary>El asistente de una extensión que crea los temas con su modelo; null, Claude con la calidad elegida.</summary>
+    public string? ThemeProvider { get; init; }
+    /// <summary>Lo pedido para el tema que se está creando (su tarjeta animada); null, ninguno.</summary>
+    public string? ThemeCreating { get; init; }
+    /// <summary>La calidad de los temas nuevos («Rápida · Sonnet», o el proveedor de la extensión).</summary>
+    public string ThemeQuality { get; init; } = "";
     /// <summary>Esta bandeja crea y borra temas propios (por ahora, la de Avalonia).</summary>
     public bool CustomThemesHere { get; init; }
     public string SoundPack { get; init; } = "";
@@ -135,7 +143,7 @@ sealed record AgentState(string Kind, string Label, bool Follow, string Detail);
 /// El tipo de una fila. Input: un cuadro para escribir (la acción lleva lo escrito en Value). Page: lleva a otra
 /// página (Key es su id) sin pedirle nada a la bandeja, como el detalle de una extensión.
 /// </summary>
-enum RowKind { Caption, Switch, Choice, Info, Note, Link, Links, Input, Page }
+enum RowKind { Caption, Switch, Choice, Info, Note, Link, Links, Input, Page, Themes }
 
 /// <summary>El color de una nota o de un enlace: el de siempre, el apagado, el de cuidado, el acento o el de peligro.</summary>
 enum RowTone { Normal, Muted, Warn, Accent, Danger }
@@ -146,15 +154,23 @@ enum RowPlace { Both, Console }
 sealed record SettingsLink(string Text, string Key);
 
 /// <summary>
+/// Una tarjeta de Apariencia › Temas. Id vacío: «Claupet», sin tema propio (con la paleta elegida). Creating: la que
+/// se está generando (Name es lo pedido). La Console lee los colores del tema de temas/ por su Id.
+/// </summary>
+sealed record ThemeCard(string Id, string Name, bool Selected = false, bool Creating = false);
+
+/// <summary>
 /// Una fila de Ajustes. Text es la etiqueta; Value, lo que se muestra a la derecha (la opción elegida, el dato
 /// o el texto del enlace; en un cuadro para escribir, lo escrito); Key, la acción que se le pide a la bandeja al tocarla.
-/// En un cuadro para escribir, Secret oculta lo escrito y Placeholder es lo que se ve mientras está vacío. En un
+/// En un cuadro para escribir, Secret oculta lo escrito, Placeholder es lo que se ve mientras está vacío y Submit, el
+/// texto de un botón que lo manda (entonces solo se manda con él o con Intro, no al salir del cuadro, y se vacía). En un
 /// enlace, File (como «*.claupet») hace que la Console pida antes un archivo y mande su ruta en Value, y Copy hace que
-/// la Console copie ese texto sin pedirle nada a la bandeja.
+/// la Console copie ese texto sin pedirle nada a la bandeja. Cards: las tarjetas de los temas (RowKind.Themes).
 /// </summary>
 sealed record SettingsRow(RowKind Kind, string Text, string Key = "", string Value = "", bool On = false,
     RowTone Tone = RowTone.Normal, bool Swatch = false, RowPlace Place = RowPlace.Both, IReadOnlyList<SettingsLink>? Links = null,
-    bool Secret = false, string? Placeholder = null, string? File = null, string? Copy = null);
+    bool Secret = false, string? Placeholder = null, string? File = null, string? Copy = null, string? Submit = null,
+    IReadOnlyList<ThemeCard>? Cards = null);
 
 /// <summary>
 /// Una sección de Ajustes. Tab es la pestaña de los ajustes rápidos donde van sus filas (las que no son solo de
@@ -217,24 +233,49 @@ static class SettingsPages
         new(RowKind.Links, "", Links: [new(L.T("Ver un aviso de ejemplo"), "sample"), new(L.T("Abrir carpeta de sonidos"), "sounds")]),
     ]);
 
-    static SettingsPage LooksPage(SettingsState s) => new("apariencia", L.T("Apariencia"), L.T("El color de la app y la mascota que lo acompaña."), "Apariencia",
-    [
-        new(RowKind.Choice, L.T("Color"), "palette", s.Palette, Swatch: true),
-        // Los temas propios (CustomThemes): se crean con Claude a partir de un prompt y se borran aquí, solo en la Console
-        // y donde la bandeja lo sepa hacer (CustomThemesHere).
-        .. s.CustomThemesHere
-            ? [new SettingsRow(RowKind.Input, L.T("Crear un tema…"), ThemeCreateKey, Place: RowPlace.Console, Placeholder: L.T("Por ejemplo, «otoñal, con una letra redonda»"))]
-            : Array.Empty<SettingsRow>(),
-        .. s.ThemeStatus is { } status ? [new SettingsRow(RowKind.Note, status, Tone: RowTone.Muted, Place: RowPlace.Console)] : Array.Empty<SettingsRow>(),
-        .. s.CustomThemesHere && CustomThemes.Selected is { } custom
-            ? [new SettingsRow(RowKind.Links, "", Place: RowPlace.Console, Links: [new(L.T("Borrar el tema «{0}»", custom.Name), ThemeDeleteKey)])]
-            : Array.Empty<SettingsRow>(),
-        Choice(L.T("Mascota"), "mascot", s.Mascot),
-        .. s.Has(PlatformFeatures.MascotSize) ? [Choice(L.T("Tamaño de la mascota"), "size", s.MascotSize)] : Array.Empty<SettingsRow>(),
-    ]);
+    static SettingsPage LooksPage(SettingsState s)
+    {
+        var custom = s.CustomThemesHere ? CustomThemes.Selected : null;
+        List<SettingsRow> rows = [new(RowKind.Choice, L.T("Color"), "palette", s.Palette, Swatch: true)];
+        if (custom is not null)
+            rows.Add(Full(Note(L.T("Ahora manda el tema «{0}»: al elegir un color, se quita.", custom.Name))));
+        rows.Add(Choice(L.T("Mascota"), "mascot", s.Mascot));
+        if (s.Has(PlatformFeatures.MascotSize)) rows.Add(Choice(L.T("Tamaño de la mascota"), "size", s.MascotSize));
+        if (s.CustomThemesHere) rows.AddRange(ThemeRows(s, custom).Select(Full));
+        return new("apariencia", L.T("Apariencia"), L.T("El color de la app, sus temas y la mascota que la acompaña."), "Apariencia", rows);
+    }
 
-    /// <summary>Las claves de las filas de los temas propios: el cuadro del prompt y el enlace para borrar el elegido.</summary>
-    public const string ThemeCreateKey = "tema-crear", ThemeDeleteKey = "tema-borrar";
+    /// <summary>
+    /// Los temas propios (CustomThemes), aparte del color y solo en la Console, donde la bandeja los sabe hacer
+    /// (CustomThemesHere): las tarjetas (Claupet sin tema, los guardados y el que se está creando), el cuadro para pedir uno
+    /// nuevo a Claude, la calidad y la importación. Usar, exportar y borrar van en cada tarjeta.
+    /// </summary>
+    static IEnumerable<SettingsRow> ThemeRows(SettingsState s, CustomTheme? selected)
+    {
+        List<ThemeCard> cards = [new("", "Claupet", Selected: selected is null)];
+        cards.AddRange(CustomThemes.All().Select(t => new ThemeCard(t.Id, t.Name, Selected: t.Id == selected?.Id)));
+        if (s.ThemeCreating is { } prompt) cards.Add(new ThemeCard("", prompt, Creating: true));
+        yield return Caption(L.T("Temas"));
+        yield return new SettingsRow(RowKind.Themes, "", ThemeKey, Cards: cards);
+        yield return new SettingsRow(RowKind.Input, L.T("Tema nuevo"), ThemeCreateKey, Placeholder: L.T("Por ejemplo, «otoñal, con una letra redonda»"),
+            Submit: L.T("Crear"));
+        if (s.ThemeStatus is { } status) yield return Note(status, s.ThemeProblem ? RowTone.Warn : RowTone.Muted);
+        if (s.ThemeProvider is { } provider) yield return Info(L.T("Calidad"), L.T("La del modelo de {0}", provider));
+        else
+        {
+            yield return Choice(L.T("Calidad"), ThemeQualityKey, s.ThemeQuality);
+            yield return Note(L.T("Rápida usa Sonnet; media, Opus, y alta, Fable. Si la cuenta no tiene ese modelo, se usa el siguiente."));
+        }
+        yield return new SettingsRow(RowKind.Link, L.T("Importar un tema"), ThemeImportKey, L.T("Elegir archivo…"), Tone: RowTone.Accent, File: "*.json");
+    }
+
+    /// <summary>
+    /// Las claves de los temas propios: las tarjetas (ThemeKey), el cuadro del prompt, cancelar el que se está creando, la
+    /// calidad e importar (con la ruta en Value). Usar, borrar y exportar llevan el id del tema detrás («tema-usar:playa»;
+    /// el id vacío es Claupet) y exportar, la ruta elegida en Value.
+    /// </summary>
+    public const string ThemeKey = "tema", ThemeCreateKey = "tema-crear", ThemeCancelKey = "tema-cancelar", ThemeQualityKey = "tema-calidad",
+        ThemeImportKey = "tema-importar", ThemeUseKey = "tema-usar:", ThemeDeleteKey = "tema-borrar:", ThemeExportKey = "tema-exportar:";
 
     static SettingsPage MascotPage(SettingsState s)
     {

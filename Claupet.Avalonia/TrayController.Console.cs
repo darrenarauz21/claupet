@@ -54,7 +54,8 @@ sealed partial class TrayController : IConsoleApp
             Sound = s.Sound,
             SoundPack = SoundPackChoices().FirstOrDefault(p => p.Id == s.SoundPack).Label ?? Sounds.Packs[0].Label,
             Palette = Theme.PaletteLabel(s.Palette),
-            ThemeStatus = _themeStatus, CustomThemesHere = true,
+            ThemeStatus = _themeStatus, ThemeProblem = _themeProblem, ThemeCreating = _themeCreating, CustomThemesHere = true,
+            ThemeQuality = ThemeQualityText, ThemeProvider = _extensions?.ProviderFor(ExtensionSlots.Assistant)?.Manifest.Name.Text,
             Mascot = _pet is { } pet ? pet.Name : Mascots.Label(Mascots.ChoiceOf(s)),
             DesktopMascot = s.DesktopMascot,
             MascotSize = MascotSizes.Label(s.MascotSize),
@@ -133,6 +134,7 @@ sealed partial class TrayController : IConsoleApp
     };
 
     string IConsoleApp.Palette => _settings.Palette;
+    string? IConsoleApp.CustomTheme => _settings.CustomTheme;
 
     /// <summary>
     /// La acción de una fila de la Console. Las listas (estilo de sonido, color, mascota, idioma, modo…) se eligen allá;
@@ -152,6 +154,7 @@ sealed partial class TrayController : IConsoleApp
             PushSettings();
             return;
         }
+        if (ThemeAction(key)) return;
         if (key.StartsWith("topic:", StringComparison.Ordinal))
         {
             var topic = AnswerTopics.Find(key["topic:".Length..]);
@@ -168,8 +171,7 @@ sealed partial class TrayController : IConsoleApp
         switch (key)
         {
             case "pack": Choose(SoundPackChoices(), _settings.SoundPack, id => _ = OnSettingAsync("pack:" + id)); break;
-            case "palette": Choose(Theme.Choices(), _settings.Palette, id => _ = OnSettingAsync("palette:" + id)); break;
-            case SettingsPages.ThemeDeleteKey: DeleteTheme(); break;
+            case "palette": Choose(Theme.PaletteChoices(), _settings.Palette, id => _ = OnSettingAsync("palette:" + id)); break;
             case "mascot": Choose(MascotChoices(), MascotChoice, id => _ = OnSettingAsync("mascot:" + id)); break;
             case "language": Choose(L.Choices, L.Language, id => _ = OnSettingAsync("language:" + id)); break;
             case "answerpreset":
