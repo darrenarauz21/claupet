@@ -58,7 +58,10 @@ sealed partial class TrayController
         Theme.SelectedPalette = _settings.Palette;
         Mascots.Choose(_settings, Mascots.ChoiceOf(_settings)); // deja en orden lo guardado por versiones anteriores
         Mascots.Selected = _settings.Mascot;
-        _refresh.Style = RefreshSprite.Resolve(_settings.Animation, _settings.Mascot);
+        // --mascota <id>: ese personaje solo en esta ejecución (para verlo sin tocar los ajustes).
+        if (ArgAfter("--mascota") is { } shown && Mascots.IsCharacter(shown)) Mascots.Selected = shown;
+        _director.Skin = Mascots.Skin;
+        _refresh.Style = RefreshSprite.Resolve(Mascots.Selected == _settings.Mascot ? _settings.Animation : RefreshSprite.Mascot, Mascots.Selected);
         ApplyTheme();
         app.ActualThemeVariantChanged += (_, _) => ApplyTheme();
 
@@ -423,16 +426,18 @@ sealed partial class TrayController
     /// <summary>Lo elegido en «Mascota»: la mascota de los avisos y la animación al actualizar.</summary>
     void SetMascot(string choice)
     {
-        var wasChibi = _settings.Mascot == Mascots.Chibi;
+        var before = _settings.Mascot;
         Mascots.Choose(_settings, choice);
-        if (!wasChibi && _settings.Mascot == Mascots.Chibi) _settings.DesktopMascot = true; // el chibi sale al escritorio
+        // Un personaje nuevo (el chibi, Dokki, Gemma, Ciel) sale al escritorio.
+        if (_settings.Mascot != before && Mascots.IsCharacter(_settings.Mascot)) _settings.DesktopMascot = true;
         SettingsStore.Save(_settings);
         Mascots.Selected = _settings.Mascot; // los avisos la leen al dibujarse
+        _director.Skin = Mascots.Skin;
         _refresh.Style = RefreshSprite.Resolve(_settings.Animation, _settings.Mascot);
         _refreshIcons.Clear();
         ShowRefreshFrame();
         UpdateMascotWindow();
-        _island?.SetMascot(Mascots.IsChibi);
+        _island?.SetMascot(Mascots.Skin);
         _ = RefreshAsync(); // muestra de la animación elegida, como la del estilo de sonido
     }
 
@@ -471,14 +476,14 @@ sealed partial class TrayController
     }
 
     /// <summary>
-    /// La mascota del escritorio está si no se ocultó; si cambia de mascota (chibi o clásica), la
+    /// La mascota del escritorio está si no se ocultó; si cambia de mascota (un personaje o la clásica), la
     /// ventana se rehace con la nueva.
     /// </summary>
     void UpdateMascotWindow()
     {
         var wanted = _settings.DesktopMascot;
         Music.Watch(wanted && _settings.DanceToMusic); // la música solo se mira si hay mascota que baile
-        if (_mascotWindow is { } current && (!wanted || current.Pet != _pet || (_pet is null && current.Chibi != Mascots.IsChibi)
+        if (_mascotWindow is { } current && (!wanted || current.Pet != _pet || (_pet is null && current.Skin != Mascots.Skin)
             || current.AllDesktops != _settings.MascotAllDesktops))
         {
             _bubble.Hide();
@@ -488,7 +493,7 @@ sealed partial class TrayController
         }
         if (!wanted || _mascotWindow is not null) return;
         PixelPoint? saved = _settings.DesktopMascotX is { } x && _settings.DesktopMascotY is { } y ? new PixelPoint(x, y) : null;
-        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _theme.Accent, _settings.MascotAllDesktops, _settings.MascotSize, _pet);
+        _mascotWindow = new MascotWindow(_director, saved, Mascots.Skin, () => _theme.Accent, _settings.MascotAllDesktops, _settings.MascotSize, _pet);
         WatchMascotScreens();
         _mascotWindow.PositionChanged += (_, _) =>
         {

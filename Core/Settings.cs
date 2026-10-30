@@ -52,7 +52,7 @@ sealed class AppSettings
     string _palette = "terracota";
     /// <summary>Animación al actualizar (RefreshSprite.Styles). Se elige junto con Mascot, en la opción «Mascota» (Mascots).</summary>
     public string Animation { get; set; } = "mascota";
-    /// <summary>Mascota de los avisos y de la animación «mascota»: Mascots.Classic o Mascots.Chibi.</summary>
+    /// <summary>Mascota de los avisos y de la animación «mascota»: Mascots.Classic o el id de un personaje (chibi, dokki…).</summary>
     public string Mascot { get; set; } = Mascots.Classic;
     /// <summary>La mascota (el chibi o la clásica) en su propia ventana sobre el escritorio. Se enciende al elegir el chibi.</summary>
     public bool DesktopMascot { get; set; }

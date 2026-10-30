@@ -96,7 +96,7 @@ sealed partial class TrayController
             ConfigDir = AssistantAccounts.ConfigDir(_settings),
             Context = AssistantContext(),
             History = _quick.Turns.ToList(),
-            Chibi = Mascots.IsChibi,
+            Mascot = Mascots.Selected,
             Expressive = Expressive,
         };
         _quick.Add(new ChatTurn(true, text));

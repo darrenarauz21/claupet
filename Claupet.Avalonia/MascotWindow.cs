@@ -9,7 +9,7 @@ using Avalonia.Threading;
 namespace Claupet;
 
 /// <summary>
-/// La mascota sobre el escritorio (el chibi o la clásica), sin marco ni fondo y siempre encima (igual
+/// La mascota sobre el escritorio (un personaje o la clásica), sin marco ni fondo y siempre encima (igual
 /// que en Windows). Hace lo que diga ChibiDirector; se arrastra para cambiarla de lugar (sin salirse
 /// de la pantalla), un clic la hace saludar (y muchos, enojarse) y el clic derecho abre su menú. Se le pueden soltar
 /// archivos encima: los atrapa (FileHover) y los lleva a la isla (FilesDropped, WalkToAsync).
@@ -39,8 +39,11 @@ sealed class MascotWindow : Window
     PixelPoint _startPosition;
     bool _dragging;
 
-    /// <summary>El chibi (true) o la clásica, que se pinta con el acento de la paleta.</summary>
-    public bool Chibi { get; }
+    /// <summary>Un personaje (el chibi u otro de ChibiSprite.Skins; true) o la clásica, que se pinta con el acento de la paleta.</summary>
+    public bool Chibi => Skin is not null;
+
+    /// <summary>El personaje que se pinta; null con la clásica o con la mascota de un paquete.</summary>
+    public ChibiSkin? Skin { get; }
 
     /// <summary>La mascota de un paquete de extensión, si se eligió una: se pinta en vez del chibi o la clásica.</summary>
     public PetSheet? Pet { get; }
@@ -54,12 +57,12 @@ sealed class MascotWindow : Window
     /// <summary>Su tamaño (MascotSizes).</summary>
     string _size;
 
-    public MascotWindow(ChibiDirector director, PixelPoint? saved, bool chibi, Func<System.Drawing.Color> accent, bool allDesktops = true,
+    public MascotWindow(ChibiDirector director, PixelPoint? saved, ChibiSkin? skin, Func<System.Drawing.Color> accent, bool allDesktops = true,
         string size = MascotSizes.Normal, PetSheet? pet = null)
     {
         _director = director;
         _size = size;
-        Chibi = chibi && pet is null;
+        Skin = pet is null ? skin : null;
         Pet = pet;
         AllDesktops = allDesktops;
         _saved = saved;
@@ -71,7 +74,7 @@ sealed class MascotWindow : Window
         Topmost = true;
         Background = Brushes.Transparent;
         TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
-        _view = new MascotView(director, chibi, pet, chibi ? 3 : 4, accent) { Cursor = new Cursor(StandardCursorType.Hand) };
+        _view = new MascotView(director, Skin, pet, Skin is not null ? 3 : 4, accent) { Cursor = new Cursor(StandardCursorType.Hand) };
         Content = _view;
         WinStyles.Float(this);
         Resize(Screens.Primary?.Scaling ?? 1);
@@ -261,7 +264,7 @@ sealed class MascotWindow : Window
         }
     }
 
-    sealed class MascotView(ChibiDirector director, bool chibi, PetSheet? pet, double unit, Func<System.Drawing.Color> accent) : Control
+    sealed class MascotView(ChibiDirector director, ChibiSkin? skin, PetSheet? pet, double unit, Func<System.Drawing.Color> accent) : Control
     {
         /// <summary>Lo que mide cada casilla, en unidades de la interfaz.</summary>
         public double Unit { get; set; } = unit;
@@ -272,7 +275,7 @@ sealed class MascotWindow : Window
         public void Tick()
         {
             var (move, t, music) = director.Now();
-            var shown = (move, chibi && pet is null ? ChibiSprite.FrameIndex(move, t) : (int)(t / 40), music ? t / ChibiSprite.Beat : -1);
+            var shown = (move, skin is not null ? ChibiSprite.FrameIndex(move, t, skin) : (int)(t / 40), music ? t / ChibiSprite.Beat : -1);
             if (shown == _shown) return;
             _shown = shown;
             InvalidateVisual();
@@ -282,7 +285,7 @@ sealed class MascotWindow : Window
         {
             var (move, t, music) = director.Now();
             if (pet is not null) Gfx.Pixels(dc, 0, 0, Unit, fill => pet.Paint(fill, move, t));
-            else if (chibi) Gfx.Pixels(dc, 0, 0, Unit, fill => ChibiSprite.Paint(fill, move, t, music));
+            else if (skin is not null) Gfx.Pixels(dc, 0, 0, Unit, fill => ChibiSprite.Paint(fill, move, t, music, skin));
             else Gfx.Pixels(dc, 0, 0, Unit, fill => ToastSprite.PaintMove(fill, move, t, accent(), music));
         }
     }

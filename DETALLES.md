@@ -175,6 +175,26 @@ para otras herramientas martilla). La nubecita de «Hablar» es de pixeles (`Bub
 mascota (o abajo, si no cabe), la sigue al arrastrarla y se va a los 8 s; un clic abre lo mismo que
 el aviso.
 
+### Personajes
+
+Además del chibi (el de Claude) hay otros personajes sobre la misma base, que se eligen en **Ajustes › Apariencia ›
+Mascota** como el chibi: **Dokki** (DeepSeek), **Gemma** (Gemini) y **Ciel** (Codex). Cada uno es un `ChibiSkin`
+(`Core/ChibiSkins.cs`, y su dibujo en `Core/Pets/`) con el mismo esqueleto: la cara, los ojos, la boca, los brazos y las
+piernas en las mismas casillas, así que hace todos los movimientos de arriba. Lo propio de cada uno:
+
+| Parte | Qué es |
+|---|---|
+| `Body`, `Head`, `Armless` | su mitad izquierda con las letras de siempre (O la ropa, R el pelo, S la piel…), que se espeja |
+| `Colors` | los colores de sus letras; las de los efectos, la caja y los objetos del flujo son las de la base |
+| `Accent` | lo que reemplaza a los ojitos de cangrejo según hacia dónde mira: el rizo de Dokki, las cejas tsundere de Gemma, el brillo del gancho de Ciel |
+| `Overlay` | lo que no es simétrico, de frente: la ballena del delantal de Dokki, el gancho de Ciel |
+| `Behind` | lo que va detrás del cuerpo y puede salirse de él: el pelo largo, las aletas y la cola de Dokki, las coletas de Gemma |
+| `ArmTint` | el color del puño en los brazos levantados |
+| `Lid` | la tapa de la laptop al ejecutar con el logo de su IA (el cangrejito de Claude es solo del chibi) |
+
+Todavía no tienen las vistas de perfil y de espaldas de la casita: en «otra herramienta» escriben en la libreta y al
+terminar festejan. Los cuadros se arman la primera vez que se pinta cada personaje y quedan guardados.
+
 ## Sesiones
 
 | Estado | Señal | De dónde sale |
@@ -851,6 +871,8 @@ solo en Windows):
 - `--show`: abre la ventana al arrancar; `--preview`: igual, aunque haya otra instancia.
 - `--sessions`, `--activity`: abre en esa vista. `--setup`: con `--preview`, muestra el asistente.
 - `--demo`: un aviso de cada tipo.
+- `--mascota <chibi|dokki|gemma|ciel>`: ese personaje solo en esta ejecución (en el escritorio, los avisos, la isla y
+  el ícono), sin tocar los ajustes: para verlos con `--preview`.
 - `--hook`: modo hook de Claude Code; lee el evento por la entrada estándar y lo guarda.
   `--hook --permiso`: el hook de permisos y preguntas de la isla (Windows).
 - `--diag`: el diagnóstico (lo mismo que **Copiar diagnóstico**). `--dump`: una consulta completa.

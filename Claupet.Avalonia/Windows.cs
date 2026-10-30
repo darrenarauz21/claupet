@@ -205,14 +205,14 @@ sealed class ToastView(Notice notice, Theme theme) : Control
         dc.FillRectangle(Gfx.B(t.Raised), new Rect(Bounds.Size));
         var art = new Rect(12, (Bounds.Height - 64) / 2, 78, 64);
         var born = Environment.TickCount64 - _born;
-        if (Mascots.IsChibi)
+        if (Mascots.Skin is { } skin)
         {
             // Asomado desde abajo, en todo el alto del aviso: de la cabeza al ruedo del hoodie.
             var column = new Rect(8, 0, 86, Bounds.Height);
             var chibiUnit = Math.Max(1, Math.Floor(column.Height / ChibiSprite.ToastRows));
             using (dc.PushClip(column))
                 Gfx.Pixels(dc, column.X + (column.Width - ChibiSprite.Columns * chibiUnit) / 2, column.Bottom - ChibiSprite.HemRow * chibiUnit, chibiUnit,
-                    fill => ChibiSprite.Paint(fill, ChibiSprite.ForNotice(notice.Kind), born));
+                    fill => ChibiSprite.Paint(fill, ChibiSprite.ForNotice(notice.Kind), born, skin));
         }
         else
         {

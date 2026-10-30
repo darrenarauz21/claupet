@@ -402,7 +402,7 @@ sealed partial class TrayController : IConsoleApp
             ConfigDir = AssistantAccounts.ConfigDir(_settings),
             Context = AssistantContext(),
             History = history,
-            Chibi = Mascots.IsChibi,
+            Mascot = Mascots.Selected,
             Expressive = Expressive,
         };
         AssistantResult result;
