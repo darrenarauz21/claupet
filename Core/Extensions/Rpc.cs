@@ -100,14 +100,20 @@ sealed class JsonRpcConnection : IAsyncDisposable
         var body = Encoding.UTF8.GetBytes(message.ToJsonString());
         if (body.Length > MaxMessage) throw new JsonRpcException(JsonRpcException.InvalidRequest, L.T("El mensaje es demasiado grande."));
         var header = Encoding.ASCII.GetBytes($"Content-Length: {body.Length}\r\n\r\n");
-        await _write.WaitAsync(_closed.Token).ConfigureAwait(false);
+        // Si el otro lado se cerró mientras tanto (el proceso terminó), _closed cancela la espera o la escritura: es lo
+        // mismo que una conexión cortada, no una cancelación de quien llama.
+        try { await _write.WaitAsync(_closed.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (_closed.IsCancellationRequested)
+        {
+            throw new JsonRpcException(JsonRpcException.ConnectionClosed, L.T("La extensión ya no está corriendo."));
+        }
         try
         {
             await _output.WriteAsync(header, _closed.Token).ConfigureAwait(false);
             await _output.WriteAsync(body, _closed.Token).ConfigureAwait(false);
             await _output.FlushAsync(_closed.Token).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException || ex is OperationCanceledException && _closed.IsCancellationRequested)
         {
             Close(L.T("Se cortó la conexión con la extensión."));
             throw new JsonRpcException(JsonRpcException.ConnectionClosed, L.T("La extensión ya no está corriendo."));

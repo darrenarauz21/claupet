@@ -33,7 +33,8 @@ Copilot too? Claupet follows them as well.
 - 🎬 **Activity.** Follow each session step by step, live. It all comes from local files: zero
   tokens.
 - 🤖 **Codex, Gemini and Copilot too.** If you also use Codex CLI, Gemini CLI or GitHub Copilot CLI,
-  their sessions show up in Usage and Activity (with Codex's limits too), read from their own files.
+  their sessions show up in Usage and Activity (with Codex's limits and Gemini's tokens too), read from their own
+  files.
 - 🔔 **Friendly heads-ups.** A little note, with sound, when a session finishes, asks something,
   needs permission, fails, or you're close to a limit.
 - 🐾 **Desktop pets with personality.** Chibi, Dokki, Gemma or Ciel (or the classic critter) read,

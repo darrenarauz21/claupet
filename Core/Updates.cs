@@ -411,12 +411,51 @@ sealed class Updates : IDisposable
         return null;
     }
 
-    /// <summary>Al abrir la app: lo que quedó de una actualización anterior (la versión de antes, lo bajado) se borra.</summary>
+    /// <summary>
+    /// Al abrir la app: lo que quedó de una actualización anterior (la versión de antes, lo bajado) se borra, y también las
+    /// bibliotecas que extrajeron las versiones de antes (OldExtractions).
+    /// </summary>
     public void CleanUp(string exe)
     {
         if (UpdateInstaller.Target(exe) is { } target) UpdateInstaller.Delete(target + UpdateInstaller.Previous);
         try { if (Directory.Exists(_folder)) Directory.Delete(_folder, recursive: true); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        if (OperatingSystem.IsWindows() && CurrentExtraction() is { } current) DeleteOldExtractions(current);
+    }
+
+    /// <summary>
+    /// La carpeta donde este ejecutable de un solo archivo extrajo sus bibliotecas (%TEMP%\.net\Claupet\&lt;id&gt;); null si
+    /// no es de un solo archivo (al compilar, en macOS).
+    /// </summary>
+    static string? CurrentExtraction() =>
+        (AppContext.GetData("NATIVE_DLL_SEARCH_DIRECTORIES") as string ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(d => d.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+            .FirstOrDefault(d => Path.GetDirectoryName(Path.GetDirectoryName(d)) is { } net && Path.GetFileName(net) == ".net");
+
+    /// <summary>
+    /// Cada versión extrae sus bibliotecas (unos 32 MB) a su propia carpeta y nadie borraba las de antes: se borran las
+    /// hermanas de la actual. Primero se renombra cada una: en Windows, con una biblioteca cargada (otra versión abierta)
+    /// no se deja, y queda para la próxima vez.
+    /// </summary>
+    internal static int DeleteOldExtractions(string current)
+    {
+        var root = Path.GetDirectoryName(current);
+        if (root is null || !Directory.Exists(root)) return 0;
+        var deleted = 0;
+        foreach (var dir in Directory.EnumerateDirectories(root))
+        {
+            if (string.Equals(Path.GetFullPath(dir), Path.GetFullPath(current), StringComparison.OrdinalIgnoreCase)) continue;
+            var doomed = dir.EndsWith(".borrar", StringComparison.Ordinal) ? dir : dir + ".borrar";
+            try
+            {
+                if (doomed != dir) Directory.Move(dir, doomed);
+                Directory.Delete(doomed, recursive: true);
+                deleted++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } // en uso: la próxima vez
+        }
+        return deleted;
     }
 
     void Set(Action change) => _post(() =>

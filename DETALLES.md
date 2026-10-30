@@ -425,17 +425,20 @@ Además de las cuentas de Claude Code, la app Avalonia sigue a otros agentes de 
 (`Agents` en `settings.json`, `Core/Agents.cs`): se agregan solos si está su carpeta de siempre y en **Ajustes ›
 Cuentas** (Claupet Console) se elige cuáles seguir. Se leen al actualizar, fuera del hilo de la interfaz, solo sus 30
 sesiones más recientes; nada se escribe en sus carpetas, no se usa su cuenta ni se gastan tokens. En **Uso**, debajo de
-la cuenta elegida, cada agente con sus límites (si los escribe) y lo de hoy; en **Actividad**, sus sesiones de las últimas
-24 horas, con la carpeta y el modelo si se saben.
+la cuenta elegida, solo los que hoy hicieron algo o tienen un límite que todavía corre (`Agents.ShowsInUsage`), con esos
+límites y lo de hoy: uno sin actividad, o con límites de hace días ya reiniciados, no sale, y si no queda ninguno tampoco
+el título «Otros agentes». Uno que no se sigue no se lee. En **Actividad**, sus sesiones de las últimas 24 horas, con la
+carpeta y el modelo si se saben.
 
 | Agente | Carpeta | Qué se lee |
 |---|---|---|
 | Codex CLI | `$CODEX_HOME` o `~/.codex` | `sessions/AAAA/MM/DD/rollout-*.jsonl`. Los límites, del último evento `event_msg` con `payload.type` `token_count`: `payload.rate_limits.primary` y `.secondary` (`used_percent`, `window_minutes`: 299 es la sesión de 5 h y 10079 la semana; `resets_in_seconds`, contado desde el `timestamp` del evento; si ya pasó, vuelve a 0). La carpeta (`cwd`) y el id de `session_meta` y el modelo de `turn_context`, si están. Los `.jsonl.zst` no se leen |
-| Gemini CLI | `~/.gemini` | `tmp/<proyecto>/chats/session-*.json`: `sessionId`, `projectHash`, `startTime`, `lastUpdated` y `messages` (se cuentan los `user` y `gemini`; el último `model`). La carpeta del proyecto, de `projects.json` si allí está su hash. No escribe límites |
+| Gemini CLI | `.gemini` en `$GEMINI_CLI_HOME` o en la carpeta del usuario | `tmp/<proyecto>/chats/session-*.jsonl`, un registro por línea que solo se agrega: los datos de la sesión (`sessionId`, `projectHash`, `startTime`, `lastUpdated`), cada mensaje con su `id` (si cambia se vuelve a agregar: vale el último), `$set` con datos nuevos y `$rewindTo` o `$patch` al deshacer o editar. También el formato anterior, `session-*.json` con `messages`, que al retomarse se copia a `.jsonl`: se juntan por `sessionId`. Los subagentes (`chats/<sesión>/<id>.jsonl`) suman a lo de hoy sin ser sesiones aparte. En Uso, las respuestas (`gemini`) y los tokens que generaron (`tokens.output` + `tokens.thoughts`) de hoy, por la hora de cada mensaje; lo deshecho sigue contando, porque ya se gastó. El último `model`; la carpeta del proyecto, de `projects.json` (`{"projects": {ruta: nombre}}`) por el nombre de su carpeta en `tmp` o por su hash. No escribe límites |
 | GitHub Copilot CLI | `$COPILOT_HOME` o `~/.copilot` | `session-state/<id>/events.jsonl`: su formato no está documentado, así que solo se cuentan sus eventos (líneas JSON) y la hora del archivo |
 
-Los formatos salen de lo que documenta la comunidad y se probaron con archivos armados a mano (`Claupet.Tests/AgentsTests.cs`),
-no con los de un equipo real: lo que no se entiende se salta.
+Los de Codex y Copilot salen de lo que documenta la comunidad; el de Gemini, de su código (`chatRecordingService.ts` y
+`chatRecordingTypes.ts` de `@google/gemini-cli-core`, v0.66). Se probaron con archivos armados a mano
+(`Claupet.Tests/AgentsTests.cs`), no con los de un equipo real: lo que no se entiende se salta.
 
 **Memoria de una cuenta de Claude nueva.** Al agregarla (con el + de Uso o «Agregar cuenta…» en la Console), si todavía no
 tiene memoria propia y hay otra cuenta, se elige: **compartida** con la elegida en Uso (su carpeta `projects`, con las
@@ -861,7 +864,7 @@ no busca.
 | Sin la clave de las Releases (`Updates.ReleaseKey` vacía, como ahora) o sin archivo para este sistema | la fila lleva a la página de la Release; no se instala nada |
 | Con la clave, «Descargar e instalar…» | pregunta (con el tamaño); baja `<archivo>.firma` y comprueba que la firma sea de esa clave, de ese archivo y de esa versión; baja el archivo de este sistema (retomando si se corta) y comprueba su tamaño y su SHA-256; si algo no coincide, lo borra y no instala |
 | Lista | del `.tar.gz` de Linux saca `Claupet`; del `.zip` de macOS, `Claupet.app`; el `.exe` de Windows va tal cual. «Reiniciar ahora» o salir de la app la cambia |
-| Cambiarla | la que corre pasa a `<nombre>.anterior` y la nueva toma su lugar (Windows, Linux y macOS dejan renombrar lo que corre); si falla, vuelve la de antes. En macOS se cambia el `.app` entero y se le quita la cuarentena y se firma para el equipo (`codesign --sign -`), como `preparar-mac.sh`. Al abrir la nueva se borran la anterior y lo bajado |
+| Cambiarla | la que corre pasa a `<nombre>.anterior` y la nueva toma su lugar (Windows, Linux y macOS dejan renombrar lo que corre); si falla, vuelve la de antes. En macOS se cambia el `.app` entero y se le quita la cuarentena y se firma para el equipo (`codesign --sign -`), como `preparar-mac.sh`. Al abrir la nueva se borran la anterior y lo bajado, y en Windows también las bibliotecas que extrajeron las versiones de antes (`%TEMP%\.net\Claupet\<id>`, unos 32 MB cada una): cada carpeta se renombra antes de borrarla, y si otra versión abierta la está usando, Windows no deja y queda para la próxima vez (`Updates.DeleteOldExtractions`) |
 
 La firma de las Releases es la de los paquetes de extensiones (ES256, `ExtensionSigner`/`ExtensionKeys`) sobre el
 nombre del archivo, la versión, el tamaño y el SHA-256 (`ReleaseSignature`): una firma vieja no sirve para otra versión.
@@ -1009,7 +1012,11 @@ registradas y vivas, y el hook. Lo habitual:
   bandeja, el menú del ícono con los colores del tema, ni abrir la ventana en la pantalla del cursor (abre en la
   principal). La ventana de la bandeja y los avisos sí son tarjetas como antes: sombra y, en Windows 11, esquinas
   redondeadas con el borde del tema (`WinStyles.Card`).
-- Los formatos de los otros agentes (Codex CLI, Gemini CLI, GitHub Copilot CLI) no se comprobaron con archivos reales.
+- Los formatos de los otros agentes (Codex CLI, Gemini CLI, GitHub Copilot CLI) no se comprobaron con archivos reales;
+  el de Gemini sale de su código, pero tampoco se probó con una instalación.
+- Gemini CLI no anota cuánto queda de su cuota diaria: se ven las respuestas y los tokens de hoy, no un porcentaje.
+  Desde el 18 de junio de 2026, las cuentas gratuitas y de Google One usan Antigravity CLI en su lugar, que Claupet
+  todavía no lee.
 - Las acciones de Linux se probaron con `--accion` en WSL (Ubuntu, sin escritorio): estado, rechazos y avisos de
   programas que faltan. Con un escritorio real (GNOME, Plasma) y en macOS, sin probar todavía.
 - En Linux con Wayland, la isla y la tecla para hablar solo ven el cursor y el teclado mientras están sobre una app
