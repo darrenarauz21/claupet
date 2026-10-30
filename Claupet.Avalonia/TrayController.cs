@@ -18,6 +18,8 @@ sealed partial class TrayController
     readonly TrayIcon _tray = new();
     readonly PopupWindow _popup = new();
     readonly DispatcherTimer _timer = new();
+    /// <summary>Una vez: vuelve a preguntar por la cuenta sin datos que el servicio puso en espera (UsageGate).</summary>
+    readonly DispatcherTimer _retryTimer = new();
     readonly DispatcherTimer _sessionTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     readonly SessionMonitor _monitor = new();
     readonly ActivityTracker _activity = new();
@@ -145,6 +147,11 @@ sealed partial class TrayController
         _timer.Interval = TimeSpan.FromMinutes(Math.Max(1, _settings.RefreshMinutes));
         _timer.Tick += (_, _) => _ = RefreshAsync();
         _timer.Start();
+        _retryTimer.Tick += (_, _) =>
+        {
+            _retryTimer.Stop();
+            _ = RefreshAsync();
+        };
 
         Dispatcher.UIThread.Post(async () =>
         {
@@ -197,6 +204,13 @@ sealed partial class TrayController
             var offline = await SessionRenewal.RenewExpiredAsync(accounts, results, a => _renewAtStart
                 || (renewSelected && _settings.Selected is { } selected && Account.SamePath(a.ConfigDir, selected)));
             if (!offline) _renewAtStart = false;
+            // Sin datos y en espera: se pregunta apenas se pueda, sin esperar al reloj de las actualizaciones.
+            if (results.Min(r => r.WaitingUntil) is { } retry)
+            {
+                _retryTimer.Stop();
+                _retryTimer.Interval = TimeSpan.FromSeconds(Math.Max(1, (retry - DateTimeOffset.Now).TotalSeconds + 1));
+                _retryTimer.Start();
+            }
             var profiles = await Task.Run(() => accounts.Select(UsageClient.ReadProfile).ToList());
             var updated = DateTime.Now;
 
@@ -207,8 +221,11 @@ sealed partial class TrayController
                 {
                     var dir = accounts[i].ConfigDir;
                     var fresh = results[i];
-                    if (fresh.Error is not null && _snapshots.TryGetValue(dir, out var old) && old.Limits.Count > 0)
-                        fresh = old.WithError(fresh.Error, fresh.SessionExpired);
+                    if (_snapshots.TryGetValue(dir, out var old) && old.Limits.Count > 0)
+                    {
+                        if (fresh.WaitingUntil is not null) fresh = old;
+                        else if (fresh.Error is not null) fresh = old.WithError(fresh.Error, fresh.SessionExpired);
+                    }
                     _snapshots[dir] = fresh;
                     _profiles[dir] = profiles[i];
                 }
@@ -670,7 +687,10 @@ sealed partial class TrayController
         UpdateTray();
         PushIslandUsage();
         PushSettings(); // la cantidad de cuentas puede haber cambiado
-        View.Render(_settings.Accounts, _settings.Selected, _snapshots, _profiles, _local, _updated);
+        // La hora del pie es la de los datos que se ven: mientras el servicio pide esperar, la de la última consulta buena.
+        var shown = _settings.Selected is { } dir && _snapshots.TryGetValue(dir, out var snap) && snap.FetchedAt is { } at
+            ? at.LocalDateTime : _updated;
+        View.Render(_settings.Accounts, _settings.Selected, _snapshots, _profiles, _local, shown);
     }
 
     void UpdateTray()

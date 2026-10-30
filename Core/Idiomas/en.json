@@ -487,7 +487,6 @@
   "Sesión vencida: actualice para renovarla.": "Session expired: refresh to renew it.",
   "Sin credenciales para esta carpeta.": "No credentials for this folder.",
   "No se pudieron leer las credenciales.": "Couldn't read the credentials.",
-  "Demasiadas consultas; se reintentará.": "Too many requests; will retry.",
   "Error {0} del servicio.": "Service error {0}.",
   "Sin respuesta del servicio.": "No response from the service.",
   "Sin conexión.": "No connection.",

@@ -289,7 +289,7 @@ sealed partial class UsageView : Control
         if (plan.Length > 0) Gfx.Write(dc, plan, Gfx.Small, _t.Tertiary, new Rect(ViewWidth - Pad - planWidth, y, planWidth + 1, small));
         y += small + 18;
 
-        if (snapshot is null)
+        if (snapshot is null || snapshot.WaitingUntil is not null)
         {
             Gfx.Write(dc, L.T("Consultando…"), Gfx.Body, _t.Tertiary, new Rect(Pad, y, Inner, body));
             return y + body + 20;
