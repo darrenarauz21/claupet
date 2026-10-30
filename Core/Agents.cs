@@ -25,9 +25,12 @@ sealed record AgentLimit(string Label, double Percent, DateTimeOffset? ResetsAt,
 /// <summary>Una sesión de otro agente: lo que se pudo leer de sus archivos (lo que no está, va vacío).</summary>
 sealed record AgentSession(string Kind, string Id, string? Folder, string? Model, DateTimeOffset LastActivity, int Messages);
 
-/// <summary>Lo leído de un agente: sus límites (si los escribe), sus sesiones recientes y lo de hoy.</summary>
+/// <summary>
+/// Lo leído de un agente: sus límites (si los escribe), sus sesiones recientes y lo de hoy. ResponsesToday y TokensToday,
+/// solo de los que los anotan (Gemini): las respuestas del modelo y los tokens que generó (salida y razonamiento).
+/// </summary>
 sealed record AgentSnapshot(AgentAccount Account, string Name, bool Exists, IReadOnlyList<AgentLimit> Limits,
-    IReadOnlyList<AgentSession> Sessions, int SessionsToday, int MessagesToday, int Unreadable)
+    IReadOnlyList<AgentSession> Sessions, int SessionsToday, int MessagesToday, int Unreadable, int ResponsesToday = 0, long TokensToday = 0)
 {
     public DateTimeOffset? LastActivity => Sessions.Count == 0 ? null : Sessions.Max(s => s.LastActivity);
 }
@@ -54,7 +57,10 @@ static class Agents
         _ => kind,
     };
 
-    /// <summary>Su carpeta de siempre: $CODEX_HOME o ~/.codex, ~/.gemini, $COPILOT_HOME o ~/.copilot.</summary>
+    /// <summary>
+    /// Su carpeta de siempre: $CODEX_HOME o ~/.codex, $COPILOT_HOME o ~/.copilot, y .gemini en $GEMINI_CLI_HOME o en la
+    /// carpeta del usuario (Gemini CLI toma esa variable como su «home», no como su carpeta).
+    /// </summary>
     public static string DefaultFolder(string kind)
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -62,7 +68,7 @@ static class Agents
         {
             Codex => Environment.GetEnvironmentVariable("CODEX_HOME") is { Length: > 0 } codex ? codex : Path.Combine(home, ".codex"),
             Copilot => Environment.GetEnvironmentVariable("COPILOT_HOME") is { Length: > 0 } copilot ? copilot : Path.Combine(home, ".copilot"),
-            _ => Path.Combine(home, ".gemini"),
+            _ => Path.Combine(Environment.GetEnvironmentVariable("GEMINI_CLI_HOME") is { Length: > 0 } gemini ? gemini : home, ".gemini"),
         };
     }
 
@@ -114,20 +120,20 @@ static class Agents
         var (folder, pattern, depth) = agent.Kind switch
         {
             Codex => ("sessions", "rollout-*.jsonl", 4),
-            Gemini => ("tmp", "session-*.json", 3),
+            Gemini => ("tmp", "*.json*", 3),
             Copilot => ("session-state", "events.jsonl", 1),
             _ => ("", "", 0),
         };
         if (pattern.Length == 0) return null;
+        Func<FileInfo, bool>? keep = agent.Kind == Gemini ? GeminiReader.IsChat : null;
         try
         {
-            return Newest(Path.Combine(agent.Folder, folder), pattern, depth).FirstOrDefault() is { } file
+            return Newest(Path.Combine(agent.Folder, folder), pattern, depth, keep).FirstOrDefault() is { } file
                 ? new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero) : null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
-    /// <summary>Lo de hoy de un agente, para Uso: sesiones y, si se pueden contar, mensajes (Gemini) o eventos (Copilot).</summary>
     /// <summary>
     /// Si sale en Uso un agente que se sigue: solo si hoy hizo algo o tiene un límite que todavía corre (los de una sesión
     /// de hace días ya se reiniciaron y no dicen nada). Sin nada que mostrar no se ve, y si no queda ninguno, tampoco el
@@ -139,12 +145,17 @@ static class Agents
     public static IReadOnlyList<AgentLimit> CurrentLimits(AgentSnapshot s, DateTimeOffset now) =>
         s.Limits.Where(l => l.ResetsAt is not { } at || at > now).ToList();
 
+    /// <summary>
+    /// Lo de hoy de un agente, para Uso: sesiones y, si se pueden contar, respuestas y tokens (Gemini, como los de Claude
+    /// en el pie), mensajes (Gemini sin tokens anotados) o eventos (Copilot).
+    /// </summary>
     public static string Today(AgentSnapshot s)
     {
         if (s.SessionsToday == 0) return L.T("Hoy: sin actividad");
         var sessions = s.SessionsToday == 1 ? L.T("1 sesión") : L.T("{0} sesiones", s.SessionsToday);
         return s.Account.Kind switch
         {
+            Gemini when s.TokensToday > 0 => L.T("Hoy: {0} · {1} respuestas · {2} tokens", sessions, s.ResponsesToday, Format.Tokens(s.TokensToday)),
             Gemini => L.T("Hoy: {0} · {1} mensajes", sessions, s.MessagesToday),
             Copilot => L.T("Hoy: {0} · {1} eventos", sessions, s.MessagesToday),
             _ => L.T("Hoy: {0}", sessions),
@@ -175,12 +186,16 @@ static class Agents
         }
     }
 
-    /// <summary>Los archivos más recientes que cumplen el patrón, bajo esa carpeta (sin seguir enlaces).</summary>
-    internal static List<FileInfo> Newest(string folder, string pattern, int depth)
+    /// <summary>
+    /// Los archivos más recientes que cumplen el patrón, bajo esa carpeta (sin seguir enlaces). keep descarta antes de
+    /// elegir los más recientes, para que otros archivos que cambian seguido no ocupen su lugar.
+    /// </summary>
+    internal static List<FileInfo> Newest(string folder, string pattern, int depth, Func<FileInfo, bool>? keep = null)
     {
         if (!Directory.Exists(folder)) return [];
         var options = new EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = depth, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
-        return new DirectoryInfo(folder).EnumerateFiles(pattern, options).OrderByDescending(f => f.LastWriteTimeUtc).Take(Recent).ToList();
+        return new DirectoryInfo(folder).EnumerateFiles(pattern, options).Where(f => keep?.Invoke(f) ?? true)
+            .OrderByDescending(f => f.LastWriteTimeUtc).Take(Recent).ToList();
     }
 
     /// <summary>Las líneas de un JSONL, una por una; las rotas se saltan.</summary>
@@ -293,50 +308,156 @@ static class CodexReader
 }
 
 /// <summary>
-/// Gemini CLI (~/.gemini): una sesión por archivo, tmp/&lt;proyecto&gt;/chats/session-*.json, con sessionId, projectHash,
-/// startTime, lastUpdated y messages (type «user» o «gemini», model, toolCalls). La carpeta del proyecto sale de
-/// projects.json si allí está su hash. No escribe sus límites: se ve lo que hizo.
+/// Gemini CLI (~/.gemini), según su código (packages/core/src/services/chatRecordingService.ts y chatRecordingTypes.ts,
+/// v0.66): una sesión por archivo en tmp/&lt;proyecto&gt;/chats/.
+/// - session-*.jsonl, el formato actual: un registro JSON por línea que solo se agrega. Los datos de la sesión (sessionId,
+///   projectHash, startTime, lastUpdated); cada mensaje con su id, que se vuelve a agregar entero si cambia (vale el
+///   último); $set con datos nuevos (o, antes, todos los mensajes), y $rewindTo o $patch al deshacer o editar.
+/// - session-*.json, el anterior: un solo documento con messages. Al retomarla, Gemini CLI la copia a .jsonl y deja la
+///   vieja: se juntan por sessionId.
+/// - Los subagentes, en chats/&lt;sesión&gt;/&lt;id&gt;.jsonl: suman a lo de hoy, pero no son sesiones aparte.
+/// Cada respuesta («gemini») anota model y tokens (input, output, cached, thoughts, tool, total); se cuentan los que
+/// generó, output y thoughts, como los de Claude en el pie. Lo deshecho o borrado sigue contando: ya se gastó. La carpeta
+/// del proyecto sale de projects.json ({"projects": {ruta: nombre}}), por el nombre de su carpeta en tmp o, en las
+/// versiones viejas, por su hash. No escribe sus límites: se ve lo que hizo.
 /// </summary>
 static class GeminiReader
 {
+    /// <summary>De un mensaje, lo que se usa: su tipo, su hora, el modelo y los tokens que generó.</summary>
+    readonly record struct Message(string? Type, DateTimeOffset? At, string? Model, long Tokens);
+
+    /// <summary>Una sesión con todo lo leído de sus archivos.</summary>
+    sealed class Conversation(FileInfo file, bool subagent)
+    {
+        public string? Id, ProjectHash;
+        public string? ProjectDir = (subagent ? file.Directory?.Parent?.Parent : file.Directory?.Parent)?.Name;
+        public bool Subagent = subagent;
+        public DateTimeOffset? Updated;
+        public DateTimeOffset LastWrite = new(file.LastWriteTimeUtc, TimeSpan.Zero);
+        public readonly Dictionary<string, Message> Messages = new(StringComparer.Ordinal);
+        int _unnamed;
+
+        public void Meta(JsonElement record)
+        {
+            if (Agents.Child(record, "sessionId") is { ValueKind: JsonValueKind.String } id) Id ??= id.GetString();
+            if (Agents.Child(record, "projectHash") is { ValueKind: JsonValueKind.String } hash) ProjectHash ??= hash.GetString();
+            foreach (var name in new[] { "startTime", "lastUpdated" })
+                if (Agents.Time(record, name) is { } at && !(Updated >= at)) Updated = at;
+            if (Agents.Child(record, "messages") is { ValueKind: JsonValueKind.Array } list)
+                foreach (var message in list.EnumerateArray()) Add(message);
+        }
+
+        public void Add(JsonElement message)
+        {
+            if (message.ValueKind != JsonValueKind.Object) return;
+            var id = Agents.Child(message, "id") is { ValueKind: JsonValueKind.String } i ? i.GetString()! : "#" + _unnamed++;
+            var tokens = Agents.Child(message, "tokens") is { ValueKind: JsonValueKind.Object } t
+                ? (long)((Agents.Number(t, "output") ?? 0) + (Agents.Number(t, "thoughts") ?? 0)) : 0;
+            Messages[id] = new(Agents.Child(message, "type") is { ValueKind: JsonValueKind.String } type ? type.GetString() : null,
+                Agents.Time(message, "timestamp"),
+                Agents.Child(message, "model") is { ValueKind: JsonValueKind.String } model ? model.GetString() : null, tokens);
+        }
+
+        /// <summary>Suma otro archivo de la misma sesión (el .json viejo y su copia .jsonl); lo del más nuevo vale.</summary>
+        public void Merge(Conversation newer)
+        {
+            foreach (var (id, message) in newer.Messages) Messages[id] = message;
+            ProjectHash ??= newer.ProjectHash;
+            if (newer.Updated is { } at && !(Updated >= at)) Updated = at;
+            if (newer.LastWrite > LastWrite) LastWrite = newer.LastWrite;
+        }
+
+        public DateTimeOffset LastActivity => Updated ?? LastWrite;
+    }
+
+    /// <summary>Un archivo de chat: chats/session-*.json o .jsonl, o el .jsonl de un subagente en chats/&lt;sesión&gt;/.</summary>
+    internal static bool IsChat(FileInfo file) => IsSession(file) || IsSubagent(file);
+
+    static bool IsSession(FileInfo file) => file.Extension is ".json" or ".jsonl"
+        && file.Name.StartsWith("session-", StringComparison.Ordinal) && file.Directory?.Name == "chats";
+
+    static bool IsSubagent(FileInfo file) => file.Extension == ".jsonl" && file.Directory?.Parent?.Name == "chats";
+
     public static AgentSnapshot Read(AgentAccount agent, DateTimeOffset now)
     {
         var projects = Projects(Path.Combine(agent.Folder, "projects.json"));
-        var sessions = new List<AgentSession>();
+        var tmp = Path.Combine(agent.Folder, "tmp");
+        var conversations = new Dictionary<string, Conversation>(StringComparer.Ordinal);
         var unreadable = 0;
-        foreach (var file in Agents.Newest(Path.Combine(agent.Folder, "tmp"), "session-*.json", 3))
+        // Del más viejo al más nuevo, para que al juntar los archivos de una sesión valga lo último.
+        var files = Agents.Newest(tmp, "session-*.json*", 3, IsSession).Concat(Agents.Newest(tmp, "*.jsonl", 3, IsSubagent))
+            .OrderBy(f => f.LastWriteTimeUtc);
+        foreach (var file in files)
         {
-            if (!string.Equals(file.Directory?.Name, "chats", StringComparison.Ordinal)) continue;
-            JsonElement root;
-            try
-            {
-                using var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                using var doc = JsonDocument.Parse(stream, new JsonDocumentOptions { MaxDepth = 64 });
-                root = doc.RootElement.Clone();
-            }
-            catch (JsonException)
+            var read = Parse(file);
+            if (read?.Id is not { } id)
             {
                 unreadable++;
                 continue;
             }
-            if (root.ValueKind != JsonValueKind.Object) continue;
-            var id = Agents.Child(root, "sessionId")?.ToString() is { Length: > 0 } sid ? sid : Path.GetFileNameWithoutExtension(file.Name);
-            var hash = Agents.Child(root, "projectHash")?.ToString();
-            var last = Agents.Time(root, "lastUpdated") ?? Agents.Time(root, "startTime") ?? new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero);
-            string? model = null;
-            var messages = 0;
-            if (Agents.Child(root, "messages") is { ValueKind: JsonValueKind.Array } list)
-                foreach (var message in list.EnumerateArray())
-                {
-                    if (Agents.Child(message, "type")?.ToString() is "user" or "gemini") messages++;
-                    if (Agents.Child(message, "model") is { ValueKind: JsonValueKind.String } m) model = m.GetString();
-                }
-            var folder = hash is not null && projects.TryGetValue(hash, out var path) ? path : file.Directory?.Parent?.Name;
-            sessions.Add(new AgentSession(Agents.Gemini, id, folder, model, last, messages));
+            var key = (read.Subagent ? "subagente:" : "") + id;
+            if (conversations.TryGetValue(key, out var known)) known.Merge(read);
+            else conversations[key] = read;
         }
-        var today = sessions.Where(s => Agents.SameDay(s.LastActivity, now)).ToList();
-        return new AgentSnapshot(agent, agent.Label, true, [], sessions.OrderByDescending(s => s.LastActivity).ToList(), today.Count,
-            today.Sum(s => s.Messages), unreadable);
+
+        var sessions = new List<AgentSession>();
+        int messagesToday = 0, responsesToday = 0;
+        long tokensToday = 0;
+        foreach (var c in conversations.Values)
+        {
+            foreach (var message in c.Messages.Values)
+            {
+                if (!Agents.SameDay(message.At ?? c.LastActivity, now)) continue;
+                if (message.Type == "gemini")
+                {
+                    responsesToday++;
+                    tokensToday += message.Tokens;
+                }
+                if (!c.Subagent && message.Type is "user" or "gemini") messagesToday++;
+            }
+            if (c.Subagent) continue;
+            var folder = c.ProjectDir is { } dir && projects.TryGetValue(dir, out var path) ? path
+                : c.ProjectHash is { } hash && projects.TryGetValue(hash, out var hashed) ? hashed : c.ProjectDir;
+            var model = c.Messages.Values.LastOrDefault(m => m.Model is not null).Model;
+            sessions.Add(new AgentSession(Agents.Gemini, c.Id!, folder, model, c.LastActivity,
+                c.Messages.Values.Count(m => m.Type is "user" or "gemini")));
+        }
+        var today = sessions.Count(s => Agents.SameDay(s.LastActivity, now));
+        return new AgentSnapshot(agent, agent.Label, true, [], sessions.OrderByDescending(s => s.LastActivity).ToList(), today,
+            messagesToday, unreadable, responsesToday, tokensToday);
+    }
+
+    /// <summary>Lo de un archivo; null si no se pudo leer (ni una línea entendible, o no es JSON).</summary>
+    static Conversation? Parse(FileInfo file)
+    {
+        var c = new Conversation(file, IsSubagent(file));
+        try
+        {
+            if (file.Extension == ".json")
+            {
+                using var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var doc = JsonDocument.Parse(stream, new JsonDocumentOptions { MaxDepth = 64 });
+                if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+                c.Meta(doc.RootElement);
+            }
+            else
+            {
+                var any = false;
+                foreach (var record in Agents.Lines(file.FullName))
+                {
+                    any = true;
+                    if (Agents.Child(record, "$set") is { ValueKind: JsonValueKind.Object } set) c.Meta(set);
+                    else if (Agents.Child(record, "id") is { ValueKind: JsonValueKind.String } && Agents.Child(record, "$patch") is null) c.Add(record);
+                    else if (Agents.Child(record, "sessionId") is { ValueKind: JsonValueKind.String }) c.Meta(record);
+                    // $rewindTo y $patch deshacen o editan lo que se ve, no lo que ya se gastó.
+                }
+                if (!any) return null;
+            }
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException) { return null; }
+        // Sin sessionId (las versiones viejas no siempre lo ponían en el .json): el nombre del archivo, el mismo en su copia .jsonl.
+        c.Id ??= Path.GetFileNameWithoutExtension(file.Name);
+        return c;
     }
 
     /// <summary>

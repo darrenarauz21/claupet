@@ -3,8 +3,9 @@ using System.Globalization;
 namespace Claupet.Tests;
 
 /// <summary>
-/// Los otros agentes, con archivos sintéticos armados con los formatos que documenta la comunidad (no copiados de un
-/// equipo real): Codex CLI, Gemini CLI y GitHub Copilot CLI. Y la memoria compartida de una cuenta de Claude.
+/// Los otros agentes, con archivos sintéticos (no copiados de un equipo real): Codex CLI y GitHub Copilot CLI con los
+/// formatos que documenta la comunidad, y Gemini CLI con el que escribe su código (chatRecordingService.ts, v0.66). Y la
+/// memoria compartida de una cuenta de Claude.
 /// </summary>
 public sealed class AgentsTests
 {
@@ -93,6 +94,96 @@ public sealed class AgentsTests
         Assert.Equal(3, snapshot.MessagesToday);
         Assert.Equal(1, snapshot.Unreadable);
         Assert.Equal(L.T("Hoy: {0} · {1} mensajes", L.T("1 sesión"), 3), Agents.Today(snapshot));
+    }
+
+    [Fact]
+    public void GeminiLeeElFormatoJsonlConSusTokensSubagentesYLoDeshecho()
+    {
+        using var dir = new TempDir();
+        var noon = new DateTimeOffset(DateTime.Today.AddHours(12)); // lejos de la medianoche
+        string At(int minutes) => Iso(noon.AddMinutes(minutes));
+        const string Id = "abcd1234-0000-4000-8000-000000000001";
+        dir.Write("gemini/projects.json", """{ "projects": { "/home/x/demo": "demo" } }""");
+
+        // La de antes de 2026, que Gemini CLI copió a .jsonl al retomarla y dejó ahí: no se cuenta dos veces.
+        var old = dir.Write("gemini/tmp/demo/chats/session-2026-10-29T16-30-abcd1234.json", $$"""
+            { "sessionId": "{{Id}}", "projectHash": "h1", "startTime": "{{At(-30)}}", "lastUpdated": "{{At(-28)}}",
+              "messages": [
+                { "id": "u1", "timestamp": "{{At(-29)}}", "type": "user", "content": [ { "text": "hola" } ] },
+                { "id": "g1", "timestamp": "{{At(-28)}}", "type": "gemini", "content": "hola", "model": "gemini-3-pro",
+                  "tokens": { "input": 1000, "output": 200, "cached": 500, "thoughts": 50, "tool": 0, "total": 1250 } } ] }
+            """);
+        var current = dir.Write("gemini/tmp/demo/chats/session-2026-10-29T16-30-abcd1234.jsonl", string.Join("\n",
+            $$"""{"sessionId":"{{Id}}","projectHash":"h1","startTime":"{{At(-30)}}","lastUpdated":"{{At(-28)}}","summary":"saludo"}""",
+            $$"""{"id":"u1","timestamp":"{{At(-29)}}","type":"user","content":[{"text":"hola"}]}""",
+            // La respuesta sale sin tokens y se vuelve a agregar entera cuando llegan: vale la última.
+            $$"""{"id":"g1","timestamp":"{{At(-28)}}","type":"gemini","content":"hola","thoughts":[],"tokens":null,"model":"gemini-3-pro"}""",
+            $$"""{"id":"g1","timestamp":"{{At(-28)}}","type":"gemini","content":"hola","thoughts":[],"tokens":{"input":1000,"output":200,"cached":500,"thoughts":50,"tool":0,"total":1250},"model":"gemini-3-pro"}""",
+            $$$"""{"$set":{"sessionId":"{{{Id}}}"}}""",
+            $$"""{"id":"u2","timestamp":"{{At(-10)}}","type":"user","content":"otra"}""",
+            $$"""{"id":"g2","timestamp":"{{At(-9)}}","type":"gemini","content":"x","tokens":{"input":2000,"output":300,"cached":0,"thoughts":0,"tool":10,"total":2310},"model":"gemini-3-flash"}""",
+            $$$"""{"$set":{"lastUpdated":"{{{At(-9)}}}"}}""",
+            """{"$rewindTo":"u2"}""", // deshecha en pantalla, pero esos tokens ya se gastaron
+            """{"$patch":{"id":"g1","content":"editado"}}""",
+            $$"""{"id":"i1","timestamp":"{{At(-8)}}","type":"info","content":"aviso"}""",
+            "{rota",
+            $$$"""{"$set":{"lastUpdated":"{{{At(-8)}}}"}}"""));
+        File.SetLastWriteTimeUtc(old, noon.AddMinutes(-28).UtcDateTime);
+        File.SetLastWriteTimeUtc(current, noon.AddMinutes(-8).UtcDateTime);
+
+        // Un subagente de esa sesión: suma a lo de hoy, no es una sesión aparte.
+        dir.Write($"gemini/tmp/demo/chats/{Id}/sub-1.jsonl", string.Join("\n",
+            $$"""{"sessionId":"sub-1","projectHash":"h1","startTime":"{{At(-20)}}","lastUpdated":"{{At(-19)}}","kind":"subagent"}""",
+            $$"""{"id":"s-u","timestamp":"{{At(-20)}}","type":"user","content":"tarea"}""",
+            $$"""{"id":"s-g","timestamp":"{{At(-19)}}","type":"gemini","content":"","tokens":{"input":400,"output":100,"cached":0,"thoughts":0,"tool":0,"total":500},"model":"gemini-3-flash"}"""));
+
+        // De anteayer: es una sesión, pero no cuenta hoy.
+        dir.Write("gemini/tmp/demo/chats/session-2026-10-27T10-00-ffff0000.jsonl", string.Join("\n",
+            $$"""{"sessionId":"ffff0000","projectHash":"h1","startTime":"{{Iso(noon.AddDays(-2))}}","lastUpdated":"{{Iso(noon.AddDays(-2))}}"}""",
+            $$$"""{"id":"g9","timestamp":"{{{Iso(noon.AddDays(-2))}}}","type":"gemini","content":"","tokens":{"input":9,"output":999,"cached":0,"total":1008}}"""));
+
+        // Lo que no es un chat no se lee ni ocupa el lugar de las sesiones; un .jsonl sin una línea entendible no se entiende.
+        dir.Write("gemini/tmp/demo/logs.json", "[]");
+        dir.Write("gemini/tmp/demo/chats/session-2026-10-29T16-30-abcd1234.jsonl.unreadable-1", "{rota");
+        dir.Write("gemini/tmp/demo/chats/session-rota.jsonl", "{rota");
+        foreach (var file in Directory.EnumerateFiles(dir["gemini/tmp"], "*", SearchOption.AllDirectories).Except([old, current]))
+            File.SetLastWriteTimeUtc(file, noon.AddHours(-1).UtcDateTime);
+        File.SetLastWriteTimeUtc(dir["gemini/tmp/demo/logs.json"], noon.AddHours(1).UtcDateTime);
+
+        var snapshot = Agents.Read(Agent(Agents.Gemini, dir["gemini"]), noon);
+        Assert.Empty(snapshot.Limits);
+        Assert.Equal(2, snapshot.Sessions.Count);
+        var today = snapshot.Sessions[0];
+        Assert.Equal(Id, today.Id);
+        Assert.Equal("/home/x/demo", today.Folder); // por el nombre de su carpeta en tmp
+        Assert.Equal("gemini-3-flash", today.Model);
+        Assert.Equal(4, today.Messages); // u1, g1, u2, g2: el aviso no cuenta
+        Assert.Equal(DateTimeOffset.Parse(At(-8), CultureInfo.InvariantCulture), today.LastActivity);
+
+        Assert.Equal(1, snapshot.SessionsToday);
+        Assert.Equal(4, snapshot.MessagesToday);
+        Assert.Equal(3, snapshot.ResponsesToday); // g1 y g2, y la del subagente
+        Assert.Equal(250 + 300 + 100, snapshot.TokensToday); // salida y razonamiento
+        Assert.Equal(1, snapshot.Unreadable);
+        Assert.Equal(L.T("Hoy: {0} · {1} respuestas · {2} tokens", L.T("1 sesión"), 3, "650"), Agents.Today(snapshot));
+        Assert.True(Agents.ShowsInUsage(snapshot, noon));
+
+        // La mascota mira la fecha del chat más nuevo, no la de logs.json (más nuevo todavía).
+        Assert.Equal(noon.AddMinutes(-8), Agents.LastWrite(Agent(Agents.Gemini, dir["gemini"])));
+    }
+
+    [Fact]
+    public void LaCarpetaDeGeminiSigueAGeminiCliHome()
+    {
+        var before = Environment.GetEnvironmentVariable("GEMINI_CLI_HOME");
+        try
+        {
+            Environment.SetEnvironmentVariable("GEMINI_CLI_HOME", null);
+            Assert.Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gemini"), Agents.DefaultFolder(Agents.Gemini));
+            Environment.SetEnvironmentVariable("GEMINI_CLI_HOME", @"D:\otra");
+            Assert.Equal(Path.Combine(@"D:\otra", ".gemini"), Agents.DefaultFolder(Agents.Gemini));
+        }
+        finally { Environment.SetEnvironmentVariable("GEMINI_CLI_HOME", before); }
     }
 
     [Fact]

@@ -34,7 +34,8 @@ Claupet los sigue a ellos también.
 - 🎬 **Actividad.** Cada sesión paso a paso, en vivo. Todo sale de archivos locales: no gasta
   tokens.
 - 🤖 **También Codex, Gemini y Copilot.** Si usa además Codex CLI, Gemini CLI o GitHub Copilot CLI,
-  sus sesiones salen en Uso y Actividad (con los límites de Codex), leídas de sus propios archivos.
+  sus sesiones salen en Uso y Actividad (con los límites de Codex y los tokens de Gemini), leídas de sus propios
+  archivos.
 - 🔔 **Avisos amables.** Un mensajito, con sonido, cuando una sesión termina, pregunta algo,
   necesita permiso, falla o se acerca a un límite.
 - 🐾 **Mascotas con personalidad.** Chibi, Dokki, Gemma o Ciel (o la criaturita clásica) leen,

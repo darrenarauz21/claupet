@@ -1338,6 +1338,7 @@
   "1 sesión": "1 session",
   "{0} sesiones": "{0} sessions",
   "Hoy: {0} · {1} mensajes": "Today: {0} · {1} messages",
+  "Hoy: {0} · {1} respuestas · {2} tokens": "Today: {0} · {1} responses · {2} tokens",
   "Hoy: {0} · {1} eventos": "Today: {0} · {1} events",
   "Hoy: {0}": "Today: {0}",
   "Sesión (5 h)": "Session (5 h)",
