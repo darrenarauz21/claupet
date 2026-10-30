@@ -307,4 +307,26 @@ public sealed class UpdatesTests
         Assert.Equal(Convert.FromBase64String(Updates.ReleaseKey).Length, read);
         Assert.Equal(ECCurve.NamedCurves.nistP256.Oid.Value, key.ExportParameters(false).Curve.Oid.Value);
     }
+
+    [Fact]
+    public void Se_borran_las_extracciones_de_versiones_anteriores_salvo_la_actual_y_las_en_uso()
+    {
+        using var temp = new TempDir();
+        var root = Directory.CreateDirectory(temp[".net/Claupet"]).FullName;
+        var current = Directory.CreateDirectory(Path.Combine(root, "actual")).FullName;
+        File.WriteAllText(Path.Combine(current, "libSkiaSharp.dll"), "x");
+        foreach (var old in new[] { "vieja1", "vieja2" })
+            File.WriteAllText(Path.Combine(Directory.CreateDirectory(Path.Combine(root, old)).FullName, "onnxruntime.dll"), "x");
+        var busy = Directory.CreateDirectory(Path.Combine(root, "en-uso")).FullName;
+        // Abierta sin dejar borrar ni renombrar, como una biblioteca cargada por otra versión.
+        using (new FileStream(Path.Combine(busy, "libSkiaSharp.dll"), FileMode.Create, FileAccess.ReadWrite, FileShare.Read))
+            Assert.Equal(2, Updates.DeleteOldExtractions(current));
+        Assert.True(Directory.Exists(current));
+        Assert.True(File.Exists(Path.Combine(busy, "libSkiaSharp.dll")) || File.Exists(Path.Combine(busy + ".borrar", "libSkiaSharp.dll")));
+        Assert.False(Directory.Exists(Path.Combine(root, "vieja1")));
+        Assert.False(Directory.Exists(Path.Combine(root, "vieja2")));
+        // Ya libre, la próxima vez se va.
+        Assert.Equal(1, Updates.DeleteOldExtractions(current));
+        Assert.Equal([current], Directory.GetDirectories(root));
+    }
 }

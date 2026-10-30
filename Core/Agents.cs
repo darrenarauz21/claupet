@@ -128,6 +128,17 @@ static class Agents
     }
 
     /// <summary>Lo de hoy de un agente, para Uso: sesiones y, si se pueden contar, mensajes (Gemini) o eventos (Copilot).</summary>
+    /// <summary>
+    /// Si sale en Uso un agente que se sigue: solo si hoy hizo algo o tiene un límite que todavía corre (los de una sesión
+    /// de hace días ya se reiniciaron y no dicen nada). Sin nada que mostrar no se ve, y si no queda ninguno, tampoco el
+    /// título «Otros agentes». Los que no se siguen (Ajustes › Cuentas) nunca se leen.
+    /// </summary>
+    public static bool ShowsInUsage(AgentSnapshot s, DateTimeOffset now) => s.Exists && (s.SessionsToday > 0 || CurrentLimits(s, now).Count > 0);
+
+    /// <summary>Los límites que todavía corren: el reinicio todavía no llegó (sin fecha de reinicio, se toman como vigentes).</summary>
+    public static IReadOnlyList<AgentLimit> CurrentLimits(AgentSnapshot s, DateTimeOffset now) =>
+        s.Limits.Where(l => l.ResetsAt is not { } at || at > now).ToList();
+
     public static string Today(AgentSnapshot s)
     {
         if (s.SessionsToday == 0) return L.T("Hoy: sin actividad");

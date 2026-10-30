@@ -5,8 +5,9 @@ namespace Claupet;
 
 /// <summary>
 /// Los otros agentes (Codex CLI, Gemini CLI, GitHub Copilot CLI) en Uso y en Actividad, debajo de lo de Claude Code. En
-/// Uso, sus límites si los escribe (Codex) y lo de hoy; en Actividad, sus sesiones de las últimas 24 horas. Solo se ven
-/// los que se siguen (Ajustes › Cuentas) y están en este equipo.
+/// Uso, los que hoy hicieron algo o tienen un límite que todavía corre (Agents.ShowsInUsage), con esos límites y lo de
+/// hoy; en Actividad, sus sesiones de las últimas 24 horas. Solo se ven los que se siguen (Ajustes › Cuentas) y están en
+/// este equipo.
 /// </summary>
 sealed partial class UsageView
 {
@@ -29,19 +30,22 @@ sealed partial class UsageView
 
     double ComposeAgentUsage(DrawingContext? dc, double y)
     {
-        if (_agents.Count == 0) return y;
+        var now = DateTimeOffset.Now;
+        var shown = _agents.Where(a => Agents.ShowsInUsage(a, now)).ToList();
+        if (shown.Count == 0) return y;
         var body = Gfx.Body.LineHeight;
         var small = Gfx.Small.LineHeight;
         y = AgentsCaption(dc, y);
-        foreach (var agent in _agents)
+        foreach (var agent in shown)
         {
+            var limits = Agents.CurrentLimits(agent, now);
             var ago = Format.Ago(agent.LastActivity);
             var agoWidth = ago.Length == 0 ? 0 : Gfx.Measure(ago, Gfx.Small).Width;
             Gfx.Write(dc, agent.Account.Label, Gfx.BodyStrong, _t.Text, new Rect(Pad, y, Inner - agoWidth - 12, body));
             if (ago.Length > 0) Gfx.Write(dc, ago, Gfx.Small, _t.Tertiary, new Rect(ViewWidth - Pad - agoWidth, y, agoWidth + 1, body), center: true);
             y += body + 8;
 
-            foreach (var limit in agent.Limits)
+            foreach (var limit in limits)
             {
                 Gfx.Write(dc, limit.Label, Gfx.Body, _t.Text, new Rect(Pad, y, Inner - 60, body));
                 Gfx.Write(dc, L.T("{0:0} %", limit.Percent), Gfx.BodyStrong, _t.Text, new Rect(ViewWidth - Pad - 60, y, 60, body), TextAlignment.Right);
@@ -65,7 +69,7 @@ sealed partial class UsageView
             var today = Agents.Today(agent);
             Gfx.Write(dc, today, Gfx.Small, _t.Secondary, new Rect(Pad, y, Inner, small));
             y += small + 4;
-            if (agent.Limits.Count == 0)
+            if (limits.Count == 0)
             {
                 var note = agent.Account.Kind == Agents.Codex
                     ? L.T("Sus límites salen cuando responde; todavía no hay ninguno escrito.")

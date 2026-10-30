@@ -182,4 +182,26 @@ public sealed class AgentsTests
         Directory.Delete(Path.Combine(work, "projects")); // el enlace, sin tocar lo de la otra cuenta
         Assert.True(File.Exists(Path.Combine(main, "projects", "demo", "sesion.jsonl")));
     }
+
+    [Fact]
+    public void En_Uso_solo_salen_los_que_hoy_hicieron_algo_o_tienen_un_limite_que_corre()
+    {
+        var now = new DateTimeOffset(2026, 10, 29, 21, 0, 0, TimeSpan.Zero);
+        var copilot = new AgentAccount { Kind = Agents.Copilot, Label = "GitHub Copilot CLI", Folder = "x" };
+        var codex = new AgentAccount { Kind = Agents.Codex, Label = "Codex CLI", Folder = "y" };
+        // Sin actividad hoy y sin límites: no sale (ni el título, si no hay otro).
+        Assert.False(Agents.ShowsInUsage(new AgentSnapshot(copilot, "GitHub Copilot CLI", true, [], [], 0, 0, 0), now));
+        // Con actividad hoy, sí.
+        Assert.True(Agents.ShowsInUsage(new AgentSnapshot(copilot, "GitHub Copilot CLI", true, [], [], 1, 3, 0), now));
+        // Límites de hace días, ya reiniciados: no dicen nada y no sale.
+        var stale = new AgentLimit("Semana", 32, now.AddDays(-20), 10080);
+        Assert.False(Agents.ShowsInUsage(new AgentSnapshot(codex, "Codex CLI", true, [stale], [], 0, 0, 0), now));
+        // Un límite que todavía corre: sale, solo con ese.
+        var current = new AgentLimit("Sesión (5 h)", 5, now.AddHours(2), 300);
+        var snapshot = new AgentSnapshot(codex, "Codex CLI", true, [stale, current], [], 0, 0, 0);
+        Assert.True(Agents.ShowsInUsage(snapshot, now));
+        Assert.Equal([current], Agents.CurrentLimits(snapshot, now));
+        // Sin la carpeta en este equipo, nunca.
+        Assert.False(Agents.ShowsInUsage(new AgentSnapshot(codex, "Codex CLI", false, [current], [], 2, 0, 0), now));
+    }
 }

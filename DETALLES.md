@@ -425,8 +425,10 @@ Además de las cuentas de Claude Code, la app Avalonia sigue a otros agentes de 
 (`Agents` en `settings.json`, `Core/Agents.cs`): se agregan solos si está su carpeta de siempre y en **Ajustes ›
 Cuentas** (Claupet Console) se elige cuáles seguir. Se leen al actualizar, fuera del hilo de la interfaz, solo sus 30
 sesiones más recientes; nada se escribe en sus carpetas, no se usa su cuenta ni se gastan tokens. En **Uso**, debajo de
-la cuenta elegida, cada agente con sus límites (si los escribe) y lo de hoy; en **Actividad**, sus sesiones de las últimas
-24 horas, con la carpeta y el modelo si se saben.
+la cuenta elegida, solo los que hoy hicieron algo o tienen un límite que todavía corre (`Agents.ShowsInUsage`), con esos
+límites y lo de hoy: uno sin actividad, o con límites de hace días ya reiniciados, no sale, y si no queda ninguno tampoco
+el título «Otros agentes». Uno que no se sigue no se lee. En **Actividad**, sus sesiones de las últimas 24 horas, con la
+carpeta y el modelo si se saben.
 
 | Agente | Carpeta | Qué se lee |
 |---|---|---|
@@ -861,7 +863,7 @@ no busca.
 | Sin la clave de las Releases (`Updates.ReleaseKey` vacía, como ahora) o sin archivo para este sistema | la fila lleva a la página de la Release; no se instala nada |
 | Con la clave, «Descargar e instalar…» | pregunta (con el tamaño); baja `<archivo>.firma` y comprueba que la firma sea de esa clave, de ese archivo y de esa versión; baja el archivo de este sistema (retomando si se corta) y comprueba su tamaño y su SHA-256; si algo no coincide, lo borra y no instala |
 | Lista | del `.tar.gz` de Linux saca `Claupet`; del `.zip` de macOS, `Claupet.app`; el `.exe` de Windows va tal cual. «Reiniciar ahora» o salir de la app la cambia |
-| Cambiarla | la que corre pasa a `<nombre>.anterior` y la nueva toma su lugar (Windows, Linux y macOS dejan renombrar lo que corre); si falla, vuelve la de antes. En macOS se cambia el `.app` entero y se le quita la cuarentena y se firma para el equipo (`codesign --sign -`), como `preparar-mac.sh`. Al abrir la nueva se borran la anterior y lo bajado |
+| Cambiarla | la que corre pasa a `<nombre>.anterior` y la nueva toma su lugar (Windows, Linux y macOS dejan renombrar lo que corre); si falla, vuelve la de antes. En macOS se cambia el `.app` entero y se le quita la cuarentena y se firma para el equipo (`codesign --sign -`), como `preparar-mac.sh`. Al abrir la nueva se borran la anterior y lo bajado, y en Windows también las bibliotecas que extrajeron las versiones de antes (`%TEMP%\.net\Claupet\<id>`, unos 32 MB cada una): cada carpeta se renombra antes de borrarla, y si otra versión abierta la está usando, Windows no deja y queda para la próxima vez (`Updates.DeleteOldExtractions`) |
 
 La firma de las Releases es la de los paquetes de extensiones (ES256, `ExtensionSigner`/`ExtensionKeys`) sobre el
 nombre del archivo, la versión, el tamaño y el SHA-256 (`ReleaseSignature`): una firma vieja no sirve para otra versión.
