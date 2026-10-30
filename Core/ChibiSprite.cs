@@ -3,21 +3,31 @@ namespace Claupet;
 
 /// <summary>
 /// La opción «Mascota» de Ajustes, que junta la mascota y la animación al actualizar en una sola
-/// lista: con la clásica o el chibi, esa mascota anima el ícono y sale en los avisos; con Asterisco,
-/// Puntos o Ninguna, ese es el estilo al actualizar y los avisos llevan la clásica. Se guarda en
-/// Animation y Mascot del settings.json.
+/// lista: con la clásica o un personaje (el chibi, Dokki, Gemma, Ciel), esa mascota anima el ícono y
+/// sale en los avisos; con Asterisco, Puntos o Ninguna, ese es el estilo al actualizar y los avisos
+/// llevan la clásica. Se guarda en Animation y Mascot del settings.json.
 /// </summary>
 static class Mascots
 {
     public const string Classic = "clasica", Chibi = "chibi";
 
     public static readonly (string Id, string Label)[] Choices =
-        [(Classic, L.T("Clásica")), (Chibi, L.T("Chibi")), .. RefreshSprite.Styles.Where(s => s.Id != RefreshSprite.Mascot)];
+    [
+        (Classic, L.T("Clásica")), .. ChibiSprite.Skins.Select(s => (s.Id, s.Name)),
+        .. RefreshSprite.Styles.Where(s => s.Id != RefreshSprite.Mascot),
+    ];
 
-    /// <summary>La mascota de los avisos (Classic o Chibi), como Theme.SelectedPalette: la leen al dibujarse.</summary>
+    /// <summary>La mascota de los avisos (Classic o un personaje), como Theme.SelectedPalette: la leen al dibujarse.</summary>
     public static string Selected { get; set; } = Classic;
 
-    public static bool IsChibi => Selected == Chibi;
+    /// <summary>La mascota elegida es un personaje (el chibi u otro de ChibiSprite.Skins), no la clásica.</summary>
+    public static bool IsChibi => Skin is not null;
+
+    /// <summary>El personaje elegido; null con la clásica.</summary>
+    public static ChibiSkin? Skin => ChibiSprite.SkinOf(Selected);
+
+    /// <summary>Ese id es un personaje.</summary>
+    public static bool IsCharacter(string? id) => ChibiSprite.SkinOf(id) is not null;
 
     /// <summary>Lo elegido en la lista (Id de Choices).</summary>
     public static string ChoiceOf(AppSettings s) => s.Animation == RefreshSprite.Mascot ? s.Mascot : s.Animation;
@@ -28,7 +38,7 @@ static class Mascots
     public static void Choose(AppSettings s, string choice)
     {
         if (!Choices.Any(c => c.Id == choice)) choice = Classic;
-        (s.Animation, s.Mascot) = choice is Classic or Chibi ? (RefreshSprite.Mascot, choice) : (choice, Classic);
+        (s.Animation, s.Mascot) = choice == Classic || IsCharacter(choice) ? (RefreshSprite.Mascot, choice) : (choice, Classic);
     }
 }
 
@@ -352,7 +362,7 @@ static partial class ChibiSprite
 
     /// <summary>La caja sola en el cuadro pedido, en casillas de su lienzo de BoxColumns × BoxRows.</summary>
     public static void PaintBox(PixelFill fill, BoxFrame frame) =>
-        Emit(fill, (_looseBoxes ??= Enum.GetValues<BoxFrame>().ToDictionary(f => f, BuildLooseBox))[frame]);
+        Emit(fill, (_looseBoxes ??= Enum.GetValues<BoxFrame>().ToDictionary(f => f, BuildLooseBox))[frame], Palette);
 
     static char[][] BuildLooseBox(BoxFrame frame)
     {
@@ -515,27 +525,75 @@ static partial class ChibiSprite
         public (int X, int Y)[]? Notes { get; init; }
     }
 
-    static readonly Dictionary<ChibiMove, Frame[]> Moves = BuildMoves();
-    static readonly Dictionary<MascotFrame, char[][]> Heads = HeadEyes.Keys.ToDictionary(f => f, BuildHead);
-    static readonly Dictionary<MascotFrame, char[][]> SmallHeads = HeadEyes.Keys.ToDictionary(f => f, BuildSmallHead);
+    /// <summary>
+    /// El personaje que se está armando: las rejillas se arman con su cuerpo y su accesorio. Fuera de Building, el
+    /// chibi. Es por hilo, aunque las rejillas se arman bajo Cache.
+    /// </summary>
+    [ThreadStatic] static ChibiSkin? _skin;
+    static ChibiSkin Skin => _skin ?? Chibi;
 
-    /// <summary>Pinta el cuadro del momento t (ms desde que empezó el movimiento), en casillas del lienzo de 40 × 52.</summary>
-    public static void Paint(PixelFill fill, ChibiMove move, long t)
+    /// <summary>Lo armado de cada personaje: sus movimientos y sus cabezas (grande y chica).</summary>
+    sealed record Built(Dictionary<ChibiMove, Frame[]> Moves, Dictionary<MascotFrame, char[][]> Heads, Dictionary<MascotFrame, char[][]> SmallHeads);
+
+    static readonly Dictionary<ChibiSkin, Built> Cache = new();
+
+    /// <summary>Arma lo de ese personaje con sus rejillas (Skin vale él mientras tanto).</summary>
+    static T Building<T>(ChibiSkin skin, Func<T> make)
     {
-        var frames = Moves[move];
+        lock (Cache)
+        {
+            var before = _skin;
+            _skin = skin;
+            try { return make(); }
+            finally { _skin = before; }
+        }
+    }
+
+    static Built Of(ChibiSkin? skin)
+    {
+        skin ??= Chibi;
+        lock (Cache)
+        {
+            if (Cache.TryGetValue(skin, out var built)) return built;
+            return Cache[skin] = Building(skin, () => new Built(BuildMoves(),
+                HeadEyes.Keys.ToDictionary(f => f, BuildHead), HeadEyes.Keys.ToDictionary(f => f, BuildSmallHead)));
+        }
+    }
+
+    /// <summary>Los colores del personaje: los de la base (con los objetos del flujo) y encima los suyos.</summary>
+    static Dictionary<char, Color> PaletteOf(ChibiSkin? skin)
+    {
+        skin ??= Chibi;
+        Of(skin); // la base ya tiene los colores de los objetos del flujo (AddFlowShapes)
+        lock (Cache)
+        {
+            if (skin.Palette is { } palette) return palette;
+            palette = new Dictionary<char, Color>(Palette);
+            foreach (var (letter, color) in skin.Colors) palette[letter] = color;
+            return skin.Palette = palette;
+        }
+    }
+
+    /// <summary>
+    /// Pinta el cuadro del momento t (ms desde que empezó el movimiento), en casillas del lienzo de 40 × 52, con ese
+    /// personaje (sin él, el chibi).
+    /// </summary>
+    public static void Paint(PixelFill fill, ChibiMove move, long t, ChibiSkin? skin = null)
+    {
+        var frames = Of(skin).Moves[move];
         var total = frames.Sum(f => f.Ms);
         var at = t % total;
         foreach (var frame in frames)
         {
-            if (at < frame.Ms) { Emit(fill, frame.Grid); return; }
+            if (at < frame.Ms) { Emit(fill, frame.Grid, PaletteOf(skin)); return; }
             at -= frame.Ms;
         }
     }
 
     /// <summary>Número del cuadro que toca en el momento t: sirve para repintar solo cuando cambia.</summary>
-    public static int FrameIndex(ChibiMove move, long t)
+    public static int FrameIndex(ChibiMove move, long t, ChibiSkin? skin = null)
     {
-        var frames = Moves[move];
+        var frames = Of(skin).Moves[move];
         var at = t % frames.Sum(f => f.Ms);
         for (var i = 0; i < frames.Length; i++)
         {
@@ -546,11 +604,14 @@ static partial class ChibiSprite
     }
 
     /// <summary>Cuánto dura una vuelta del movimiento, en ms.</summary>
-    public static int Length(ChibiMove move) => Moves[move].Sum(f => f.Ms);
+    public static int Length(ChibiMove move, ChibiSkin? skin = null) => Of(skin).Moves[move].Sum(f => f.Ms);
 
-    /// <summary>La cabeza sola en un cuadro de la animación al actualizar: la grande (32 × 32) o la chica (16 × 16).</summary>
-    public static void PaintHead(PixelFill fill, MascotFrame frame, bool small = false) =>
-        Emit(fill, (small ? SmallHeads : Heads)[frame]);
+    /// <summary>
+    /// La cabeza sola en un cuadro de la animación al actualizar: la grande (32 × 32) o la chica (16 × 16). Sin
+    /// personaje, la del chibi: también es el logo de la app.
+    /// </summary>
+    public static void PaintHead(PixelFill fill, MascotFrame frame, bool small = false, ChibiSkin? skin = null) =>
+        Emit(fill, (small ? Of(skin).SmallHeads : Of(skin).Heads)[frame], PaletteOf(skin));
 
     /// <summary>Qué hace el chibi en cada aviso.</summary>
     public static ChibiMove ForNotice(NoticeKind kind) => kind switch
@@ -749,6 +810,7 @@ static partial class ChibiSprite
             ],
         };
         AddFlowMoves(moves, F);
+        AddSignature(moves, F); // los gestos propios del personaje (Core/Pets)
         return moves;
     }
 
@@ -767,13 +829,14 @@ static partial class ChibiSprite
 
     static char[][] Compose(Pose pose)
     {
-        var g = pose.Back ? BackBody() : Mirror(Body);
-        if (!pose.Back)
+        var back = pose.Back && Skin.Back is not null;
+        var g = back ? Skin.Back!() : Front();
+        if (!back)
         {
             g[21][20] = 'W'; g[21][21] = 'K'; // el brillo del ojo derecho, del mismo lado que el del izquierdo
             SetEyes(g, pose.Eyes);
             SetMouth(g, pose.Mouth);
-            SetCrab(g, pose.Crab);
+            Skin.Accent(g, pose.Crab);
         }
         if (pose.Cheeks) PuffCheeks(g);
         foreach (var (shape, x, y) in pose.Face) Stamp(g, x, y, shape);
@@ -792,6 +855,7 @@ static partial class ChibiSprite
         var canvas = Blank(Columns, Rows);
         foreach (var (shape, x, y) in pose.Behind) Stamp(canvas, x, y, shape);
         var ox = Ox + pose.Dx;
+        if (!back) Skin.Behind?.Invoke(canvas, ox, Oy + pose.Dy);
         Stamp(canvas, ox, Oy + pose.Dy, g);
         var bob = pose.Bob ? 1 : 0; // con el rebote bajan también los brazos y lo que lleva en las manos
         if (pose.Carrying) Stamp(canvas, ox + BoxX, Oy + pose.Dy + BoxY + bob, Box);
@@ -799,6 +863,7 @@ static partial class ChibiSprite
         {
             if (arm == Arm.Down) continue;
             var (x, y, rows) = Arms[arm];
+            if (Skin.ArmTint.Count > 0) rows = [.. rows.Select(r => new string([.. r.Select(ch => Skin.ArmTint.GetValueOrDefault(ch, ch))]))];
             if (!left)
             {
                 x = 31 - x - (rows[0].Length - 1);
@@ -909,9 +974,10 @@ static partial class ChibiSprite
 
     static void RemoveArm(char[][] g, bool left)
     {
-        for (var r = 0; r < Armless.Length; r++)
+        var armless = Skin.Armless;
+        for (var r = 0; r < armless.Length; r++)
             for (var c = 0; c < 7; c++)
-                g[31 + r][left ? c : 31 - c] = Armless[r][c];
+                g[31 + r][left ? c : 31 - c] = armless[r][c];
     }
 
     /// <summary>Levanta un pie (1 el izquierdo, 2 el derecho): esa pierna sube dos casillas y deja libre su lugar en el piso.</summary>
@@ -937,7 +1003,7 @@ static partial class ChibiSprite
     /// </summary>
     static char[][] BuildHead(MascotFrame frame)
     {
-        var g = Mirror(Body);
+        var g = Front();
         g[21][20] = 'W'; g[21][21] = 'K';
         switch (frame)
         {
@@ -961,14 +1027,23 @@ static partial class ChibiSprite
                 break;
         }
         var rows = g.Take(30).ToList();
-        rows[29] = [.. rows[29].Select(ch => ch == 'W' ? 'O' : ch)]; // sin la punta de los cordones
-        rows.Add("...KKKKKKKKKKKKKKKKKKKKKKKKKK...".ToCharArray()); // cierra abajo, bajo el cuello
+        Skin.TrimHead?.Invoke(rows);
+        rows.Add(Skin.HeadClose.ToCharArray()); // cierra abajo, bajo el cuello
         return [Blank(HeadSize, 1)[0], .. rows]; // 1 + 30 + 1 = 32 filas
+    }
+
+    /// <summary>El cuerpo de frente del personaje: su mitad espejada y lo que no es simétrico.</summary>
+    static char[][] Front()
+    {
+        var g = Mirror(Skin.Body);
+        Skin.Overlay?.Invoke(g);
+        return g;
     }
 
     static char[][] BuildSmallHead(MascotFrame frame)
     {
-        var g = Mirror(Head);
+        var g = Mirror(Skin.Head);
+        Skin.SmallOverlay?.Invoke(g);
         g[11][9] = 'W'; g[11][10] = 'K'; // brillo del mismo lado en los dos ojos
         foreach (var x in new[] { 5, 9 })
         {
@@ -1016,7 +1091,7 @@ static partial class ChibiSprite
     }
 
     /// <summary>Manda la rejilla a dibujar, juntando en un solo rectángulo las casillas seguidas del mismo color.</summary>
-    static void Emit(PixelFill fill, char[][] grid)
+    static void Emit(PixelFill fill, char[][] grid, Dictionary<char, Color> palette)
     {
         for (var y = 0; y < grid.Length; y++)
         {
@@ -1026,7 +1101,7 @@ static partial class ChibiSprite
                 var ch = row[x];
                 var end = x + 1;
                 while (end < row.Length && row[end] == ch) end++;
-                if (ch != '.') fill(Palette[ch], x, y, end - x, 1);
+                if (ch != '.') fill(palette[ch], x, y, end - x, 1);
                 x = end;
             }
         }
@@ -1051,6 +1126,8 @@ sealed class ChibiDirector
 {
     /// <summary>Los interruptores de Ajustes: TrayApp le pasa los suyos.</summary>
     public AppSettings Settings { get; set; } = new();
+    /// <summary>El personaje que se mueve (sus movimientos duran lo suyo); null: el chibi.</summary>
+    public ChibiSkin? Skin { get; set; }
 
     // Lo que piden las sesiones: el movimiento, si interrumpe enseguida (una pregunta o un permiso) y el paso que lo trae.
     (ChibiMove Move, bool Urgent, string? Step) _wish = (ChibiMove.Sleep, false, null);
@@ -1082,6 +1159,23 @@ sealed class ChibiDirector
         }
     }
 
+    /// <summary>Hasta cuánto después de escribir en sus sesiones la mascota de otro agente teclea, y hasta cuánto queda despierta.</summary>
+    public static readonly TimeSpan AgentBusy = TimeSpan.FromSeconds(45), AgentAwake = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// La mascota de otro agente (Codex, Gemini, Copilot), que solo sabe cuándo escribió por última vez en sus sesiones:
+    /// teclea en la laptop mientras escribe, queda quieta si trabajó hace poco y si no, duerme (o queda quieta, sin
+    /// «Dormir sin sesiones»). Con música baila, como la de Claude Code.
+    /// </summary>
+    public void SetActivity(DateTimeOffset? last, DateTimeOffset now)
+    {
+        _sessions = [];
+        var ago = last is { } at ? now - at : TimeSpan.MaxValue;
+        _wish = ago < AgentBusy ? (Settings.FlowGestures ? ChibiMove.Run : ChibiMove.Dance, false, null)
+            : ago < AgentAwake || !Settings.SleepWithoutSessions ? (ChibiMove.Idle, false, null)
+            : (ChibiMove.Sleep, false, null);
+    }
+
     /// <summary>El gesto de una sesión que trabaja: su último paso, mientras corre o si todavía no se vio; si no, pensando.</summary>
     (ChibiMove Move, DateTimeOffset At, string? Step) Wish(SessionInfo session)
     {
@@ -1100,7 +1194,7 @@ sealed class ChibiDirector
     };
 
     /// <summary>Lo mínimo que se queda un gesto del flujo: una vuelta; la casita, que es larga, unos 3 s.</summary>
-    static long MinHold(ChibiMove move) => Math.Min(ChibiSprite.Length(move), 3200);
+    long MinHold(ChibiMove move) => Math.Min(ChibiSprite.Length(move, Skin), 3200);
 
     /// <summary>Lo que piensa sin un paso nuevo antes de ponerse a construir (los pasos seguidos llegan en unos segundos).</summary>
     const long PonderBeforeBuilding = 8000;
@@ -1113,7 +1207,7 @@ sealed class ChibiDirector
         if (wish != _state && (urgent || !ChibiSprite.IsFlow(_state) || now - _stateSince >= MinHold(_state)))
         {
             // La otra herramienta terminó: la casita queda lista y festeja antes de pasar a lo siguiente.
-            if (_state == ChibiMove.Tool && !urgent && Finished(_building)) _builtUntil = now + ChibiSprite.Length(ChibiMove.Built);
+            if (_state == ChibiMove.Tool && !urgent && Finished(_building)) _builtUntil = now + ChibiSprite.Length(ChibiMove.Built, Skin);
             _state = wish;
             _stateSince = Math.Max(now, _builtUntil);
         }
@@ -1190,7 +1284,7 @@ sealed class ChibiDirector
         var now = Environment.TickCount64;
         if (_gesture is { } g && now >= g.Until)
             _gesture = g.Move is ChibiMove.Pout or ChibiMove.Sulk or ChibiMove.Fury
-                ? (ChibiMove.Calm, now + ChibiSprite.Length(ChibiMove.Calm)) // se calma antes de volver a lo suyo
+                ? (ChibiMove.Calm, now + ChibiSprite.Length(ChibiMove.Calm, Skin)) // se calma antes de volver a lo suyo
                 : null;
         var music = Settings.DanceToMusic && Music.IsPlaying;
         var move = _gesture?.Move ?? _mood ?? FromSessions(now, music);

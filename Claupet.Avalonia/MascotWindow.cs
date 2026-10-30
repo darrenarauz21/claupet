@@ -9,7 +9,7 @@ using Avalonia.Threading;
 namespace Claupet;
 
 /// <summary>
-/// La mascota sobre el escritorio (el chibi o la clásica), sin marco ni fondo y siempre encima (igual
+/// La mascota sobre el escritorio (un personaje o la clásica), sin marco ni fondo y siempre encima (igual
 /// que en Windows). Hace lo que diga ChibiDirector; se arrastra para cambiarla de lugar (sin salirse
 /// de la pantalla), un clic la hace saludar (y muchos, enojarse) y el clic derecho abre su menú. Se le pueden soltar
 /// archivos encima: los atrapa (FileHover) y los lleva a la isla (FilesDropped, WalkToAsync).
@@ -39,8 +39,11 @@ sealed class MascotWindow : Window
     PixelPoint _startPosition;
     bool _dragging;
 
-    /// <summary>El chibi (true) o la clásica, que se pinta con el acento de la paleta.</summary>
-    public bool Chibi { get; }
+    /// <summary>Un personaje (el chibi u otro de ChibiSprite.Skins; true) o la clásica, que se pinta con el acento de la paleta.</summary>
+    public bool Chibi => Skin is not null;
+
+    /// <summary>El personaje que se pinta; null con la clásica o con la mascota de un paquete.</summary>
+    public ChibiSkin? Skin { get; }
 
     /// <summary>La mascota de un paquete de extensión, si se eligió una: se pinta en vez del chibi o la clásica.</summary>
     public PetSheet? Pet { get; }
@@ -54,12 +57,12 @@ sealed class MascotWindow : Window
     /// <summary>Su tamaño (MascotSizes).</summary>
     string _size;
 
-    public MascotWindow(ChibiDirector director, PixelPoint? saved, bool chibi, Func<System.Drawing.Color> accent, bool allDesktops = true,
+    public MascotWindow(ChibiDirector director, PixelPoint? saved, ChibiSkin? skin, Func<System.Drawing.Color> accent, bool allDesktops = true,
         string size = MascotSizes.Normal, PetSheet? pet = null)
     {
         _director = director;
         _size = size;
-        Chibi = chibi && pet is null;
+        Skin = pet is null ? skin : null;
         Pet = pet;
         AllDesktops = allDesktops;
         _saved = saved;
@@ -71,7 +74,7 @@ sealed class MascotWindow : Window
         Topmost = true;
         Background = Brushes.Transparent;
         TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
-        _view = new MascotView(director, chibi, pet, chibi ? 3 : 4, accent) { Cursor = new Cursor(StandardCursorType.Hand) };
+        _view = new MascotView(director, Skin, pet, Skin is not null ? 3 : 4, accent) { Cursor = new Cursor(StandardCursorType.Hand) };
         Content = _view;
         WinStyles.Float(this);
         Resize(Screens.Primary?.Scaling ?? 1);
@@ -100,7 +103,7 @@ sealed class MascotWindow : Window
         menu.Items.Add(hide);
         ContextMenu = menu;
 
-        _timer.Tick += (_, _) => _view.Tick();
+        _timer.Tick += (_, _) => Wake();
         Opened += (_, _) =>
         {
             Resize(RenderScaling); // la escala de la pantalla en que quedó
@@ -257,32 +260,65 @@ sealed class MascotWindow : Window
         else
         {
             _director.Poke(); // saluda; si lo siguen molestando, se enoja
+            Wake();
             Poked?.Invoke();
         }
     }
 
-    sealed class MascotView(ChibiDirector director, bool chibi, PetSheet? pet, double unit, Func<System.Drawing.Color> accent) : Control
+    /// <summary>
+    /// Mira si cambió el cuadro y programa la próxima vez para cuando cambie el siguiente: el chibi cambia de dibujo un par
+    /// de veces por segundo, y despertar 25 veces por segundo todo el día gastaba batería. Como mucho espera 200 ms, para que
+    /// un gesto nuevo (un aviso, una sesión que termina) no tarde en verse.
+    /// </summary>
+    void Wake() => _timer.Interval = TimeSpan.FromMilliseconds(_view.Tick());
+
+    /// <summary>Con la sesión bloqueada no se ve: deja de despertarse hasta que vuelva.</summary>
+    public void SetPaused(bool paused)
+    {
+        if (paused) _timer.Stop();
+        else if (IsVisible)
+        {
+            _timer.Start();
+            Wake();
+        }
+    }
+
+    sealed class MascotView(ChibiDirector director, ChibiSkin? skin, PetSheet? pet, double unit, Func<System.Drawing.Color> accent) : Control
     {
         /// <summary>Lo que mide cada casilla, en unidades de la interfaz.</summary>
         public double Unit { get; set; } = unit;
 
         (ChibiMove Move, int Frame, long Beat) _shown = (ChibiMove.Sleep, -1, -1);
 
-        /// <summary>Repinta solo cuando cambia el cuadro o, con música, el tiempo del compás (la clásica se anima con el tiempo: cada vuelta del reloj).</summary>
-        public void Tick()
+        const int MaxWait = 200, Step = 10;
+
+        /// <summary>
+        /// Repinta solo cuando cambia el cuadro o, con música, el tiempo del compás, y dice en cuántos ms mirar de nuevo. La
+        /// clásica y las de paquete se animan con el tiempo: siguen cada 40 ms.
+        /// </summary>
+        public int Tick()
         {
             var (move, t, music) = director.Now();
-            var shown = (move, chibi && pet is null ? ChibiSprite.FrameIndex(move, t) : (int)(t / 40), music ? t / ChibiSprite.Beat : -1);
-            if (shown == _shown) return;
-            _shown = shown;
-            InvalidateVisual();
+            var drawsChibi = skin is not null;
+            var shown = (move, drawsChibi ? ChibiSprite.FrameIndex(move, t, skin) : (int)(t / 40), music ? t / ChibiSprite.Beat : -1);
+            if (shown != _shown)
+            {
+                _shown = shown;
+                InvalidateVisual();
+            }
+            if (!drawsChibi) return 40;
+            var next = MaxWait;
+            for (var dt = Step; dt < MaxWait; dt += Step)
+                if (ChibiSprite.FrameIndex(move, t + dt, skin) != shown.Item2) { next = dt; break; }
+            if (music) next = Math.Min(next, (int)(ChibiSprite.Beat - t % ChibiSprite.Beat));
+            return Math.Max(16, next);
         }
 
         public override void Render(DrawingContext dc)
         {
             var (move, t, music) = director.Now();
             if (pet is not null) Gfx.Pixels(dc, 0, 0, Unit, fill => pet.Paint(fill, move, t));
-            else if (chibi) Gfx.Pixels(dc, 0, 0, Unit, fill => ChibiSprite.Paint(fill, move, t, music));
+            else if (skin is not null) Gfx.Pixels(dc, 0, 0, Unit, fill => ChibiSprite.Paint(fill, move, t, music, skin));
             else Gfx.Pixels(dc, 0, 0, Unit, fill => ToastSprite.PaintMove(fill, move, t, accent(), music));
         }
     }

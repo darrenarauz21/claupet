@@ -51,13 +51,15 @@ static class StartupRegistration
         if (old) Set(true);
     }
 
-    public static void Set(bool enabled)
+    /// <summary>exe: el que se abre al iniciar; sin él, este (al instalar, el de la carpeta instalada).</summary>
+    public static void Set(bool enabled, string? exe = null)
     {
+        exe ??= Exe;
         if (OperatingSystem.IsWindows())
         {
             using var key = Registry.CurrentUser.CreateSubKey(RunKey);
             key.DeleteValue(OldRunValue, throwOnMissingValue: false);
-            if (enabled) key.SetValue(RunValue, $"\"{Exe}\"");
+            if (enabled) key.SetValue(RunValue, $"\"{exe}\"");
             else key.DeleteValue(RunValue, throwOnMissingValue: false);
             return;
         }
@@ -71,23 +73,23 @@ static class StartupRegistration
             return;
         }
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-        File.WriteAllText(file, OperatingSystem.IsMacOS() ? LaunchAgent() : DesktopEntry());
+        File.WriteAllText(file, OperatingSystem.IsMacOS() ? LaunchAgent(exe) : DesktopEntry(exe));
     }
 
-    static string DesktopEntry() =>
+    static string DesktopEntry(string exe) =>
         "[Desktop Entry]\n"
         + "Type=Application\n"
         + "Name=Claupet\n"
-        + $"Exec=\"{Exe}\"\n"
+        + $"Exec=\"{exe}\"\n"
         + "Icon=claupet\n"
         + "X-GNOME-Autostart-enabled=true\n";
 
-    static string LaunchAgent() =>
+    static string LaunchAgent(string exe) =>
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         + "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
         + "<plist version=\"1.0\">\n<dict>\n"
         + $"  <key>Label</key><string>{MacLabel}</string>\n"
-        + $"  <key>ProgramArguments</key><array><string>{SecurityElement.Escape(Exe)}</string></array>\n"
+        + $"  <key>ProgramArguments</key><array><string>{SecurityElement.Escape(exe)}</string></array>\n"
         + "  <key>RunAtLoad</key><true/>\n"
         + "  <key>ProcessType</key><string>Interactive</string>\n"
         + "</dict>\n</plist>\n";

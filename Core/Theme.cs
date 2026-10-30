@@ -53,6 +53,9 @@ sealed record Theme
     /// <summary>La paleta elegida (Id de Palettes); si no existe, la primera.</summary>
     public static string SelectedPalette { get; set; } = "terracota";
 
+    /// <summary>El tema propio elegido (su id en temas/); null: ninguno, y manda la paleta.</summary>
+    public static string? SelectedCustom { get; set; }
+
     /// <summary>Sigue el modo de las aplicaciones de Windows.</summary>
     public static Theme Current
     {
@@ -80,18 +83,25 @@ sealed record Theme
                 Success = c.Success, Warn = c.Warn,
             };
         }
-        var palette = Palettes.FirstOrDefault(p => p.Id == SelectedPalette);
-        if (palette.Id is null) palette = Palettes[0];
-        return (dark ? DarkTheme : Light) with { Accent = dark ? palette.Dark : palette.Light };
+        return (dark ? DarkTheme : Light) with { Accent = PaletteAccent(dark) };
     }
 
-    public static string PaletteLabel(string id) =>
-        CustomThemes.IdOf(id) is { } theme ? CustomThemes.Load(theme)?.Name ?? Palettes[0].Label
-        : Palettes.FirstOrDefault(p => p.Id == id).Label ?? Palettes[0].Label;
+    /// <summary>El acento de la paleta elegida, aunque mande un tema propio (el punto de color de la fila «Color»).</summary>
+    public static Color PaletteAccent(bool dark)
+    {
+        var palette = Palettes.FirstOrDefault(p => p.Id == SelectedPalette);
+        if (palette.Id is null) palette = Palettes[0];
+        return dark ? palette.Dark : palette.Light;
+    }
 
-    /// <summary>Lo que se elige en «Color»: las paletas y, detrás, los temas propios («tema:&lt;id&gt;»).</summary>
+    public static string PaletteLabel(string id) => Palettes.FirstOrDefault(p => p.Id == id).Label ?? Palettes[0].Label;
+
+    /// <summary>Lo que se elige en «Color»: solo las paletas (los temas propios van aparte, en sus tarjetas).</summary>
+    public static IEnumerable<(string Id, string Label)> PaletteChoices() => Palettes.Select(p => (p.Id, p.Label));
+
+    /// <summary>Lo que la mascota sabe poner por su nombre: las paletas y los temas propios («tema:&lt;id&gt;»).</summary>
     public static IEnumerable<(string Id, string Label)> Choices() =>
-        Palettes.Select(p => (p.Id, p.Label)).Concat(CustomThemes.All().Select(t => (t.PaletteId, t.Name)));
+        PaletteChoices().Concat(CustomThemes.All().Select(t => (t.PaletteId, t.Name)));
 
     public Color For(double percent, string? severity = null) =>
         severity is "critical" or "exceeded" or "blocked" || percent >= 90 ? Danger : Accent;

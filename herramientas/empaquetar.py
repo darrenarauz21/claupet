@@ -32,7 +32,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "paquetes")
 WORK = os.path.join(OUT, "_trabajo")
 AVALONIA = os.path.join(ROOT, "Claupet.Avalonia", "Claupet.Avalonia.csproj")
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 
 # ── Íconos: la misma mascota que app.ico, en pixeles ─────────────────────────────────────────
 

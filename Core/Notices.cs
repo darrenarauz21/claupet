@@ -158,7 +158,7 @@ sealed class NoticeDetector
     {
         try
         {
-            var input = Console.In.ReadToEnd();
+            var input = HookInstaller.ReadEvent(Console.OpenStandardInput());
             using var doc = JsonDocument.Parse(input);
             var r = doc.RootElement;
             var line = JsonSerializer.Serialize(new Dictionary<string, string?>

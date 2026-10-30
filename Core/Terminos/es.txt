@@ -1,0 +1,31 @@
+TÉRMINOS Y CONDICIONES DE USO DE CLAUPET
+Versión 1
+
+Al aceptar estos términos y usar Claupet, usted acepta lo que sigue. Si no está de acuerdo, no la use.
+
+1. Qué es Claupet
+Claupet es una app gratuita y de código abierto que acompaña su trabajo con Claude Code: muestra el uso de sus cuentas, le avisa de sus sesiones y le ofrece una mascota y un asistente. Es un proyecto independiente: no es un producto oficial de Anthropic ni está afiliado a Anthropic. «Claude» y «Claude Code» son marcas de Anthropic.
+
+2. Licencia
+Claupet se distribuye con la licencia MIT: puede usarla, copiarla, modificarla y distribuirla según sus condiciones, que están en el archivo LICENSE del repositorio (github.com/darrenarauz21/claupet). Las bibliotecas que incluye y los modelos que descarga tienen sus propias licencias, listadas en THIRD_PARTY_NOTICES.md.
+
+3. Su cuenta de Claude
+Claupet lee lo que Claude Code ya guarda en su equipo (credenciales, sesiones y uso) para mostrárselo. Lo que usted le pregunta al chat, a la isla o a la mascota se envía a Claude por medio de Claude Code, con la cuenta que usted elija, y cuenta dentro de su plan como cualquier otro mensaje. Usted es responsable de usar Claude conforme a los términos y políticas de Anthropic que aceptó al crear su cuenta.
+
+4. Sus datos
+Claupet guarda sus ajustes, su historial y los modelos descargados en su equipo. No guarda contraseñas ni copia sus conversaciones de Claude Code a otro lugar. El proyecto no tiene servidores propios: no recibe sus datos. Claupet se conecta a internet solo para lo que usted usa, por ejemplo: el uso de sus cuentas (Anthropic), sus preguntas a Claude, el clima cuando lo pregunta (Open-Meteo y, para ubicar su ciudad, la ubicación de Windows o su dirección IP con ipwho.is), las versiones nuevas (GitHub; se puede apagar en Ajustes) y los modelos que active (Hugging Face y GitHub).
+
+5. Lo que hace en su equipo
+Con su permiso, Claupet agrega hooks al settings.json de cada carpeta de Claude Code (antes guarda un respaldo), puede iniciar con el sistema y, en Windows, crea accesos directos. Cuando usted se lo pide, hace acciones en el equipo, como capturas, portapapeles, ventanas o recordatorios; cada tipo de acción pide permiso la primera vez. En Windows, al desinstalarla desde Configuración › Aplicaciones se quitan los hooks, el inicio con el sistema, los accesos directos y los recordatorios pendientes.
+
+6. Respuestas de la IA
+Las respuestas de Claude y del modelo local pueden equivocarse. Revise lo que le proponen antes de usarlo o de dejar que haga algo en su equipo.
+
+7. Extensiones
+Las extensiones son de terceros. Claupet comprueba su firma y le muestra sus permisos antes de instalarlas, pero no responde por lo que hacen. Instale solo las de autores en quienes confíe.
+
+8. Sin garantía
+Claupet se ofrece «tal cual», sin garantía de ningún tipo, expresa o implícita, incluidas las de comerciabilidad, idoneidad para un fin determinado y no infracción. En ningún caso los autores o titulares de los derechos responden por reclamaciones, daños u otras responsabilidades que surjan del software, de su uso o de otros tratos con él.
+
+9. Cambios
+Si estos términos cambian, Claupet le pedirá aceptarlos de nuevo al abrirse. Si no los acepta, Claupet se cierra y puede desinstalarla.

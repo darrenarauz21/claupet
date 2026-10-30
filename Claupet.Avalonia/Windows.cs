@@ -25,6 +25,7 @@ sealed class PopupWindow : Window
     public DateTime LastHidden { get; private set; }
 
     readonly Border _frame;
+    Theme? _theme;
 
     public PopupWindow()
     {
@@ -41,13 +42,18 @@ sealed class PopupWindow : Window
         KeyDown += (_, e) => { if (e.Key == Key.Escape) HidePopup(); };
         // Al cambiar de alto (otra vista, una sesión desplegada) se vuelve a pegar al borde.
         SizeChanged += (_, _) => { if (IsVisible) Reposition(); };
+        Opened += (_, _) => { if (_theme is { } theme) WinStyles.Card(this, theme); };
     }
 
     public void ApplyTheme(Theme theme)
     {
+        _theme = theme;
         View.Palette = theme;
+        // En Windows 11 el borde (redondeado) lo dibuja el sistema, como en la app WinForms.
+        _frame.BorderThickness = new Thickness(WinStyles.Rounded ? 0 : 1);
         _frame.BorderBrush = Gfx.B(theme.Border);
         Background = Gfx.B(theme.Background);
+        WinStyles.Card(this, theme);
     }
 
     public void ShowNear()
@@ -109,12 +115,16 @@ sealed class ToastWindow : Window
         Width = ToastWidth;
         Height = ToastHeight;
         WinStyles.Float(this);
+        WinStyles.Card(this, theme); // sombra y, en Windows 11, esquinas redondeadas con su borde
+        Opened += (_, _) => WinStyles.Card(this, theme);
         Background = Gfx.B(theme.Raised);
         _view = new ToastView(notice, theme);
-        Content = new Border { BorderThickness = new Thickness(1), BorderBrush = Gfx.B(theme.Border), Child = _view };
+        Content = new Border { BorderThickness = new Thickness(WinStyles.Rounded ? 0 : 1), BorderBrush = Gfx.B(theme.Border), Child = _view };
         _view.Clicked += () => { Clicked?.Invoke(this); Dismiss(); };
         _view.CloseClicked += Dismiss;
         _timer.Tick += (_, _) => Tick();
+        // Cerrado de cualquier forma (también con CloseAll), el temporizador no sigue vivo.
+        Closed += (_, _) => _timer.Stop();
     }
 
     // Antes de mostrarse, Avalonia aún no sabe la escala real: se usa la de la pantalla principal;
@@ -168,7 +178,11 @@ sealed class ToastWindow : Window
             }
         }
         _view.Remaining = _closingSince is null && !Notice.Sticky ? Math.Clamp(_remaining / (double)Lifetime, 0, 1) : -1;
-        _view.InvalidateVisual();
+        _view.Refresh();
+        // Quieto en su lugar y sin barra que avance (fijo o con el cursor encima), solo se mueve la mascota: basta mirar
+        // cada 100 ms, que sus cuadros duran más.
+        var still = _closingSince is null && Position == _target && (Notice.Sticky || _view.Hovered);
+        _timer.Interval = TimeSpan.FromMilliseconds(still ? 100 : 33);
     }
 
     /// <summary>Lugar de cada aviso en la pila: abajo a la derecha (en macOS, arriba), el más nuevo junto al borde.</summary>
@@ -196,6 +210,18 @@ sealed class ToastView(Notice notice, Theme theme) : Control
 
     readonly long _born = Environment.TickCount64;
     bool _hoverClose;
+    (int Frame, int Bar) _shown = (-1, -1);
+
+    /// <summary>Repinta solo si cambió el cuadro de la mascota o el largo de la barra, en pixeles.</summary>
+    public void Refresh()
+    {
+        var born = Environment.TickCount64 - _born;
+        var frame = Mascots.IsChibi ? ChibiSprite.FrameIndex(ChibiSprite.ForNotice(notice.Kind), born, Mascots.Skin) : (int)(born / 40);
+        var shown = (frame, Remaining < 0 ? -1 : (int)(Bounds.Width * Remaining));
+        if (shown == _shown) return;
+        _shown = shown;
+        InvalidateVisual();
+    }
 
     Rect CloseBounds => new(Bounds.Width - 30, 6, 24, 24);
 
@@ -205,14 +231,14 @@ sealed class ToastView(Notice notice, Theme theme) : Control
         dc.FillRectangle(Gfx.B(t.Raised), new Rect(Bounds.Size));
         var art = new Rect(12, (Bounds.Height - 64) / 2, 78, 64);
         var born = Environment.TickCount64 - _born;
-        if (Mascots.IsChibi)
+        if (Mascots.Skin is { } skin)
         {
             // Asomado desde abajo, en todo el alto del aviso: de la cabeza al ruedo del hoodie.
             var column = new Rect(8, 0, 86, Bounds.Height);
             var chibiUnit = Math.Max(1, Math.Floor(column.Height / ChibiSprite.ToastRows));
             using (dc.PushClip(column))
                 Gfx.Pixels(dc, column.X + (column.Width - ChibiSprite.Columns * chibiUnit) / 2, column.Bottom - ChibiSprite.HemRow * chibiUnit, chibiUnit,
-                    fill => ChibiSprite.Paint(fill, ChibiSprite.ForNotice(notice.Kind), born));
+                    fill => ChibiSprite.Paint(fill, ChibiSprite.ForNotice(notice.Kind), born, skin));
         }
         else
         {

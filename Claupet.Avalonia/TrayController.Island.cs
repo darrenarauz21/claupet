@@ -94,7 +94,7 @@ sealed partial class TrayController
         _island.OpenOnHover = _settings.IslandHover;
         _island.MicEnabled = _voice is not null;
         _island.SetAccent(Theme.ForDark(true).Accent);
-        _island.SetMascot(Mascots.IsChibi);
+        _island.SetMascot(Mascots.Skin);
         PushIslandModel();
         PushIslandUsage();
         _island.SetChat(_quick.Turns.ToList(), IslandChat.Streaming, IslandChat.Asking);
@@ -191,7 +191,7 @@ sealed partial class TrayController
                 Model = _settings.IslandModel,
                 ConfigDir = AssistantAccounts.ConfigDir(_settings),
                 File = file,
-                Chibi = Mascots.IsChibi,
+                Mascot = Mascots.Selected,
             }, piece => Dispatcher.UIThread.Post(() => island?.AppendAnalysis(piece)),
                 stage => Dispatcher.UIThread.Post(() => island?.SetAnalysisStage(stage)), cancel.Token);
         }

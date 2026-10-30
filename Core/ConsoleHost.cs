@@ -12,6 +12,8 @@ interface IConsoleApp
     /// <summary>Lo que muestra Ajustes, ya listo (sin las filas de lo que este sistema todavía no tiene).</summary>
     SettingsState SettingsState();
     string Palette { get; }
+    /// <summary>El tema propio elegido (su id en temas/); null, ninguno.</summary>
+    string? CustomTheme => null;
     /// <summary>Hace la acción de una fila; si muestra una lista para elegir, la pasa por ConsoleHost.Offer.</summary>
     void Act(string key);
     /// <summary>Lo escrito en un cuadro de Ajustes que no es de una extensión; false si esa clave no espera texto.</summary>
@@ -169,6 +171,7 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
             Type = ConsoleLink.State,
             Language = L.Language,
             Palette = app.Palette,
+            CustomTheme = app.CustomTheme,
             Pages = _extensions is { } extensions ? extensions.Merge(pages) : pages,
         });
         // El modelo y «leer en voz alta» también están en la cabecera del chat.

@@ -51,6 +51,9 @@ mascota (`[ACCION]`) son del protocolo y van siempre en español. Para otro idio
 | Credenciales de Claude Code (solo se leen) | `.credentials.json` de cada carpeta | Linux: igual; macOS: el Llavero |
 | Iniciar con el sistema | registro, `HKCU\…\Run` | Linux: `~/.config/autostart/claupet.desktop`; macOS: `~/Library/LaunchAgents/local.claupet.plist` |
 | Versión nueva bajada (hasta instalarla) | `…\Claupet\actualizacion\<versión>` | `…/Claupet/actualizacion/<versión>` |
+| La app instalada | `%LOCALAPPDATA%\Programs\Claupet\Claupet.exe` (o la carpeta elegida) y `claupet.ico` | Linux: `~/.local/share/claupet`; macOS: Aplicaciones |
+| Entrada de Configuración › Aplicaciones | registro, `HKCU\…\Uninstall\Claupet` | — |
+| Términos aceptados | `TermsAccepted` en `settings.json` (la versión) | igual |
 
 En macOS, Claude Code guarda las credenciales en el Llavero: «Claude Code-credentials» para
 `~/.claude` y, desde Claude Code 2.1.144, «Claude Code-credentials-» seguido de los 8 primeros
@@ -88,7 +91,7 @@ muestra al elegir.
   sistema): Terracota (`#D97757`, la predeterminada), Océano, Bosque, Lavanda, Rosa y Grafito. Cambia
   el acento: barras, interruptores, enlaces, el número del ícono y la mascota del ícono, del pie y
   de los avisos. Fondos, textos y colores de estado (peligro, aviso, éxito) no cambian. Están en
-  `Theme.Palettes` (`Core/Theme.cs`).
+  `Theme.Palettes` (`Core/Theme.cs`). Elegir una quita el tema propio, si había (ver «Temas propios»).
 - **Mascota:** junta la mascota y la animación al actualizar en una sola lista (`Mascots`, en
   `Core/ChibiSprite.cs`). Clásica (de un color, el acento) o Chibi (ver abajo): esa mascota anima el
   ícono y sale en los avisos. Asterisco (el ✻ de Claude Code, que crece y se encoge), Puntos (una ola
@@ -174,6 +177,46 @@ estar en el escritorio, con los mismos movimientos armados con sus dibujos de lo
 para otras herramientas martilla). La nubecita de «Hablar» es de pixeles (`BubbleSprite`), va arriba de la
 mascota (o abajo, si no cabe), la sigue al arrastrarla y se va a los 8 s; un clic abre lo mismo que
 el aviso.
+
+### Personajes
+
+Además del chibi (el de Claude) hay otros personajes sobre la misma base, que se eligen en **Ajustes › Apariencia ›
+Mascota** como el chibi: **Dokki** (DeepSeek), **Gemma** (Gemini) y **Ciel** (Codex). Cada uno es un `ChibiSkin`
+(`Core/ChibiSkins.cs`, y su dibujo en `Core/Pets/`) con el mismo esqueleto: la cara, los ojos, la boca, los brazos y las
+piernas en las mismas casillas, así que hace todos los movimientos de arriba. Lo propio de cada uno:
+
+| Parte | Qué es |
+|---|---|
+| `Body`, `Head`, `Armless` | su mitad izquierda con las letras de siempre (O la ropa, R el pelo, S la piel…), que se espeja |
+| `Colors` | los colores de sus letras; las de los efectos, la caja y los objetos del flujo son las de la base |
+| `Accent` | lo que reemplaza a los ojitos de cangrejo según hacia dónde mira: el rizo de Dokki, las cejas tsundere de Gemma, el brillo del gancho de Ciel |
+| `Overlay` | lo que no es simétrico, de frente: la ballena del delantal de Dokki, el gancho de Ciel |
+| `Behind` | lo que va detrás del cuerpo y puede salirse de él: el pelo largo, las aletas y la cola de Dokki, las coletas de Gemma |
+| `ArmTint` | el color del puño en los brazos levantados |
+| `Lid` | la tapa de la laptop al ejecutar con el logo de su IA (el cangrejito de Claude es solo del chibi) |
+
+Todavía no tienen las vistas de perfil y de espaldas de la casita: en «otra herramienta» escriben en la libreta y al
+terminar festejan. Los cuadros se arman la primera vez que se pinta cada personaje y quedan guardados.
+
+**Gestos propios** (`Moves` de cada uno, que reemplazan los de la base):
+
+| Personaje | Gestos |
+|---|---|
+| Dokki | saluda y termina con una reverencia (las manos en la falda); festeja con el chorrito de ballena; duerme soltando burbujas; quieta, a veces bosteza |
+| Gemma | quieta, a ratos se cruza de brazos, mira a otro lado con los cachetes rojos y resopla («¡hmph!»); festeja y enseguida disimula; saluda de mala gana |
+| Ciel | piensa con un «</>» verde; festeja sin saltar, con un brazo arriba y el visto bueno |
+
+**Voces.** Cada uno tiene su estilo de sonido (`Sounds`, «dokki», «gemma» y «ciel»), sintetizado como el «oi» del
+chibi: la altura sube a un pico y cae, y la vocal pasa de una a otra. Cambia el timbre: Dokki, grave y con aire, con un
+vibrato lento; Gemma, aguda y cortante; Ciel, clara y serena. Si suena la voz de un personaje y se elige otro, pasa a
+sonar la suya. El asistente también toma su personalidad (`AssistantRequest.Mascot`).
+
+**Una mascota por agente** (`TrayController.AgentPets.cs`, Ajustes › Apariencia › Mascota en la Console): junto a la de
+Claude Code, una por cada otro agente que se sigue y está en el equipo, con el personaje elegido (`AgentPet`; si no,
+Ciel para Codex y Gemma para Gemini, y Copilot sin mascota). De esos agentes solo se sabe cuándo escribieron en sus
+sesiones: cada 15 s se mira la fecha del archivo más nuevo (`Agents.LastWrite`, sin leerlo). La mascota teclea si fue
+hace menos de 45 s, queda quieta hasta los 10 min y después duerme (`ChibiDirector.SetActivity`). Cada una guarda dónde
+quedó (`AgentPetSpots`); «Ocultar del escritorio» deja a ese agente sin mascota.
 
 ## Sesiones
 
@@ -316,16 +359,29 @@ Abrir `Claupet.exe` otra vez, sin argumentos, con Claupet ya abierto, también t
 
 ## Temas propios
 
-Además de las seis paletas, en Ajustes › Apariencia de la Console se escribe un prompt en **Crear un tema…** («un tema
-de playa con el fondo animado», «algo otoñal con una letra más redonda») y Claude arma un tema para todo Claupet, con
-la cuenta y el modelo de la mascota (si la mascota usa el modelo local, el de la cuenta). Al terminar queda elegido;
-**Borrar el tema** lo quita y vuelve a la terracota. Cada tema es un JSON en `temas\<id>.json`, junto a los ajustes,
-y se elige en la lista **Color** como una paleta más, con el id `tema:<id>`: la bandeja y la Console lo leen del disco
-por ese id (`Core/CustomThemes.cs`). Si el archivo falta o está roto, `Theme.ForDark` e `Ink.For` vuelven a la
-terracota, sin error.
+Los temas van aparte de las seis paletas, en Ajustes › Apariencia › **Temas** de la Console: una tarjeta por tema, con
+bordes redondeados y la vista previa de ese tema en el modo de la Console (sus colores, «Aa» en su letra y su escena
+animada), y la tarjeta **Claupet**, que es no usar ninguno. Tocar una tarjeta la elige y la elegida lleva el borde del
+acento y su marca; el menú «⋯» de cada tema propio lo exporta a un `.json` o lo elimina, con confirmación en la misma
+tarjeta (`Console/ThemeGallery.cs`). Elegir una paleta en **Color** quita el tema; el tema sigue guardado en su tarjeta.
 
-El JSON lleva el id, el nombre, los colores de `Theme` para el modo claro y el oscuro, una familia de letra opcional y
-un fondo animado opcional. El diseño se respeta por código y no por confianza en el modelo:
+En **Tema nuevo** se escribe un prompt («un tema de playa con el fondo animado», «algo otoñal con una letra más
+redonda») y **Crear** (o Intro) se lo pide a Claude con la cuenta del asistente. Mientras tanto aparece su tarjeta, con
+un brillo que la cruza y chispas en pixel art, y se puede cancelar; al terminar, el tema queda elegido. **Calidad**
+elige el modelo: rápida, Sonnet; media, Opus, y alta, Fable. Si la cuenta no tiene permiso para ese modelo, se prueba
+con el siguiente y se avisa con cuál se hizo; con el asistente de una extensión, va con el modelo de ese proveedor.
+**Importar un tema** trae un `.json` exportado (o escrito a mano), que pasa por la misma lectura y las mismas
+correcciones que uno creado con Claude y se guarda con un id libre.
+
+Cada tema es un JSON en `temas\<id>.json`, junto a los ajustes, y el elegido está en `CustomTheme` de los ajustes
+(antes se guardaba en `Palette` como `tema:<id>`, y al leer se pasa solo); la bandeja y la Console lo leen del disco por
+ese id (`Core/CustomThemes.cs`). La mascota los sigue nombrando junto a las paletas, como `tema:<id>`. Si el archivo
+falta o está roto, `Theme.ForDark` e `Ink.For` vuelven a la paleta, sin error.
+
+El JSON lleva el formato (`claupet-theme/1`), el id, el nombre, una línea sobre su ambiente, los colores de `Theme` para
+el modo claro y el oscuro, una familia de letra opcional y un fondo animado opcional. Al pedirlo, Claude recibe qué pinta
+cada color, los rangos de luz de cada superficie, las letras instaladas en el equipo, el catálogo de escenas con lo que
+pinta cada color y un ejemplo completo. Igual, el diseño se respeta por código y no por confianza en el modelo:
 
 - Se lee con tolerancia (el primer objeto JSON de la respuesta, aunque venga en un bloque de código o con comas de más); lo que no
   es un color se queda con el de Claupet.
@@ -338,10 +394,12 @@ un fondo animado opcional. El diseño se respeta por código y no por confianza 
 - El id se limpia (minúsculas, cifras y guiones; nada de barras, puntos ni nombres reservados) y la ruta siempre
   queda dentro de `temas\`.
 
-El fondo animado sale de un catálogo cerrado de escenas en pixel art (`playa`, `lluvia`, `nieve`, `estrellas`, `hojas`,
-`burbujas`, `luciernagas`); el modelo elige la escena, sus colores, la densidad (0,1–1) y la velocidad (0,25–2). Se
-dibuja solo en la Console, detrás del contenido y con poca opacidad, a 12 cuadros por segundo, y se pausa con la
-ventana minimizada u oculta (`Console/SceneLayer.cs`). La isla, las burbujas y la mascota solo toman los colores.
+El fondo animado sale de un catálogo cerrado de escenas en pixel art (`playa`, `atardecer`, `lluvia`, `nieve`,
+`estrellas`, `hojas`, `sakura`, `burbujas`, `luciernagas`, `aurora`, `ciudad` y `brasas`); el modelo elige la escena,
+sus colores, la densidad (0,1–1) y la velocidad (0,25–2). Las partículas van en dos planos (las lejanas, más chicas,
+lentas y tenues). Se dibuja solo en la Console, detrás del contenido y con poca opacidad, a 12 cuadros por segundo, y se
+pausa con la ventana minimizada u oculta (`Console/SceneLayer.cs`); las vistas previas usan la misma escena con un
+píxel más chico. La isla, las burbujas y la mascota solo toman los colores.
 
 Para probar sin ventanas: `Claupet.exe --tema "<prompt>"` crea el tema, lo guarda e imprime el JSON validado (no lo
 elige).
@@ -586,7 +644,8 @@ como el asistente de una extensión.
 | Qué | Cómo |
 |---|---|
 | Modelos | Qwen3.5 0.8B (533 MB), 2B (1,3 GB, el propuesto) o 4B (2,7 GB), Apache 2.0, en GGUF Q4_K_M de Unsloth fijado a un commit de Hugging Face y con su SHA-256 (`LocalModel.Choices`, `LocalModel` en `settings.json`) |
-| Programa | `llama-server` de llama.cpp b11913 para CPU x64 (24 MB, MIT), de su Release de GitHub y con su SHA-256; del zip se sacan solo el servidor, sus DLL y las de ggml para cada CPU |
+| Programa | `llama-server` de llama.cpp b11913 con Vulkan para x64 (37 MB, MIT), de su Release de GitHub y con su SHA-256; del zip se sacan solo el servidor, sus DLL y las de ggml (Vulkan y cada CPU). Trae también el motor del procesador: sirve sin tarjeta gráfica. Quien ya tenía la versión para CPU (24 MB) la sigue usando hasta bajar esta; las dos quedan (otra copia de la app, de antes, puede usar la vieja) |
+| Tarjeta gráfica | **Ajustes › Respuestas › Tarjeta gráfica** (`LocalGpu`): Automático (de entrada; si con la gráfica no arranca, sigue con el procesador), Siempre o Nunca. Con la gráfica carga todas las capas en ella (`-ngl 99`); sin, `--device none`. Sirve con cualquier marca, dedicada o integrada; cuál usa lo dice `llama-server --list-devices` (una vez por sesión), y se ve en la fila. Medido en una AMD Radeon integrada (Ryzen 7 5700U) con el 2B y 762 tokens: lee a 215 tokens/s contra 124–135 con el procesador y escribe a 21,6 contra 15–17; arranca 0,3 s más lento. En una integrada la memoria es la misma RAM: gana velocidad y deja libre el procesador, no memoria. `Claupet --modelo-local <id> <pregunta> --gpu` (o `--cpu`) lo prueba sin ventanas |
 | Descarga | a pedido, en `…\Claupet\modelo-local`, retomando como la de Whisper; al terminar se borran los otros modelos. **Ajustes › Respuestas › Motores** muestra el avance, cancela o borra |
 | Arranque | la primera pregunta lo arranca en `127.0.0.1`, en un puerto libre y con una clave nueva en cada arranque (`--api-key`): otro programa del equipo no puede usarlo. Va en un Job que lo cierra si Claupet termina; tras los minutos sin uso de «Liberar la memoria tras» (5 por defecto) suelta la memoria (`--sleep-idle-seconds`) |
 | Respuestas | por `/v1/chat/completions` con stream, como una extensión `openai-chat`; sin razonamiento (`--reasoning-budget 0`), contexto de 4.096 y una conversación a la vez |
@@ -606,7 +665,8 @@ asistente). `Answers.AskAsync` (`Core/Answers.Router.cs`) decide en cada pregunt
    «¿cuánto me queda de Claude?», «sube el volumen», «pon el brillo al 40», «modo oscuro», «abre Spotify»,
    «recuérdame X en 20 minutos», «anota X», «25 × 4 + 10», «15 % de 200», «10 km a millas», «hola», «gracias».
    Si sobra algo («sube el volumen y abre Spotify»), no adivinan: pasa al siguiente.
-2. **Si ninguna regla sirve y el modelo local está descargado**, él entiende la pregunta: responde un JSON con
+2. **Si ninguna regla sirve y el modelo local está descargado y se usa** (es el modelo elegido, o el reparto manda
+   algún tipo de pregunta al local), él entiende la pregunta; si todo va a la nube, no se arranca solo para esto. Responde un JSON con
    el tipo, la acción, el lugar y el día, restringido por un esquema (`response_format` con `json_schema`, que
    llama-server convierte en gramática). Solo puede elegir tipos y acciones de la lista; las que llevan un
    JSON propio (notas, recordatorios, agendar) no las elige él.
@@ -691,7 +751,8 @@ cursor de todo el escritorio (`GlobalPointer.cs`): Windows lo da directo; en Lin
 socket de Unix que .NET crea solo. Una copia de prueba (`--preview`) no responde los permisos: los sigue
 respondiendo la app de siempre.
 
-**Asistente de configuración** (`SetupWindow.cs`). Los mismos cinco pasos que en Windows. «Aplicar» solo está en el
+**Asistente de configuración** (`SetupWindow.cs`). Los mismos pasos que en Windows, salvo «Instalación» (en Linux y
+macOS instalan `instalar.sh` y `preparar-mac.sh`): también pide aceptar los términos. «Aplicar» solo está en el
 último, no es el botón por defecto y no responde a Enter.
 
 **Voz** (`Audio.cs`, `Voice.cs`, `GlobalKeys.cs`, `TrayController.Voice.cs`). Whisper, la voz de Claupet y sus
@@ -765,6 +826,27 @@ paquete, el audio para las que escuchan (`SharedAudio.cs`: el micrófono y, con 
 API local y sus tokens, y las claves cifradas con DPAPI (`Core/Extensions/Secrets.cs`). Un paquete `.claupet` soltado
 sobre la mascota o la isla, o elegido con «Instalar…» en el asistente de configuración, abre la revisión en la Console.
 
+## Instalación en Windows
+
+Se descarga un solo `Claupet-windows-x64.exe`; al abrirlo, el asistente de configuración hace de instalador
+(`Core/Installation.cs`, `SetupAssistant.cs` y `SetupWindow.cs`), sin permisos de administrador:
+
+| Paso | Qué pasa |
+|---|---|
+| Términos | el texto de `Core/Terminos/<idioma>.txt` (dentro del ejecutable, `Terms`); sin aceptarlo no se pasa al paso siguiente, y cerrar el asistente cierra la app. Se guarda la versión aceptada (`TermsAccepted`): al subir `Terms.Version`, la app vuelve a preguntar al abrirse |
+| Instalación | la carpeta por defecto es `%LOCALAPPDATA%\Programs\Claupet`; con «Cambiar…», si la elegida no se llama `Claupet`, se usa una `Claupet` dentro. Tiene que ser de este equipo, sin `%` y con permiso de escritura sin administrador (las versiones nuevas cambian el .exe ahí): si no, no se pasa al paso siguiente. Si esta copia ya es la instalada, el paso solo lo dice |
+| «Aplicar» | copia el .exe a la carpeta como `Claupet.exe` (sin la marca de «descargado de internet»; si había otra versión, la cambia como una actualización), la registra en `HKCU\…\Uninstall\Claupet` y apunta ahí los hooks (también el de permisos en la isla), el inicio con Windows y los accesos directos; luego abre la instalada (`--reiniciar`, y `--descargar-modelos` si quedaron modelos por bajar) y se cierra |
+
+Al abrirse, la copia instalada pone al día la versión y el tamaño de su entrada (`Installation.Refresh`). Abrir otra
+vez el archivo descargado, si es el mismo que se instaló (mismo tamaño y fecha), abre la instalada; otro .exe (otra
+versión o compilación) abre el asistente, que ofrece reemplazarla.
+
+**Desinstalar** (`Claupet.exe --desinstalar`, desde Configuración › Aplicaciones): pregunta; cierra los Claupet que
+corren desde la carpeta instalada; quita los hooks (con respaldo), el inicio con Windows, los accesos directos, las
+tareas de los recordatorios pendientes y la entrada; si la persona quiere, borra también la carpeta de datos. El .exe
+no puede borrarse a sí mismo: después del último mensaje, `cmd` espera unos segundos y borra solo lo que puso la
+instalación (`Claupet.exe`, `.anterior`, `.nuevo` y `claupet.ico`) y la carpeta si quedó vacía.
+
 ## Versiones nuevas
 
 Con **Ajustes › Sistema › Buscar actualizaciones** (`CheckUpdates`, encendido de entrada), una vez al día la app lee
@@ -828,6 +910,12 @@ donde un `.wav` o `.mp3` con el mismo nombre (`terminado`, `pregunta`, `permiso`
 
 Requiere el SDK de .NET 8.
 
+La app vive todo el día en la bandeja, así que cuida la memoria: lee las conversaciones de Claude Code línea por
+línea y en UTF-8 (`Core/JsonLines.cs`), sin cargar un archivo entero (al abrirse las recorre todas para Actividad y el
+historial), y el recolector de basura va con `System.GC.ConserveMemory` en 7 (`Claupet.Avalonia.csproj`). Medido en
+Windows con 1,7 GB de conversaciones: unos 185 MB privados estables y 220 MB de pico al abrirse (antes, 2 GB al abrirse
+y unos 680 MB después).
+
 ```powershell
 dotnet build Claupet.Avalonia -c Release                # la app, para Windows, Linux y macOS
 dotnet test Claupet.Tests                               # las pruebas (en Windows)
@@ -851,6 +939,8 @@ solo en Windows):
 - `--show`: abre la ventana al arrancar; `--preview`: igual, aunque haya otra instancia.
 - `--sessions`, `--activity`: abre en esa vista. `--setup`: con `--preview`, muestra el asistente.
 - `--demo`: un aviso de cada tipo.
+- `--mascota <chibi|dokki|gemma|ciel>`: ese personaje solo en esta ejecución (en el escritorio, los avisos, la isla y
+  el ícono), sin tocar los ajustes: para verlos con `--preview`.
 - `--hook`: modo hook de Claude Code; lee el evento por la entrada estándar y lo guarda.
   `--hook --permiso`: el hook de permisos y preguntas de la isla (Windows).
 - `--diag`: el diagnóstico (lo mismo que **Copiar diagnóstico**). `--dump`: una consulta completa.
@@ -901,6 +991,11 @@ registradas y vivas, y el hook. Lo habitual:
 - Los porcentajes salen de `https://api.anthropic.com/api/oauth/usage`, el mismo endpoint que usa
   `/usage` en Claude Code. **No está documentado**: si cambia, la cuenta muestra el error y se
   mantienen los últimos datos buenos.
+- Ese endpoint limita mucho las consultas (las de `/usage` de Claude Code cuentan también) y su `retry-after` llega
+  en 0 o no llega. La app pregunta como mucho una vez por minuto por cuenta y, si responde «demasiadas consultas»
+  (429), no lo muestra: sigue con los últimos datos buenos (la hora del pie es la de esos datos) y espera 2, 4, 8, 16
+  y luego 30 minutos. La espera y la última respuesta quedan en `uso.json`, así que reiniciar la app no vuelve a
+  preguntar antes de tiempo. Sin datos previos, la cuenta dice «Consultando…» hasta que se pueda.
 - La app **no renueva** el token, para no pisar la sesión de Claude Code: si una cuenta no se usa
   en horas, su token vence y la ventana pide abrir Claude Code con esa cuenta.
 - El estado de las sesiones sale de archivos internos de Claude Code, que no están documentados.
@@ -911,8 +1006,9 @@ registradas y vivas, y el hook. Lo habitual:
   están en Linux ni en macOS. Ahí ya están Claupet Console, el chat con la mascota, la isla, la voz y las acciones en el
   equipo; lo demás, en las etapas siguientes.
 - Comparada con la app WinForms de hasta la 2.3.0, la de Windows no tiene todavía: las transiciones de la ventana de la
-  bandeja, las esquinas y la sombra de Windows 11 en ella y en los avisos, el menú del ícono con los colores del tema, ni
-  abrir la ventana en la pantalla del cursor (abre en la principal).
+  bandeja, el menú del ícono con los colores del tema, ni abrir la ventana en la pantalla del cursor (abre en la
+  principal). La ventana de la bandeja y los avisos sí son tarjetas como antes: sombra y, en Windows 11, esquinas
+  redondeadas con el borde del tema (`WinStyles.Card`).
 - Los formatos de los otros agentes (Codex CLI, Gemini CLI, GitHub Copilot CLI) no se comprobaron con archivos reales.
 - Las acciones de Linux se probaron con `--accion` en WSL (Ubuntu, sin escritorio): estado, rechazos y avisos de
   programas que faltan. Con un escritorio real (GNOME, Plasma) y en macOS, sin probar todavía.

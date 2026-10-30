@@ -1,0 +1,31 @@
+CLAUPET TERMS AND CONDITIONS OF USE
+Version 1
+
+By accepting these terms and using Claupet, you agree to the following. If you don't agree, don't use it.
+
+1. What Claupet is
+Claupet is a free, open-source app that accompanies your work with Claude Code: it shows your accounts' usage, tells you about your sessions and offers a mascot and an assistant. It is an independent project: it is not an official Anthropic product and is not affiliated with Anthropic. "Claude" and "Claude Code" are trademarks of Anthropic.
+
+2. License
+Claupet is distributed under the MIT license: you may use, copy, modify and distribute it under its terms, which are in the LICENSE file of the repository (github.com/darrenarauz21/claupet). The libraries it includes and the models it downloads have their own licenses, listed in THIRD_PARTY_NOTICES.md.
+
+3. Your Claude account
+Claupet reads what Claude Code already stores on your computer (credentials, sessions and usage) to show it to you. What you ask the chat, the island or the mascot is sent to Claude through Claude Code, with the account you choose, and counts toward your plan like any other message. You are responsible for using Claude in accordance with the Anthropic terms and policies you accepted when you created your account.
+
+4. Your data
+Claupet stores your settings, your history and the downloaded models on your computer. It doesn't store passwords or copy your Claude Code conversations anywhere else. The project has no servers of its own: it doesn't receive your data. Claupet connects to the internet only for what you use, for example: your accounts' usage (Anthropic), your questions to Claude, the weather when you ask for it (Open-Meteo and, to find your city, Windows location or your IP address with ipwho.is), new versions (GitHub; can be turned off in Settings) and the models you turn on (Hugging Face and GitHub).
+
+5. What it does on your computer
+With your permission, Claupet adds hooks to the settings.json of each Claude Code folder (it saves a backup first), can start with your system and, on Windows, creates shortcuts. When you ask it to, it takes actions on your computer, such as screenshots, clipboard, windows or reminders; each kind of action asks for permission the first time. On Windows, uninstalling it from Settings › Apps removes the hooks, start with your system, the shortcuts and pending reminders.
+
+6. AI answers
+Answers from Claude and from the local model can be wrong. Review what they suggest before using it or letting it do something on your computer.
+
+7. Extensions
+Extensions are made by third parties. Claupet checks their signature and shows you their permissions before installing them, but it isn't responsible for what they do. Only install extensions from authors you trust.
+
+8. No warranty
+Claupet is provided "as is", without warranty of any kind, express or implied, including the warranties of merchantability, fitness for a particular purpose and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages or other liability arising from, out of or in connection with the software or the use or other dealings in it.
+
+9. Changes
+If these terms change, Claupet will ask you to accept them again when it opens. If you don't accept them, Claupet closes and you can uninstall it.

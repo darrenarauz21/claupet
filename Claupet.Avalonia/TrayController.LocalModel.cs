@@ -39,7 +39,43 @@ sealed partial class TrayController
         if (!HasLocal) return;
         Assistant.Local = LocalBrainIfReady;
         _localServer.IdleMinutes = _settings.LocalIdleMinutes;
+        _localServer.Gpu = _settings.LocalGpu;
     }
+
+    /// <summary>Con la tarjeta gráfica (si se puede o siempre): hace falta la versión de llama-server con Vulkan.</summary>
+    bool WantsGpu => _settings.LocalGpu != LocalModel.GpuOff;
+
+    /// <summary>Está el modelo, pero solo la versión de llama-server de antes (sin la tarjeta gráfica) y se la quiere usar.</summary>
+    bool GpuMissing => LocalModel.Ready(LocalChoice) && WantsGpu && !LocalModel.GpuServerReady;
+
+    static IReadOnlyList<(string Id, string Label)> GpuChoices() =>
+    [
+        (LocalModel.GpuAuto, L.T("Automático: la usa si arranca con ella")),
+        (LocalModel.GpuOn, L.T("Siempre")),
+        (LocalModel.GpuOff, L.T("Nunca: solo el procesador")),
+    ];
+
+    /// <summary>Lo que dice la fila: el modo y, si ya corre en una, su nombre.</summary>
+    string LocalGpuLabel()
+    {
+        var mode = _settings.LocalGpu switch
+        {
+            LocalModel.GpuOn => L.T("Siempre"),
+            LocalModel.GpuOff => L.T("Nunca"),
+            _ => L.T("Automático"),
+        };
+        return _localServer.Device is { } device ? $"{mode} · {device}" : mode;
+    }
+
+    void PickLocalGpu() => Choose(GpuChoices(), _settings.LocalGpu, v =>
+    {
+        _settings.LocalGpu = v;
+        SettingsStore.Save(_settings);
+        _localServer.Gpu = v;
+        _localServer.Stop(); // vuelve a arrancar así en la próxima pregunta
+        if (GpuMissing) _ = DownloadLocalModelAsync(); // la versión de llama-server con Vulkan (unos 37 MB)
+        PushSettings();
+    });
 
     /// <summary>Después de elegir un modelo: si es el local y falta, se descarga.</summary>
     void ModelPicked(string id)
@@ -51,12 +87,15 @@ sealed partial class TrayController
     (string Status, string Action) LocalStatusText() =>
         _localDownload is not null ? (L.T("Descargando el modelo local… {0} %", _localPercent ?? 0), L.T("Cancelar"))
         : _localError is not null ? (L.T("No se pudo descargar ({0})", _localError), L.T("Reintentar"))
+        : GpuMissing ? (L.T("En este equipo, con el procesador; con la tarjeta gráfica responde más rápido ({0} MB más)",
+            LocalModel.ServerSize / 1_000_000), L.T("Descargar"))
         : LocalModel.Ready(LocalChoice) ? (L.T("En este equipo; usa unos {0} de RAM al responder", LocalChoice.Ram), L.T("Borrar"))
-        : (L.T("Sin descargar ({0} MB, una sola vez)", LocalModel.Missing(LocalChoice) / 1_000_000), L.T("Descargar"));
+        : (L.T("Sin descargar ({0} MB, una sola vez)", LocalModel.Missing(LocalChoice, WantsGpu) / 1_000_000), L.T("Descargar"));
 
     void LocalModelAction()
     {
         if (_localDownload is { } download) download.Cancel();
+        else if (GpuMissing) _ = DownloadLocalModelAsync();
         else if (LocalModel.Ready(LocalChoice)) _ = RemoveLocalModelAsync();
         else _ = DownloadLocalModelAsync();
     }
@@ -86,7 +125,7 @@ sealed partial class TrayController
     async Task DownloadLocalModelAsync()
     {
         var choice = LocalChoice;
-        if (!HasLocal || _localDownload is not null || LocalModel.Ready(choice)) return;
+        if (!HasLocal || _localDownload is not null || LocalModel.Ready(choice) && !GpuMissing) return;
         if (_settings.LocalModel is null)
         {
             _settings.LocalModel = choice.Id;
@@ -106,7 +145,7 @@ sealed partial class TrayController
         try
         {
             _localServer.Stop(); // al terminar se borran los otros modelos: ninguno puede estar abierto
-            await LocalModel.DownloadAsync(choice, progress, cancel.Token);
+            await LocalModel.DownloadAsync(choice, progress, cancel.Token, gpu: WantsGpu);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)

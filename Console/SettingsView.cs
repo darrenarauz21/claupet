@@ -25,6 +25,9 @@ sealed class SettingsView : StackPanel
     public event Action<string>? Navigate;
 
     readonly List<RowView> _rows = [];
+    /// <summary>Las tarjetas de los temas (Apariencia), si la página las tiene, y su fila.</summary>
+    ThemeGallery? _gallery;
+    int _galleryIndex;
     readonly TextBlock _title = new() { FontFamily = Ink.Display, FontSize = 26, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
     readonly TextBlock _description = new() { FontSize = 13.5, FontFamily = Ink.Sans, Margin = new Thickness(0, 6, 0, 0), TextWrapping = TextWrapping.Wrap };
     string _shape = "";
@@ -41,6 +44,7 @@ sealed class SettingsView : StackPanel
         {
             // Mismo armado: solo cambian los textos y los interruptores.
             for (var i = 0; i < _rows.Count; i++) _rows[i].Update(_rows[i].Index < rows.Count ? rows[_rows[i].Index] : _rows[i].Row, ink);
+            _gallery?.Show(rows[_galleryIndex].Cards ?? [], ink);
             _title.Text = page.Title;
             _description.Text = page.Description;
             _description.IsVisible = page.Description.Length > 0;
@@ -49,6 +53,7 @@ sealed class SettingsView : StackPanel
         _page = page.Id;
         _shape = shape;
         _rows.Clear();
+        _gallery = null;
         Children.Clear();
         if (page.Parent is { } parent && back is not null) Children.Add(BackLink(parent, back, ink));
         _title.Text = page.Title;
@@ -77,6 +82,17 @@ sealed class SettingsView : StackPanel
                     Foreground = ink.Tertiary,
                     Margin = new Thickness(4, 26, 0, 8),
                 });
+                card = null;
+                last = null;
+                continue;
+            }
+            if (row.Kind == RowKind.Themes)
+            {
+                // Las tarjetas de los temas van sueltas, no dentro de una tarjeta de filas.
+                _gallery = new ThemeGallery(Act);
+                _galleryIndex = i;
+                _gallery.Show(row.Cards ?? [], ink);
+                Children.Add(_gallery);
                 card = null;
                 last = null;
                 continue;
@@ -244,7 +260,10 @@ sealed class RowView
             case RowKind.Choice:
                 _value = Ui.Text(row.Value, 13.5, ink.Text);
                 var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
-                if (row.Swatch) content.Children.Add(new Ellipse { Width = 12, Height = 12, Fill = ink.Accent, VerticalAlignment = VerticalAlignment.Center });
+                // El punto es el de la paleta, aunque mande un tema propio.
+                var swatch = Theme.PaletteAccent(ink.Dark);
+                if (row.Swatch)
+                    content.Children.Add(new Ellipse { Width = 12, Height = 12, Fill = new SolidColorBrush(Color.FromRgb(swatch.R, swatch.G, swatch.B)), VerticalAlignment = VerticalAlignment.Center });
                 content.Children.Add(_value);
                 content.Children.Add(Ui.Chevron(ink.Secondary));
                 Pill = Ui.Press(content, () => _actions.Act(Row.Key, null), (b, on) => b.Opacity = on ? 0.85 : 1, name: row.Text);
@@ -278,10 +297,24 @@ sealed class RowView
                     Background = ink.Pill,
                     CornerRadius = new CornerRadius(10),
                     Height = 34,
-                    Width = 260,
+                    Width = row.Submit is null ? 260 : 300,
                     Padding = new Thickness(12, 0),
                 };
                 right = field;
+                if (row.Submit is { } submit)
+                {
+                    // El botón del acento manda lo escrito; con el cuadro vacío no hace nada.
+                    var send = Ui.Press(Ui.Text(submit, 13.5, Ink.On(ink.Accent), FontWeight.SemiBold), () => Commit(force: true),
+                        (b, on) => b.Opacity = on ? 0.88 : 1, submit);
+                    send.Background = ink.Accent;
+                    send.CornerRadius = new CornerRadius(999);
+                    send.Height = 34;
+                    send.Padding = new Thickness(16, 0);
+                    var both = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                    both.Children.Add(field);
+                    both.Children.Add(send);
+                    right = both;
+                }
                 break;
             case RowKind.Page:
                 // Toda la fila lleva a la página: a la derecha, su dato y la flecha.
@@ -353,29 +386,39 @@ sealed class RowView
             box.Resources[key] = ink.Text;
         foreach (var key in new[] { "TextControlPlaceholderForeground", "TextControlPlaceholderForegroundPointerOver", "TextControlPlaceholderForegroundFocused" })
             box.Resources[key] = ink.Tertiary;
-        // Intro guarda; Esc vuelve a lo que había. Al salir del cuadro también se guarda.
+        // Intro guarda; Esc vuelve a lo que había. Al salir del cuadro también se guarda, salvo si tiene su botón.
         box.KeyDown += (_, e) =>
         {
             if (e.Key == Key.Enter)
             {
                 e.Handled = true;
-                Commit();
+                Commit(force: true);
             }
             else if (e.Key == Key.Escape)
             {
                 e.Handled = true;
-                box.Text = Row.Secret ? "" : Row.Value;
+                box.Text = Row.Secret || Row.Submit is not null ? "" : Row.Value;
             }
         };
         box.LostFocus += (_, _) => Commit();
         return box;
     }
 
-    /// <summary>Si en el cuadro hay algo nuevo, se manda (una clave, solo si se escribió algo).</summary>
-    public void Commit()
+    /// <summary>
+    /// Si en el cuadro hay algo nuevo, se manda (una clave, solo si se escribió algo). Un cuadro con su botón solo se
+    /// manda con él o con Intro (force), y se vacía: lo escrito es un pedido, no un valor que se guarda.
+    /// </summary>
+    public void Commit(bool force = false)
     {
         if (_box is null) return;
         var text = _box.Text ?? "";
+        if (Row.Submit is not null)
+        {
+            if (!force || text.Trim().Length == 0) return;
+            _box.Text = "";
+            _actions.Send(Row.Key, text);
+            return;
+        }
         if (Row.Secret ? text.Length == 0 : text == Row.Value) return;
         if (Row.Secret) _box.Text = "";
         else Row = Row with { Value = text };

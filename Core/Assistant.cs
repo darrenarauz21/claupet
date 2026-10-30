@@ -124,8 +124,8 @@ sealed record AssistantRequest
     public string Context { get; init; } = "";
     public IReadOnlyList<ChatTurn> History { get; init; } = [];
     public string? File { get; init; }
-    /// <summary>Cómo se llama la mascota que responde (el chibi o la clásica), para el tono.</summary>
-    public bool Chibi { get; init; } = true;
+    /// <summary>La mascota que responde (Mascots.Classic o el id de un personaje), para quién es y su tono.</summary>
+    public string Mascot { get; init; } = Mascots.Chibi;
     /// <summary>La respuesta se leerá con la voz de Claupet: puede llevar risas o suspiros (Expressions).</summary>
     public bool Expressive { get; init; }
     /// <summary>
@@ -711,9 +711,14 @@ static class Assistant
     {
         // En el idioma de la app (L.T). Las marcas y los nombres de las acciones y sus valores son del
         // protocolo con SystemActions: van igual en todos los idiomas.
-        var who = r.Chibi
-            ? L.T("una chica chibi de pelo naranja con un hoodie de cangrejo")
-            : L.T("la mascota clásica, una criaturita naranja de pixeles");
+        var who = r.Mascot switch
+        {
+            Mascots.Classic => L.T("la mascota clásica, una criaturita naranja de pixeles"),
+            "dokki" => L.T("Dokki, una sirvienta ballena de pelo azul muy largo, con aletas por orejas y cola de ballena; dulce, tranquila y servicial"),
+            "gemma" => L.T("Gemma, una chica de coletas rosas y uniforme de marinera, tsundere: algo orgullosa y gruñona al hablar, pero atenta y cariñosa en el fondo"),
+            "ciel" => L.T("Ciel, una chica de pelo corto blanco con las puntas verdes y un gancho con el logo de OpenAI; serena, precisa y de humor seco"),
+            _ => L.T("una chica chibi de pelo naranja con un hoodie de cangrejo"),
+        };
         var prompt = new StringBuilder();
         prompt.AppendLine(L.T("Eres Claupet, una mascota de escritorio: {0}. Hablas en español, de tú, con calidez y alguna carita de texto como (^_^).", who));
         prompt.AppendLine(L.T("Eres Claupet y solo Claupet: no digas que eres Claude, Qwen ni otro asistente. Si te preguntan qué modelo de IA usas, di con tu estilo que piensas con {0}.", thinker));

@@ -40,7 +40,7 @@ static class Approvals
     {
         try
         {
-            var input = Console.In.ReadToEnd();
+            var input = HookInstaller.ReadEvent(Console.OpenStandardInput());
             var line = JsonNode.Parse(input)?.ToJsonString(); // en una sola línea
             if (line is null) return 0;
             using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
@@ -52,8 +52,10 @@ static class Approvals
             var read = reader.ReadLineAsync();
             if (!read.Wait(TimeSpan.FromSeconds(DecisionSeconds)) || string.IsNullOrWhiteSpace(read.Result)) return 0;
             using var check = JsonDocument.Parse(read.Result); // solo JSON válido llega a Claude Code
-            Console.Out.Write(read.Result);
-            Console.Out.Flush();
+            // En UTF-8, como lo lee Claude Code (Console.Out usaría la página de códigos del sistema).
+            using var output = Console.OpenStandardOutput();
+            output.Write(new UTF8Encoding(false).GetBytes(read.Result));
+            output.Flush();
         }
         catch (TimeoutException) { } // la app no está abierta (o no tiene la isla): decide la terminal
         catch (Exception ex) { ErrorLog.Write(ex); } // otro problema: queda anotado y decide la terminal

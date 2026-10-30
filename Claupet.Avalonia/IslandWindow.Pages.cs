@@ -133,11 +133,11 @@ sealed partial class IslandWindow
             : talking ? (tick / 160 % 3 == 0 ? MascotFrame.Happy : MascotFrame.Open)
             : _file is not null && !_analysisSeen || tick - _analysisEnd < 3000 && _analysisDone ? MascotFrame.Happy
             : tick % 3600 > 3480 ? MascotFrame.Closed : MascotFrame.Open;
-        if (_chibi)
+        if (_skin is { } skin)
         {
             var unit = Math.Max(1, Math.Floor(box.Height / ChibiSprite.HeadSize));
             var size = ChibiSprite.HeadSize * unit;
-            Gfx.Pixels(dc, box.X + (box.Width - size) / 2, box.Y + (box.Height - size) / 2, unit, fill => ChibiSprite.PaintHead(fill, frame));
+            Gfx.Pixels(dc, box.X + (box.Width - size) / 2, box.Y + (box.Height - size) / 2, unit, fill => ChibiSprite.PaintHead(fill, frame, skin: skin));
         }
         else
         {
@@ -914,10 +914,12 @@ sealed partial class IslandWindow
         var cellW = (inner - 8) / cols;
         var cells = new List<(Rect Rect, string Label, string Description)>();
         var rowY = gridY;
+        // La descripción es lo que explica cada opción: se ve entera, hasta cinco líneas (más, con «…»).
+        var described = Small.LineHeight * 5;
         for (var i = 0; i < q.Options.Count; i += cols)
         {
             var heights = Enumerable.Range(i, Math.Min(cols, q.Options.Count - i)).Select(k =>
-                18 + (q.Options[k].Description.Length > 0 ? Math.Min(MeasureWrapped(q.Options[k].Description, Small, cellW - 22).Height, 34) : 0) + 16).ToList();
+                18 + (q.Options[k].Description.Length > 0 ? Math.Min(MeasureWrapped(q.Options[k].Description, Small, cellW - 22).Height, described) : 0) + 16).ToList();
             var h = heights.Max();
             for (var c = 0; c < heights.Count; c++)
                 cells.Add((new Rect(x + pad + c * (cellW + 8), rowY, cellW, h), q.Options[i + c].Label, q.Options[i + c].Description));

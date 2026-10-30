@@ -9,7 +9,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Claupet</AssemblyName>
     <RootNamespace>Claupet</RootNamespace>
-    <Version>2.3.0</Version>
+    <Version>2.4.0</Version>
     <AssemblyTitle>Claupet</AssemblyTitle>
     <Product>Claupet</Product>
     <ApplicationIcon>..\app.ico</ApplicationIcon>
@@ -23,6 +23,11 @@
     <Compile Include="..\Console\**\*.cs" Link="Console\%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Las traducciones (L.T), dentro del ejecutable. -->
     <EmbeddedResource Include="..\Core\Idiomas\*.json" LogicalName="idiomas/%(Filename)%(Extension)" />
+    <!-- El recolector de basura que ahorra memoria: compacta más seguido, y la app (que vive todo el día en la bandeja)
+         queda en unos 180 MB en vez de unos 500. El concurrente sigue encendido, para que las animaciones no se traben. -->
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+    <!-- Los términos y condiciones del asistente (Terms), en cada idioma. -->
+    <EmbeddedResource Include="..\Core\Terminos\*.txt" LogicalName="terminos/%(Filename)%(Extension)" />
     <!-- Las pruebas (Claupet.Tests) ven lo interno de la app. -->
     <InternalsVisibleTo Include="Claupet.Tests" />
   </ItemGroup>

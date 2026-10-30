@@ -162,9 +162,10 @@ sealed class ConsoleWindow : Window
                     L.Use(language);
                     rebuild = true;
                 }
-                if (message.Palette is { } palette && palette != Claupet.Theme.SelectedPalette)
+                if (message.Palette is { } palette && (palette != Claupet.Theme.SelectedPalette || message.CustomTheme != Claupet.Theme.SelectedCustom))
                 {
                     Claupet.Theme.SelectedPalette = palette;
+                    Claupet.Theme.SelectedCustom = message.CustomTheme;
                     _ink = Ink.For(IsDark());
                     rebuild = true;
                 }

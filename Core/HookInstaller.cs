@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -20,6 +21,16 @@ static class HookInstaller
 
     /// <summary>El hook de los permisos y las preguntas en la isla.</summary>
     public static string ApprovalsCommand(string exePath) => $"\"{exePath}\" --hook --permiso";
+
+    /// <summary>
+    /// El evento que Claude Code le pasa al hook, que siempre llega en UTF-8. Console.In no sirve: en Windows, la app
+    /// (sin consola) lo lee con la página de códigos del sistema y «¿Qué · menú» llega como «Â¿QuÃ© Â· menÃº».
+    /// </summary>
+    public static string ReadEvent(Stream input)
+    {
+        using var reader = new StreamReader(input, new UTF8Encoding(false));
+        return reader.ReadToEnd();
+    }
 
     const string ApprovalsEvent = "PermissionRequest";
 
@@ -54,6 +65,20 @@ static class HookInstaller
     });
 
     public static string SettingsPath(string configDir) => Path.Combine(configDir, "settings.json");
+
+    /// <summary>Carpetas de Claude Code donde puede ir el hook: las de las cuentas y las ~/.claude* que existan.</summary>
+    public static List<string> ConfigDirs(IEnumerable<string> accounts)
+    {
+        var dirs = accounts.ToList();
+        try
+        {
+            dirs.AddRange(Directory.EnumerateDirectories(Account.Home, ".claude*")
+                .Where(d => Directory.Exists(Path.Combine(d, "projects")) || Directory.Exists(Path.Combine(d, "sessions"))
+                    || File.Exists(Path.Combine(d, "settings.json"))));
+        }
+        catch (Exception) { }
+        return dirs.Select(Account.Normalize).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(d => d).ToList();
+    }
 
     /// <summary>Installed: apunta a este .exe. Outdated: hay un hook de la app, pero a otra ruta.</summary>
     public static State Status(string configDir, string exePath)

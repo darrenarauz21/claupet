@@ -18,6 +18,8 @@ sealed partial class TrayController
     readonly TrayIcon _tray = new();
     readonly PopupWindow _popup = new();
     readonly DispatcherTimer _timer = new();
+    /// <summary>Una vez: vuelve a preguntar por la cuenta sin datos que el servicio puso en espera (UsageGate).</summary>
+    readonly DispatcherTimer _retryTimer = new();
     readonly DispatcherTimer _sessionTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     readonly SessionMonitor _monitor = new();
     readonly ActivityTracker _activity = new();
@@ -56,9 +58,13 @@ sealed partial class TrayController
         Sounds.EnsureDefaults();
 
         Theme.SelectedPalette = _settings.Palette;
+        Theme.SelectedCustom = _settings.CustomTheme;
         Mascots.Choose(_settings, Mascots.ChoiceOf(_settings)); // deja en orden lo guardado por versiones anteriores
         Mascots.Selected = _settings.Mascot;
-        _refresh.Style = RefreshSprite.Resolve(_settings.Animation, _settings.Mascot);
+        // --mascota <id>: ese personaje solo en esta ejecución (para verlo sin tocar los ajustes).
+        if (ArgAfter("--mascota") is { } shown && Mascots.IsCharacter(shown)) Mascots.Selected = shown;
+        _director.Skin = Mascots.Skin;
+        _refresh.Style = RefreshSprite.Resolve(Mascots.Selected == _settings.Mascot ? _settings.Animation : RefreshSprite.Mascot, Mascots.Selected);
         ApplyTheme();
         app.ActualThemeVariantChanged += (_, _) => ApplyTheme();
 
@@ -105,6 +111,7 @@ sealed partial class TrayController
         };
         View.NewSessionRequested += session => _ = NewSessionAsync(session);
         SetupExtensions();
+        WatchMascotScreens(); // también sin mascota: con la sesión bloqueada se pausa la isla
         StartConsole();
         StartUpdates();
         _ = StartExtensionsAsync();
@@ -140,6 +147,11 @@ sealed partial class TrayController
         _timer.Interval = TimeSpan.FromMinutes(Math.Max(1, _settings.RefreshMinutes));
         _timer.Tick += (_, _) => _ = RefreshAsync();
         _timer.Start();
+        _retryTimer.Tick += (_, _) =>
+        {
+            _retryTimer.Stop();
+            _ = RefreshAsync();
+        };
 
         Dispatcher.UIThread.Post(async () =>
         {
@@ -159,15 +171,20 @@ sealed partial class TrayController
             if (OperatingSystem.IsWindows()) WeatherService.WindowsLocation = WindowsLocation.GetAsync;
             if (OwnsShortcuts && OperatingSystem.IsWindows())
             {
-                // Los encendidos se crean si faltan y se corrigen si apuntan a otro .exe (se movió la carpeta).
+                // Los encendidos se crean si faltan y se corrigen si apuntan a otro .exe (se movió la carpeta); la entrada
+                // de Configuración › Aplicaciones, al día si esta es la copia instalada (cambia con cada versión nueva).
                 if (_settings.StartMenuShortcut) Shortcuts.Ensure(Shortcuts.StartMenu);
                 if (_settings.DesktopShortcut) Shortcuts.Ensure(Shortcuts.Desktop);
+                Installation.Refresh(ExePath, SemVersion.App.ToString());
             }
             UpdateMascotWindow();
             UpdateIsland();
             UpdateVoice();
+            // --descargar-modelos: la abrió el asistente al reiniciar (idioma o instalación) con modelos por bajar.
+            if (Program.Args.Contains(DownloadModelsFlag)) DownloadMissingModels();
             if (ArgAfter("--hablar") is { } wav && _voice is { } voice) _ = Task.Delay(1500).ContinueWith(_ => Dispatcher.UIThread.Post(() => _ = voice.DemoAsync(wav)));
-            if (autoSetup && NeedsSetup()) await ShowSetupAsync();
+            // Si se cerró (sin aceptar los términos) o se reinició (otro idioma, o se abre la instalada), no sigue.
+            if (autoSetup && NeedsSetup() && !await ShowSetupAsync()) return;
             await RefreshAsync();
         });
     }
@@ -187,8 +204,14 @@ sealed partial class TrayController
             var offline = await SessionRenewal.RenewExpiredAsync(accounts, results, a => _renewAtStart
                 || (renewSelected && _settings.Selected is { } selected && Account.SamePath(a.ConfigDir, selected)));
             if (!offline) _renewAtStart = false;
+            // Sin datos y en espera: se pregunta apenas se pueda, sin esperar al reloj de las actualizaciones.
+            if (results.Min(r => r.WaitingUntil) is { } retry)
+            {
+                _retryTimer.Stop();
+                _retryTimer.Interval = TimeSpan.FromSeconds(Math.Max(1, (retry - DateTimeOffset.Now).TotalSeconds + 1));
+                _retryTimer.Start();
+            }
             var profiles = await Task.Run(() => accounts.Select(UsageClient.ReadProfile).ToList());
-            var local = await Task.Run(() => LocalUsage.ScanToday(accounts.Select(a => a.ConfigDir)));
             var updated = DateTime.Now;
 
             // Los datos nuevos se aplican cuando la animación termina, no antes.
@@ -198,12 +221,14 @@ sealed partial class TrayController
                 {
                     var dir = accounts[i].ConfigDir;
                     var fresh = results[i];
-                    if (fresh.Error is not null && _snapshots.TryGetValue(dir, out var old) && old.Limits.Count > 0)
-                        fresh = old.WithError(fresh.Error, fresh.SessionExpired);
+                    if (_snapshots.TryGetValue(dir, out var old) && old.Limits.Count > 0)
+                    {
+                        if (fresh.WaitingUntil is not null) fresh = old;
+                        else if (fresh.Error is not null) fresh = old.WithError(fresh.Error, fresh.SessionExpired);
+                    }
                     _snapshots[dir] = fresh;
                     _profiles[dir] = profiles[i];
                 }
-                _local = local;
                 _updated = updated;
             };
             _ = CountActivityAsync(accounts);
@@ -223,9 +248,13 @@ sealed partial class TrayController
         _counting = true;
         try
         {
-            var summary = await Task.Run(() => _activity.Scan(accounts.Select(a => a.ConfigDir)));
+            var dirs = accounts.Select(a => a.ConfigDir).ToList();
+            // Los tokens de hoy (el pie de la ventana) salen del mismo recorrido, que solo lee lo nuevo.
+            var (summary, today) = await Task.Run(() => (_activity.Scan(dirs), _activity.Today(dirs)));
             View.SetActivity(summary);
             _activitySummary = summary;
+            _local = today;
+            View.Render(_settings.Accounts, _settings.Selected, _snapshots, _profiles, _local, _updated);
             MaybeShowRecap(false);
         }
         finally { _counting = false; }
@@ -239,11 +268,18 @@ sealed partial class TrayController
         {
             var accounts = _settings.Accounts.ToList();
             var sessions = await Task.Run(() => _monitor.Scan(accounts));
-            View.SetSessions(sessions);
-            _director.SetSessions(sessions);
+            // Casi siempre nada cambió: entonces no se repinta (la ventana sí, si está abierta, por los tiempos que muestra).
+            var key = SessionsKey(sessions);
+            var changed = key != _sessionsKey;
+            _sessionsKey = key;
             _lastSessions = sessions;
-            BroadcastSessions(sessions);
-            IslandSessions(sessions);
+            if (changed || _popup.IsVisible) View.SetSessions(sessions);
+            if (changed)
+            {
+                _director.SetSessions(sessions);
+                BroadcastSessions(sessions);
+                IslandSessions(sessions);
+            }
             if (_settings.Notifications)
             {
                 _detector.Sessions(sessions).ForEach(ShowNotice);
@@ -251,6 +287,36 @@ sealed partial class TrayController
             }
         }
         finally { _scanning = false; }
+    }
+
+    int _sessionsKey;
+
+    /// <summary>Lo que se ve de las sesiones, resumido: si es igual que en el tick anterior, nada cambió.</summary>
+    static int SessionsKey(IReadOnlyList<SessionInfo> sessions)
+    {
+        var hash = new HashCode();
+        foreach (var s in sessions)
+        {
+            hash.Add(s.SessionId);
+            hash.Add(s.State);
+            hash.Add(s.Steps);
+            hash.Add(s.Turns);
+            hash.Add(s.Action);
+            hash.Add(s.Title);
+            hash.Add(s.StatusAt);
+            hash.Add(s.TurnStartedAt);
+            hash.Add(s.TurnEndedAt);
+            hash.Add(s.TodoDone);
+            hash.Add(s.TodoTotal);
+            hash.Add(s.ErrorAt);
+            hash.Add(s.RetryAt);
+            hash.Add(s.AwaitingAnswer);
+            hash.Add(s.Flow.Count);
+            hash.Add(s.Edits.Count);
+            hash.Add(s.LastAnswer);
+            hash.Add(s.Model);
+        }
+        return hash.ToHashCode();
     }
 
     void ShowNotice(Notice notice)
@@ -344,6 +410,10 @@ sealed partial class TrayController
                     Flip(s => s.MascotAllDesktops = !s.MascotAllDesktops);
                     UpdateMascotWindow(); // se rehace con el nuevo comportamiento
                     break;
+                case "agentpets":
+                    Flip(s => s.AgentPets = !s.AgentPets);
+                    UpdateAgentPets();
+                    break;
                 case "sleep":
                     Flip(s => s.SleepWithoutSessions = !s.SleepWithoutSessions);
                     _ = ScanSessionsAsync(); // para que se duerma o se despierte ya
@@ -412,27 +482,41 @@ sealed partial class TrayController
         _sounds.Play(NoticeKind.Done, pack, force: true);
     }
 
+    /// <summary>Elige la paleta y quita el tema propio; la mascota también nombra así los temas («tema:&lt;id&gt;»).</summary>
     void SetPalette(string palette)
     {
+        if (CustomThemes.IdOf(palette) is { } theme)
+        {
+            SetCustomTheme(theme);
+            return;
+        }
         _settings.Palette = palette;
+        _settings.CustomTheme = null;
         SettingsStore.Save(_settings);
         Theme.SelectedPalette = palette;
+        Theme.SelectedCustom = null;
         ApplyTheme();
     }
 
     /// <summary>Lo elegido en «Mascota»: la mascota de los avisos y la animación al actualizar.</summary>
     void SetMascot(string choice)
     {
-        var wasChibi = _settings.Mascot == Mascots.Chibi;
+        var before = _settings.Mascot;
         Mascots.Choose(_settings, choice);
-        if (!wasChibi && _settings.Mascot == Mascots.Chibi) _settings.DesktopMascot = true; // el chibi sale al escritorio
+        // Un personaje nuevo (el chibi, Dokki, Gemma, Ciel) sale al escritorio y, si sonaba la voz de otro, suena la suya.
+        if (_settings.Mascot != before && Mascots.IsCharacter(_settings.Mascot))
+        {
+            _settings.DesktopMascot = true;
+            if (Sounds.IsVoice(_settings.SoundPack)) _settings.SoundPack = _settings.Mascot;
+        }
         SettingsStore.Save(_settings);
         Mascots.Selected = _settings.Mascot; // los avisos la leen al dibujarse
+        _director.Skin = Mascots.Skin;
         _refresh.Style = RefreshSprite.Resolve(_settings.Animation, _settings.Mascot);
         _refreshIcons.Clear();
         ShowRefreshFrame();
         UpdateMascotWindow();
-        _island?.SetMascot(Mascots.IsChibi);
+        _island?.SetMascot(Mascots.Skin);
         _ = RefreshAsync(); // muestra de la animación elegida, como la del estilo de sonido
     }
 
@@ -445,6 +529,7 @@ sealed partial class TrayController
         _settings.MascotSize = size;
         SettingsStore.Save(_settings);
         _mascotWindow?.SetSize(size);
+        foreach (var pet in _agentPets.Values) pet.Window.SetSize(size);
         if (_chatBubble?.IsVisible == true && _mascotWindow is { } mascot) _chatBubble.Follow(mascot.ScreenBounds);
     }
 
@@ -471,14 +556,14 @@ sealed partial class TrayController
     }
 
     /// <summary>
-    /// La mascota del escritorio está si no se ocultó; si cambia de mascota (chibi o clásica), la
+    /// La mascota del escritorio está si no se ocultó; si cambia de mascota (un personaje o la clásica), la
     /// ventana se rehace con la nueva.
     /// </summary>
     void UpdateMascotWindow()
     {
         var wanted = _settings.DesktopMascot;
         Music.Watch(wanted && _settings.DanceToMusic); // la música solo se mira si hay mascota que baile
-        if (_mascotWindow is { } current && (!wanted || current.Pet != _pet || (_pet is null && current.Chibi != Mascots.IsChibi)
+        if (_mascotWindow is { } current && (!wanted || current.Pet != _pet || (_pet is null && current.Skin != Mascots.Skin)
             || current.AllDesktops != _settings.MascotAllDesktops))
         {
             _bubble.Hide();
@@ -486,9 +571,13 @@ sealed partial class TrayController
             current.Close();
             _mascotWindow = null;
         }
-        if (!wanted || _mascotWindow is not null) return;
+        if (!wanted || _mascotWindow is not null)
+        {
+            UpdateAgentPets();
+            return;
+        }
         PixelPoint? saved = _settings.DesktopMascotX is { } x && _settings.DesktopMascotY is { } y ? new PixelPoint(x, y) : null;
-        _mascotWindow = new MascotWindow(_director, saved, Mascots.IsChibi, () => _theme.Accent, _settings.MascotAllDesktops, _settings.MascotSize, _pet);
+        _mascotWindow = new MascotWindow(_director, saved, Mascots.Skin, () => _theme.Accent, _settings.MascotAllDesktops, _settings.MascotSize, _pet);
         WatchMascotScreens();
         _mascotWindow.PositionChanged += (_, _) =>
         {
@@ -507,6 +596,7 @@ sealed partial class TrayController
         };
         _mascotWindow.Show();
         _ = ScanSessionsAsync(); // para que empiece haciendo lo que corresponde
+        UpdateAgentPets(); // las de los otros agentes, a su lado
     }
 
     /// <summary>Toma el tema del momento (modo del sistema y paleta elegida): ventana, ícono y animación.</summary>
@@ -597,7 +687,10 @@ sealed partial class TrayController
         UpdateTray();
         PushIslandUsage();
         PushSettings(); // la cantidad de cuentas puede haber cambiado
-        View.Render(_settings.Accounts, _settings.Selected, _snapshots, _profiles, _local, _updated);
+        // La hora del pie es la de los datos que se ven: mientras el servicio pide esperar, la de la última consulta buena.
+        var shown = _settings.Selected is { } dir && _snapshots.TryGetValue(dir, out var snap) && snap.FetchedAt is { } at
+            ? at.LocalDateTime : _updated;
+        View.Render(_settings.Accounts, _settings.Selected, _snapshots, _profiles, _local, shown);
     }
 
     void UpdateTray()
@@ -708,24 +801,17 @@ sealed partial class TrayController
         PushSettings();
     }
 
-    IEnumerable<string> SetupDirs()
-    {
-        var dirs = _settings.Accounts.Select(a => a.ConfigDir).ToList();
-        try
-        {
-            dirs.AddRange(Directory.EnumerateDirectories(Account.Home, ".claude*")
-                .Where(d => Directory.Exists(Path.Combine(d, "projects")) || Directory.Exists(Path.Combine(d, "sessions"))
-                    || File.Exists(Path.Combine(d, "settings.json"))));
-        }
-        catch (Exception) { }
-        return dirs.Select(Account.Normalize).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(d => d).ToList();
-    }
+    IEnumerable<string> SetupDirs() => HookInstaller.ConfigDirs(_settings.Accounts.Select(a => a.ConfigDir));
 
     bool NeedsSetup() =>
-        !_settings.SetupDone || SetupDirs().Any(d => HookInstaller.Status(d, ExePath) == HookInstaller.State.Outdated);
+        !_settings.SetupDone || !Terms.Accepted(_settings)
+        || SetupDirs().Any(d => HookInstaller.Status(d, ExePath) == HookInstaller.State.Outdated);
 
-    /// <summary>El asistente por pasos; lo elegido se aplica al pulsar «Aplicar», como en Windows.</summary>
-    async Task ShowSetupAsync()
+    /// <summary>
+    /// El asistente por pasos; lo elegido se aplica al pulsar «Aplicar», como en Windows. Devuelve false si Claupet se
+    /// cierra (o se reinicia).
+    /// </summary>
+    async Task<bool> ShowSetupAsync()
     {
         _popup.HidePopup();
         var language = L.Language; // el asistente puede cambiarlo mientras está abierto
@@ -738,15 +824,50 @@ sealed partial class TrayController
         setup.Show();
         setup.Activate();
         var accepted = await setup.Result;
+        // Los términos cuentan apenas se aceptan, aunque después se cierre con «Ahora no»; sin ellos, Claupet se cierra.
+        if (setup.TermsAccepted) _settings.TermsAccepted = Terms.Version;
         _settings.SetupDone = true; // «Ahora no» tampoco vuelve a preguntar, salvo que la app cambie de lugar
         SettingsStore.Save(_settings);
-        if (!accepted) return;
+        if (!Terms.Accepted(_settings))
+        {
+            Quit();
+            return false;
+        }
+        if (!accepted) return true;
 
-        var lines = setup.ApplyHooks(ExePath);
+        // La instalación primero (Windows): los hooks, el inicio y los accesos directos apuntan al .exe instalado, que se
+        // abre al final.
+        var lines = new List<string>();
+        var exe = ExePath;
+        string? installed = null;
+        if (OperatingSystem.IsWindows() && setup.InstallFolder is { } folder)
+        {
+            try { installed = exe = Installation.Install(ExePath, folder, SemVersion.App.ToString()); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                ErrorLog.Write(ex);
+                _settings.SetupDone = false; // el asistente vuelve la próxima vez
+                SettingsStore.Save(_settings);
+                await Dialogs.Info(L.T("No se pudo instalar Claupet en {0}: {1}", folder, ex.Message.TrimEnd('.')) + Environment.NewLine
+                    + L.T("No se cambió nada más: el asistente vuelve a abrirse la próxima vez que abra Claupet."), _theme);
+                return true;
+            }
+            lines.Add(L.T("Claupet quedó instalada en {0}.", folder));
+        }
+
+        lines.AddRange(setup.ApplyHooks(exe));
+        if (installed is not null) lines.AddRange(MoveApprovals(exe));
         var windows = OperatingSystem.IsWindows();
+        if (windows && setup.DesktopShortcut != _settings.DesktopShortcut)
+        {
+            // La copia instalada crea los encendidos al abrirse (Shortcuts.Ensure).
+            _settings.DesktopShortcut = setup.DesktopShortcut;
+            SettingsStore.Save(_settings);
+            if (installed is null || !setup.DesktopShortcut) Shortcuts.Set(Shortcuts.Desktop, setup.DesktopShortcut);
+        }
         try
         {
-            StartupRegistration.Set(setup.StartWithSystem);
+            StartupRegistration.Set(setup.StartWithSystem, exe);
             lines.Add(setup.StartWithSystem
                 ? windows ? L.T("Iniciará con Windows.") : L.T("Iniciará con el sistema.")
                 : windows ? L.T("No iniciará con Windows.") : L.T("No iniciará con el sistema."));
@@ -764,8 +885,9 @@ sealed partial class TrayController
         if (setup.Chat != _settings.Chat) ToggleChat();
         if (setup.Island != _settings.Island) FlipIsland(s => s.Island = setup.Island);
 
-        // Modelos y voz: como encenderlos en Ajustes, que baja lo que falte.
-        var relaunch = setup.Language != language;
+        // Modelos y voz: como encenderlos en Ajustes, que baja lo que falte. Si la app se reinicia (otro idioma, o se abre
+        // la instalada), los baja la que se abre.
+        var relaunch = setup.Language != language || installed is not null;
         var voiceMissing = setup.Mic && !VoiceModel.Ready;
         // El modelo local: la mascota responde con él; al apagarlo vuelve a Haiku.
         if (HasLocal && (setup.LocalModelId != LocalChoice.Id || setup.LocalModelOn && _settings.LocalModel is null))
@@ -783,37 +905,59 @@ sealed partial class TrayController
         SettingsStore.Save(_settings);
         UpdateVoice();
         if (!_settings.ReadAloud) _readAloud?.Stop();
-        if (relaunch && (voiceMissing || speechMissing || localMissing))
-            lines.Add(L.T("Al reiniciar, descargue los modelos en Ajustes › Asistente."));
-        else
+        if (voiceMissing)
         {
-            if (voiceMissing)
-            {
-                _ = DownloadVoiceModelAsync();
-                lines.Add(L.T("El modelo de voz se descarga en segundo plano; el avance está en Ajustes › Asistente."));
-            }
-            if (speechMissing)
-            {
-                _ = DownloadSpeechAsync();
-                lines.Add(L.T("La voz de Claupet se descarga en segundo plano; el avance está en Ajustes › Asistente."));
-            }
-            if (localMissing)
-            {
-                _ = DownloadLocalModelAsync();
-                lines.Add(L.T("El modelo local se descarga en segundo plano; el avance está en Claupet Console › Respuestas."));
-            }
+            if (!relaunch) _ = DownloadVoiceModelAsync();
+            lines.Add(L.T("El modelo de voz se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+        }
+        if (speechMissing)
+        {
+            if (!relaunch) _ = DownloadSpeechAsync();
+            lines.Add(L.T("La voz de Claupet se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+        }
+        if (localMissing)
+        {
+            if (!relaunch) _ = DownloadLocalModelAsync();
+            lines.Add(L.T("El modelo local se descarga en segundo plano; el avance está en Claupet Console › Respuestas."));
         }
         PushSettings();
 
         if (setup.HooksChanged > 0)
             lines.Add(L.T("Los avisos de permisos funcionan en las sesiones de Claude Code que se abran desde ahora."));
-        if (relaunch) lines.Add(L.T("Claupet se reinicia para cambiar el idioma."));
+        if (installed is not null) lines.Add(L.T("Claupet se abre ahora desde la carpeta instalada; puede borrar el archivo que descargó."));
+        else if (relaunch) lines.Add(L.T("Claupet se reinicia para cambiar el idioma."));
         await Dialogs.Info(string.Join(Environment.NewLine, lines), _theme);
-        if (!relaunch) return;
+        if (!relaunch) return true;
         // El asistente ya usa el idioma nuevo (L.Language): se guarda y se reinicia sin pasar por SetLanguage.
         _settings.Language = setup.Language;
         SettingsStore.Save(_settings);
-        Restart();
+        return !Restart(installed, voiceMissing || speechMissing || localMissing ? [DownloadModelsFlag] : []);
+    }
+
+    /// <summary>Lo pasa el asistente a la app que se abre al reiniciar, si quedaron modelos por bajar.</summary>
+    const string DownloadModelsFlag = "--descargar-modelos";
+
+    /// <summary>Lo que el asistente encendió y falta bajar, como si se pulsara «Descargar» en Ajustes.</summary>
+    void DownloadMissingModels()
+    {
+        if (_settings.Mic && !VoiceModel.Ready) _ = DownloadVoiceModelAsync();
+        if (_settings.ReadAloud && NeedsSupertonic(_settings.ReadAloudVoice) && !ClaupetVoiceModel.Ready) _ = DownloadSpeechAsync();
+        if (HasLocal && _settings.MascotModel == AssistantModels.Local && !LocalModel.Ready(LocalChoice)) _ = DownloadLocalModelAsync();
+    }
+
+    /// <summary>
+    /// Al instalar: el hook de permisos en la isla (si está) también pasa al .exe instalado; si no, seguiría llamando al
+    /// descargado. Devuelve una línea por carpeta que no se pudo cambiar.
+    /// </summary>
+    List<string> MoveApprovals(string exe)
+    {
+        var lines = new List<string>();
+        foreach (var dir in SetupDirs().Where(d => HookInstaller.ApprovalsStatus(d, exe) == HookInstaller.State.Outdated))
+        {
+            try { HookInstaller.InstallApprovals(dir, exe); }
+            catch (Exception ex) { lines.Add(L.T("{0}: no se pudo cambiar ({1}).", dir.Replace(Account.Home, "~"), ex.Message)); }
+        }
+        return lines;
     }
 
     async Task RemoveSetupAsync()
@@ -845,16 +989,22 @@ sealed partial class TrayController
         Restart();
     }
 
-    /// <summary>Abre otra instancia, que espera a que esta termine de cerrarse (--reiniciar), y se cierra.</summary>
-    void Restart()
+    /// <summary>
+    /// Abre otra instancia, que espera a que esta termine de cerrarse (--reiniciar), y se cierra. exe: otra copia (la recién
+    /// instalada); extra: más opciones para la que se abre. Devuelve false si no pudo abrirla (y esta sigue).
+    /// </summary>
+    bool Restart(string? exe = null, string[]? extra = null)
     {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ExePath) { ArgumentList = { "--reiniciar" }, UseShellExecute = false })?.Dispose(); }
+        var start = new System.Diagnostics.ProcessStartInfo(exe ?? ExePath) { ArgumentList = { "--reiniciar" }, UseShellExecute = false };
+        foreach (var arg in extra ?? []) start.ArgumentList.Add(arg);
+        try { System.Diagnostics.Process.Start(start)?.Dispose(); }
         catch (Exception ex)
         {
             ErrorLog.Write(ex);
-            return;
+            return false;
         }
         Dispatcher.UIThread.Post(Quit);
+        return true;
     }
 
     void Quit()
@@ -864,6 +1014,7 @@ sealed partial class TrayController
         _reminderTimer.Stop();
         _toasts.CloseAll();
         _mascotWindow?.Close();
+        CloseAgentPets();
         _bubble.Close();
         _asking?.Cancel();
         _chatBubble?.Close();

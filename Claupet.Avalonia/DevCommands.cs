@@ -64,23 +64,28 @@ static class DevCommands
             return follow.Failed ? 1 : 0;
         }
 
-        // --modelo-local <id> [pregunta]: baja ese modelo local (y llama-server) como desde Ajustes, con el avance; con una
-        // pregunta, se la hace como la mascota y dice cuánto tardó en arrancar y en responder. Por ahora, solo en Windows.
+        // --modelo-local <id> [pregunta] [--gpu | --cpu]: baja ese modelo local (y llama-server) como desde Ajustes, con el
+        // avance; con una pregunta, se la hace como la mascota y dice en qué corrió y cuánto tardó en arrancar y en responder.
+        // --gpu: siempre con la tarjeta gráfica; --cpu: solo el procesador; sin ellas, como en Ajustes. Solo en Windows.
         if (Array.IndexOf(args, "--modelo-local") is var lm and >= 0 && lm + 1 < args.Length)
         {
             if (!OperatingSystem.IsWindows()) { Console.WriteLine("El modelo local todavía es solo de Windows."); return 1; }
             var choice = LocalModel.Find(args[lm + 1]);
-            if (!LocalModel.Ready(choice))
+            var gpu = !args.Contains("--cpu");
+            if (LocalModel.Missing(choice, gpu) > 0)
             {
-                Console.WriteLine($"descargando {choice.Name} ({LocalModel.Missing(choice) / 1_000_000} MB)");
-                LocalModel.DownloadAsync(choice, Percent(), CancellationToken.None).GetAwaiter().GetResult();
+                Console.WriteLine($"descargando {choice.Name} ({LocalModel.Missing(choice, gpu) / 1_000_000} MB)");
+                LocalModel.DownloadAsync(choice, Percent(), CancellationToken.None, gpu).GetAwaiter().GetResult();
             }
             Console.WriteLine(LocalModel.Ready(choice) ? $"{choice.Name}: listo" : $"{choice.Name}: incompleto");
             if (!LocalModel.Ready(choice) || lm + 2 >= args.Length) return LocalModel.Ready(choice) ? 0 : 1;
-            using var server = new LocalModelServer();
+            using var server = new LocalModelServer
+            {
+                Gpu = args.Contains("--gpu") ? LocalModel.GpuOn : args.Contains("--cpu") ? LocalModel.GpuOff : SettingsStore.Load().LocalGpu,
+            };
             var clock = System.Diagnostics.Stopwatch.StartNew();
             server.EnsureAsync(choice, CancellationToken.None).GetAwaiter().GetResult();
-            Console.WriteLine($"arranque: {clock.ElapsedMilliseconds} ms");
+            Console.WriteLine($"arranque: {clock.ElapsedMilliseconds} ms · {server.Device ?? "procesador"}");
             Assistant.Local = () => new LocalBrain(server, choice);
             clock.Restart();
             var answer = Assistant.AskAsync(new AssistantRequest { Prompt = args[lm + 2], Voice = AssistantVoice.Mascot, Model = AssistantModels.Local })
@@ -119,12 +124,13 @@ static class DevCommands
             return answer.Failed ? 1 : 0;
         }
 
-        // --tema <prompt>: le pide a Claude un tema propio (con la cuenta y el modelo de la mascota), lo guarda en temas/ y
-        // escribe el JSON ya validado y corregido. No lo elige: eso queda para Ajustes.
+        // --tema <prompt>: le pide a Claude un tema propio (con la cuenta del asistente y la calidad de Ajustes), lo guarda
+        // en temas/ y escribe el JSON ya validado y corregido. No lo elige: eso queda para Ajustes.
         if (Array.IndexOf(args, "--tema") is var th and >= 0 && th + 1 < args.Length)
         {
-            var (theme, error) = CustomThemes.CreateAsync(args[th + 1], SettingsStore.Load()).GetAwaiter().GetResult();
+            var (theme, error, note) = CustomThemes.CreateAsync(args[th + 1], SettingsStore.Load()).GetAwaiter().GetResult();
             if (theme is null) { Console.WriteLine(error); return 1; }
+            if (note is not null) Console.WriteLine(note);
             Console.WriteLine(CustomThemes.PathFor(theme.Id));
             Console.WriteLine(CustomThemes.ToJson(theme));
             return 0;

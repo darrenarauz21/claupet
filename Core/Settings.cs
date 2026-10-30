@@ -47,12 +47,27 @@ sealed class AppSettings
     public bool Notifications { get; set; } = true;
     public bool Sound { get; set; } = true;
     public string SoundPack { get; set; } = "clasico";
-    /// <summary>Paleta del acento (Theme.Palettes). «claude» es como se llamaba antes «terracota».</summary>
-    public string Palette { get => _palette; set => _palette = value == "claude" ? "terracota" : value; }
+    /// <summary>
+    /// Paleta del acento (Theme.Palettes). «claude» es como se llamaba antes «terracota»; «tema:&lt;id&gt;», como se
+    /// elegía antes un tema propio: pasa a CustomTheme.
+    /// </summary>
+    public string Palette
+    {
+        get => _palette;
+        set
+        {
+            if (CustomThemes.IdOf(value) is { } theme) (CustomTheme, _palette) = (theme, "terracota");
+            else _palette = value == "claude" ? "terracota" : value;
+        }
+    }
     string _palette = "terracota";
+    /// <summary>El tema propio elegido (CustomThemes: el id de su archivo en temas/); null, ninguno y manda Palette.</summary>
+    public string? CustomTheme { get; set; }
+    /// <summary>Con qué calidad se crean los temas propios (CustomThemes.Qualities).</summary>
+    public string ThemeQuality { get; set; } = CustomThemes.Qualities[0].Id;
     /// <summary>Animación al actualizar (RefreshSprite.Styles). Se elige junto con Mascot, en la opción «Mascota» (Mascots).</summary>
     public string Animation { get; set; } = "mascota";
-    /// <summary>Mascota de los avisos y de la animación «mascota»: Mascots.Classic o Mascots.Chibi.</summary>
+    /// <summary>Mascota de los avisos y de la animación «mascota»: Mascots.Classic o el id de un personaje (chibi, dokki…).</summary>
     public string Mascot { get; set; } = Mascots.Classic;
     /// <summary>La mascota (el chibi o la clásica) en su propia ventana sobre el escritorio. Se enciende al elegir el chibi.</summary>
     public bool DesktopMascot { get; set; }
@@ -75,6 +90,12 @@ sealed class AppSettings
     public bool MascotAllDesktops { get; set; } = true;
     public int? DesktopMascotX { get; set; }
     public int? DesktopMascotY { get; set; }
+    /// <summary>Además de la de Claude Code, una mascota en el escritorio por cada otro agente que se sigue (Agents).</summary>
+    public bool AgentPets { get; set; }
+    /// <summary>El personaje de cada agente (su Kind → id de personaje, o vacío para ninguno); sin entrada, Agents.DefaultPet.</summary>
+    public Dictionary<string, string> AgentPet { get; set; } = new();
+    /// <summary>Dónde quedó la mascota de cada agente (su Kind).</summary>
+    public Dictionary<string, PetSpot> AgentPetSpots { get; set; } = new();
     /// <summary>Tamaño de la mascota del escritorio (MascotSizes).</summary>
     public string MascotSize { get; set; } = MascotSizes.Normal;
     /// <summary>La última pestaña abierta de Ajustes.</summary>
@@ -93,6 +114,8 @@ sealed class AppSettings
     public string? LocalModel { get; set; }
     /// <summary>Minutos sin uso tras los que el modelo local suelta la memoria.</summary>
     public int LocalIdleMinutes { get; set; } = 5;
+    /// <summary>La tarjeta gráfica para el modelo local: LocalModel.GpuAuto (de entrada), GpuOn o GpuOff.</summary>
+    public string LocalGpu { get; set; } = Claupet.LocalModel.GpuAuto;
 
     /// <summary>Ajustes › Respuestas: quién responde primero cada tipo de pregunta (AnswerTopics); el que falta, el de siempre.</summary>
     public Dictionary<string, Engine> AnswerEngines { get; set; } = new();
@@ -138,6 +161,8 @@ sealed class AppSettings
     public DateOnly? RecapShown { get; set; }
     /// <summary>El asistente de configuración ya se mostró una vez.</summary>
     public bool SetupDone { get; set; }
+    /// <summary>La versión de los términos y condiciones que la persona aceptó (Terms.Version); null: ninguna.</summary>
+    public string? TermsAccepted { get; set; }
     /// <summary>El acceso directo «Claupet» del menú Inicio, que abre Claupet Console (en Windows).</summary>
     public bool StartMenuShortcut { get; set; } = true;
     /// <summary>El mismo acceso directo en el escritorio.</summary>

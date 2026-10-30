@@ -54,9 +54,11 @@ sealed partial class TrayController : IConsoleApp
             Sound = s.Sound,
             SoundPack = SoundPackChoices().FirstOrDefault(p => p.Id == s.SoundPack).Label ?? Sounds.Packs[0].Label,
             Palette = Theme.PaletteLabel(s.Palette),
-            ThemeStatus = _themeStatus, CustomThemesHere = true,
+            ThemeStatus = _themeStatus, ThemeProblem = _themeProblem, ThemeCreating = _themeCreating, CustomThemesHere = true,
+            ThemeQuality = ThemeQualityText, ThemeProvider = _extensions?.ProviderFor(ExtensionSlots.Assistant)?.Manifest.Name.Text,
             Mascot = _pet is { } pet ? pet.Name : Mascots.Label(Mascots.ChoiceOf(s)),
             DesktopMascot = s.DesktopMascot,
+            AgentPets = s.AgentPets,
             MascotSize = MascotSizes.Label(s.MascotSize),
             MascotAllDesktops = s.MascotAllDesktops,
             Speak = s.Speak,
@@ -87,6 +89,7 @@ sealed partial class TrayController : IConsoleApp
             LocalAction = LocalStatusText().Action,
             LocalReady = LocalModel.Ready(LocalChoice),
             LocalIdle = L.T("{0} min", s.LocalIdleMinutes),
+            LocalGpu = LocalGpuLabel(),
             Island = s.Island,
             IslandHover = s.IslandHover,
             IslandWhileBusy = s.IslandWhileBusy,
@@ -133,6 +136,7 @@ sealed partial class TrayController : IConsoleApp
     };
 
     string IConsoleApp.Palette => _settings.Palette;
+    string? IConsoleApp.CustomTheme => _settings.CustomTheme;
 
     /// <summary>
     /// La acción de una fila de la Console. Las listas (estilo de sonido, color, mascota, idioma, modo…) se eligen allá;
@@ -146,12 +150,18 @@ sealed partial class TrayController : IConsoleApp
             PushSettings();
             return;
         }
+        if (key.StartsWith("agentpet:", StringComparison.Ordinal))
+        {
+            ChooseAgentPet(key["agentpet:".Length..]);
+            return;
+        }
         if (key.StartsWith("agent:", StringComparison.Ordinal))
         {
             ToggleAgent(key["agent:".Length..]);
             PushSettings();
             return;
         }
+        if (ThemeAction(key)) return;
         if (key.StartsWith("topic:", StringComparison.Ordinal))
         {
             var topic = AnswerTopics.Find(key["topic:".Length..]);
@@ -168,8 +178,7 @@ sealed partial class TrayController : IConsoleApp
         switch (key)
         {
             case "pack": Choose(SoundPackChoices(), _settings.SoundPack, id => _ = OnSettingAsync("pack:" + id)); break;
-            case "palette": Choose(Theme.Choices(), _settings.Palette, id => _ = OnSettingAsync("palette:" + id)); break;
-            case SettingsPages.ThemeDeleteKey: DeleteTheme(); break;
+            case "palette": Choose(Theme.PaletteChoices(), _settings.Palette, id => _ = OnSettingAsync("palette:" + id)); break;
             case "mascot": Choose(MascotChoices(), MascotChoice, id => _ = OnSettingAsync("mascot:" + id)); break;
             case "language": Choose(L.Choices, L.Language, id => _ = OnSettingAsync("language:" + id)); break;
             case "answerpreset":
@@ -225,6 +234,7 @@ sealed partial class TrayController : IConsoleApp
             case "size": Choose(MascotSizes.Choices, _settings.MascotSize, SetMascotSize); break;
             case "localmodel": PickLocalModel(); break;
             case "localidle": PickLocalIdle(); break;
+            case "localgpu": PickLocalGpu(); break;
             case "local": LocalModelAction(); break;
             // En Windows se puede grabar otra tecla o combinación; en Linux y macOS, solo las que se mantienen.
             case "mickey":
@@ -402,7 +412,7 @@ sealed partial class TrayController : IConsoleApp
             ConfigDir = AssistantAccounts.ConfigDir(_settings),
             Context = AssistantContext(),
             History = history,
-            Chibi = Mascots.IsChibi,
+            Mascot = Mascots.Selected,
             Expressive = Expressive,
         };
         AssistantResult result;
