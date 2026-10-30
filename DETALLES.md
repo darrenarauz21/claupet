@@ -606,7 +606,8 @@ asistente). `Answers.AskAsync` (`Core/Answers.Router.cs`) decide en cada pregunt
    «¿cuánto me queda de Claude?», «sube el volumen», «pon el brillo al 40», «modo oscuro», «abre Spotify»,
    «recuérdame X en 20 minutos», «anota X», «25 × 4 + 10», «15 % de 200», «10 km a millas», «hola», «gracias».
    Si sobra algo («sube el volumen y abre Spotify»), no adivinan: pasa al siguiente.
-2. **Si ninguna regla sirve y el modelo local está descargado**, él entiende la pregunta: responde un JSON con
+2. **Si ninguna regla sirve y el modelo local está descargado y se usa** (es el modelo elegido, o el reparto manda
+   algún tipo de pregunta al local), él entiende la pregunta; si todo va a la nube, no se arranca solo para esto. Responde un JSON con
    el tipo, la acción, el lugar y el día, restringido por un esquema (`response_format` con `json_schema`, que
    llama-server convierte en gramática). Solo puede elegir tipos y acciones de la lista; las que llevan un
    JSON propio (notas, recordatorios, agendar) no las elige él.

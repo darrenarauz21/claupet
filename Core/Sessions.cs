@@ -77,29 +77,57 @@ sealed class SessionMonitor
     /// <summary>Tras este tiempo sin actividad, una sesión terminada pasa a inactiva.</summary>
     static readonly TimeSpan DoneWindow = TimeSpan.FromMinutes(30);
 
+    /// <summary>Si su fecha y su tamaño no cambian, el registro se vuelve a analizar igual cada tanto (fechas de 1 s en HFS+).</summary>
+    static readonly TimeSpan RegistryRefresh = TimeSpan.FromSeconds(10);
+
     readonly Dictionary<string, Transcript> _transcripts = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Cada sessions/&lt;pid&gt;.json ya analizado, con la fecha y el tamaño con que se leyó: se mira cada 1,5–3 s todo el día
+    /// y casi nunca cambia. Dead: su proceso ya terminó (no vuelve con el mismo procStart).
+    /// </summary>
+    sealed class Registry
+    {
+        public required DateTime Written;
+        public required long Length;
+        public required DateTime ReadAt;
+        public required JsonElement Root;
+        public bool Dead;
+    }
+
+    readonly Dictionary<string, Registry> _registry = new(StringComparer.OrdinalIgnoreCase);
 
     public List<SessionInfo> Scan(IEnumerable<Account> accounts)
     {
         var result = new List<SessionInfo>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var account in accounts)
         {
             var dir = Path.Combine(account.ConfigDir, "sessions");
-            IEnumerable<string> files;
-            try { files = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "*.json").ToList() : []; }
+            List<FileInfo> entries;
+            // La enumeración ya trae la fecha y el tamaño de cada archivo (en Windows, sin abrirlos).
+            try { entries = Directory.Exists(dir) ? new DirectoryInfo(dir).EnumerateFiles("*.json").ToList() : []; }
             catch (Exception) { continue; }
 
-            foreach (var file in files)
+            foreach (var file in entries)
             {
                 try
                 {
-                    using var doc = JsonDocument.Parse(Json.ReadShared(file));
-                    var r = doc.RootElement;
+                    files.Add(file.FullName);
+                    var entry = Read(file);
+                    if (entry.Dead) continue;
+                    var r = entry.Root;
                     var pid = r.TryGetProperty("pid", out var p) && p.TryGetInt32(out var value) ? value : 0;
                     var id = Json.Str(r, "sessionId");
-                    if (pid == 0 || id is null || !IsAlive(pid, Json.Str(r, "procStart")) || !seen.Add(id)) continue;
+                    if (pid == 0 || id is null) continue;
+                    if (!IsAlive(pid, Json.Str(r, "procStart")))
+                    {
+                        entry.Dead = true;
+                        continue;
+                    }
+                    if (!seen.Add(id)) continue;
                     if (Assistant.IsOwn(Json.Str(r, "cwd"))) continue; // una consulta de la mascota o de la isla, no una sesión suya
                     result.Add(Build(account, r, id, Update(account, id), pid));
                 }
@@ -109,11 +137,26 @@ sealed class SessionMonitor
 
         foreach (var gone in _transcripts.Keys.Where(k => !seen.Contains(k)).ToList())
             _transcripts.Remove(gone);
+        foreach (var gone in _registry.Keys.Where(k => !files.Contains(k)).ToList())
+            _registry.Remove(gone);
 
         return result
             .OrderBy(s => s.State)
             .ThenByDescending(s => s.TurnEndedAt ?? s.StatusAt ?? s.StartedAt)
             .ToList();
+    }
+
+    /// <summary>El registro de una sesión, analizado de nuevo solo si cambió su fecha o su tamaño (o pasó un rato).</summary>
+    Registry Read(FileInfo file)
+    {
+        var now = DateTime.UtcNow;
+        if (_registry.TryGetValue(file.FullName, out var cached) && cached.Written == file.LastWriteTimeUtc && cached.Length == file.Length
+            && now - cached.ReadAt < RegistryRefresh)
+            return cached;
+        using var doc = JsonDocument.Parse(Json.ReadShared(file.FullName));
+        var entry = new Registry { Written = file.LastWriteTimeUtc, Length = file.Length, ReadAt = now, Root = doc.RootElement.Clone() };
+        _registry[file.FullName] = entry;
+        return entry;
     }
 
     static SessionInfo Build(Account account, JsonElement r, string id, Transcript t, int pid)
@@ -269,6 +312,8 @@ sealed class SessionMonitor
         {
             try
             {
+                // El tamaño se mira sin abrir el archivo (cada 1,5–3 s, todo el día): se abre solo si cambió.
+                if (new FileInfo(Path!).Length == _offset) return;
                 using var fs = new FileStream(Path!, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 if (fs.Length < _offset) Reset();
                 if (fs.Length == _offset) return;

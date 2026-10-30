@@ -100,20 +100,29 @@ sealed record ActivityStats(long Tokens, int ActiveDays, int CurrentStreak, int 
 /// </summary>
 sealed class ActivityTracker
 {
-    static string FilePath => DataFolder.In("history.json");
+    /// <summary>history.json, junto a los ajustes (las pruebas usan otro).</summary>
+    readonly string _file;
     static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
     readonly Dictionary<string, long> _offsets = new(StringComparer.OrdinalIgnoreCase);
     readonly HashSet<string> _seen = new(StringComparer.Ordinal);
     readonly Dictionary<DateOnly, Day> _computed = new();
-    Dictionary<DateOnly, DayRecord> _stored = Load();
+    Dictionary<DateOnly, DayRecord> _stored;
+
+    public ActivityTracker(string? file = null)
+    {
+        _file = file ?? DataFolder.In("history.json");
+        _stored = Load();
+    }
 
     sealed class Day
     {
-        public long Tokens, Output, CacheRead;
+        public long Tokens, Output, CacheRead, Input, CacheWrite;
         public int Responses, Prompts, ToolCalls;
         public readonly HashSet<string> Sessions = new(StringComparer.Ordinal);
         public readonly Dictionary<string, long> Models = new();
+        /// <summary>La salida por modelo (Models lleva el total de tokens): para el pie de la ventana, solo la de hoy.</summary>
+        public readonly Dictionary<string, long> OutputByModel = new();
 
         public DayRecord ToRecord() => new()
         {
@@ -152,6 +161,24 @@ sealed class ActivityTracker
             Save(merged);
         }
         return new ActivitySummary { Days = merged };
+    }
+
+    /// <summary>
+    /// Los tokens de hoy en este equipo, para el pie de la ventana: lo mismo que contaría LocalUsage.ScanToday (las mismas
+    /// respuestas sin repetir, sin las «synthetic», por fecha local), pero de lo que Scan ya leyó, solo lo nuevo de cada
+    /// conversación. Antes se volvían a leer enteras las de hoy en cada actualización. Se llama después de Scan.
+    /// </summary>
+    public LocalTotals Today(IEnumerable<string> configDirs)
+    {
+        var totals = new LocalTotals { Shared = LocalUsage.ProjectRoots(configDirs).Shared };
+        if (!_computed.TryGetValue(DateOnly.FromDateTime(DateTime.Now), out var day)) return totals;
+        totals.Input = day.Input;
+        totals.Output = day.Output;
+        totals.CacheWrite = day.CacheWrite;
+        totals.CacheRead = day.CacheRead;
+        totals.Responses = day.Responses;
+        foreach (var (model, output) in day.OutputByModel) totals.OutputByModel[model] = output;
+        return totals;
     }
 
     void ReadNew(string path)
@@ -215,13 +242,18 @@ sealed class ActivityTracker
         if (key != "m::" && !_seen.Add(key)) return;
 
         var output = (long)Json.Num(u, "output_tokens");
-        var tokens = (long)Json.Num(u, "input_tokens") + (long)Json.Num(u, "cache_creation_input_tokens") + output;
+        var input = (long)Json.Num(u, "input_tokens");
+        var cacheWrite = (long)Json.Num(u, "cache_creation_input_tokens");
+        var tokens = input + cacheWrite + output;
         day.Tokens += tokens;
         day.Output += output;
+        day.Input += input;
+        day.CacheWrite += cacheWrite;
         day.CacheRead += (long)Json.Num(u, "cache_read_input_tokens");
         day.Responses++;
         var shortName = model.StartsWith("claude-", StringComparison.Ordinal) ? model[7..] : model;
         day.Models[shortName] = day.Models.GetValueOrDefault(shortName) + tokens;
+        day.OutputByModel[shortName] = day.OutputByModel.GetValueOrDefault(shortName) + output;
         if (session is not null) day.Sessions.Add(session);
     }
 
@@ -241,12 +273,12 @@ sealed class ActivityTracker
         if (session is not null) day.Sessions.Add(session);
     }
 
-    static Dictionary<DateOnly, DayRecord> Load()
+    Dictionary<DateOnly, DayRecord> Load()
     {
         try
         {
-            if (!File.Exists(FilePath)) return new();
-            var raw = JsonSerializer.Deserialize<Dictionary<string, DayRecord>>(File.ReadAllText(FilePath), Options);
+            if (!File.Exists(_file)) return new();
+            var raw = JsonSerializer.Deserialize<Dictionary<string, DayRecord>>(File.ReadAllText(_file), Options);
             var result = new Dictionary<DateOnly, DayRecord>();
             foreach (var (key, value) in raw ?? new())
                 if (DateOnly.TryParseExact(key, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
@@ -256,15 +288,15 @@ sealed class ActivityTracker
         catch (Exception) { return new(); }
     }
 
-    static void Save(Dictionary<DateOnly, DayRecord> days)
+    void Save(Dictionary<DateOnly, DayRecord> days)
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(_file)!);
             var raw = days.OrderBy(kv => kv.Key).ToDictionary(kv => kv.Key.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), kv => kv.Value);
-            var temp = FilePath + ".tmp";
+            var temp = _file + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(raw, Options));
-            File.Move(temp, FilePath, overwrite: true);
+            File.Move(temp, _file, overwrite: true);
         }
         catch (Exception) { }
     }

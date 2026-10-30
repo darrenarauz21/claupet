@@ -123,6 +123,8 @@ sealed class ToastWindow : Window
         _view.Clicked += () => { Clicked?.Invoke(this); Dismiss(); };
         _view.CloseClicked += Dismiss;
         _timer.Tick += (_, _) => Tick();
+        // Cerrado de cualquier forma (también con CloseAll), el temporizador no sigue vivo.
+        Closed += (_, _) => _timer.Stop();
     }
 
     // Antes de mostrarse, Avalonia aún no sabe la escala real: se usa la de la pantalla principal;
@@ -176,7 +178,11 @@ sealed class ToastWindow : Window
             }
         }
         _view.Remaining = _closingSince is null && !Notice.Sticky ? Math.Clamp(_remaining / (double)Lifetime, 0, 1) : -1;
-        _view.InvalidateVisual();
+        _view.Refresh();
+        // Quieto en su lugar y sin barra que avance (fijo o con el cursor encima), solo se mueve la mascota: basta mirar
+        // cada 100 ms, que sus cuadros duran más.
+        var still = _closingSince is null && Position == _target && (Notice.Sticky || _view.Hovered);
+        _timer.Interval = TimeSpan.FromMilliseconds(still ? 100 : 33);
     }
 
     /// <summary>Lugar de cada aviso en la pila: abajo a la derecha (en macOS, arriba), el más nuevo junto al borde.</summary>
@@ -204,6 +210,18 @@ sealed class ToastView(Notice notice, Theme theme) : Control
 
     readonly long _born = Environment.TickCount64;
     bool _hoverClose;
+    (int Frame, int Bar) _shown = (-1, -1);
+
+    /// <summary>Repinta solo si cambió el cuadro de la mascota o el largo de la barra, en pixeles.</summary>
+    public void Refresh()
+    {
+        var born = Environment.TickCount64 - _born;
+        var frame = Mascots.IsChibi ? ChibiSprite.FrameIndex(ChibiSprite.ForNotice(notice.Kind), born) : (int)(born / 40);
+        var shown = (frame, Remaining < 0 ? -1 : (int)(Bounds.Width * Remaining));
+        if (shown == _shown) return;
+        _shown = shown;
+        InvalidateVisual();
+    }
 
     Rect CloseBounds => new(Bounds.Width - 30, 6, 24, 24);
 
