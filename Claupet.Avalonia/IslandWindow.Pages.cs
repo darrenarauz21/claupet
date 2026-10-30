@@ -133,11 +133,11 @@ sealed partial class IslandWindow
             : talking ? (tick / 160 % 3 == 0 ? MascotFrame.Happy : MascotFrame.Open)
             : _file is not null && !_analysisSeen || tick - _analysisEnd < 3000 && _analysisDone ? MascotFrame.Happy
             : tick % 3600 > 3480 ? MascotFrame.Closed : MascotFrame.Open;
-        if (_chibi)
+        if (_skin is { } skin)
         {
             var unit = Math.Max(1, Math.Floor(box.Height / ChibiSprite.HeadSize));
             var size = ChibiSprite.HeadSize * unit;
-            Gfx.Pixels(dc, box.X + (box.Width - size) / 2, box.Y + (box.Height - size) / 2, unit, fill => ChibiSprite.PaintHead(fill, frame));
+            Gfx.Pixels(dc, box.X + (box.Width - size) / 2, box.Y + (box.Height - size) / 2, unit, fill => ChibiSprite.PaintHead(fill, frame, skin: skin));
         }
         else
         {

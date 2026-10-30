@@ -67,7 +67,7 @@ sealed class AppSettings
     public string ThemeQuality { get; set; } = CustomThemes.Qualities[0].Id;
     /// <summary>Animación al actualizar (RefreshSprite.Styles). Se elige junto con Mascot, en la opción «Mascota» (Mascots).</summary>
     public string Animation { get; set; } = "mascota";
-    /// <summary>Mascota de los avisos y de la animación «mascota»: Mascots.Classic o Mascots.Chibi.</summary>
+    /// <summary>Mascota de los avisos y de la animación «mascota»: Mascots.Classic o el id de un personaje (chibi, dokki…).</summary>
     public string Mascot { get; set; } = Mascots.Classic;
     /// <summary>La mascota (el chibi o la clásica) en su propia ventana sobre el escritorio. Se enciende al elegir el chibi.</summary>
     public bool DesktopMascot { get; set; }
@@ -90,6 +90,12 @@ sealed class AppSettings
     public bool MascotAllDesktops { get; set; } = true;
     public int? DesktopMascotX { get; set; }
     public int? DesktopMascotY { get; set; }
+    /// <summary>Además de la de Claude Code, una mascota en el escritorio por cada otro agente que se sigue (Agents).</summary>
+    public bool AgentPets { get; set; }
+    /// <summary>El personaje de cada agente (su Kind → id de personaje, o vacío para ninguno); sin entrada, Agents.DefaultPet.</summary>
+    public Dictionary<string, string> AgentPet { get; set; } = new();
+    /// <summary>Dónde quedó la mascota de cada agente (su Kind).</summary>
+    public Dictionary<string, PetSpot> AgentPetSpots { get; set; } = new();
     /// <summary>Tamaño de la mascota del escritorio (MascotSizes).</summary>
     public string MascotSize { get; set; } = MascotSizes.Normal;
     /// <summary>La última pestaña abierta de Ajustes.</summary>

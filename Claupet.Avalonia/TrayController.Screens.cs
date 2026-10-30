@@ -65,6 +65,7 @@ sealed partial class TrayController
         if (_locked == locked) return;
         _locked = locked;
         _mascotWindow?.SetPaused(locked);
+        foreach (var pet in _agentPets.Values) pet.Window.SetPaused(locked); // las de los otros agentes, igual
         _island?.SetPaused(locked);
         UpdateVoice(); // la tecla para hablar no se mira con la sesión bloqueada
     }

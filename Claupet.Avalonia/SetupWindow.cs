@@ -51,7 +51,7 @@ sealed class SetupWindow : Window
     bool _applied;
 
     public string Language { get; private set; }
-    /// <summary>La mascota elegida (Mascots.Classic o Chibi), o null si no se tocó.</summary>
+    /// <summary>La mascota elegida (Mascots.Classic o un personaje), o null si no se tocó.</summary>
     public string? Mascot { get; private set; }
     public bool DesktopMascot { get; private set; }
     public bool Chat { get; private set; }
@@ -474,12 +474,13 @@ sealed class SetupWindow : Window
     void Companion()
     {
         Header(L.T("Su compañero"), L.T("Elija cómo quiere ver a Claupet. Todo se puede cambiar después en Ajustes."));
-        string[] ids = [Mascots.Chibi, Mascots.Classic];
+        // Los personajes (el chibi, Dokki, Gemma, Ciel) y la clásica al final.
+        string[] ids = [.. ChibiSprite.Skins.Select(s => s.Id), Mascots.Classic];
         SwitchRow? desk = null;
-        var mascots = Segmented([L.T("Chibi"), L.T("Clásica")], Array.IndexOf(ids, Mascot ?? _currentMascot), i =>
+        var mascots = Segmented([.. ids.Select(Mascots.Label)], Array.IndexOf(ids, Mascot ?? _currentMascot), i =>
         {
             Mascot = ids[i];
-            if (Mascot == Mascots.Chibi && desk is not null) desk.On = true; // el chibi sale al escritorio
+            if (Mascots.IsCharacter(Mascot) && desk is not null) desk.On = true; // un personaje sale al escritorio
         });
         Add(Field(L.T("Mascota"), mascots));
         // Bailar con la música, por ahora, solo en Windows (Ajustes tampoco lo ofrece en los demás).

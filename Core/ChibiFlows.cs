@@ -306,9 +306,9 @@ static partial class ChibiSprite
             Props = Writing([.. done.Select(r => new string(r))], bookX + 10 - scribble.Length, bookY + 2) }, 320));
         moves[ChibiMove.Edit] = [.. edit];
 
-        // Ejecutar: detrás de la laptop (se ve la tapa, con el cangrejito de Claude), teclea a ráfagas con la
-        // pantalla reflejada en los ojos, y entre ráfaga y ráfaga se queda mirando lo que salió.
-        var lid = new (string[], int, int)[] { (Art.Lid, 8, 30), (Art.LidBase, 7, 40) };
+        // Ejecutar: detrás de la laptop (se ve la tapa, con el logo de su IA: el cangrejito de Claude en el chibi), teclea
+        // a ráfagas con la pantalla reflejada en los ojos, y entre ráfaga y ráfaga se queda mirando lo que salió.
+        var lid = new (string[], int, int)[] { (Skin.Lid ?? Art.Lid, 8, 30), (Art.LidBase, 7, 40) };
         var typing = new Pose { Eyes = Eyes.Glow, Mouth = Mouth.Small, Crab = (1, 2), Left = Arm.Type, Right = Arm.Front, Props = lid };
         var typed = typing with { Left = Arm.Front, Right = Arm.Type };
         var watch = typing with { Left = Arm.Front, Right = Arm.Front };
@@ -390,11 +390,17 @@ static partial class ChibiSprite
         }
         moves[ChibiMove.Ponder] = [.. ponder];
 
-        // Otra herramienta: construye una casita con el mazo (ChibiBuild).
-        AddBuildMove(moves, F);
+        // Otra herramienta: construye una casita con el mazo (ChibiBuild), si el personaje tiene las vistas de perfil;
+        // si no, escribe en la libreta y festeja como al terminar.
+        if (Skin.Builds) AddBuildMove(moves, F);
+        else
+        {
+            moves[ChibiMove.Tool] = moves[ChibiMove.Edit];
+            moves[ChibiMove.Built] = moves[ChibiMove.Cheer];
+        }
     }
 
-    static readonly Dictionary<(ChibiMove, int, int), char[][]> WithMusic = new();
+    static readonly Dictionary<(ChibiSkin, ChibiMove, int, int), char[][]> WithMusic = new();
 
     /// <summary>
     /// Como Paint, pero con música, sin dejar de hacer lo suyo. Al ejecutar se pone audífonos y mece la
@@ -402,29 +408,33 @@ static partial class ChibiSprite
     /// suelta una nota que sube por una esquina de arriba y luego por la otra. Al pensar, la nube ocupa
     /// la esquina derecha: las notas salen solo por la izquierda.
     /// </summary>
-    public static void Paint(PixelFill fill, ChibiMove move, long t, bool music)
+    public static void Paint(PixelFill fill, ChibiMove move, long t, bool music, ChibiSkin? skin = null)
     {
-        if (!music) { Paint(fill, move, t); return; }
-        var i = FrameIndex(move, t);
+        if (!music) { Paint(fill, move, t, skin); return; }
+        skin ??= Chibi;
+        var i = FrameIndex(move, t, skin);
         var beat = (int)(t / Beat % 4);
-        if (!WithMusic.TryGetValue((move, i, beat), out var grid))
+        var key = (skin, move, i, beat);
+        char[][]? grid;
+        lock (Cache)
+            if (!WithMusic.TryGetValue(key, out grid))
+                WithMusic[key] = grid = Building(skin, () => WithNote(Of(skin).Moves[move][i], move, beat));
+        Emit(fill, grid, PaletteOf(skin));
+    }
+
+    static char[][] WithNote(Frame frame, ChibiMove move, int beat)
+    {
+        if (frame.Pose is not { } pose) // un cuadro armado aparte (de perfil): solo la nota
         {
-            var frame = Moves[move][i];
-            if (frame.Pose is not { } pose) // un cuadro armado aparte (de perfil): solo la nota
-            {
-                grid = [.. frame.Grid.Select(r => (char[])r.Clone())];
-                var (nx, ny) = frame.Notes![beat];
-                Stamp(grid, Ox + nx, Oy + ny, Note);
-                WithMusic[(move, i, beat)] = grid;
-                Emit(fill, grid);
-                return;
-            }
-            (int X, int Y)[] notes = frame.Notes ?? (move == ChibiMove.Ponder ? [(0, 3), (1, 0), (0, 3), (1, 0)] : [(0, 3), (1, 0), (27, 3), (26, 0)]);
-            WithMusic[(move, i, beat)] = grid = move == ChibiMove.Run
-                ? Compose(pose with { Head = beat switch { 0 => -1, 2 => 1, _ => 0 }, Face = [.. pose.Face, (Art.Headphones, 0, 8)] })
-                : Compose(pose with { Nod = beat % 2 == 1, Fx = [.. pose.Fx, (Note, notes[beat].X, notes[beat].Y)] });
+            char[][] grid = [.. frame.Grid.Select(r => (char[])r.Clone())];
+            var (nx, ny) = frame.Notes![beat];
+            Stamp(grid, Ox + nx, Oy + ny, Note);
+            return grid;
         }
-        Emit(fill, grid);
+        (int X, int Y)[] notes = frame.Notes ?? (move == ChibiMove.Ponder ? [(0, 3), (1, 0), (0, 3), (1, 0)] : [(0, 3), (1, 0), (27, 3), (26, 0)]);
+        return move == ChibiMove.Run
+            ? Compose(pose with { Head = beat switch { 0 => -1, 2 => 1, _ => 0 }, Face = [.. pose.Face, (Art.Headphones, 0, 8)] })
+            : Compose(pose with { Nod = beat % 2 == 1, Fx = [.. pose.Fx, (Note, notes[beat].X, notes[beat].Y)] });
     }
 
     /// <summary>Baja la cabeza (filas 0 a 28) una casilla: tapa la sombra del cuello.</summary>

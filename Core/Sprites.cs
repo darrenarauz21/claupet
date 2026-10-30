@@ -66,9 +66,12 @@ static class RefreshSprite
 
     public static string Label(string id) => Styles.FirstOrDefault(s => s.Id == id).Label ?? Styles[0].Label;
 
-    /// <summary>El estilo que se dibuja: el elegido en Ajustes, con la mascota elegida si es «Mascota».</summary>
+    /// <summary>
+    /// El estilo que se dibuja: el elegido en Ajustes, con la mascota elegida si es «Mascota». Con un personaje, su
+    /// cabeza (la de Mascots.Skin al dibujarse).
+    /// </summary>
     public static string Resolve(string animation, string mascot) =>
-        animation == Mascot && mascot == Mascots.Chibi ? Chibi : animation;
+        animation == Mascot && Mascots.IsCharacter(mascot) ? Chibi : animation;
 
     /// <summary>Tamaño de la cuadrícula de cada estilo, en casillas.</summary>
     public static int Columns(string style) => style switch
@@ -128,7 +131,7 @@ static class RefreshSprite
                 }
                 break;
             case Chibi or SmallChibi:
-                ChibiSprite.PaintHead(fill, frame.Phase, small: style == SmallChibi); // con sus colores, no con el acento
+                ChibiSprite.PaintHead(fill, frame.Phase, small: style == SmallChibi, skin: Mascots.Skin); // con sus colores, no con el acento
                 break;
             default:
                 MascotSprite.Paint(fill, frame.Phase, color);

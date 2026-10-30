@@ -1,26 +1,28 @@
 <div align="center">
 
-<img src="docs/capturas/mascota-voz.png" alt="Claupet escucha, piensa y responde" width="420">
+<img src="docs/capturas/mascotas.png" alt="Chibi, Dokki, Gemma y Ciel bailando juntas" width="664">
 
 # Claupet
 
-**Su uso, sus sesiones de Claude Code y una mascota de escritorio, junto al reloj.**
+**Su uso, las sesiones de sus agentes de código y una mascota de escritorio, junto al reloj.**
 
 [English](README.md) · **Español**
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-D97757)
 ![macOS](https://img.shields.io/badge/macOS-Apple%20%7C%20Intel-D97757)
 ![Linux](https://img.shields.io/badge/Linux-x64-D97757)
+![Mascotas](https://img.shields.io/badge/mascotas-Chibi%20·%20Dokki%20·%20Gemma%20·%20Ciel-8B5CF6)
 ![Licencia](https://img.shields.io/badge/licencia-MIT-2A1F1A)
 
-[Descargar](#descargar) · [Instalar](#instalar) · [Para desarrolladores](#para-desarrolladores)
+[Descargar](#descargar) · [Las mascotas](#conozca-a-las-mascotas) · [Instalar](#instalar) · [Para desarrolladores](#para-desarrolladores)
 
 </div>
 
 ---
 
 Claude Code hace el trabajo. Claupet le mantiene al tanto: cuánto le queda de su plan, qué sesión
-le necesita y en qué anda cada una, sin abrir una terminal.
+le necesita y en qué anda cada una, sin abrir una terminal. ¿También usa Codex, Gemini o Copilot?
+Claupet los sigue a ellos también.
 
 ## Qué hace
 
@@ -31,11 +33,13 @@ le necesita y en qué anda cada una, sin abrir una terminal.
   y una sesión nueva con la cuenta, la carpeta y el modelo que usted elija.
 - 🎬 **Actividad.** Cada sesión paso a paso, en vivo. Todo sale de archivos locales: no gasta
   tokens.
+- 🤖 **También Codex, Gemini y Copilot.** Si usa además Codex CLI, Gemini CLI o GitHub Copilot CLI,
+  sus sesiones salen en Uso y Actividad (con los límites de Codex), leídas de sus propios archivos.
 - 🔔 **Avisos amables.** Un mensajito, con sonido, cuando una sesión termina, pregunta algo,
   necesita permiso, falla o se acerca a un límite.
-- 🦀 **Una mascota de escritorio.** La criaturita clásica o una chibi con hoodie de
-  cangrejo que lee, busca, teclea y construye al ritmo de sus sesiones, baila cuando se renueva un
-  límite y se enoja si la molestan a clics.
+- 🐾 **Mascotas con personalidad.** Chibi, Dokki, Gemma o Ciel (o la criaturita clásica) leen,
+  buscan, teclean y construyen al ritmo de sus sesiones, cada una con sus gestos, su voz y su forma
+  de hablar. Si quiere, una por agente: [conózcalas abajo](#conozca-a-las-mascotas).
 - 💬 **Hable con Claupet** *(Windows)*. Pregúntele a la mascota, o a la isla de arriba de la
   pantalla, por escrito o de viva voz, y escuche la respuesta con la voz propia de Claupet. Suéltele
   un archivo y se lo resume. También cambia el fondo, el tema, el volumen o la música, y le encarga
@@ -45,7 +49,8 @@ le necesita y en qué anda cada una, sin abrir una terminal.
   ventanas, brillo, portapapeles, carpetas y del equipo. Cada cosa pide permiso la primera vez.
 - 📶 **Hecha para redes reales.** Sigue el proxy de Windows, renueva sola las sesiones vencidas y,
   sin internet, igual saluda y le dice la hora.
-- 🎨 **A su gusto.** Paletas de color, mascotas, animaciones y estilos de sonido.
+- 🎨 **A su gusto.** Paletas de color, temas propios creados con un prompt, mascotas, animaciones y
+  estilos de sonido.
 - 🌎 **En español e inglés.** Arranca en el idioma de su sistema y se cambia cuando quiera en
   **Ajustes › Sistema**.
 
@@ -53,6 +58,40 @@ le necesita y en qué anda cada una, sin abrir una terminal.
   <img src="docs/capturas/isla-chat.png" alt="La isla con una respuesta" width="48%">
   <img src="docs/capturas/caja.png" alt="La mascota lleva un archivo en una caja hasta la isla, que lo resume" width="48%">
 </p>
+
+## Conozca a las mascotas
+
+<table>
+  <tr>
+    <td align="center" width="25%"><img src="docs/capturas/mascota-chibi.png" alt="Chibi con maracas" width="160"></td>
+    <td align="center" width="25%"><img src="docs/capturas/mascota-dokki.png" alt="Dokki festeja con un chorrito de ballena" width="160"></td>
+    <td align="center" width="25%"><img src="docs/capturas/mascota-gemma.png" alt="Gemma festeja y después disimula" width="160"></td>
+    <td align="center" width="25%"><img src="docs/capturas/mascota-ciel.png" alt="Ciel piensa en código" width="160"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Chibi</b><br><sub>Claude</sub></td>
+    <td align="center"><b>Dokki</b><br><sub>DeepSeek</sub></td>
+    <td align="center"><b>Gemma</b><br><sub>Gemini</sub></td>
+    <td align="center"><b>Ciel</b><br><sub>Codex</sub></td>
+  </tr>
+  <tr>
+    <td valign="top">Hoodie de cangrejo con ojitos sobre antenas. Lee, busca, teclea y construye una casita al ritmo
+      de sus sesiones, y toca maracas cuando se renueva un límite.</td>
+    <td valign="top">Sirvienta ballena, con aletas por orejas y cola. Hace una reverencia al saludar, sopla un
+      chorrito al festejar y sueña en burbujas. Dulce y tranquila.</td>
+    <td valign="top">Tsundere de coletas altas atadas con la estrella de Gemini. Festeja… y enseguida disimula.
+      ¡Hmph!</td>
+    <td valign="top">Pelo corto blanco con puntas verdes y un gancho con el logo de OpenAI. Piensa en
+      <code>&lt;/&gt;</code> y festeja con un visto bueno, sin perder la calma.</td>
+  </tr>
+</table>
+
+Cada una tiene sus gestos y su voz, y el asistente toma su personalidad. Elija la suya en
+**Ajustes › Apariencia › Mascota**.
+
+¿Sigue también a Codex, Gemini o Copilot? Encienda **Una mascota por cada agente**: cada agente tiene
+la suya junto a la de Claude Code. Teclea mientras ese agente trabaja y duerme cuando está quieto.
+Cualquier personaje sirve para cualquier agente.
 
 ## Descargar
 
@@ -116,11 +155,16 @@ python herramientas/empaquetar.py                  # paquetes autocontenidos en 
 
 ```text
 Core/                     lógica común: uso, sesiones, actividad, avisos, asistente y red
+Core/Pets/                los personajes: Dokki, Gemma y Ciel (Chibi está en Core/ChibiSprite.cs)
 Console/                  Claupet Console, la ventana grande
 Claupet.Avalonia/         la app en Windows, Linux y macOS: bandeja, mascota, isla y voz
 Claupet.Tests/            pruebas
 herramientas/             empaquetado y scripts de instalación
 ```
+
+Cada mascota es pixel art escrito en código: media figura, una letra por color, espejada. Todas
+comparten el mismo esqueleto, así que un personaje nuevo solo trae su pelo, su ropa, sus colores y sus
+gestos. Los detalles están en [DETALLES.md](DETALLES.md#personajes).
 
 ### Hecha con
 
@@ -140,12 +184,14 @@ herramientas/             empaquetado y scripts de instalación
 | Whisper `ggml-small` | El micrófono: voz a texto | Su equipo (488 MB, se descarga la primera vez) |
 | Supertonic 3 | La voz de Claupet: texto a voz | Su equipo (unos 400 MB, se descarga la primera vez) |
 
-Opciones útiles al desarrollar: `--preview` abre una segunda ventana, `--dump` escribe una
-consulta completa de uso y `--preguntar "<texto>"` le pregunta a la mascota desde la consola. Todos
-los detalles técnicos están en [DETALLES.md](DETALLES.md).
+Opciones útiles al desarrollar: `--preview` abre una segunda ventana, `--mascota <chibi|dokki|gemma|ciel>`
+muestra esa mascota solo en esa ejecución, `--dump` escribe una consulta completa de uso y
+`--preguntar "<texto>"` le pregunta a la mascota desde la consola. Todos los detalles técnicos están
+en [DETALLES.md](DETALLES.md).
 
 ## Licencia
 
 [MIT](LICENSE). Las bibliotecas incluidas y los modelos de voz que se descargan tienen sus propias
 licencias: vea [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Claupet es un proyecto personal y no
-oficial, sin relación con Anthropic. «Claude» y «Claude Code» son marcas de Anthropic, PBC.
+oficial, sin relación con Anthropic, DeepSeek, Google ni OpenAI. Claude, Claude Code, DeepSeek, Gemini,
+Codex, OpenAI y sus logos son marcas de sus respectivos dueños; las mascotas son un homenaje de fan.

@@ -105,7 +105,8 @@ sealed partial class IslandWindow : Window
     bool _asking;
     long _answerEnd;        // cuándo terminó la última respuesta del chat
     int _answerHold;        // y cuánto se queda abierta para leerla (ms)
-    bool _chibi = true;
+    /// <summary>El personaje de la cabeza; null: la clásica.</summary>
+    ChibiSkin? _skin = ChibiSprite.Chibi;
 
     // Análisis de un archivo
     string? _file;
@@ -216,9 +217,9 @@ sealed partial class IslandWindow : Window
         Redraw();
     }
 
-    public void SetMascot(bool chibi)
+    public void SetMascot(ChibiSkin? skin)
     {
-        _chibi = chibi;
+        _skin = skin;
         Redraw();
     }
 

@@ -16,6 +16,9 @@ sealed class AgentAccount
     public bool Follow { get; set; } = true;
 }
 
+/// <summary>Dónde quedó la mascota de un agente en el escritorio, en pixeles.</summary>
+sealed record PetSpot(int X, int Y);
+
 /// <summary>Un límite de uso que el agente deja escrito (Codex: la ventana de 5 h y la semanal).</summary>
 sealed record AgentLimit(string Label, double Percent, DateTimeOffset? ResetsAt, int WindowMinutes);
 
@@ -92,8 +95,37 @@ static class Agents
         var detail = snapshot is { Exists: false } ? L.T("{0} · no está en este equipo", folder)
             : snapshot?.LastActivity is { } last ? L.T("{0} · última sesión {1}", folder, Format.Ago(last))
             : folder;
-        return new AgentState(a.Kind, a.Label, a.Follow, detail);
+        return new AgentState(a.Kind, a.Label, a.Follow, detail, ChibiSprite.SkinOf(PetOf(settings, a.Kind))?.Name ?? L.T("Ninguna"));
     }).ToList();
+
+    /// <summary>El personaje de cada agente si no se eligió otro: Ciel para Codex y Gemma para Gemini; Copilot, ninguno.</summary>
+    public static string DefaultPet(string kind) => kind switch { Codex => "ciel", Gemini => "gemma", _ => "" };
+
+    /// <summary>El personaje elegido para ese agente (cualquiera sirve para cualquiera), o vacío si no lleva mascota.</summary>
+    public static string PetOf(AppSettings settings, string kind) =>
+        settings.AgentPet.TryGetValue(kind, out var id) && (id.Length == 0 || ChibiSprite.SkinOf(id) is not null) ? id : DefaultPet(kind);
+
+    /// <summary>
+    /// Cuándo escribió el agente por última vez en sus sesiones. Solo mira la fecha de los archivos, sin leerlos, así que se
+    /// puede preguntar seguido (la mascota de cada agente teclea mientras trabaja). null si no hay sesiones.
+    /// </summary>
+    public static DateTimeOffset? LastWrite(AgentAccount agent)
+    {
+        var (folder, pattern, depth) = agent.Kind switch
+        {
+            Codex => ("sessions", "rollout-*.jsonl", 4),
+            Gemini => ("tmp", "session-*.json", 3),
+            Copilot => ("session-state", "events.jsonl", 1),
+            _ => ("", "", 0),
+        };
+        if (pattern.Length == 0) return null;
+        try
+        {
+            return Newest(Path.Combine(agent.Folder, folder), pattern, depth).FirstOrDefault() is { } file
+                ? new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
 
     /// <summary>Lo de hoy de un agente, para Uso: sesiones y, si se pueden contar, mensajes (Gemini) o eventos (Copilot).</summary>
     public static string Today(AgentSnapshot s)
