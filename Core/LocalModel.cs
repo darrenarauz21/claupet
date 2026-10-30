@@ -35,16 +35,81 @@ static class LocalModel
     /// <summary>El que se propone: responde bien en español y cabe en casi cualquier equipo.</summary>
     public const string DefaultId = "qwen3.5-2b";
 
-    // llama-server de llama.cpp, versión b11913, compilado para CPU x64.
+    // llama-server de llama.cpp, versión b11913, compilado con Vulkan para x64: usa la tarjeta gráfica (dedicada o
+    // integrada, de cualquier marca) y trae también el motor del procesador, que queda si no hay gráfica o no arranca.
     const string Build = "b11913";
-    const string ServerUrl = "https://github.com/ggml-org/llama.cpp/releases/download/b11913/llama-b11913-bin-win-cpu-x64.zip";
-    public const long ServerSize = 24_218_562;
-    const string ServerSha256 = "55b31ccaf398e90457cfe28087297f5f3fdf1e3bfa7a28e1108f13d0af8e4621";
+    const string ServerUrl = "https://github.com/ggml-org/llama.cpp/releases/download/b11913/llama-b11913-bin-win-vulkan-x64.zip";
+    public const long ServerSize = 37_140_477;
+    const string ServerSha256 = "d9b27dfe8addb0782c59c194604dbab69ccef8493c8964a435d762c4be45e176";
+
+    /// <summary>La tarjeta gráfica (Ajustes › Respuestas): si arranca con ella, siempre con ella, o nunca.</summary>
+    public const string GpuAuto = "auto", GpuOn = "on", GpuOff = "off";
 
     public static string Folder => DataFolder.In("modelo-local");
-    static string ServerFolder => Path.Combine(Folder, "llama-" + Build);
-    public static string ServerExe => Path.Combine(ServerFolder, "llama-server.exe");
+    static string ServerFolder => Path.Combine(Folder, "llama-" + Build + "-vulkan");
+    /// <summary>La de antes, solo para el procesador: se sigue usando, si estaba, hasta que se baje la de Vulkan.</summary>
+    static string CpuServerFolder => Path.Combine(Folder, "llama-" + Build);
+    static string GpuServerExe => Path.Combine(ServerFolder, "llama-server.exe");
+    public static string ServerExe => File.Exists(GpuServerExe) ? GpuServerExe : Path.Combine(CpuServerFolder, "llama-server.exe");
     public static string ModelFile(Choice choice) => Path.Combine(Folder, choice.File);
+
+    /// <summary>Está la versión que puede usar la tarjeta gráfica (la de Vulkan).</summary>
+    public static bool GpuServerReady => File.Exists(GpuServerExe);
+
+    static Task<string?>? _gpuDevice;
+
+    /// <summary>
+    /// La tarjeta gráfica que usaría llama-server, como la nombra él (llama-server --list-devices; al arrancar no lo
+    /// dice), con «integrada» si comparte la memoria; null si no hay ninguna o falta la versión de Vulkan. Se pregunta una
+    /// vez por sesión.
+    /// </summary>
+    public static Task<string?> GpuDeviceAsync() => _gpuDevice ??= Task.Run(ListGpu);
+
+    static string? ListGpu()
+    {
+        if (!GpuServerReady) return null;
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo(GpuServerExe, "--list-devices")
+            {
+                WorkingDirectory = ServerFolder, UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true,
+            });
+            if (process is null) return null;
+            var errors = process.StandardError.ReadToEndAsync();
+            var output = process.StandardOutput.ReadToEnd();
+            if (!process.WaitForExit(10_000))
+            {
+                process.Kill();
+                return null;
+            }
+            return ParseGpu(output + "\n" + errors.Result);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException) { return null; }
+    }
+
+    /// <summary>
+    /// De lo que escribe --list-devices, la primera gráfica: «  Vulkan0: AMD Radeon(TM) Graphics (12978 MiB, …)» da su
+    /// nombre. En una terminal escribe además «ggml_vulkan: 0 = … | uma: 1 | …» (uma: comparte la memoria con el
+    /// procesador): con esa línea dice también «integrada». Capturada, como la lee la app, esa no sale.
+    /// </summary>
+    internal static string? ParseGpu(string text)
+    {
+        const string Detail = "ggml_vulkan: 0 = ", Listed = "Vulkan0: ";
+        var lines = text.Split('\n');
+        foreach (var line in lines)
+        {
+            var at = line.IndexOf(Detail, StringComparison.Ordinal);
+            if (at < 0) continue;
+            var rest = line[(at + Detail.Length)..];
+            var name = rest.Split([" (", " |"], 2, StringSplitOptions.None)[0].Trim();
+            return rest.Contains("uma: 1", StringComparison.Ordinal) ? L.T("{0} (integrada)", name) : name;
+        }
+        foreach (var line in lines)
+            if (line.Trim() is var listed && listed.StartsWith(Listed, StringComparison.Ordinal))
+                return listed[Listed.Length..].Split(" (", 2)[0].Trim();
+        return null;
+    }
 
     /// <summary>El elegido (o el propuesto, si no hay ninguno o ya no existe).</summary>
     public static Choice Find(string? id) => Choices.FirstOrDefault(c => c.Id == id) ?? Choices.First(c => c.Id == DefaultId);
@@ -56,8 +121,9 @@ static class LocalModel
     /// <summary>Están llama-server y ese modelo (entero).</summary>
     public static bool Ready(Choice choice) => ServerReady && ModelReady(choice);
 
-    /// <summary>Lo que falta bajar para usarlo, en bytes.</summary>
-    public static long Missing(Choice choice) => (ServerReady ? 0 : ServerSize) + (ModelReady(choice) ? 0 : choice.Size);
+    /// <summary>Lo que falta bajar para usarlo, en bytes; con gpu, también la versión de Vulkan si solo está la de antes.</summary>
+    public static long Missing(Choice choice, bool gpu = true) =>
+        ((gpu ? GpuServerReady : ServerReady) ? 0 : ServerSize) + (ModelReady(choice) ? 0 : choice.Size);
 
     static long Length(string path) => File.Exists(path) ? new FileInfo(path).Length : 0;
 
@@ -65,11 +131,11 @@ static class LocalModel
     /// Baja lo que falte (llama-server y el modelo), retomando lo que haya quedado, y avisa el avance de 0 a 1.
     /// Al terminar borra los otros modelos, para no dejar gigas sin usar.
     /// </summary>
-    public static async Task DownloadAsync(Choice choice, IProgress<double> progress, CancellationToken cancel)
+    public static async Task DownloadAsync(Choice choice, IProgress<double> progress, CancellationToken cancel, bool gpu = true)
     {
-        var total = Math.Max(1, Missing(choice));
+        var total = Math.Max(1, Missing(choice, gpu));
         long done = 0;
-        if (!ServerReady)
+        if (gpu ? !GpuServerReady : !ServerReady)
         {
             var zip = Path.Combine(Folder, "llama-server.zip");
             await ModelDownload.FetchAsync(ServerUrl, zip, ServerSize, ServerSha256,
@@ -77,6 +143,8 @@ static class LocalModel
             await Task.Run(() => Extract(zip), cancel);
             File.Delete(zip);
             done += ServerSize;
+            _gpuDevice = null; // ya hay a quién preguntarle por la gráfica
+            // La de antes queda (24 MB): otra copia de la app, de una versión anterior, puede estar usándola.
         }
         if (!ModelReady(choice))
         {
@@ -134,6 +202,18 @@ sealed class LocalModelServer : IDisposable
     /// <summary>Minutos sin uso tras los que suelta la memoria (Ajustes › Respuestas); vale desde el próximo arranque.</summary>
     public int IdleMinutes { get; set; } = 5;
 
+    /// <summary>La tarjeta gráfica (LocalModel.GpuAuto, GpuOn o GpuOff); vale desde el próximo arranque.</summary>
+    public string Gpu { get; set; } = LocalModel.GpuAuto;
+
+    /// <summary>
+    /// La gráfica en que corre, como la nombra llama.cpp (con «integrada» si comparte la memoria); null si corre en el
+    /// procesador o todavía no arrancó.
+    /// </summary>
+    public string? Device => _process is { HasExited: false } && _onGpu ? _device : null;
+
+    bool _onGpu, _gpuFailed;
+    string? _device;
+
     readonly SemaphoreSlim _lock = new(1, 1);
     readonly KillOnCloseJob _job = new();
     readonly Queue<string> _log = new();
@@ -151,37 +231,16 @@ sealed class LocalModelServer : IDisposable
             var file = LocalModel.ModelFile(choice);
             if (_process is { HasExited: false } && _file == file && _base is { } running) return (running, _key);
             Stop();
-            var port = FreePort();
-            _key = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
-            var start = new ProcessStartInfo(LocalModel.ServerExe)
+            var gpu = LocalModel.GpuServerReady && Gpu != LocalModel.GpuOff && !(_gpuFailed && Gpu == LocalModel.GpuAuto);
+            try { await StartAsync(file, gpu, cancel); }
+            catch (ExtensionUnavailableException) when (gpu && Gpu == LocalModel.GpuAuto && !cancel.IsCancellationRequested)
             {
-                WorkingDirectory = Path.GetDirectoryName(LocalModel.ServerExe)!,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            // Sin «pensar» en voz alta (responde enseguida), una sola conversación a la vez y sin la página web.
-            foreach (var arg in new[]
-            {
-                "-m", file, "--host", "127.0.0.1", "--port", port.ToString(), "--api-key", _key, "-a", AssistantModels.Local,
-                "-c", "4096", "-np", "1", "--reasoning-budget", "0", "--no-webui", "--sleep-idle-seconds", (IdleMinutes * 60).ToString(),
-            })
-                start.ArgumentList.Add(arg);
-            // La clave va por argumentos y no por el entorno: no la hereda nada más.
-            var process = new Process { StartInfo = start };
-            process.OutputDataReceived += (_, e) => Remember(e.Data);
-            process.ErrorDataReceived += (_, e) => Remember(e.Data);
-            lock (_log) _log.Clear();
-            process.Start();
-            _job.Add(process);
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            _process = process;
-            _file = file;
-            _base = new Uri($"http://127.0.0.1:{port}/v1/");
-            await WaitReadyAsync(process, port, cancel);
-            return (_base, _key);
+                // Con la tarjeta gráfica no arrancó (sin memoria para el modelo, un controlador viejo): sigue con el procesador.
+                _gpuFailed = true;
+                Stop();
+                await StartAsync(file, gpu: false, cancel);
+            }
+            return (_base!, _key);
         }
         catch
         {
@@ -189,6 +248,47 @@ sealed class LocalModelServer : IDisposable
             throw;
         }
         finally { _lock.Release(); }
+    }
+
+    /// <summary>Arranca llama-server con ese modelo: con gpu, todas sus capas en la tarjeta gráfica; sin, solo el procesador.</summary>
+    async Task StartAsync(string file, bool gpu, CancellationToken cancel)
+    {
+        var port = FreePort();
+        _key = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+        var start = new ProcessStartInfo(LocalModel.ServerExe)
+        {
+            WorkingDirectory = Path.GetDirectoryName(LocalModel.ServerExe)!,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        // Sin «pensar» en voz alta (responde enseguida), una sola conversación a la vez y sin la página web.
+        foreach (var arg in new[]
+        {
+            "-m", file, "--host", "127.0.0.1", "--port", port.ToString(), "--api-key", _key, "-a", AssistantModels.Local,
+            "-c", "4096", "-np", "1", "--reasoning-budget", "0", "--no-webui", "--sleep-idle-seconds", (IdleMinutes * 60).ToString(),
+        })
+            start.ArgumentList.Add(arg);
+        // La de Vulkan: todo el modelo en la gráfica, o ninguna gráfica (si no, igual le pasaría parte del trabajo).
+        if (LocalModel.GpuServerReady)
+            foreach (var arg in gpu ? new[] { "-ngl", "99" } : ["--device", "none"])
+                start.ArgumentList.Add(arg);
+        _onGpu = gpu;
+        _device = gpu ? await LocalModel.GpuDeviceAsync() : null;
+        // La clave va por argumentos y no por el entorno: no la hereda nada más.
+        var process = new Process { StartInfo = start };
+        process.OutputDataReceived += (_, e) => Remember(e.Data);
+        process.ErrorDataReceived += (_, e) => Remember(e.Data);
+        lock (_log) _log.Clear();
+        process.Start();
+        _job.Add(process);
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        _process = process;
+        _file = file;
+        _base = new Uri($"http://127.0.0.1:{port}/v1/");
+        await WaitReadyAsync(process, port, cancel);
     }
 
     /// <summary>Espera a que /health responda 200 (cargar el modelo lleva unos segundos); si se cierra antes, dice por qué.</summary>

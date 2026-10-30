@@ -1435,5 +1435,12 @@
   "Ciel, una chica de pelo corto blanco con las puntas verdes y un gancho con el logo de OpenAI; serena, precisa y de humor seco": "Ciel, a girl with short white hair with green tips and an OpenAI-logo hair clip; calm, precise and dry-humored",
   "Una mascota por cada agente": "One pet per agent",
   "Junto a la de Claude Code, cada agente con la suya: teclea mientras el agente trabaja, queda quieta si trabajó hace poco y si no, duerme. Cualquier personaje sirve para cualquier agente.": "Next to Claude Code's, each agent gets its own: it types while the agent works, stays still if it worked recently and otherwise sleeps. Any character works for any agent.",
-  "Mascota de {0}": "{0}'s pet"
+  "Mascota de {0}": "{0}'s pet",
+  "Tarjeta gráfica": "Graphics card",
+  "{0} (integrada)": "{0} (integrated)",
+  "Automático: la usa si arranca con ella": "Automatic: uses it if it starts with it",
+  "Siempre": "Always",
+  "Nunca: solo el procesador": "Never: processor only",
+  "Nunca": "Never",
+  "En este equipo, con el procesador; con la tarjeta gráfica responde más rápido ({0} MB más)": "On this computer, on the processor; with the graphics card it answers faster ({0} MB more)"
 }

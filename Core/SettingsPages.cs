@@ -102,6 +102,7 @@ sealed record SettingsState
     /// <summary>Respuestas: el modelo local listo, cuándo suelta la memoria y el modelo de la nube («Claude · Haiku»).</summary>
     public bool LocalReady { get; init; }
     public string LocalIdle { get; init; } = "";
+    public string LocalGpu { get; init; } = "";
     public string CloudModel { get; init; } = "";
     /// <summary>El modelo local responde preguntas generales: se avisa que puede inventar.</summary>
     public bool GeneralLocal { get; init; }
@@ -370,6 +371,7 @@ static class SettingsPages
         {
             rows.Add(Choice(L.T("Modelo local"), "localmodel", s.LocalModel));
             rows.Add(Link(s.LocalStatus, s.LocalAction, "local", s.LocalAction == L.T("Borrar") ? RowTone.Danger : RowTone.Accent));
+            rows.Add(Choice(L.T("Tarjeta gráfica"), "localgpu", s.LocalGpu));
             if (s.LocalReady) rows.Add(Choice(L.T("Liberar la memoria tras"), "localidle", s.LocalIdle));
         }
         rows.Add(Info(L.T("Nube"), s.CloudModel));

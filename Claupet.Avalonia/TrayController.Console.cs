@@ -89,6 +89,7 @@ sealed partial class TrayController : IConsoleApp
             LocalAction = LocalStatusText().Action,
             LocalReady = LocalModel.Ready(LocalChoice),
             LocalIdle = L.T("{0} min", s.LocalIdleMinutes),
+            LocalGpu = LocalGpuLabel(),
             Island = s.Island,
             IslandHover = s.IslandHover,
             IslandWhileBusy = s.IslandWhileBusy,
@@ -233,6 +234,7 @@ sealed partial class TrayController : IConsoleApp
             case "size": Choose(MascotSizes.Choices, _settings.MascotSize, SetMascotSize); break;
             case "localmodel": PickLocalModel(); break;
             case "localidle": PickLocalIdle(); break;
+            case "localgpu": PickLocalGpu(); break;
             case "local": LocalModelAction(); break;
             // En Windows se puede grabar otra tecla o combinación; en Linux y macOS, solo las que se mantienen.
             case "mickey":

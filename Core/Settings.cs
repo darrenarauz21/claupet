@@ -114,6 +114,8 @@ sealed class AppSettings
     public string? LocalModel { get; set; }
     /// <summary>Minutos sin uso tras los que el modelo local suelta la memoria.</summary>
     public int LocalIdleMinutes { get; set; } = 5;
+    /// <summary>La tarjeta gráfica para el modelo local: LocalModel.GpuAuto (de entrada), GpuOn o GpuOff.</summary>
+    public string LocalGpu { get; set; } = Claupet.LocalModel.GpuAuto;
 
     /// <summary>Ajustes › Respuestas: quién responde primero cada tipo de pregunta (AnswerTopics); el que falta, el de siempre.</summary>
     public Dictionary<string, Engine> AnswerEngines { get; set; } = new();
