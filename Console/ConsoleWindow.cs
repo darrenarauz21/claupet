@@ -12,12 +12,13 @@ using Avalonia.Styling;
 
 /// <summary>
 /// La ventana de Claupet Console: bordes redondeados, la barra de arriba propia (con el ícono de Claupet), el riel
-/// con Chat, Editor y Ajustes y, al lado, la lista de chats, la de archivos o las secciones de los ajustes. Lo del chat
-/// y los ajustes lo manda la bandeja (aquí no se guardan ajustes); el editor trabaja con los archivos directamente.
+/// con Chat, Terminal, Editor y Ajustes y, al lado, la lista de chats, la de sesiones, la de archivos o las secciones de
+/// los ajustes. Lo del chat y los ajustes lo manda la bandeja (aquí no se guardan ajustes); la Terminal y el editor
+/// trabajan solos (con Claude Code y con los archivos).
 /// </summary>
 sealed class ConsoleWindow : Window
 {
-    enum Mode { Chat, Editor, Settings }
+    enum Mode { Chat, Terminal, Editor, Settings }
 
     readonly ConsoleClient _client = new();
     readonly Grid _root = new() { RowDefinitions = new RowDefinitions("48,*") };
@@ -33,6 +34,7 @@ sealed class ConsoleWindow : Window
     readonly ScrollViewer _scroll = new();
     readonly ChatPane _chat = new();
     readonly EditorPane _editor = new();
+    readonly TerminalPane _terminal = new();
     readonly StackPanel _fileList = new() { Spacing = 2 };
     /// <summary>La lista de archivos del editor, a la izquierda (se muestra con el botón de la cabecera del editor).</summary>
     bool _editorFiles;
@@ -84,6 +86,7 @@ sealed class ConsoleWindow : Window
             Render(rebuild: true);
         };
         _editor.DocsChanged += () => { if (_mode == Mode.Editor && _editorFiles) RenderFileList(); };
+        _terminal.TabsChanged += () => { if (_mode == Mode.Terminal) _asideTop.Child = _terminal.Header(); };
         // Los atajos del editor (Ctrl+N, O, S, W) mientras se ve.
         KeyDown += (_, e) => { if (_mode == Mode.Editor) _editor.HandleKey(e); };
         Closing += (_, e) =>
@@ -138,7 +141,11 @@ sealed class ConsoleWindow : Window
             _ink = Ink.For(IsDark());
             Render(rebuild: true);
         };
-        Closed += (_, _) => _client.Dispose();
+        Closed += (_, _) =>
+        {
+            _terminal.CloseAll();
+            _client.Dispose();
+        };
     }
 
     bool IsDark() => (Application.Current?.ActualThemeVariant ?? ThemeVariant.Light) == ThemeVariant.Dark;
@@ -236,22 +243,28 @@ sealed class ConsoleWindow : Window
             _main.BorderBrush = _ink.Hairline;
             _chat.SetInk(_ink);
             _editor.SetInk(_ink);
+            _terminal.SetInk(_ink);
             _body.ColumnDefinitions[1].Width = new GridLength(_mode switch
             {
-                Mode.Chat => 250,
+                Mode.Chat or Mode.Terminal => 250,
                 Mode.Editor => _editorFiles ? 250 : 0,
                 _ => 210,
             });
             // Sin columna (el editor con los archivos ocultos), nada de ella asoma.
             _aside.IsVisible = _body.ColumnDefinitions[1].Width.Value > 0;
-            _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Editor => FilesHeader(), _ => _heading };
-            _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Editor => _fileList, _ => _sections };
+            _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Terminal => _terminal.Header(), Mode.Editor => FilesHeader(), _ => _heading };
+            _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Terminal => _terminal.List, Mode.Editor => _fileList, _ => _sections };
         }
         _heading.Text = L.T("Ajustes");
         _heading.Foreground = _ink.Text;
         _heading.Margin = new Thickness(10, 2, 10, 12);
 
-        // El editor no necesita a la bandeja: trabaja con los archivos.
+        // La Terminal y el editor no necesitan a la bandeja.
+        if (_mode == Mode.Terminal)
+        {
+            if (_main.Child != _terminal) _main.Child = _terminal;
+            return;
+        }
         if (_mode == Mode.Editor)
         {
             if (_editorFiles) RenderFileList();
@@ -307,6 +320,7 @@ sealed class ConsoleWindow : Window
         Render(rebuild: true);
         if (mode == Mode.Chat) _chat.FocusInput();
         if (mode == Mode.Editor) _editor.FocusText();
+        if (mode == Mode.Terminal) _terminal.FocusInput();
     }
 
     // ── Archivos del editor ─────────────────────────────────────────────────────────────────
@@ -515,15 +529,17 @@ sealed class ConsoleWindow : Window
 
     // Los íconos del riel, en un cuadro de 24 (los del diseño).
     const string ChatIcon = "M5,5 H19 A1,1 0 0 1 20,6 V15 A1,1 0 0 1 19,16 H10 L5,20 V6 A1,1 0 0 1 6,5 Z";
+    const string TerminalIcon = "M4,5 H20 A1,1 0 0 1 21,6 V18 A1,1 0 0 1 20,19 H4 A1,1 0 0 1 3,18 V6 A1,1 0 0 1 4,5 Z M7,10 L10,12.5 L7,15 M12.5,15 H16.5";
     const string EditorIcon = "M14,3 H7 A1,1 0 0 0 6,4 V20 A1,1 0 0 0 7,21 H17 A1,1 0 0 0 18,20 V7 L14,3 Z M14,3 V7 H18 M9.5,12 H14.5 M9.5,16 H12.5";
     const string SettingsIcon = "M15,12 A3,3 0 1 1 9,12 A3,3 0 1 1 15,12 Z M12,2.5 V5 M12,19 V21.5 M5.3,5.3 L7.1,7.1 M16.9,16.9 L18.7,18.7 M2.5,12 H5 "
         + "M19,12 H21.5 M5.3,18.7 L7.1,16.9 M16.9,7.1 L18.7,5.3";
 
-    /// <summary>El riel de la izquierda: Chat, Editor y Ajustes. El editor llega en una próxima etapa.</summary>
+    /// <summary>El riel de la izquierda: Chat, Terminal, Editor y Ajustes.</summary>
     Control Rail()
     {
         var rail = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
         rail.Children.Add(RailButton(ChatIcon, L.T("Chat"), _mode == Mode.Chat, () => SetMode(Mode.Chat)));
+        rail.Children.Add(RailButton(TerminalIcon, L.T("Terminal"), _mode == Mode.Terminal, () => SetMode(Mode.Terminal)));
         rail.Children.Add(RailButton(EditorIcon, L.T("Editor"), _mode == Mode.Editor, () => SetMode(Mode.Editor)));
         rail.Children.Add(RailButton(SettingsIcon, L.T("Ajustes"), _mode == Mode.Settings, () => SetMode(Mode.Settings)));
         return rail;
