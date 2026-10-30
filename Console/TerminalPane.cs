@@ -43,6 +43,8 @@ sealed partial class TerminalPane : Grid
         public string? Branch { get; set; } = GitBranch.Of(agent.Options.Folder);
         public string Project => Path.GetFileName(Agent.Options.Folder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : Agent.Options.Folder;
         public string Draft { get; set; } = "";
+        /// <summary>Una terminal de comandos (TerminalPane.Shell.cs). Entonces Agent no se abre: solo lleva la carpeta.</summary>
+        public ShellSession? Shell { get; init; }
     }
 
     readonly List<Tab> _tabs = [];
@@ -63,6 +65,8 @@ sealed partial class TerminalPane : Grid
     Ink _ink = Ink.For(false);
     Tab? _current;
     bool _creating = true;
+    /// <summary>La carpeta con la que se abre la sesión nueva (la del proyecto desde el que se pidió).</summary>
+    string? _newFolder;
     Border _send = new();
     TextBlock _status = new();
     TextBlock _context = new();
@@ -97,7 +101,7 @@ sealed partial class TerminalPane : Grid
     FontFamily Mono => _look.Mono;
 
     /// <summary>El ancho de la columna de la izquierda: con descripción o solo los íconos.</summary>
-    public double ListWidth => _look.IconsOnly ? 64 : 250;
+    public double ListWidth => _look.IconsOnly ? 64 : _projects.ListWidth;
 
     void ApplyLook()
     {
@@ -115,7 +119,11 @@ sealed partial class TerminalPane : Grid
     /// <summary>Al cerrar la Console: ningún Claude Code queda corriendo.</summary>
     public void CloseAll()
     {
-        foreach (var tab in _tabs) tab.Agent.Dispose();
+        foreach (var tab in _tabs)
+        {
+            tab.Agent.Dispose();
+            tab.Shell?.Dispose();
+        }
         _tabs.Clear();
     }
 
@@ -151,42 +159,6 @@ sealed partial class TerminalPane : Grid
     /// <summary>Las pestañas, agrupadas por proyecto.</summary>
     public Control List => _list;
 
-    void RenderList()
-    {
-        _list.Children.Clear();
-        foreach (var group in _tabs.GroupBy(t => t.Agent.Options.Folder, StringComparer.OrdinalIgnoreCase))
-        {
-            var first = group.First();
-            if (_look.IconsOnly)
-            {
-                // Solo íconos: una raya separa los proyectos y cada pestaña es su ícono, con el resto al pasar el cursor.
-                if (_list.Children.Count > 0)
-                    _list.Children.Add(new Border { Height = 1, Background = _ink.Hairline, Margin = new Thickness(14, 6) });
-                foreach (var tab in group) _list.Children.Add(TabIcon(tab));
-                continue;
-            }
-            var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(10, 12, 10, 4) };
-            head.Children.Add(Ui.Text(first.Project, 12.5, _ink.Secondary, FontWeight.SemiBold));
-            if (first.Branch is { } branch)
-            {
-                head.Children.Add(Icon(BranchIcon, _ink.Tertiary, 11, 1.8));
-                var name = Ui.Text(branch, 12, _ink.Tertiary, family: Mono);
-                name.TextTrimming = TextTrimming.CharacterEllipsis;
-                name.MaxWidth = 130;
-                head.Children.Add(name);
-            }
-            ToolTip.SetTip(head, first.Agent.Options.Folder);
-            _list.Children.Add(head);
-            foreach (var tab in group) _list.Children.Add(TabItem(tab));
-        }
-        if (_tabs.Count == 0 && !_look.IconsOnly)
-        {
-            var empty = Ui.Text(L.T("Sin sesiones abiertas"), 13, _ink.Tertiary);
-            empty.Margin = new Thickness(10, 8);
-            _list.Children.Add(empty);
-        }
-    }
-
     Control TabItem(Tab tab)
     {
         var current = tab == _current && !_creating && !_settings;
@@ -198,7 +170,7 @@ sealed partial class TerminalPane : Grid
             Height = 22,
             CornerRadius = new CornerRadius(6),
             Background = _ink.Pill,
-            Child = Ui.Text("C", 12, _ink.Accent, FontWeight.Bold, Mono),
+            Child = Ui.Text(KindMark(tab), 12, _ink.Accent, FontWeight.Bold, Mono),
             Margin = new Thickness(0, 0, 9, 0),
         };
         ((TextBlock)kind.Child).HorizontalAlignment = HorizontalAlignment.Center;
@@ -219,9 +191,9 @@ sealed partial class TerminalPane : Grid
             CornerRadius = new CornerRadius(99),
             Margin = new Thickness(8, 0, 2, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            Background = Waiting(t) ? _ink.Warn : t.Busy ? _ink.Accent : tab.Agent.Running ? _ink.Track : _ink.Hairline,
+            Background = Dot(tab),
         };
-        if (t.Busy) Pulse(dot);
+        if (Busy(tab)) Pulse(dot);
         Grid.SetColumn(dot, 2);
         row.Children.Add(dot);
         var item = Ui.Press(row, () => Select(tab), current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, Title(tab));
@@ -237,7 +209,7 @@ sealed partial class TerminalPane : Grid
     {
         var current = tab == _current && !_creating && !_settings;
         var t = tab.Agent.Transcript;
-        var kind = Ui.Text("C", 13, _ink.Accent, FontWeight.Bold, Mono);
+        var kind = Ui.Text(KindMark(tab), 13, _ink.Accent, FontWeight.Bold, Mono);
         kind.HorizontalAlignment = HorizontalAlignment.Center;
         kind.VerticalAlignment = VerticalAlignment.Center;
         var dot = new Border
@@ -250,9 +222,9 @@ sealed partial class TerminalPane : Grid
             Margin = new Thickness(0, -2, -2, 0),
             BorderBrush = _ink.Window,
             BorderThickness = new Thickness(1.5),
-            Background = Waiting(t) ? _ink.Warn : t.Busy ? _ink.Accent : tab.Agent.Running ? _ink.Track : _ink.Hairline,
+            Background = Dot(tab),
         };
-        if (t.Busy) Pulse(dot);
+        if (Busy(tab)) Pulse(dot);
         var badge = new Panel { Width = 30, Height = 30 };
         badge.Children.Add(new Border { CornerRadius = new CornerRadius(8), Background = current ? _ink.Raised : _ink.Pill, Child = kind });
         badge.Children.Add(dot);
@@ -268,11 +240,11 @@ sealed partial class TerminalPane : Grid
 
     static bool Waiting(AgentTranscript t) => t.Blocks.Any(b => b.Kind == AgentBlockKind.Permission && b.Answer is null);
 
-    static string Title(Tab tab) =>
+    static string Title(Tab tab) => tab.Shell is { } shell ? ShellTitle(shell) :
         tab.Agent.Transcript.Blocks.FirstOrDefault(b => b.Kind == AgentBlockKind.Ask)?.Text.ReplaceLineEndings(" ") is { Length: > 0 } first
             ? first : "Claude Code";
 
-    static string Describe(Tab tab) =>
+    static string Describe(Tab tab) => tab.Shell is { } shell ? ShellDescribe(shell) :
         string.Join(" · ", new[] { tab.Account, ModelLabel(tab.Agent.Options.Model), tab.Agent.Options.Effort }.Where(s => !string.IsNullOrEmpty(s)));
 
     static string ModelLabel(string? model) => model ?? L.T("modelo por defecto");
@@ -289,11 +261,15 @@ sealed partial class TerminalPane : Grid
         _input.Focus();
     }
 
-    void ShowNew()
+    /// <summary>La sesión nueva; con folder, en esa carpeta (desde el menú de un proyecto).</summary>
+    void ShowNew() => ShowNew(null);
+
+    void ShowNew(string? folder)
     {
         if (_current is { } previous && !_settings && !_creating) previous.Draft = _input.Text ?? "";
         _creating = true;
         _settings = false;
+        _newFolder = folder;
         Build();
         RenderList();
     }
@@ -301,6 +277,7 @@ sealed partial class TerminalPane : Grid
     void CloseTab(Tab tab)
     {
         tab.Agent.Dispose();
+        tab.Shell?.Dispose();
         var index = _tabs.IndexOf(tab);
         _tabs.Remove(tab);
         if (_current == tab)
@@ -321,6 +298,8 @@ sealed partial class TerminalPane : Grid
         (_input.Parent as Panel)?.Children.Remove(_input);
         Children.Clear();
         RowDefinitions.Clear();
+        ColumnDefinitions.Clear();
+        StopSide();
         _views.Clear();
         _live.Clear();
         _blocks.Children.Clear();
@@ -334,10 +313,25 @@ sealed partial class TerminalPane : Grid
         if (_creating || _current is null)
         {
             _form = new NewForm();
+            if (_newFolder is { } folder && Directory.Exists(folder)) _form.Folder = folder;
+            _newFolder = null;
             Children.Add(NewSession());
             return;
         }
+        if (_current.Shell is not null)
+        {
+            BuildShell(_current);
+            return;
+        }
         RowDefinitions = new RowDefinitions("46,*,Auto");
+        ColumnDefinitions = new ColumnDefinitions(_projects.PanelOpen ? "*,Auto" : "*");
+        if (_projects.PanelOpen)
+        {
+            var side = SidePanel(_current);
+            Grid.SetColumn(side, 1);
+            Grid.SetRowSpan(side, 3);
+            Children.Add(side);
+        }
         Children.Add(SessionHeader(_current));
         Grid.SetRow(_scroll, 1);
         Children.Add(_scroll);
@@ -360,7 +354,7 @@ sealed partial class TerminalPane : Grid
 
     Control SessionHeader(Tab tab)
     {
-        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto"), Margin = new Thickness(20, 0, 10, 0) };
+        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto,Auto"), Margin = new Thickness(20, 0, 10, 0) };
         var where = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7, VerticalAlignment = VerticalAlignment.Center };
         where.Children.Add(Ui.Text(tab.Project, 14, _ink.Text, FontWeight.SemiBold));
         if (tab.Branch is { } branch)
@@ -385,9 +379,13 @@ sealed partial class TerminalPane : Grid
         _interrupt = Pill(L.T("Interrumpir"), _ink.Pill, _ink.Text, () => tab.Agent.Interrupt());
         Grid.SetColumn(_interrupt, 3);
         bar.Children.Add(_interrupt);
+        var panel = Round(PanelIcon, L.T("Ramas, cambios y procesos"), ToggleSide);
+        panel.Margin = new Thickness(4, 0, 0, 0);
+        Grid.SetColumn(panel, 4);
+        bar.Children.Add(panel);
         var close = Round(CloseIcon, L.T("Cerrar la sesión"), () => CloseTab(tab));
-        close.Margin = new Thickness(4, 0, 0, 0);
-        Grid.SetColumn(close, 4);
+        close.Margin = new Thickness(2, 0, 0, 0);
+        Grid.SetColumn(close, 5);
         bar.Children.Add(close);
         return bar;
     }
@@ -397,7 +395,7 @@ sealed partial class TerminalPane : Grid
     {
         if (_current is not { } tab) return;
         var t = tab.Agent.Transcript;
-        _status.Text = t.Model is { } model ? model.Replace("claude-", "") + (tab.Agent.Options.Effort is { } e ? " · " + e : "") : "";
+        _status.Text = t.Model is { } model ? model.Replace("claude-", "") + (tab.Agent.Effort is { } e ? " · " + e : "") : "";
         var parts = new List<string>();
         if (t.ContextPercent is { } context) parts.Add(L.T("contexto {0:0} %", context));
         if (t.FiveHour is { } five) parts.Add(L.T("5 h {0:0} %", five));
@@ -437,8 +435,32 @@ sealed partial class TerminalPane : Grid
 
         var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(22, 8, 0, 0) };
         chips.Children.Add(Chip(tab.Account));
-        chips.Children.Add(Chip(ModelLabel(tab.Agent.Options.Model) + (tab.Agent.Options.Effort is { } effort ? " · " + effort : "")));
-        if (tab.Agent.Options.PermissionMode is { } mode and not "default") chips.Children.Add(Chip(ModeLabel(mode)));
+        // El modelo, el esfuerzo y los permisos se cambian aquí durante la sesión; valen desde el turno siguiente.
+        var agent = tab.Agent;
+        TextBlock? modelText = null, effortText = null, modeText = null;
+        chips.Children.Add(Chip(ModelLabel(agent.Transcript.Model?.Replace("claude-", "") ?? agent.Options.Model), anchor =>
+            DropList.Show(anchor, _ink, Launcher.Models.Select(m => new DropList.Entry(m, m)).Prepend(new DropList.Entry("", L.T("modelo por defecto"))).ToList(), picked =>
+            {
+                if (picked is null) return;
+                agent.SetModel(picked.Length == 0 ? null : picked);
+                modelText!.Text = picked.Length == 0 ? L.T("modelo por defecto") : picked;
+            }), out modelText));
+        chips.Children.Add(Chip(agent.Effort ?? L.T("esfuerzo por defecto"), anchor =>
+            DropList.Show(anchor, _ink, Launcher.Efforts.Select(e => new DropList.Entry(e, e, e == agent.Effort)).ToList(), picked =>
+            {
+                if (picked is null) return;
+                agent.SetEffort(picked);
+                effortText!.Text = picked;
+                PaintStatus();
+            }), out effortText));
+        var mode = agent.Transcript.PermissionMode ?? agent.Options.PermissionMode ?? "default";
+        chips.Children.Add(Chip(ModeLabel(mode), anchor =>
+            DropList.Show(anchor, _ink, TerminalAgent.Modes.Select(m => new DropList.Entry(m, ModeLabel(m), m == (agent.Transcript.PermissionMode ?? mode))).ToList(), picked =>
+            {
+                if (picked is null) return;
+                agent.SetPermissionMode(picked);
+                modeText!.Text = ModeLabel(picked);
+            }), out modeText));
         var hint = Ui.Text(L.T("Intro envía · Mayús+Intro, otra línea"), 11.5, _ink.Tertiary);
         hint.Margin = new Thickness(6, 0, 0, 0);
         chips.Children.Add(hint);
@@ -466,8 +488,27 @@ sealed partial class TerminalPane : Grid
         return new Border { Background = _ink.Pill, CornerRadius = new CornerRadius(999), Padding = new Thickness(9, 2), Child = label };
     }
 
+    /// <summary>Una etiqueta que abre su lista al tocarla (el modelo, el esfuerzo o los permisos de la sesión).</summary>
+    Control Chip(string text, Action<Control> pick, out TextBlock label)
+    {
+        label = Ui.Text(text, 11.5, _ink.Secondary);
+        label.TextTrimming = TextTrimming.CharacterEllipsis;
+        label.MaxWidth = 220;
+        Border? chip = null;
+        chip = Ui.Press(label, () => pick(chip!), (b, on) => b.Background = on ? _ink.Track : _ink.Pill, text);
+        chip.Background = _ink.Pill;
+        chip.CornerRadius = new CornerRadius(999);
+        chip.Padding = new Thickness(9, 2);
+        return chip;
+    }
+
     void OnInputKey(object? sender, KeyEventArgs e)
     {
+        if (_current?.Shell is { } shell && !_creating && !_settings)
+        {
+            e.Handled = ShellKey(shell, e);
+            return;
+        }
         if (e.Key == Key.Escape && _current is { } tab && tab.Agent.Transcript.Busy)
         {
             e.Handled = true;
@@ -481,6 +522,11 @@ sealed partial class TerminalPane : Grid
 
     void Submit()
     {
+        if (_current?.Shell is { } shell)
+        {
+            SubmitShell(shell);
+            return;
+        }
         if (_current is not { } tab || !tab.Agent.Running) return;
         var text = _input.Text?.Trim() ?? "";
         if (text.Length == 0) return;
@@ -492,7 +538,13 @@ sealed partial class TerminalPane : Grid
     /// <summary>Llegaron eventos de una sesión: se cambian solo sus bloques (y la lista, si cambió su estado).</summary>
     void OnChanged(Tab tab, IReadOnlyList<AgentBlock> changed)
     {
-        if (tab != _current || _creating)
+        // Al terminar un turno pudo cambiar el repositorio (archivos editados, un commit).
+        if (changed.Any(b => b.Kind == AgentBlockKind.Done))
+        {
+            RefreshGit(tab.Agent.Options.Folder, force: true);
+            if (tab == _current && !_creating && !_settings && _projects.PanelOpen && _projects.PanelTab != "procesos") LoadSide(tab);
+        }
+        if (tab != _current || _creating || _settings)
         {
             if (changed.Count > 0) RenderList();
             return;
@@ -1082,7 +1134,8 @@ sealed partial class TerminalPane : Grid
                         new KeyFrame { Cue = new Cue(0), Setters = { new Setter(RotateTransform.AngleProperty, 0d) } },
                         new KeyFrame { Cue = new Cue(1), Setters = { new Setter(RotateTransform.AngleProperty, 360d) } },
                     },
-                }.RunAsync(spin, stop.Token);
+                    // Se anima el arco (un Visual): Avalonia aplica el ángulo a su RenderTransform.
+                }.RunAsync(arc, stop.Token);
             };
         return box;
     }
@@ -1148,7 +1201,9 @@ sealed partial class TerminalPane : Grid
         folder.TextTrimming = TextTrimming.PrefixCharacterEllipsis;
         panel.Children.Add(Field(L.T("Carpeta"), folder, async anchor =>
         {
-            var recents = TerminalRecents.Load().Folders.Where(Directory.Exists).Take(8).ToList();
+            // Los proyectos vinculados primero y después las carpetas recientes.
+            var recents = _projects.Folders.Concat(TerminalRecents.Load().Folders).Where(Directory.Exists)
+                .Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToList();
             var entries = recents.Select(f => new DropList.Entry(f, ShortPath(f), Selected: string.Equals(f, _form.Folder, StringComparison.OrdinalIgnoreCase)))
                 .Append(new DropList.Entry("…", L.T("Elegir otra carpeta…"), Action: true)).ToList();
             DropList.Show(anchor, _ink, entries, async picked =>
@@ -1168,6 +1223,8 @@ sealed partial class TerminalPane : Grid
             await Task.CompletedTask;
         }));
 
+        // Desde aquí, los campos que son solo de Claude Code (con un shell se ocultan: TerminalPane.Shell.cs).
+        var agentFields = panel.Children.Count;
         var accountLabel = Ui.Text(AccountLabel(accounts, _form.Account), 13, _ink.Text);
         panel.Children.Add(Field(L.T("Cuenta"), accountLabel, anchor =>
         {
@@ -1219,6 +1276,8 @@ sealed partial class TerminalPane : Grid
             return Task.CompletedTask;
         }));
 
+        KindField(panel, about, agentFields);
+
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
         buttons.Children.Add(Pill(L.T("Abrir sesión"), _ink.Accent, Ink.On(_ink.Accent), () => Open(accounts)));
         if (_tabs.Count > 0)
@@ -1251,10 +1310,16 @@ sealed partial class TerminalPane : Grid
 
     void Open(IReadOnlyList<Account> accounts)
     {
+        if (_newShell is { } shell)
+        {
+            OpenShell(shell);
+            return;
+        }
         if (!Directory.Exists(_form.Folder)) return;
         var account = accounts.FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, _form.Account ?? ""));
         var options = new AgentOptions(_form.Folder, account?.ConfigDir, _form.Model, _form.Effort, _form.Mode);
         TerminalRecents.Remember(options);
+        LinkProject(options.Folder);
         // Una copia de prueba (--preview) no le pasa los permisos a la isla de la app de siempre.
         var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview") };
         var tab = new Tab(agent, account?.Label ?? L.T("cuenta por defecto"));

@@ -131,10 +131,16 @@ sealed class AgentTranscript
                 Stream(e, changed);
                 break;
             case "assistant" when r.TryGetProperty("message", out var m):
+                // El modelo que respondió de verdad (en modo plan, Claude Code puede usar otro que el de init).
+                Model = Json.Str(m, "model") ?? Model;
                 Assistant(m, changed);
                 break;
-            case "user" when r.TryGetProperty("message", out var m):
+            // Los «isReplay» son ecos de lo que hizo el anfitrión (cambiar el modelo): no son pedidos de la persona.
+            case "user" when r.TryGetProperty("message", out var m) && !(r.TryGetProperty("isReplay", out var replay) && replay.ValueKind == JsonValueKind.True):
                 Results(r, m, changed);
+                break;
+            case "control_response" when r.TryGetProperty("response", out var response):
+                Response(response, changed);
                 break;
             case "control_request" when r.TryGetProperty("request", out var req) && Json.Str(req, "subtype") == "can_use_tool":
                 Permission(r, req, changed);
@@ -165,6 +171,9 @@ sealed class AgentTranscript
                 var think = OpenThink() ?? Add(new AgentBlock { Kind = AgentBlockKind.Think, Open = true, Id = "" }, changed);
                 think.Tokens = (long)Json.Num(r, "estimated_tokens");
                 Touch(think, changed);
+                break;
+            case "status":
+                PermissionMode = Json.Str(r, "permissionMode") ?? PermissionMode;
                 break;
             case "permission_denied" when Step(Json.Str(r, "tool_use_id")) is { } step:
                 step.State = StepState.Denied;
@@ -299,6 +308,19 @@ sealed class AgentTranscript
             Suggestions = Node(suggestions),
             Questions = tool == "AskUserQuestion" ? Approvals.QuestionsOf(input) : null,
         }, changed);
+    }
+
+    /// <summary>La respuesta a lo que pidió el anfitrión: el modelo o el modo nuevos, o el error (que queda como aviso).</summary>
+    void Response(JsonElement response, List<AgentBlock> changed)
+    {
+        if (Json.Str(response, "subtype") == "error")
+        {
+            if (Json.Str(response, "error") is { Length: > 0 } error) Add(new AgentBlock { Kind = AgentBlockKind.Notice, Text = error }, changed);
+            return;
+        }
+        if (!response.TryGetProperty("response", out var body) || body.ValueKind != JsonValueKind.Object) return;
+        Model = Json.Str(body, "model") ?? Model;
+        PermissionMode = Json.Str(body, "mode") ?? PermissionMode;
     }
 
     void Result(JsonElement r, List<AgentBlock> changed)
@@ -471,6 +493,29 @@ static class AgentProtocol
         ["request"] = new JsonObject { ["subtype"] = "initialize" },
     });
 
+    /// <summary>Cambia el modelo de la sesión (un alias o el id); sin modelo, vuelve al de la cuenta.</summary>
+    public static string SetModel(string id, string? model) => Line(new JsonObject
+    {
+        ["type"] = "control_request",
+        ["request_id"] = id,
+        ["request"] = model is null ? new JsonObject { ["subtype"] = "set_model" } : new JsonObject { ["subtype"] = "set_model", ["model"] = model },
+    });
+
+    public static string SetPermissionMode(string id, string mode) => Line(new JsonObject
+    {
+        ["type"] = "control_request",
+        ["request_id"] = id,
+        ["request"] = new JsonObject { ["subtype"] = "set_permission_mode", ["mode"] = mode },
+    });
+
+    /// <summary>El esfuerzo no tiene pedido propio: va como ajuste de la sesión (effortLevel), igual que --effort.</summary>
+    public static string SetEffort(string id, string effort) => Line(new JsonObject
+    {
+        ["type"] = "control_request",
+        ["request_id"] = id,
+        ["request"] = new JsonObject { ["subtype"] = "apply_flag_settings", ["settings"] = new JsonObject { ["effortLevel"] = effort } },
+    });
+
     public static string Interrupt(string id) => Line(new JsonObject
     {
         ["type"] = "control_request",
@@ -562,6 +607,8 @@ sealed class TerminalAgent : IDisposable
 {
     readonly AgentOptions _options;
     readonly Action<Action> _post;
+    readonly System.Collections.Concurrent.ConcurrentQueue<string> _lines = new();
+    int _draining;
     readonly object _write = new();
     /// <summary>Los permisos que esperan también en la isla; al cancelarlos, la isla quita la tarjeta.</summary>
     readonly Dictionary<AgentBlock, CancellationTokenSource> _island = [];
@@ -575,11 +622,15 @@ sealed class TerminalAgent : IDisposable
     {
         _options = options;
         _post = post;
+        Effort = options.Effort;
     }
 
     public AgentOptions Options => _options;
     public AgentTranscript Transcript { get; } = new();
     public bool Running => _process is { HasExited: false };
+
+    /// <summary>El proceso de la sesión (para el panel de procesos), mientras corre.</summary>
+    public int? ProcessId => _process is { HasExited: false } process ? process.Id : null;
 
     /// <summary>Cambiaron esos bloques (o el estado de la sesión). Se avisa en el hilo de post.</summary>
     public event Action<IReadOnlyList<AgentBlock>>? Changed;
@@ -627,6 +678,28 @@ sealed class TerminalAgent : IDisposable
         if (string.IsNullOrWhiteSpace(text) || !Running) return;
         Changed?.Invoke([Transcript.Ask(text)]);
         Write(AgentProtocol.UserMessage(text));
+    }
+
+    /// <summary>El esfuerzo de la sesión: el elegido al abrirla o el último que se cambió.</summary>
+    public string? Effort { get; private set; }
+
+    /// <summary>Cambia el modelo para los turnos que siguen (null: el de la cuenta). La respuesta llega por la transcripción.</summary>
+    public void SetModel(string? model)
+    {
+        if (!Running || model is not null && !Launcher.IsValid(model)) return;
+        Write(AgentProtocol.SetModel(NextId(), model));
+    }
+
+    public void SetPermissionMode(string mode)
+    {
+        if (Running && Modes.Contains(mode)) Write(AgentProtocol.SetPermissionMode(NextId(), mode));
+    }
+
+    public void SetEffort(string effort)
+    {
+        if (!Running || !Launcher.Efforts.Contains(effort)) return;
+        Effort = effort;
+        Write(AgentProtocol.SetEffort(NextId(), effort));
     }
 
     /// <summary>Corta el turno en curso (como Esc en la TUI). La sesión sigue abierta.</summary>
@@ -692,15 +765,12 @@ sealed class TerminalAgent : IDisposable
         try
         {
             while (await process.StandardOutput.ReadLineAsync() is { } line)
-                // Se avisa aunque no cambie un bloque: puede cambiar el modelo, el uso o el contexto.
-                _post(() =>
-                {
-                    var changed = Transcript.Apply(line);
-                    if (AskIsland)
-                        foreach (var permission in changed.Where(b => b.Kind == AgentBlockKind.Permission && b.Answer is null && !_island.ContainsKey(b)))
-                            _ = AskIslandAsync(permission);
-                    Changed?.Invoke(changed);
-                });
+            {
+                // Las líneas se juntan hasta que la interfaz las toma: con cien fragmentos de texto por segundo se
+                // repinta una vez por vuelta, no una por fragmento.
+                _lines.Enqueue(line);
+                if (Interlocked.Exchange(ref _draining, 1) == 0) _post(Drain);
+            }
         }
         catch (Exception) { }
         await process.WaitForExitAsync();
@@ -713,6 +783,27 @@ sealed class TerminalAgent : IDisposable
             var reason = code == 0 || problem.Length == 0 ? L.T("La sesión terminó.") : problem.Split('\n')[0].Trim();
             Notice(reason);
         });
+    }
+
+    /// <summary>Aplica las líneas que llegaron y avisa una vez con los bloques que cambiaron (aunque no cambie ninguno:
+    /// puede cambiar el modelo, el uso o el contexto).</summary>
+    void Drain()
+    {
+        Volatile.Write(ref _draining, 0);
+        var changed = new List<AgentBlock>();
+        while (_lines.TryDequeue(out var line))
+            foreach (var block in Transcript.Apply(line))
+                if (!changed.Contains(block)) changed.Add(block);
+        if (AskIsland)
+            foreach (var permission in changed.Where(b => b.Kind == AgentBlockKind.Permission && b.Answer is null && !_island.ContainsKey(b)))
+                _ = AskIslandAsync(permission);
+        Changed?.Invoke(changed);
+    }
+
+    /// <summary>Detiene el proceso (y lo que abrió); la pestaña queda, con el aviso de que la sesión terminó.</summary>
+    public void Stop()
+    {
+        if (_process is { } process) Assistant.Kill(process);
     }
 
     void Notice(string text) => Changed?.Invoke([Transcript.Notice(text)]);

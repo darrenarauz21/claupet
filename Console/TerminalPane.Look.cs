@@ -61,6 +61,8 @@ sealed partial class TerminalPane
         };
         panel.Children.Add(Round(icons ? ListIcon : GridIcon, icons ? L.T("Lista con descripción") : L.T("Solo íconos"),
             () => ChangeLook(l => l.IconsOnly = !l.IconsOnly)));
+        if (!icons && Projects().Count > 1)
+            panel.Children.Add(Round(AllFolded ? UnfoldAllIcon : FoldAllIcon, AllFolded ? L.T("Desplegar todos los proyectos") : L.T("Plegar todos los proyectos"), FoldAll));
         panel.Children.Add(Round(GearIcon, L.T("Ajustes de la Terminal"), () => { if (_settings) CloseSettings(); else ShowSettings(); }));
         add.Margin = icons ? default : new Thickness(4, 0, 0, 0);
         panel.Children.Add(add);
@@ -142,6 +144,32 @@ sealed partial class TerminalPane
 
         panel.Children.Add(Ui.Text(L.T("Vista previa"), 12.5, _ink.Tertiary, FontWeight.Medium));
         panel.Children.Add(Preview());
+
+        // Los proyectos vinculados: desvincular solo los quita de la lista, no borra la carpeta.
+        panel.Children.Add(Ui.Text(L.T("Proyectos vinculados"), 12.5, _ink.Tertiary, FontWeight.Medium));
+        if (_projects.Folders.Count == 0)
+        {
+            var none = Ui.Text(L.T("Todavía no hay. Un proyecto se vincula al abrir una sesión en su carpeta."), 12.5, _ink.Tertiary);
+            none.TextWrapping = TextWrapping.Wrap;
+            panel.Children.Add(none);
+        }
+        foreach (var folder in _projects.Folders.ToList())
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), MinHeight = 40 };
+            var text = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(Ui.Text(System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(folder)) is { Length: > 0 } name ? name : folder, 13, _ink.Text));
+            var path = Ui.Text(ShortPath(folder), 11.5, _ink.Tertiary, family: Mono);
+            path.TextTrimming = TextTrimming.PrefixCharacterEllipsis;
+            text.Children.Add(path);
+            row.Children.Add(text);
+            var sessions = TabsOf(folder).Count;
+            var unlink = Pill(L.T("Desvincular"), _ink.Pill, _ink.Danger, () => Unlink(folder));
+            if (sessions > 0) ToolTip.SetTip(unlink, L.T("Cierra sus {0} sesiones", sessions));
+            unlink.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(unlink, 1);
+            row.Children.Add(unlink);
+            panel.Children.Add(row);
+        }
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
         buttons.Children.Add(Pill(L.T("Listo"), _ink.Accent, Ink.On(_ink.Accent), CloseSettings));

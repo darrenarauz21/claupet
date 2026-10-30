@@ -118,3 +118,74 @@ sealed class TerminalLook
 
     static ImmutableSolidColorBrush B(string hex) => new(Color.Parse(hex));
 }
+
+/// <summary>
+/// Los proyectos de la Terminal: las carpetas vinculadas (quedan en la lista aunque no tengan sesiones), las plegadas y
+/// el ancho de la lista. Desvincular solo quita la carpeta de la lista: no la borra. Se guarda en terminal-proyectos.json.
+/// </summary>
+sealed class TerminalProjects
+{
+    public List<string> Folders { get; set; } = [];
+    public List<string> Folded { get; set; } = [];
+    public double ListWidth { get; set; } = 250;
+    /// <summary>El panel de la derecha (Ramas, Cambios, Procesos): si se ve, cuál y su ancho.</summary>
+    public bool PanelOpen { get; set; } = true;
+    public string PanelTab { get; set; } = "ramas";
+    public double PanelWidth { get; set; } = 290;
+
+    public const double MinWidth = 190, MaxWidth = 460, PanelMin = 220, PanelMax = 560;
+
+    static string FilePath => DataFolder.In("terminal-proyectos.json");
+
+    public static TerminalProjects Load()
+    {
+        try
+        {
+            if (File.Exists(FilePath) && JsonSerializer.Deserialize<TerminalProjects>(File.ReadAllText(FilePath)) is { } projects)
+            {
+                projects.ListWidth = Math.Clamp(projects.ListWidth, MinWidth, MaxWidth);
+                projects.PanelWidth = Math.Clamp(projects.PanelWidth, PanelMin, PanelMax);
+                if (projects.PanelTab is not ("ramas" or "cambios" or "procesos")) projects.PanelTab = "ramas";
+                return projects;
+            }
+        }
+        catch (Exception) { }
+        return new();
+    }
+
+    public void Save()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(this));
+        }
+        catch (Exception) { }
+    }
+
+    static bool Same(string a, string b) => string.Equals(Path.TrimEndingDirectorySeparator(a), Path.TrimEndingDirectorySeparator(b), StringComparison.OrdinalIgnoreCase);
+
+    public bool Has(string folder) => Folders.Any(f => Same(f, folder));
+
+    /// <summary>Lo agrega al final de la lista, si no estaba. True si se agregó.</summary>
+    public bool Link(string folder)
+    {
+        if (Has(folder)) return false;
+        Folders.Add(folder);
+        return true;
+    }
+
+    public void Unlink(string folder)
+    {
+        Folders.RemoveAll(f => Same(f, folder));
+        Folded.RemoveAll(f => Same(f, folder));
+    }
+
+    public bool IsFolded(string folder) => Folded.Any(f => Same(f, folder));
+
+    public void SetFolded(string folder, bool folded)
+    {
+        Folded.RemoveAll(f => Same(f, folder));
+        if (folded) Folded.Add(folder);
+    }
+}

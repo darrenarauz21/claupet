@@ -36,6 +36,17 @@ sealed class ConsoleWindow : Window
     readonly EditorPane _editor = new();
     readonly TerminalPane _terminal = new();
     readonly StackPanel _fileList = new() { Spacing = 2 };
+    /// <summary>El borde de la lista de la Terminal, que se arrastra para ensancharla (la Terminal recuerda la medida).</summary>
+    readonly Border _grip = new()
+    {
+        Width = 9,
+        Margin = new Thickness(0, 0, 1, 0),
+        HorizontalAlignment = HorizontalAlignment.Right,
+        Background = Brushes.Transparent,
+        Cursor = new Cursor(StandardCursorType.SizeWestEast),
+        ZIndex = 1,
+        Child = new Border { Width = 2, CornerRadius = new CornerRadius(1), HorizontalAlignment = HorizontalAlignment.Center, Opacity = 0 },
+    };
     /// <summary>La lista de archivos del editor, a la izquierda (se muestra con el botón de la cabecera del editor).</summary>
     bool _editorFiles;
     /// <summary>Ya se preguntó por los cambios sin guardar: ahora sí se cierra.</summary>
@@ -118,6 +129,9 @@ sealed class ConsoleWindow : Window
         _aside.Children.Add(_asideScroll);
         Grid.SetColumn(_aside, 1);
         _body.Children.Add(_aside);
+        Grid.SetColumn(_grip, 1);
+        _body.Children.Add(_grip);
+        Grip();
         _sceneBox.Child = _scene;
         Grid.SetColumn(_sceneBox, 2);
         _body.Children.Add(_sceneBox);
@@ -254,6 +268,8 @@ sealed class ConsoleWindow : Window
             });
             // Sin columna (el editor con los archivos ocultos), nada de ella asoma.
             _aside.IsVisible = _body.ColumnDefinitions[1].Width.Value > 0;
+            _grip.IsVisible = _mode == Mode.Terminal && _terminal.ListWidth > TerminalProjects.MinWidth - 1;
+            ((Border)_grip.Child!).Background = _ink.Accent;
             _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Terminal => _terminal.Header(), Mode.Editor => FilesHeader(), _ => _heading };
             _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Terminal => _terminal.List, Mode.Editor => _fileList, _ => _sections };
         }
@@ -315,6 +331,38 @@ sealed class ConsoleWindow : Window
         _sections.Children.Add(terminal);
         _view.Show(shown, _ink, rebuild, _pages.FirstOrDefault(p => p.Id == shown.Parent)?.Title);
         if (_main.Child != _scroll) _main.Child = _scroll;
+    }
+
+    /// <summary>Arrastrar el borde cambia el ancho de la lista (entre TerminalProjects.MinWidth y MaxWidth); al soltar, se guarda.</summary>
+    void Grip()
+    {
+        double? from = null;
+        double width = 0;
+        var line = (Border)_grip.Child!;
+        _grip.PointerEntered += (_, _) => line.Opacity = 0.6;
+        _grip.PointerExited += (_, _) => { if (from is null) line.Opacity = 0; };
+        _grip.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(_grip).Properties.IsLeftButtonPressed) return;
+            from = e.GetPosition(_body).X;
+            width = _body.ColumnDefinitions[1].Width.Value;
+            e.Pointer.Capture(_grip);
+            e.Handled = true;
+        };
+        _grip.PointerMoved += (_, e) =>
+        {
+            if (from is not { } start) return;
+            var next = Math.Clamp(width + e.GetPosition(_body).X - start, TerminalProjects.MinWidth, TerminalProjects.MaxWidth);
+            _body.ColumnDefinitions[1].Width = new GridLength(next);
+        };
+        _grip.PointerReleased += (_, e) =>
+        {
+            if (from is null) return;
+            from = null;
+            e.Pointer.Capture(null);
+            line.Opacity = 0;
+            _terminal.SetListWidth(_body.ColumnDefinitions[1].Width.Value);
+        };
     }
 
     void Select(string id)

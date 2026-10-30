@@ -20,6 +20,51 @@ public sealed class AgentTranscriptTests
     static string Partial(string ev) => $$"""{"type":"stream_event","event":{{ev}}}""";
 
     [Fact]
+    public void ElModeloYElModoCambianConLaRespuestaDeClaudeCode()
+    {
+        var t = Started();
+        // El eco del cambio de modelo no es un pedido de la persona.
+        var replay = t.Apply("""{"type":"user","isReplay":true,"message":{"role":"user","content":"<local-command-stdout>Set model to sonnet</local-command-stdout>"}}""");
+        t.Apply("""{"type":"control_response","response":{"subtype":"success","request_id":"c-1","response":{"model":"claude-sonnet-5-5"}}}""");
+        t.Apply("""{"type":"control_response","response":{"subtype":"success","request_id":"c-2","response":{"mode":"plan"}}}""");
+
+        Assert.Empty(replay);
+        Assert.Empty(t.Blocks);
+        Assert.Equal("claude-sonnet-5-5", t.Model);
+        Assert.Equal("plan", t.PermissionMode);
+
+        t.Apply("""{"type":"system","subtype":"status","permissionMode":"acceptEdits"}""");
+        t.Apply("""{"type":"assistant","message":{"id":"m1","model":"claude-opus-5-5","content":[{"type":"text","text":"Hecho."}]}}""");
+        Assert.Equal("acceptEdits", t.PermissionMode);
+        Assert.Equal("claude-opus-5-5", t.Model);
+    }
+
+    [Fact]
+    public void UnCambioRechazadoQuedaComoAviso()
+    {
+        var t = Started();
+        t.Apply("""{"type":"control_response","response":{"subtype":"error","request_id":"c-1","error":"Model not found: gpt"}}""");
+
+        var notice = Assert.Single(t.Blocks);
+        Assert.Equal(AgentBlockKind.Notice, notice.Kind);
+        Assert.Equal("Model not found: gpt", notice.Text);
+        Assert.Equal("claude-haiku-5-5", t.Model);
+    }
+
+    [Fact]
+    public void LosCambiosDeLaSesionSonPedidosDeControl()
+    {
+        var model = JsonNode.Parse(AgentProtocol.SetModel("c-1", "sonnet"))!;
+        Assert.Equal("set_model", (string?)model["request"]!["subtype"]);
+        Assert.Equal("sonnet", (string?)model["request"]!["model"]);
+        Assert.Null(JsonNode.Parse(AgentProtocol.SetModel("c-2", null))!["request"]!["model"]);
+        Assert.Equal("plan", (string?)JsonNode.Parse(AgentProtocol.SetPermissionMode("c-3", "plan"))!["request"]!["mode"]);
+        var effort = JsonNode.Parse(AgentProtocol.SetEffort("c-4", "high"))!["request"]!;
+        Assert.Equal("apply_flag_settings", (string?)effort["subtype"]);
+        Assert.Equal("high", (string?)effort["settings"]!["effortLevel"]);
+    }
+
+    [Fact]
     public void ArmaLaRespuestaPorPartesYLaCierraConElMensajeCompleto()
     {
         var t = Started();
