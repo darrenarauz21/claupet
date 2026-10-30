@@ -23,7 +23,9 @@ sealed class NewSessionWindow : Window
     /// <summary>Las opciones elegidas, o null si se canceló.</summary>
     public Task<LaunchOptions?> Result => _done.Task;
 
-    public NewSessionWindow(IReadOnlyList<Account> accounts, LaunchOptions initial, IEnumerable<string> recentFolders, Theme theme)
+    /// <param name="status">Cómo está cada cuenta («disponible», «al límite…»), para elegir con cuál trabaja esta sesión.</param>
+    public NewSessionWindow(IReadOnlyList<Account> accounts, LaunchOptions initial, IEnumerable<string> recentFolders, Theme theme,
+        Func<Account, string>? status = null)
     {
         _accounts = accounts;
         Title = L.T("Nueva sesión de Claude Code");
@@ -59,7 +61,9 @@ sealed class NewSessionWindow : Window
 
         _account = new ComboBox
         {
-            ItemsSource = accounts.Select(a => $"{a.Label} ({a.ConfigDir.Replace(Account.Home, "~")})").ToList(),
+            ItemsSource = accounts.Select(a => status is null
+                ? $"{a.Label} ({a.ConfigDir.Replace(Account.Home, "~")})"
+                : $"{a.Label} · {status(a)}").ToList(),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             SelectedIndex = Math.Max(0, accounts.ToList().FindIndex(a => initial.ConfigDir is not null && Account.SamePath(a.ConfigDir, initial.ConfigDir))),
         };

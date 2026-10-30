@@ -8,7 +8,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using SD = System.Drawing;
 
-/// <summary>Las piezas chicas de la Console: textos, lo que se toca, el chevrón y la cabeza del chibi.</summary>
+/// <summary>Las piezas chicas de la Console: textos, lo que se toca, el chevrón y el ícono de Claupet.</summary>
 static class Ui
 {
     public static readonly Cursor Hand = new(StandardCursorType.Hand);
@@ -82,13 +82,13 @@ static class Ui
         VerticalAlignment = VerticalAlignment.Center,
     };
 
-    /// <summary>Los cuadritos de la cabeza del chibi, recortados a lo que pinta.</summary>
-    public static readonly (IBrush Brush, Rect Rect)[] Head = HeadPixels();
+    /// <summary>Los cuadritos del ícono de Claupet, recortados a lo que pinta.</summary>
+    public static readonly (IBrush Brush, Rect Rect)[] Logo = LogoPixels();
 
-    static (IBrush, Rect)[] HeadPixels()
+    static (IBrush, Rect)[] LogoPixels()
     {
         var rects = new List<(SD.Color Color, Rect Rect)>();
-        ChibiSprite.PaintHead((color, x, y, w, h) => rects.Add((color, new Rect(x, y, w, h))), MascotFrame.Open);
+        ClaupetLogo.Paint((color, x, y, w, h) => rects.Add((color, new Rect(x, y, w, h))));
         if (rects.Count == 0) return [];
         var left = rects.Min(r => r.Rect.Left);
         var top = rects.Min(r => r.Rect.Top);
@@ -96,24 +96,24 @@ static class Ui
             r.Rect.Translate(new Vector(-left, -top)))).ToArray();
     }
 
-    static Size HeadSize => Head.Length == 0 ? new Size(1, 1) : new Size(Head.Max(h => h.Rect.Right), Head.Max(h => h.Rect.Bottom));
+    static Size LogoSize => Logo.Length == 0 ? new Size(1, 1) : new Size(Logo.Max(h => h.Rect.Right), Logo.Max(h => h.Rect.Bottom));
 
-    public static void PaintHead(DrawingContext dc, Rect box)
+    public static void PaintLogo(DrawingContext dc, Rect box)
     {
-        var size = HeadSize;
+        var size = LogoSize;
         var unit = Math.Min(box.Width / size.Width, box.Height / size.Height);
         var x0 = box.X + (box.Width - size.Width * unit) / 2;
         var y0 = box.Y + (box.Height - size.Height * unit) / 2;
         using (dc.PushRenderOptions(new RenderOptions { EdgeMode = EdgeMode.Aliased }))
-            foreach (var (brush, r) in Head)
+            foreach (var (brush, r) in Logo)
                 dc.FillRectangle(brush, new Rect(x0 + r.X * unit, y0 + r.Y * unit, r.Width * unit, r.Height * unit));
     }
 
-    /// <summary>El ícono de la ventana: la cabeza del chibi.</summary>
-    public static WindowIcon HeadIcon()
+    /// <summary>El ícono de la ventana: el de Claupet.</summary>
+    public static WindowIcon LogoIcon()
     {
         using var bmp = new RenderTargetBitmap(new PixelSize(64, 64), new Vector(96, 96));
-        using (var dc = bmp.CreateDrawingContext()) PaintHead(dc, new Rect(0, 0, 64, 64));
+        using (var dc = bmp.CreateDrawingContext()) PaintLogo(dc, new Rect(0, 0, 64, 64));
         var stream = new MemoryStream();
         bmp.Save(stream);
         stream.Position = 0;
@@ -121,8 +121,8 @@ static class Ui
     }
 }
 
-/// <summary>La cabeza del chibi como logo, del tamaño que se le dé.</summary>
-sealed class HeadLogo : Control
+/// <summary>El ícono de Claupet como logo, del tamaño que se le dé.</summary>
+sealed class AppLogo : Control
 {
-    public override void Render(DrawingContext context) => Ui.PaintHead(context, new Rect(Bounds.Size));
+    public override void Render(DrawingContext context) => Ui.PaintLogo(context, new Rect(Bounds.Size));
 }

@@ -11,7 +11,7 @@ using Avalonia.Platform;
 using Avalonia.Styling;
 
 /// <summary>
-/// La ventana de Claupet Console: bordes redondeados, la barra de arriba propia (con la cabeza del chibi), el riel
+/// La ventana de Claupet Console: bordes redondeados, la barra de arriba propia (con el ícono de Claupet), el riel
 /// con Chat, Editor y Ajustes y, al lado, la lista de chats, la de archivos o las secciones de los ajustes. Lo del chat
 /// y los ajustes lo manda la bandeja (aquí no se guardan ajustes); el editor trabaja con los archivos directamente.
 /// </summary>
@@ -60,7 +60,7 @@ sealed class ConsoleWindow : Window
         _mode = ConsoleApp.Files.Count > 0 ? Mode.Editor : section is null ? Mode.Chat : Mode.Settings;
         _section = section ?? "general";
         Title = "Claupet Console";
-        Icon = Ui.HeadIcon();
+        Icon = Ui.LogoIcon();
         Width = 1080;
         Height = 720;
         MinWidth = 760;
@@ -459,7 +459,7 @@ sealed class ConsoleWindow : Window
     {
         var current = chat.Id == _chatId;
         var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        if (chat.Quick) title.Children.Add(new HeadLogo { Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center });
+        if (chat.Quick) title.Children.Add(new AppLogo { Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center });
         title.Children.Add(new TextBlock
         {
             Text = chat.Title,
@@ -493,7 +493,7 @@ sealed class ConsoleWindow : Window
     Control Header()
     {
         var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"), Background = Brushes.Transparent };
-        var logo = new HeadLogo { Width = 18, Height = 18, Margin = new Thickness(18, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
+        var logo = new AppLogo { Width = 18, Height = 18, Margin = new Thickness(18, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
         bar.Children.Add(logo);
         var title = Ui.Text("Claupet Console", 13.5, _ink.Text, FontWeight.SemiBold);
         Grid.SetColumn(title, 1);
@@ -594,7 +594,7 @@ sealed class ConsoleWindow : Window
     Control Waiting()
     {
         var panel = new StackPanel { Spacing = 14, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 380 };
-        panel.Children.Add(new HeadLogo { Width = 48, Height = 48 });
+        panel.Children.Add(new AppLogo { Width = 48, Height = 48 });
         // La Console es el mismo Claupet.exe: la bandeja es otro proceso con ese nombre.
         var claupet = Environment.ProcessPath ?? "";
         var processes = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(claupet));

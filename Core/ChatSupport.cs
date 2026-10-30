@@ -45,7 +45,10 @@ static class TaskFolders
     }
 }
 
-/// <summary>La cuenta de Claude Code que responde al asistente: la elegida en Ajustes o, si no, la de Uso.</summary>
+/// <summary>
+/// La cuenta de Claude Code que responde al asistente: la elegida en Ajustes o, si no, la de Uso. Y cómo está cada cuenta,
+/// para elegirla al abrir una sesión (cada sesión va con la suya).
+/// </summary>
 static class AssistantAccounts
 {
     public static string? ConfigDir(AppSettings settings) => settings.AssistantAccount ?? settings.Selected;
@@ -56,7 +59,38 @@ static class AssistantAccounts
 
     public static IEnumerable<(string Id, string Label)> Choices(AppSettings settings) =>
         settings.Accounts.Select(a => (a.ConfigDir, a.Label)).Prepend(("", L.T("La elegida en Uso")));
+
+    /// <summary>
+    /// Para elegir la cuenta de una sesión: las que tienen sesión iniciada, primero las que tienen margen, cada una con su
+    /// estado («al límite, reinicia en 2 h»). Las que no tienen sesión no se ofrecen: con ellas Claude Code no responde.
+    /// </summary>
+    public static IEnumerable<(string Id, string Label)> Available(AppSettings settings, IReadOnlyDictionary<string, UsageSnapshot> snapshots) =>
+        settings.Accounts.Select(a => (Account: a, Status: StatusOf(a, snapshots)))
+            .Where(x => x.Status.State != AccountReady.SignedOut)
+            .OrderBy(x => x.Status.State)
+            .Select(x => (x.Account.ConfigDir, $"{x.Account.Label} · {x.Status.Text}"));
+
+    /// <summary>Si la cuenta puede trabajar ahora, según sus credenciales y los últimos límites leídos.</summary>
+    public static (AccountReady State, string Text) StatusOf(Account account, IReadOnlyDictionary<string, UsageSnapshot> snapshots)
+    {
+        if (!Credentials.Exists(account.ConfigDir)) return (AccountReady.SignedOut, L.T("sin sesión iniciada"));
+        snapshots.TryGetValue(account.ConfigDir, out var snap);
+        if (snap is { SessionExpired: true }) return (AccountReady.Expired, L.T("la sesión venció"));
+        var now = DateTimeOffset.Now;
+        // Un límite lleno que todavía no reinicia: el que reinicia más tarde es el que manda.
+        var full = (snap?.Limits ?? []).Where(l => l.Percent >= 100 && (l.ResetsAt is not { } at || at > now))
+            .OrderByDescending(l => l.ResetsAt ?? DateTimeOffset.MaxValue).FirstOrDefault();
+        if (full is not null)
+            return (AccountReady.AtLimit, Format.Reset(full.ResetsAt) is { Length: > 0 } reset
+                ? L.T("al límite, {0}", reset.ToLowerInvariant()) : L.T("al límite"));
+        return snap?.Session is { } session
+            ? (AccountReady.Ready, L.T("disponible, sesión al {0:0} %", session.Percent))
+            : (AccountReady.Ready, L.T("disponible"));
+    }
 }
+
+/// <summary>Cómo está una cuenta para trabajar, en el orden en que se ofrecen.</summary>
+enum AccountReady { Ready, AtLimit, Expired, SignedOut }
 
 /// <summary>
 /// Lo que la mascota sabe del momento, para responder sobre el uso y las sesiones: el uso de cada cuenta y las sesiones

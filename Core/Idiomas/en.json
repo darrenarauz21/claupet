@@ -1442,5 +1442,11 @@
   "Siempre": "Always",
   "Nunca: solo el procesador": "Never: processor only",
   "Nunca": "Never",
-  "En este equipo, con el procesador; con la tarjeta gráfica responde más rápido ({0} MB más)": "On this computer, on the processor; with the graphics card it answers faster ({0} MB more)"
+  "En este equipo, con el procesador; con la tarjeta gráfica responde más rápido ({0} MB más)": "On this computer, on the processor; with the graphics card it answers faster ({0} MB more)",
+  "sin sesión iniciada": "not signed in",
+  "la sesión venció": "session expired",
+  "al límite, {0}": "at the limit, {0}",
+  "al límite": "at the limit",
+  "disponible, sesión al {0:0} %": "available, session at {0:0}%",
+  "disponible": "available"
 }

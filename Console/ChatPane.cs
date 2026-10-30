@@ -270,7 +270,7 @@ sealed class ChatPane : Grid
                 Child = Ui.Text(who, 12, _ink.Tertiary),
             });
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("24,*") };
-        row.Children.Add(new HeadLogo { Width = 24, Height = 24, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) });
+        row.Children.Add(new AppLogo { Width = 24, Height = 24, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) });
         Grid.SetColumn(column, 1);
         row.Children.Add(column);
         return row;
@@ -390,7 +390,7 @@ sealed class ChatPane : Grid
     Control Empty(string? about)
     {
         var panel = new StackPanel { Spacing = 10, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 96, 0, 0), MaxWidth = 420 };
-        panel.Children.Add(new HeadLogo { Width = 44, Height = 44, HorizontalAlignment = HorizontalAlignment.Center });
+        panel.Children.Add(new AppLogo { Width = 44, Height = 44, HorizontalAlignment = HorizontalAlignment.Center });
         panel.Children.Add(new TextBlock
         {
             Text = L.T("¿En qué le ayudo?"),
