@@ -66,6 +66,20 @@ static class HookInstaller
 
     public static string SettingsPath(string configDir) => Path.Combine(configDir, "settings.json");
 
+    /// <summary>Carpetas de Claude Code donde puede ir el hook: las de las cuentas y las ~/.claude* que existan.</summary>
+    public static List<string> ConfigDirs(IEnumerable<string> accounts)
+    {
+        var dirs = accounts.ToList();
+        try
+        {
+            dirs.AddRange(Directory.EnumerateDirectories(Account.Home, ".claude*")
+                .Where(d => Directory.Exists(Path.Combine(d, "projects")) || Directory.Exists(Path.Combine(d, "sessions"))
+                    || File.Exists(Path.Combine(d, "settings.json"))));
+        }
+        catch (Exception) { }
+        return dirs.Select(Account.Normalize).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(d => d).ToList();
+    }
+
     /// <summary>Installed: apunta a este .exe. Outdated: hay un hook de la app, pero a otra ruta.</summary>
     public static State Status(string configDir, string exePath)
     {

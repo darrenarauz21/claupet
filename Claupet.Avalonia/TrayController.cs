@@ -161,15 +161,20 @@ sealed partial class TrayController
             if (OperatingSystem.IsWindows()) WeatherService.WindowsLocation = WindowsLocation.GetAsync;
             if (OwnsShortcuts && OperatingSystem.IsWindows())
             {
-                // Los encendidos se crean si faltan y se corrigen si apuntan a otro .exe (se movió la carpeta).
+                // Los encendidos se crean si faltan y se corrigen si apuntan a otro .exe (se movió la carpeta); la entrada
+                // de Configuración › Aplicaciones, al día si esta es la copia instalada (cambia con cada versión nueva).
                 if (_settings.StartMenuShortcut) Shortcuts.Ensure(Shortcuts.StartMenu);
                 if (_settings.DesktopShortcut) Shortcuts.Ensure(Shortcuts.Desktop);
+                Installation.Refresh(ExePath, SemVersion.App.ToString());
             }
             UpdateMascotWindow();
             UpdateIsland();
             UpdateVoice();
+            // --descargar-modelos: la abrió el asistente al reiniciar (idioma o instalación) con modelos por bajar.
+            if (Program.Args.Contains(DownloadModelsFlag)) DownloadMissingModels();
             if (ArgAfter("--hablar") is { } wav && _voice is { } voice) _ = Task.Delay(1500).ContinueWith(_ => Dispatcher.UIThread.Post(() => _ = voice.DemoAsync(wav)));
-            if (autoSetup && NeedsSetup()) await ShowSetupAsync();
+            // Si se cerró (sin aceptar los términos) o se reinició (otro idioma, o se abre la instalada), no sigue.
+            if (autoSetup && NeedsSetup() && !await ShowSetupAsync()) return;
             await RefreshAsync();
         });
     }
@@ -757,24 +762,17 @@ sealed partial class TrayController
         PushSettings();
     }
 
-    IEnumerable<string> SetupDirs()
-    {
-        var dirs = _settings.Accounts.Select(a => a.ConfigDir).ToList();
-        try
-        {
-            dirs.AddRange(Directory.EnumerateDirectories(Account.Home, ".claude*")
-                .Where(d => Directory.Exists(Path.Combine(d, "projects")) || Directory.Exists(Path.Combine(d, "sessions"))
-                    || File.Exists(Path.Combine(d, "settings.json"))));
-        }
-        catch (Exception) { }
-        return dirs.Select(Account.Normalize).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(d => d).ToList();
-    }
+    IEnumerable<string> SetupDirs() => HookInstaller.ConfigDirs(_settings.Accounts.Select(a => a.ConfigDir));
 
     bool NeedsSetup() =>
-        !_settings.SetupDone || SetupDirs().Any(d => HookInstaller.Status(d, ExePath) == HookInstaller.State.Outdated);
+        !_settings.SetupDone || !Terms.Accepted(_settings)
+        || SetupDirs().Any(d => HookInstaller.Status(d, ExePath) == HookInstaller.State.Outdated);
 
-    /// <summary>El asistente por pasos; lo elegido se aplica al pulsar «Aplicar», como en Windows.</summary>
-    async Task ShowSetupAsync()
+    /// <summary>
+    /// El asistente por pasos; lo elegido se aplica al pulsar «Aplicar», como en Windows. Devuelve false si Claupet se
+    /// cierra (o se reinicia).
+    /// </summary>
+    async Task<bool> ShowSetupAsync()
     {
         _popup.HidePopup();
         var language = L.Language; // el asistente puede cambiarlo mientras está abierto
@@ -787,15 +785,50 @@ sealed partial class TrayController
         setup.Show();
         setup.Activate();
         var accepted = await setup.Result;
+        // Los términos cuentan apenas se aceptan, aunque después se cierre con «Ahora no»; sin ellos, Claupet se cierra.
+        if (setup.TermsAccepted) _settings.TermsAccepted = Terms.Version;
         _settings.SetupDone = true; // «Ahora no» tampoco vuelve a preguntar, salvo que la app cambie de lugar
         SettingsStore.Save(_settings);
-        if (!accepted) return;
+        if (!Terms.Accepted(_settings))
+        {
+            Quit();
+            return false;
+        }
+        if (!accepted) return true;
 
-        var lines = setup.ApplyHooks(ExePath);
+        // La instalación primero (Windows): los hooks, el inicio y los accesos directos apuntan al .exe instalado, que se
+        // abre al final.
+        var lines = new List<string>();
+        var exe = ExePath;
+        string? installed = null;
+        if (OperatingSystem.IsWindows() && setup.InstallFolder is { } folder)
+        {
+            try { installed = exe = Installation.Install(ExePath, folder, SemVersion.App.ToString()); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                ErrorLog.Write(ex);
+                _settings.SetupDone = false; // el asistente vuelve la próxima vez
+                SettingsStore.Save(_settings);
+                await Dialogs.Info(L.T("No se pudo instalar Claupet en {0}: {1}", folder, ex.Message.TrimEnd('.')) + Environment.NewLine
+                    + L.T("No se cambió nada más: el asistente vuelve a abrirse la próxima vez que abra Claupet."), _theme);
+                return true;
+            }
+            lines.Add(L.T("Claupet quedó instalada en {0}.", folder));
+        }
+
+        lines.AddRange(setup.ApplyHooks(exe));
+        if (installed is not null) lines.AddRange(MoveApprovals(exe));
         var windows = OperatingSystem.IsWindows();
+        if (windows && setup.DesktopShortcut != _settings.DesktopShortcut)
+        {
+            // La copia instalada crea los encendidos al abrirse (Shortcuts.Ensure).
+            _settings.DesktopShortcut = setup.DesktopShortcut;
+            SettingsStore.Save(_settings);
+            if (installed is null || !setup.DesktopShortcut) Shortcuts.Set(Shortcuts.Desktop, setup.DesktopShortcut);
+        }
         try
         {
-            StartupRegistration.Set(setup.StartWithSystem);
+            StartupRegistration.Set(setup.StartWithSystem, exe);
             lines.Add(setup.StartWithSystem
                 ? windows ? L.T("Iniciará con Windows.") : L.T("Iniciará con el sistema.")
                 : windows ? L.T("No iniciará con Windows.") : L.T("No iniciará con el sistema."));
@@ -813,8 +846,9 @@ sealed partial class TrayController
         if (setup.Chat != _settings.Chat) ToggleChat();
         if (setup.Island != _settings.Island) FlipIsland(s => s.Island = setup.Island);
 
-        // Modelos y voz: como encenderlos en Ajustes, que baja lo que falte.
-        var relaunch = setup.Language != language;
+        // Modelos y voz: como encenderlos en Ajustes, que baja lo que falte. Si la app se reinicia (otro idioma, o se abre
+        // la instalada), los baja la que se abre.
+        var relaunch = setup.Language != language || installed is not null;
         var voiceMissing = setup.Mic && !VoiceModel.Ready;
         // El modelo local: la mascota responde con él; al apagarlo vuelve a Haiku.
         if (HasLocal && (setup.LocalModelId != LocalChoice.Id || setup.LocalModelOn && _settings.LocalModel is null))
@@ -832,37 +866,59 @@ sealed partial class TrayController
         SettingsStore.Save(_settings);
         UpdateVoice();
         if (!_settings.ReadAloud) _readAloud?.Stop();
-        if (relaunch && (voiceMissing || speechMissing || localMissing))
-            lines.Add(L.T("Al reiniciar, descargue los modelos en Ajustes › Asistente."));
-        else
+        if (voiceMissing)
         {
-            if (voiceMissing)
-            {
-                _ = DownloadVoiceModelAsync();
-                lines.Add(L.T("El modelo de voz se descarga en segundo plano; el avance está en Ajustes › Asistente."));
-            }
-            if (speechMissing)
-            {
-                _ = DownloadSpeechAsync();
-                lines.Add(L.T("La voz de Claupet se descarga en segundo plano; el avance está en Ajustes › Asistente."));
-            }
-            if (localMissing)
-            {
-                _ = DownloadLocalModelAsync();
-                lines.Add(L.T("El modelo local se descarga en segundo plano; el avance está en Claupet Console › Respuestas."));
-            }
+            if (!relaunch) _ = DownloadVoiceModelAsync();
+            lines.Add(L.T("El modelo de voz se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+        }
+        if (speechMissing)
+        {
+            if (!relaunch) _ = DownloadSpeechAsync();
+            lines.Add(L.T("La voz de Claupet se descarga en segundo plano; el avance está en Ajustes › Asistente."));
+        }
+        if (localMissing)
+        {
+            if (!relaunch) _ = DownloadLocalModelAsync();
+            lines.Add(L.T("El modelo local se descarga en segundo plano; el avance está en Claupet Console › Respuestas."));
         }
         PushSettings();
 
         if (setup.HooksChanged > 0)
             lines.Add(L.T("Los avisos de permisos funcionan en las sesiones de Claude Code que se abran desde ahora."));
-        if (relaunch) lines.Add(L.T("Claupet se reinicia para cambiar el idioma."));
+        if (installed is not null) lines.Add(L.T("Claupet se abre ahora desde la carpeta instalada; puede borrar el archivo que descargó."));
+        else if (relaunch) lines.Add(L.T("Claupet se reinicia para cambiar el idioma."));
         await Dialogs.Info(string.Join(Environment.NewLine, lines), _theme);
-        if (!relaunch) return;
+        if (!relaunch) return true;
         // El asistente ya usa el idioma nuevo (L.Language): se guarda y se reinicia sin pasar por SetLanguage.
         _settings.Language = setup.Language;
         SettingsStore.Save(_settings);
-        Restart();
+        return !Restart(installed, voiceMissing || speechMissing || localMissing ? [DownloadModelsFlag] : []);
+    }
+
+    /// <summary>Lo pasa el asistente a la app que se abre al reiniciar, si quedaron modelos por bajar.</summary>
+    const string DownloadModelsFlag = "--descargar-modelos";
+
+    /// <summary>Lo que el asistente encendió y falta bajar, como si se pulsara «Descargar» en Ajustes.</summary>
+    void DownloadMissingModels()
+    {
+        if (_settings.Mic && !VoiceModel.Ready) _ = DownloadVoiceModelAsync();
+        if (_settings.ReadAloud && NeedsSupertonic(_settings.ReadAloudVoice) && !ClaupetVoiceModel.Ready) _ = DownloadSpeechAsync();
+        if (HasLocal && _settings.MascotModel == AssistantModels.Local && !LocalModel.Ready(LocalChoice)) _ = DownloadLocalModelAsync();
+    }
+
+    /// <summary>
+    /// Al instalar: el hook de permisos en la isla (si está) también pasa al .exe instalado; si no, seguiría llamando al
+    /// descargado. Devuelve una línea por carpeta que no se pudo cambiar.
+    /// </summary>
+    List<string> MoveApprovals(string exe)
+    {
+        var lines = new List<string>();
+        foreach (var dir in SetupDirs().Where(d => HookInstaller.ApprovalsStatus(d, exe) == HookInstaller.State.Outdated))
+        {
+            try { HookInstaller.InstallApprovals(dir, exe); }
+            catch (Exception ex) { lines.Add(L.T("{0}: no se pudo cambiar ({1}).", dir.Replace(Account.Home, "~"), ex.Message)); }
+        }
+        return lines;
     }
 
     async Task RemoveSetupAsync()
@@ -894,16 +950,22 @@ sealed partial class TrayController
         Restart();
     }
 
-    /// <summary>Abre otra instancia, que espera a que esta termine de cerrarse (--reiniciar), y se cierra.</summary>
-    void Restart()
+    /// <summary>
+    /// Abre otra instancia, que espera a que esta termine de cerrarse (--reiniciar), y se cierra. exe: otra copia (la recién
+    /// instalada); extra: más opciones para la que se abre. Devuelve false si no pudo abrirla (y esta sigue).
+    /// </summary>
+    bool Restart(string? exe = null, string[]? extra = null)
     {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ExePath) { ArgumentList = { "--reiniciar" }, UseShellExecute = false })?.Dispose(); }
+        var start = new System.Diagnostics.ProcessStartInfo(exe ?? ExePath) { ArgumentList = { "--reiniciar" }, UseShellExecute = false };
+        foreach (var arg in extra ?? []) start.ArgumentList.Add(arg);
+        try { System.Diagnostics.Process.Start(start)?.Dispose(); }
         catch (Exception ex)
         {
             ErrorLog.Write(ex);
-            return;
+            return false;
         }
         Dispatcher.UIThread.Post(Quit);
+        return true;
     }
 
     void Quit()

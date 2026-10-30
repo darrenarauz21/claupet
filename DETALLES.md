@@ -51,6 +51,9 @@ mascota (`[ACCION]`) son del protocolo y van siempre en español. Para otro idio
 | Credenciales de Claude Code (solo se leen) | `.credentials.json` de cada carpeta | Linux: igual; macOS: el Llavero |
 | Iniciar con el sistema | registro, `HKCU\…\Run` | Linux: `~/.config/autostart/claupet.desktop`; macOS: `~/Library/LaunchAgents/local.claupet.plist` |
 | Versión nueva bajada (hasta instalarla) | `…\Claupet\actualizacion\<versión>` | `…/Claupet/actualizacion/<versión>` |
+| La app instalada | `%LOCALAPPDATA%\Programs\Claupet\Claupet.exe` (o la carpeta elegida) y `claupet.ico` | Linux: `~/.local/share/claupet`; macOS: Aplicaciones |
+| Entrada de Configuración › Aplicaciones | registro, `HKCU\…\Uninstall\Claupet` | — |
+| Términos aceptados | `TermsAccepted` en `settings.json` (la versión) | igual |
 
 En macOS, Claude Code guarda las credenciales en el Llavero: «Claude Code-credentials» para
 `~/.claude` y, desde Claude Code 2.1.144, «Claude Code-credentials-» seguido de los 8 primeros
@@ -707,7 +710,8 @@ cursor de todo el escritorio (`GlobalPointer.cs`): Windows lo da directo; en Lin
 socket de Unix que .NET crea solo. Una copia de prueba (`--preview`) no responde los permisos: los sigue
 respondiendo la app de siempre.
 
-**Asistente de configuración** (`SetupWindow.cs`). Los mismos cinco pasos que en Windows. «Aplicar» solo está en el
+**Asistente de configuración** (`SetupWindow.cs`). Los mismos pasos que en Windows, salvo «Instalación» (en Linux y
+macOS instalan `instalar.sh` y `preparar-mac.sh`): también pide aceptar los términos. «Aplicar» solo está en el
 último, no es el botón por defecto y no responde a Enter.
 
 **Voz** (`Audio.cs`, `Voice.cs`, `GlobalKeys.cs`, `TrayController.Voice.cs`). Whisper, la voz de Claupet y sus
@@ -780,6 +784,27 @@ chat de la mascota, la isla y la Console, los eventos (chat, avisos, archivos so
 paquete, el audio para las que escuchan (`SharedAudio.cs`: el micrófono y, con WASAPI, lo que suena en el equipo), la
 API local y sus tokens, y las claves cifradas con DPAPI (`Core/Extensions/Secrets.cs`). Un paquete `.claupet` soltado
 sobre la mascota o la isla, o elegido con «Instalar…» en el asistente de configuración, abre la revisión en la Console.
+
+## Instalación en Windows
+
+Se descarga un solo `Claupet-windows-x64.exe`; al abrirlo, el asistente de configuración hace de instalador
+(`Core/Installation.cs`, `SetupAssistant.cs` y `SetupWindow.cs`), sin permisos de administrador:
+
+| Paso | Qué pasa |
+|---|---|
+| Términos | el texto de `Core/Terminos/<idioma>.txt` (dentro del ejecutable, `Terms`); sin aceptarlo no se pasa al paso siguiente, y cerrar el asistente cierra la app. Se guarda la versión aceptada (`TermsAccepted`): al subir `Terms.Version`, la app vuelve a preguntar al abrirse |
+| Instalación | la carpeta por defecto es `%LOCALAPPDATA%\Programs\Claupet`; con «Cambiar…», si la elegida no se llama `Claupet`, se usa una `Claupet` dentro. Tiene que ser de este equipo, sin `%` y con permiso de escritura sin administrador (las versiones nuevas cambian el .exe ahí): si no, no se pasa al paso siguiente. Si esta copia ya es la instalada, el paso solo lo dice |
+| «Aplicar» | copia el .exe a la carpeta como `Claupet.exe` (sin la marca de «descargado de internet»; si había otra versión, la cambia como una actualización), la registra en `HKCU\…\Uninstall\Claupet` y apunta ahí los hooks (también el de permisos en la isla), el inicio con Windows y los accesos directos; luego abre la instalada (`--reiniciar`, y `--descargar-modelos` si quedaron modelos por bajar) y se cierra |
+
+Al abrirse, la copia instalada pone al día la versión y el tamaño de su entrada (`Installation.Refresh`). Abrir otra
+vez el archivo descargado, si es el mismo que se instaló (mismo tamaño y fecha), abre la instalada; otro .exe (otra
+versión o compilación) abre el asistente, que ofrece reemplazarla.
+
+**Desinstalar** (`Claupet.exe --desinstalar`, desde Configuración › Aplicaciones): pregunta; cierra los Claupet que
+corren desde la carpeta instalada; quita los hooks (con respaldo), el inicio con Windows, los accesos directos, las
+tareas de los recordatorios pendientes y la entrada; si la persona quiere, borra también la carpeta de datos. El .exe
+no puede borrarse a sí mismo: después del último mensaje, `cmd` espera unos segundos y borra solo lo que puso la
+instalación (`Claupet.exe`, `.anterior`, `.nuevo` y `claupet.ico`) y la carpeta si quedó vacía.
 
 ## Versiones nuevas
 

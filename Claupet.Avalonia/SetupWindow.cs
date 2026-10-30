@@ -13,8 +13,10 @@ using SD = System.Drawing;
 namespace Claupet;
 
 /// <summary>
-/// La bienvenida de Claupet, por pasos, como SetupForm en Windows: el idioma y las novedades, el hook de permisos en
-/// cada carpeta de Claude Code, la mascota, los modelos y la voz, y el inicio con el sistema y las notificaciones. Lo que
+/// La bienvenida de Claupet, por pasos, como SetupForm en Windows: el idioma y las novedades, los términos y
+/// condiciones, la carpeta donde se instala (solo en Windows: en Linux y macOS la instalan sus scripts), el hook de
+/// permisos en cada carpeta de Claude Code, la mascota, los modelos y la voz, y el inicio con el sistema y las
+/// notificaciones. No se pasa de los términos sin aceptarlos, ni de la instalación con una carpeta que no sirve. Lo que
 /// esta app todavía no tiene (PlatformFeatures) no se ofrece: el paso lo muestra bajo «Próximamente». Nada cambia hasta
 /// «Aplicar», que no es el botón por defecto y no responde a Enter: una tecla suelta no reescribe los hooks ni el inicio.
 /// </summary>
@@ -22,7 +24,10 @@ sealed class SetupWindow : Window
 {
     sealed record HookRow(string Dir, HookInstaller.State State, string Name);
 
-    const int Steps = 5;
+    enum Step { Welcome, Terms, Install, Hooks, Companion, Models, Startup }
+
+    readonly Step[] _order = Enum.GetValues<Step>().Where(s => s != Step.Install || OperatingSystem.IsWindows()).ToArray();
+    int Steps => _order.Length;
     const PlatformFeatures Voice = PlatformFeatures.Mic | PlatformFeatures.ReadAloud;
     const PlatformFeatures Models = Voice | PlatformFeatures.LocalModel | PlatformFeatures.Extensions;
     static readonly SD.Color OnAccent = SD.Color.FromArgb(0x14, 0x14, 0x13);
@@ -62,6 +67,16 @@ sealed class SetupWindow : Window
     public Task<bool> Result => _done.Task;
     /// <summary>Cuántos hooks agregó o actualizó ApplyHooks.</summary>
     public int HooksChanged { get; private set; }
+    /// <summary>Se aceptaron los términos (ahora o antes).</summary>
+    public bool TermsAccepted { get; private set; }
+    /// <summary>Dónde instalar Claupet al aplicar (Windows); null si esta copia ya es la instalada, o fuera de Windows.</summary>
+    public string? InstallFolder { get; private set; }
+    /// <summary>El acceso directo del escritorio (Windows; el del menú Inicio va siempre).</summary>
+    public bool DesktopShortcut { get; private set; }
+
+    /// <summary>Por qué no se puede instalar en InstallFolder; null si se puede.</summary>
+    string? _installProblem;
+    readonly string _exePath;
 
     /// <summary>Instala un paquete .claupet (lo revisa Claupet Console); null donde no hay extensiones.</summary>
     public Func<string, Task>? InstallPackage { get; init; }
@@ -74,8 +89,16 @@ sealed class SetupWindow : Window
     {
         _t = theme;
         _features = features;
+        _exePath = exePath;
         _railColor = theme.Dark ? SD.Color.FromArgb(0x2E, 0x2E, 0x2B) : SD.Color.FromArgb(0xF0, 0xEE, 0xE6);
         _startLanguage = Language = L.Language;
+        TermsAccepted = Terms.Accepted(settings);
+        if (OperatingSystem.IsWindows() && !Installation.IsInstalled(exePath))
+        {
+            InstallFolder = Installation.Folder ?? Installation.DefaultFolder;
+            _installProblem = Installation.Problem(InstallFolder);
+        }
+        DesktopShortcut = settings.DesktopShortcut;
         _currentMascot = Mascots.ChoiceOf(settings);
         DesktopMascot = settings.DesktopMascot;
         Chat = settings.Chat;
@@ -142,7 +165,7 @@ sealed class SetupWindow : Window
         (_later, _laterText) = Pill(PillKind.Link, () => Close());
         (_back, _backText) = Pill(PillKind.Quiet, () => GoTo(_current - 1));
         // «Siguiente» solo avanza; en el último paso se oculta y aparece «Aplicar», que es otro botón.
-        (_next, _nextText) = Pill(PillKind.Primary, () => { if (_current < Steps - 1) GoTo(_current + 1); });
+        (_next, _nextText) = Pill(PillKind.Primary, () => { if (_current < Gate) GoTo(_current + 1); });
         (_apply, _applyText) = Pill(PillKind.Primary, Apply);
         // Enter no pulsa «Aplicar» ni con el foco en él: se aplica con el clic (o, llegando con Tab, con Espacio).
         _apply.AddHandler(KeyDownEvent, (_, e) => { if (e.Key == Key.Enter) e.Handled = true; }, RoutingStrategies.Tunnel);
@@ -209,7 +232,19 @@ sealed class SetupWindow : Window
         return v is null ? "" : $"{v.Major}.{v.Minor}.{v.Build}";
     }
 
-    string[] StepNames => [L.T("Bienvenida"), L.T("Avisos de permisos"), L.T("Su compañero"), L.T("Modelos y voz"), L.T("Inicio y avisos")];
+    string[] StepNames => _order.Select(s => s switch
+    {
+        Step.Welcome => L.T("Bienvenida"),
+        Step.Terms => L.T("Términos"),
+        Step.Install => L.T("Instalación"),
+        Step.Hooks => L.T("Avisos de permisos"),
+        Step.Companion => L.T("Su compañero"),
+        Step.Models => L.T("Modelos y voz"),
+        _ => L.T("Inicio y avisos"),
+    }).ToArray();
+
+    /// <summary>El primer paso del que todavía no se puede pasar: los términos sin aceptar o una carpeta que no sirve.</summary>
+    int Gate => !TermsAccepted ? Array.IndexOf(_order, Step.Terms) : _installProblem is not null ? Array.IndexOf(_order, Step.Install) : Steps - 1;
 
     bool Has(PlatformFeatures feature) => (_features & feature) == feature;
 
@@ -224,33 +259,40 @@ sealed class SetupWindow : Window
     /// <summary>Muestra un paso: lo rehace entero, así también sirve al cambiar de idioma.</summary>
     void GoTo(int index)
     {
-        _current = Math.Clamp(index, 0, Steps - 1);
+        _current = Math.Clamp(index, 0, Gate);
         var last = _current == Steps - 1;
+        var blocked = !last && _current >= Gate;
         Title = L.T("Configurar Claupet");
         _version.Text = L.T("Versión {0}", Version());
         _soon.Text = L.T("Próximamente").ToUpper();
         Ui.AutomationName(_close, L.T("Cerrar"));
-        SetText(_later, _laterText, L.T("Ahora no"));
+        // Sin los términos aceptados, cerrar el asistente cierra Claupet.
+        SetText(_later, _laterText, TermsAccepted ? L.T("Ahora no") : L.T("Salir"));
         SetText(_back, _backText, L.T("Atrás"));
         SetText(_next, _nextText, L.T("Siguiente"));
         SetText(_apply, _applyText, L.T("Aplicar"));
         _back.IsVisible = _current > 0;
         _next.IsVisible = !last;
+        _next.IsEnabled = !blocked;
+        _next.Opacity = blocked ? 0.5 : 1;
         _apply.IsVisible = last;
         Rail();
 
         _body.Children.Clear();
-        switch (_current)
+        switch (_order[_current])
         {
-            case 0: Welcome(); break;
-            case 1: Hooks(); break;
-            case 2: Companion(); break;
-            case 3: ModelsAndVoice(); break;
+            case Step.Welcome: Welcome(); break;
+            case Step.Terms: TermsStep(); break;
+            case Step.Install: if (OperatingSystem.IsWindows()) Install(); break;
+            case Step.Hooks: Hooks(); break;
+            case Step.Companion: Companion(); break;
+            case Step.Models: ModelsAndVoice(); break;
             default: Startup(); break;
         }
         _scroll.Offset = default;
-        // Enter sigue con «Siguiente»; en el último paso nada tiene el foco, así que un Enter suelto no hace nada.
-        if (last) FocusManager?.ClearFocus();
+        // Enter sigue con «Siguiente»; en el último paso (o con «Siguiente» apagado) nada tiene el foco, así que un
+        // Enter suelto no hace nada.
+        if (last || blocked) FocusManager?.ClearFocus();
         else _next.Focus();
     }
 
@@ -320,6 +362,86 @@ sealed class SetupWindow : Window
         if (Has(Voice)) news.Add((L.T("Voz"), L.T("Háblele con el micrófono y escuche las respuestas."), null));
         if (Has(PlatformFeatures.Island)) news.Add((L.T("Isla"), L.T("Sesiones, permisos y un chat rápido en el borde de arriba."), null));
         Add(Cards(news.ToArray()));
+    }
+
+    void TermsStep()
+    {
+        Header(L.T("Términos y condiciones"), L.T("Léalos antes de seguir: para usar Claupet hay que aceptarlos."));
+        Add(new Border
+        {
+            Height = 236, CornerRadius = new CornerRadius(14), Background = Gfx.B(_t.Raised), BorderBrush = Gfx.B(_t.Border),
+            BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 0, 10),
+            Child = new ScrollViewer
+            {
+                Content = Label(Terms.Text, 11.7, _t.Text, margin: new Thickness(14, 12, 18, 12)),
+                HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            },
+        });
+        Add(new SwitchRow(_t, L.T("Acepto los términos y condiciones"), L.T("Sin aceptarlos, Claupet se cierra."), TermsAccepted, true, v =>
+        {
+            TermsAccepted = v;
+            Dispatcher.UIThread.Post(() => GoTo(_current)); // «Siguiente», «Salir» y los pasos siguientes
+        }));
+    }
+
+    /// <summary>La carpeta donde se instala (solo en Windows: el paso no sale en los demás).</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    void Install()
+    {
+        if (InstallFolder is not { } folder)
+        {
+            Header(L.T("Instalación"), L.T("Claupet ya está instalada en este equipo."));
+            var here = System.IO.Path.GetDirectoryName(_exePath) ?? "";
+            Add(ActionRow(L.T("Carpeta"), here, L.T("Abrir"), () =>
+            {
+                try { System.Diagnostics.Process.Start("explorer.exe", $"\"{here}\"")?.Dispose(); }
+                catch (Exception ex) { ErrorLog.Write(ex); }
+            }));
+            Add(DesktopRow());
+            Add(Note(L.T("Para quitarla, use Configuración › Aplicaciones › Claupet › Desinstalar.")));
+            return;
+        }
+        Header(L.T("Instalación"),
+            L.T("Claupet se instala en una carpeta propia, como cualquier app: queda en el menú Inicio y en Configuración › Aplicaciones, desde donde se desinstala."));
+        Add(ActionRow(L.T("Carpeta"), folder, L.T("Cambiar…"), async () =>
+        {
+            try
+            {
+                var start = await StorageProvider.TryGetFolderFromPathAsync(Directory.Exists(folder) ? folder : System.IO.Path.GetDirectoryName(folder) ?? Account.Home);
+                var picked = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                {
+                    Title = L.T("Elija dónde instalar Claupet"), AllowMultiple = false, SuggestedStartLocation = start,
+                });
+                if (picked.Count == 0 || picked[0].TryGetLocalPath() is not { } chosen) return;
+                InstallFolder = Installation.FolderFor(chosen);
+                _installProblem = Installation.Problem(InstallFolder);
+                GoTo(_current);
+            }
+            catch (Exception ex) { ErrorLog.Write(ex); }
+        }));
+        if (_installProblem is { } problem) Add(Label(problem, 11.7, _t.Danger, margin: new Thickness(0, 2, 0, 8)));
+        Add(DesktopRow());
+        if (Installation.Folder is { } current && Installation.InstalledExe is not null && Account.SamePath(folder, current))
+            Add(Note(L.T("Ya hay una Claupet instalada ahí: se reemplaza por esta versión ({0}).", Version())));
+        Add(Note(L.T("Sus ajustes y modelos siguen en {0}. Después de instalarla puede borrar el archivo que descargó.", DataFolder.Root)));
+    }
+
+    SwitchRow DesktopRow() => new(_t, L.T("Acceso directo en el escritorio"), L.T("El del menú Inicio se crea siempre."), DesktopShortcut, true, v => DesktopShortcut = v);
+
+    /// <summary>Como una fila con interruptor, pero con un botón discreto a la derecha.</summary>
+    Control ActionRow(string title, string detail, string action, Action onClick)
+    {
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 4) };
+        var text = new StackPanel { Margin = new Thickness(0, 8, 20, 8), VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(Label(title, 13, _t.Text));
+        text.Children.Add(Label(detail, 11.7, _t.Tertiary, margin: new Thickness(0, 1, 0, 0)));
+        row.Children.Add(text);
+        var (button, label) = Pill(PillKind.Quiet, onClick);
+        SetText(button, label, action);
+        button.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(button, 1);
+        row.Children.Add(button);
+        return row;
     }
 
     void Hooks()
@@ -600,17 +722,22 @@ sealed class SetupWindow : Window
         Ui.AutomationName(pill, value);
     }
 
-    /// <summary>Instala o actualiza el hook donde se marcó. Devuelve una línea por carpeta.</summary>
+    /// <summary>
+    /// Deja el hook donde se marcó (o ya estaba) apuntando a exePath: esta copia o, al instalar, la de la carpeta instalada.
+    /// Devuelve una línea por carpeta que cambió.
+    /// </summary>
     public List<string> ApplyHooks(string exePath)
     {
         var lines = new List<string>();
-        foreach (var row in _rows.Where(r => r.State is HookInstaller.State.Missing or HookInstaller.State.Outdated && _hooksOn.Contains(r.Dir)))
+        foreach (var row in _rows.Where(r => r.State == HookInstaller.State.Installed || r.State is HookInstaller.State.Missing or HookInstaller.State.Outdated && _hooksOn.Contains(r.Dir)))
         {
+            var state = HookInstaller.Status(row.Dir, exePath);
+            if (state is HookInstaller.State.Installed or HookInstaller.State.Unreadable) continue;
             try
             {
                 var backup = HookInstaller.Install(row.Dir, exePath);
                 HooksChanged++;
-                var verb = row.State == HookInstaller.State.Outdated ? L.T("hook actualizado") : L.T("hook agregado");
+                var verb = state == HookInstaller.State.Outdated ? L.T("hook actualizado") : L.T("hook agregado");
                 lines.Add(backup is null ? $"{row.Name}: {verb}." : L.T("{0}: {1} (respaldo: {2}).", row.Name, verb, System.IO.Path.GetFileName(backup)));
             }
             catch (Exception ex)

@@ -16,6 +16,13 @@ static class Program
         // --idioma <es|en>: ese idioma solo en esta ejecución (para probar las traducciones sin tocar los ajustes).
         L.Use(Array.IndexOf(args, "--idioma") is var li and >= 0 && li + 1 < args.Length ? args[li + 1] : SettingsStore.Load().Language);
 
+        // --desinstalar (Windows): lo abre Configuración › Aplicaciones › Claupet › Desinstalar (Installation). Todavía sin
+        // Avalonia: los mensajes son los de Windows.
+        if (OperatingSystem.IsWindows() && args.Contains(Installation.UninstallFlag))
+            return Installation.RunUninstaller(
+                text => NativeMessage(text, MbYesNo | MbIconQuestion | MbDefButton2) == IdYes,
+                text => NativeMessage(text, MbOk | MbIconInformation));
+
         // Las extensiones: el anfitrión de una DLL y las herramientas para autores (ExtensionCli).
         if (ExtensionCli.TryRun(args) is { } extensionCode) return extensionCode;
         // Mismos modos de línea de comandos que la app de Windows.
@@ -43,6 +50,9 @@ static class Program
 
         // --console: Claupet Console, la ventana grande, en su propio proceso (la misma de Windows).
         if (args.Contains(ConsoleApp.Flag)) return ConsoleApp.Run(args);
+
+        // El .exe descargado otra vez, con esta misma versión ya instalada (Windows): se abre la instalada.
+        if (OperatingSystem.IsWindows() && args.Length == 0 && Installation.OpenInstalled(Environment.ProcessPath ?? "")) return 0;
 
         // --preview: abre la ventana aunque ya haya otra instancia (para probar cambios).
         var preview = args.Contains("--preview");
@@ -91,6 +101,15 @@ static class Program
         }
         return string.Join(", ", missing);
     }
+
+    const uint MbOk = 0x0, MbYesNo = 0x4, MbIconQuestion = 0x20, MbIconInformation = 0x40, MbDefButton2 = 0x100, MbTopMost = 0x40000;
+    const int IdYes = 6;
+
+    /// <summary>Un mensaje de Windows, para el desinstalador (corre sin Avalonia).</summary>
+    static int NativeMessage(string text, uint flags) => MessageBoxW(IntPtr.Zero, text, "Claupet", flags | MbTopMost);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern int MessageBoxW(IntPtr owner, string text, string caption, uint type);
 
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()

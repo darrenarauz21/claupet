@@ -40,7 +40,7 @@ static class Shortcuts
 
     static void Write(string file)
     {
-        WriteIcon();
+        WriteIcon(IconFile);
         var link = (IShellLinkW)new ShellLink();
         try
         {
@@ -68,8 +68,11 @@ static class Shortcuts
         finally { Marshal.FinalReleaseComObject(link); }
     }
 
-    /// <summary>El ícono: la cabeza del chibi en los tamaños que pide Windows, como PNG dentro de un .ico.</summary>
-    static void WriteIcon()
+    /// <summary>
+    /// El ícono: la cabeza del chibi en los tamaños que pide Windows, como PNG dentro de un .ico. También lo usa la
+    /// entrada de Configuración › Aplicaciones (Installation), en la carpeta instalada.
+    /// </summary>
+    public static void WriteIcon(string file)
     {
         int[] sizes = [16, 24, 32, 48, 64, 128, 256];
         var images = sizes.Select(HeadPng).ToList();
@@ -94,8 +97,8 @@ static class Shortcuts
             }
             foreach (var image in images) writer.Write(image);
         }
-        Directory.CreateDirectory(Path.GetDirectoryName(IconFile)!);
-        File.WriteAllBytes(IconFile, stream.ToArray());
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllBytes(file, stream.ToArray());
     }
 
     /// <summary>
