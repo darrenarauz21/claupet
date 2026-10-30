@@ -115,7 +115,8 @@ static class Approvals
         return target;
     }
 
-    static IReadOnlyList<AskedQuestion>? QuestionsOf(JsonElement input)
+    /// <summary>Las preguntas de AskUserQuestion, si se pueden mostrar enteras (con texto y al menos dos opciones, hasta cuatro).</summary>
+    public static IReadOnlyList<AskedQuestion>? QuestionsOf(JsonElement input)
     {
         if (input.ValueKind != JsonValueKind.Object || !input.TryGetProperty("questions", out var list) || list.ValueKind != JsonValueKind.Array) return null;
         var questions = new List<AskedQuestion>();
@@ -137,17 +138,24 @@ static class Approvals
     public static string Deny() => Decision(new JsonObject { ["behavior"] = "deny", ["message"] = L.T("Denegado desde Claupet.") });
 
     /// <summary>Las respuestas a las preguntas: por pregunta, una etiqueta o (si se pueden elegir varias) la lista.</summary>
-    public static string Answer(ApprovalRequest request, IReadOnlyDictionary<string, IReadOnlyList<string>> picks)
+    public static string Answer(ApprovalRequest request, IReadOnlyDictionary<string, IReadOnlyList<string>> picks) =>
+        Decision(new JsonObject { ["behavior"] = "allow", ["updatedInput"] = Answered(JsonNode.Parse(request.InputJson), request.Questions, picks) });
+
+    /// <summary>
+    /// El pedido con sus respuestas en «answers»: por pregunta, una etiqueta o (si se pueden elegir varias) la lista.
+    /// Claude Code se las pasa así al modelo (probado con 2.1, también por stdio en la Terminal).
+    /// </summary>
+    public static JsonObject Answered(JsonNode? input, IReadOnlyList<AskedQuestion>? questions, IReadOnlyDictionary<string, IReadOnlyList<string>> picks)
     {
-        var input = JsonNode.Parse(request.InputJson) as JsonObject ?? new JsonObject();
+        var answered = input?.DeepClone() as JsonObject ?? new JsonObject();
         var answers = new JsonObject();
-        foreach (var q in request.Questions ?? [])
+        foreach (var q in questions ?? [])
         {
             if (!picks.TryGetValue(q.Question, out var chosen) || chosen.Count == 0) continue;
             answers[q.Question] = q.MultiSelect ? new JsonArray([.. chosen.Select(c => (JsonNode)JsonValue.Create(c)!)]) : JsonValue.Create(chosen[0]);
         }
-        input["answers"] = answers;
-        return Decision(new JsonObject { ["behavior"] = "allow", ["updatedInput"] = input });
+        answered["answers"] = answers;
+        return answered;
     }
 
     static string Decision(JsonObject decision) => new JsonObject

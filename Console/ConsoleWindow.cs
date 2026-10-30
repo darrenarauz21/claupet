@@ -87,6 +87,7 @@ sealed class ConsoleWindow : Window
         };
         _editor.DocsChanged += () => { if (_mode == Mode.Editor && _editorFiles) RenderFileList(); };
         _terminal.TabsChanged += () => { if (_mode == Mode.Terminal) _asideTop.Child = _terminal.Header(); };
+        _terminal.ListChanged += () => { if (_mode == Mode.Terminal) Render(rebuild: true); };
         // Los atajos del editor (Ctrl+N, O, S, W) mientras se ve.
         KeyDown += (_, e) => { if (_mode == Mode.Editor) _editor.HandleKey(e); };
         Closing += (_, e) =>
@@ -246,7 +247,8 @@ sealed class ConsoleWindow : Window
             _terminal.SetInk(_ink);
             _body.ColumnDefinitions[1].Width = new GridLength(_mode switch
             {
-                Mode.Chat or Mode.Terminal => 250,
+                Mode.Chat => 250,
+                Mode.Terminal => _terminal.ListWidth,
                 Mode.Editor => _editorFiles ? 250 : 0,
                 _ => 210,
             });
@@ -301,6 +303,16 @@ sealed class ConsoleWindow : Window
             if (current) item.Background = _ink.Pill;
             _sections.Children.Add(item);
         }
+        // Los de la Terminal son de la Console (no pasan por la bandeja): se abren en su panel.
+        var terminal = Ui.Press(Ui.Text(L.T("Terminal"), 14.5, _ink.Secondary), () =>
+        {
+            SetMode(Mode.Terminal);
+            _terminal.ShowSettings();
+        }, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name: L.T("Terminal"));
+        terminal.MinHeight = 38;
+        terminal.Padding = new Thickness(12, 0);
+        terminal.CornerRadius = new CornerRadius(12);
+        _sections.Children.Add(terminal);
         _view.Show(shown, _ink, rebuild, _pages.FirstOrDefault(p => p.Id == shown.Parent)?.Title);
         if (_main.Child != _scroll) _main.Child = _scroll;
     }

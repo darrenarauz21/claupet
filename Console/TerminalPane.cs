@@ -20,7 +20,7 @@ using Avalonia.Threading;
 /// sin la pantalla de la TUI. Cada pestaña es un Claude Code con su cuenta, su modelo y su esfuerzo. A la izquierda, las
 /// pestañas por proyecto (Aside); a la derecha, la sesión elegida o la sesión nueva. No necesita a la bandeja.
 /// </summary>
-sealed class TerminalPane : Grid
+sealed partial class TerminalPane : Grid
 {
     // Los íconos, en un cuadro de 24.
     const string PlusIcon = "M12,5 V19 M5,12 H19";
@@ -50,6 +50,13 @@ sealed class TerminalPane : Grid
     /// <summary>Lo que se va escribiendo de una respuesta: se cambia solo el texto, sin rehacer el bloque.</summary>
     readonly Dictionary<AgentBlock, SelectableTextBlock> _live = [];
     readonly StackPanel _blocks = new() { Spacing = 6 };
+    /// <summary>El tamaño elegido en Ajustes › Terminal agranda o achica los bloques enteros, como un zoom.</summary>
+    readonly LayoutTransformControl _zoom = new();
+    TerminalLook _look = TerminalLook.Load();
+    /// <summary>Los colores del tema, antes de aplicarles el fondo y el color del texto de la Terminal.</summary>
+    Ink? _theme;
+    /// <summary>Se muestran los ajustes de la Terminal en vez de la sesión.</summary>
+    bool _settings;
     readonly ScrollViewer _scroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     readonly TextBox _input = new();
     readonly StackPanel _list = new() { Spacing = 1 };
@@ -65,19 +72,39 @@ sealed class TerminalPane : Grid
     /// <summary>La lista de pestañas cambió (para la columna de la izquierda).</summary>
     public event Action? TabsChanged;
 
+    /// <summary>Cambió el ancho de la lista (con descripción o solo íconos): la ventana vuelve a armar la columna.</summary>
+    public event Action? ListChanged;
+
     public TerminalPane()
     {
-        _scroll.Content = new Border { Child = _blocks, Padding = new Thickness(20, 12, 20, 16) };
+        _zoom.Child = _blocks;
+        _scroll.Content = new Border { Child = _zoom, Padding = new Thickness(20, 12, 20, 16) };
         _input.AddHandler(KeyDownEvent, OnInputKey, RoutingStrategies.Tunnel);
+        ApplyLook();
         Build();
     }
 
     public void SetInk(Ink ink)
     {
-        if (ReferenceEquals(ink, _ink)) return;
-        _ink = ink;
+        if (ReferenceEquals(ink, _theme)) return;
+        _theme = ink;
+        _ink = _look.Apply(ink);
         Build();
         RenderList();
+    }
+
+    /// <summary>La letra de las sesiones (Ajustes › Terminal).</summary>
+    FontFamily Mono => _look.Mono;
+
+    /// <summary>El ancho de la columna de la izquierda: con descripción o solo los íconos.</summary>
+    public double ListWidth => _look.IconsOnly ? 64 : 250;
+
+    void ApplyLook()
+    {
+        Animate = _look.Animate;
+        var scale = _look.Size / TerminalLook.DefaultSize;
+        _zoom.LayoutTransform = new ScaleTransform(scale, scale);
+        if (_theme is { } theme) _ink = _look.Apply(theme);
     }
 
     public void FocusInput()
@@ -94,11 +121,12 @@ sealed class TerminalPane : Grid
 
     // ── Columna de la izquierda ─────────────────────────────────────────────────────────────
 
-    /// <summary>«Terminal» y el botón de sesión nueva.</summary>
+    /// <summary>«Terminal», el cambio de lista, los ajustes y el botón de sesión nueva (solo los botones, con la lista de íconos).</summary>
     public Control Header()
     {
-        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(8, 2, 6, 10) };
-        bar.Children.Add(new TextBlock
+        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = _look.IconsOnly ? new Thickness(0, 2, 0, 10) : new Thickness(8, 2, 6, 10) };
+        if (!_look.IconsOnly)
+            bar.Children.Add(new TextBlock
         {
             Text = L.T("Terminal"),
             FontFamily = Ink.Display,
@@ -113,8 +141,10 @@ sealed class TerminalPane : Grid
         add.CornerRadius = new CornerRadius(999);
         add.Background = _ink.Accent;
         ToolTip.SetTip(add, L.T("Sesión nueva"));
-        Grid.SetColumn(add, 1);
-        bar.Children.Add(add);
+        var buttons = HeaderButtons(add);
+        Grid.SetColumn(buttons, _look.IconsOnly ? 0 : 1);
+        if (_look.IconsOnly) Grid.SetColumnSpan(buttons, 2);
+        bar.Children.Add(buttons);
         return bar;
     }
 
@@ -127,12 +157,20 @@ sealed class TerminalPane : Grid
         foreach (var group in _tabs.GroupBy(t => t.Agent.Options.Folder, StringComparer.OrdinalIgnoreCase))
         {
             var first = group.First();
+            if (_look.IconsOnly)
+            {
+                // Solo íconos: una raya separa los proyectos y cada pestaña es su ícono, con el resto al pasar el cursor.
+                if (_list.Children.Count > 0)
+                    _list.Children.Add(new Border { Height = 1, Background = _ink.Hairline, Margin = new Thickness(14, 6) });
+                foreach (var tab in group) _list.Children.Add(TabIcon(tab));
+                continue;
+            }
             var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(10, 12, 10, 4) };
             head.Children.Add(Ui.Text(first.Project, 12.5, _ink.Secondary, FontWeight.SemiBold));
             if (first.Branch is { } branch)
             {
                 head.Children.Add(Icon(BranchIcon, _ink.Tertiary, 11, 1.8));
-                var name = Ui.Text(branch, 12, _ink.Tertiary, family: Ink.Mono);
+                var name = Ui.Text(branch, 12, _ink.Tertiary, family: Mono);
                 name.TextTrimming = TextTrimming.CharacterEllipsis;
                 name.MaxWidth = 130;
                 head.Children.Add(name);
@@ -141,7 +179,7 @@ sealed class TerminalPane : Grid
             _list.Children.Add(head);
             foreach (var tab in group) _list.Children.Add(TabItem(tab));
         }
-        if (_tabs.Count == 0)
+        if (_tabs.Count == 0 && !_look.IconsOnly)
         {
             var empty = Ui.Text(L.T("Sin sesiones abiertas"), 13, _ink.Tertiary);
             empty.Margin = new Thickness(10, 8);
@@ -151,7 +189,7 @@ sealed class TerminalPane : Grid
 
     Control TabItem(Tab tab)
     {
-        var current = tab == _current && !_creating;
+        var current = tab == _current && !_creating && !_settings;
         var t = tab.Agent.Transcript;
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
         var kind = new Border
@@ -160,7 +198,7 @@ sealed class TerminalPane : Grid
             Height = 22,
             CornerRadius = new CornerRadius(6),
             Background = _ink.Pill,
-            Child = Ui.Text("C", 12, _ink.Accent, FontWeight.Bold, Ink.Mono),
+            Child = Ui.Text("C", 12, _ink.Accent, FontWeight.Bold, Mono),
             Margin = new Thickness(0, 0, 9, 0),
         };
         ((TextBlock)kind.Child).HorizontalAlignment = HorizontalAlignment.Center;
@@ -194,6 +232,40 @@ sealed class TerminalPane : Grid
         return item;
     }
 
+    /// <summary>Una pestaña en la lista de íconos: el de Claude Code con el punto de su estado encima.</summary>
+    Control TabIcon(Tab tab)
+    {
+        var current = tab == _current && !_creating && !_settings;
+        var t = tab.Agent.Transcript;
+        var kind = Ui.Text("C", 13, _ink.Accent, FontWeight.Bold, Mono);
+        kind.HorizontalAlignment = HorizontalAlignment.Center;
+        kind.VerticalAlignment = VerticalAlignment.Center;
+        var dot = new Border
+        {
+            Width = 8,
+            Height = 8,
+            CornerRadius = new CornerRadius(99),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, -2, -2, 0),
+            BorderBrush = _ink.Window,
+            BorderThickness = new Thickness(1.5),
+            Background = Waiting(t) ? _ink.Warn : t.Busy ? _ink.Accent : tab.Agent.Running ? _ink.Track : _ink.Hairline,
+        };
+        if (t.Busy) Pulse(dot);
+        var badge = new Panel { Width = 30, Height = 30 };
+        badge.Children.Add(new Border { CornerRadius = new CornerRadius(8), Background = current ? _ink.Raised : _ink.Pill, Child = kind });
+        badge.Children.Add(dot);
+        var item = Ui.Press(badge, () => Select(tab), current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, Title(tab));
+        item.Padding = new Thickness(6);
+        item.Margin = new Thickness(8, 1);
+        item.CornerRadius = new CornerRadius(10);
+        item.HorizontalAlignment = HorizontalAlignment.Center;
+        if (current) item.Background = _ink.Pill;
+        ToolTip.SetTip(item, $"{Title(tab)}\n{tab.Project}{(tab.Branch is { } branch ? " · " + branch : "")}\n{Describe(tab)}");
+        return item;
+    }
+
     static bool Waiting(AgentTranscript t) => t.Blocks.Any(b => b.Kind == AgentBlockKind.Permission && b.Answer is null);
 
     static string Title(Tab tab) =>
@@ -207,9 +279,10 @@ sealed class TerminalPane : Grid
 
     void Select(Tab tab)
     {
-        if (_current is { } previous) previous.Draft = _input.Text ?? "";
+        if (_current is { } previous && !_settings) previous.Draft = _input.Text ?? "";
         _current = tab;
         _creating = false;
+        _settings = false;
         _input.Text = tab.Draft;
         Build();
         RenderList();
@@ -218,8 +291,9 @@ sealed class TerminalPane : Grid
 
     void ShowNew()
     {
-        if (_current is { } previous) previous.Draft = _input.Text ?? "";
+        if (_current is { } previous && !_settings && !_creating) previous.Draft = _input.Text ?? "";
         _creating = true;
+        _settings = false;
         Build();
         RenderList();
     }
@@ -250,6 +324,13 @@ sealed class TerminalPane : Grid
         _views.Clear();
         _live.Clear();
         _blocks.Children.Clear();
+        // Con un fondo propio, la Terminal lo pinta (tapa la escena del tema); si no, se ve el de la ventana.
+        Background = _look.OwnBackground ? _ink.Surface : null;
+        if (_settings)
+        {
+            Children.Add(LookPage());
+            return;
+        }
         if (_creating || _current is null)
         {
             _form = new NewForm();
@@ -285,7 +366,7 @@ sealed class TerminalPane : Grid
         if (tab.Branch is { } branch)
         {
             where.Children.Add(Icon(BranchIcon, _ink.Tertiary, 12, 1.8));
-            var name = Ui.Text(branch, 12.5, _ink.Secondary, family: Ink.Mono);
+            var name = Ui.Text(branch, 12.5, _ink.Secondary, family: Mono);
             name.TextTrimming = TextTrimming.CharacterEllipsis;
             name.MaxWidth = 220;
             where.Children.Add(name);
@@ -297,7 +378,7 @@ sealed class TerminalPane : Grid
         _status.TextTrimming = TextTrimming.CharacterEllipsis;
         Grid.SetColumn(_status, 1);
         bar.Children.Add(_status);
-        _context = Ui.Text("", 12, _ink.Tertiary, family: Ink.Mono);
+        _context = Ui.Text("", 12, _ink.Tertiary, family: Mono);
         _context.Margin = new Thickness(8, 0);
         Grid.SetColumn(_context, 2);
         bar.Children.Add(_context);
@@ -332,27 +413,13 @@ sealed class TerminalPane : Grid
         _input.TextWrapping = TextWrapping.Wrap;
         _input.MinHeight = 22;
         _input.MaxHeight = 180;
-        _input.Padding = new Thickness(0);
-        _input.FontFamily = Ink.Mono;
-        _input.FontSize = 13.5;
-        _input.Foreground = _ink.Text;
-        _input.CaretBrush = _ink.Accent;
-        _input.SelectionBrush = Translucent(_ink.Accent, 0.35);
+        Plain(_input);
+        _input.FontSize = _look.Size;
         _input.Watermark = L.T("Pídale algo a Claude Code");
-        _input.VerticalContentAlignment = VerticalAlignment.Center;
         Ui.AutomationName(_input, L.T("Mensaje para Claude Code"));
-        foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused",
-                     "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused" })
-            _input.Resources[key] = Brushes.Transparent;
-        _input.Resources["TextControlBorderThemeThickness"] = new Thickness(0);
-        _input.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
-        foreach (var key in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused" })
-            _input.Resources[key] = _ink.Text;
-        foreach (var key in new[] { "TextControlPlaceholderForeground", "TextControlPlaceholderForegroundPointerOver", "TextControlPlaceholderForegroundFocused" })
-            _input.Resources[key] = _ink.Tertiary;
 
         var line = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
-        var prompt = Ui.Text("❯", 14, _ink.Accent, FontWeight.Bold, Ink.Mono);
+        var prompt = Ui.Text("❯", 14, _ink.Accent, FontWeight.Bold, Mono);
         prompt.VerticalAlignment = VerticalAlignment.Top;
         prompt.Margin = new Thickness(0, 1, 10, 0);
         line.Children.Add(prompt);
@@ -468,7 +535,7 @@ sealed class TerminalPane : Grid
             AgentBlockKind.Think => ThinkView(block),
             AgentBlockKind.Step => StepView(block),
             AgentBlockKind.Todo => TodoView(block),
-            AgentBlockKind.Permission => PermissionView(block),
+            AgentBlockKind.Permission => block.Questions is null ? PermissionView(block) : QuestionView(block),
             AgentBlockKind.Done => DoneView(block),
             _ => NoticeView(block),
         };
@@ -481,11 +548,11 @@ sealed class TerminalPane : Grid
     Control AskView(AgentBlock block)
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-        var prompt = Ui.Text("❯", 13.5, _ink.Accent, FontWeight.Bold, Ink.Mono);
+        var prompt = Ui.Text("❯", 13.5, _ink.Accent, FontWeight.Bold, Mono);
         prompt.VerticalAlignment = VerticalAlignment.Top;
         prompt.Margin = new Thickness(0, 0, 10, 0);
         row.Children.Add(prompt);
-        var text = Selectable(block.Text, Ink.Mono, 13.5, _ink.Text);
+        var text = Selectable(block.Text, Mono, 13.5, _ink.Text);
         Grid.SetColumn(text, 1);
         row.Children.Add(text);
         return new Border
@@ -535,7 +602,7 @@ sealed class TerminalPane : Grid
         verb.Margin = new Thickness(0, 0, 8, 0);
         Grid.SetColumn(verb, 1);
         row.Children.Add(verb);
-        var target = Ui.Text(block.Text, 12.5, _ink.Text, family: Ink.Mono);
+        var target = Ui.Text(block.Text, 12.5, _ink.Text, family: Mono);
         target.TextTrimming = TextTrimming.CharacterEllipsis;
         ToolTip.SetTip(target, block.Text);
         Grid.SetColumn(target, 2);
@@ -543,8 +610,8 @@ sealed class TerminalPane : Grid
         if (block.Added + block.Removed > 0)
         {
             var counts = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(8, 0, 0, 0) };
-            if (block.Added > 0) counts.Children.Add(Ui.Text($"+{block.Added}", 12, Added, family: Ink.Mono));
-            if (block.Removed > 0) counts.Children.Add(Ui.Text($"−{block.Removed}", 12, _ink.Danger, family: Ink.Mono));
+            if (block.Added > 0) counts.Children.Add(Ui.Text($"+{block.Added}", 12, Added, family: Mono));
+            if (block.Removed > 0) counts.Children.Add(Ui.Text($"−{block.Removed}", 12, _ink.Danger, family: Mono));
             Grid.SetColumn(counts, 3);
             row.Children.Add(counts);
         }
@@ -582,7 +649,7 @@ sealed class TerminalPane : Grid
             foreach (var line in block.Diff)
             {
                 var sign = line.Length > 0 ? line[0] : ' ';
-                var text = Ui.Text(line.Length > 0 ? line : " ", 12, sign == '+' ? Added : sign == '-' ? _ink.Danger : _ink.Secondary, family: Ink.Mono);
+                var text = Ui.Text(line.Length > 0 ? line : " ", 12, sign == '+' ? Added : sign == '-' ? _ink.Danger : _ink.Secondary, family: Mono);
                 text.TextTrimming = TextTrimming.CharacterEllipsis;
                 lines.Children.Add(new Border
                 {
@@ -593,7 +660,7 @@ sealed class TerminalPane : Grid
             }
         else
         {
-            var output = Selectable(block.Output ?? "", Ink.Mono, 12, _ink.Secondary);
+            var output = Selectable(block.Output ?? "", Mono, 12, _ink.Secondary);
             output.TextWrapping = TextWrapping.NoWrap;
             output.TextTrimming = TextTrimming.CharacterEllipsis;
             lines.Children.Add(new Border { Padding = new Thickness(10, 6), Child = output });
@@ -621,7 +688,7 @@ sealed class TerminalPane : Grid
                 "in_progress" => ("◐", _ink.Accent),
                 _ => ("☐", _ink.Tertiary),
             };
-            row.Children.Add(Ui.Text(mark, 13, brush, family: Ink.Mono));
+            row.Children.Add(Ui.Text(mark, 13, brush, family: Mono));
             var text = Ui.Text(item.Text, 13, item.Status == "completed" ? _ink.Tertiary : _ink.Text);
             if (item.Status == "completed") text.TextDecorations = TextDecorations.Strikethrough;
             text.TextTrimming = TextTrimming.CharacterEllipsis;
@@ -636,7 +703,7 @@ sealed class TerminalPane : Grid
         var panel = new StackPanel { Spacing = 8 };
         var question = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
         question.Children.Add(Ui.Text(Wants(block.Tool), 13, _ink.Text, FontWeight.SemiBold));
-        var target = Ui.Text(block.Text, 12.5, _ink.Secondary, family: Ink.Mono);
+        var target = Ui.Text(block.Text, 12.5, _ink.Secondary, family: Mono);
         target.TextTrimming = TextTrimming.CharacterEllipsis;
         target.Margin = new Thickness(8, 0, 0, 0);
         ToolTip.SetTip(target, block.Text);
@@ -645,7 +712,7 @@ sealed class TerminalPane : Grid
         panel.Children.Add(question);
         if (Preview(block) is { Length: > 0 } preview)
         {
-            var code = Selectable(preview, Ink.Mono, 12, _ink.Secondary);
+            var code = Selectable(preview, Mono, 12, _ink.Secondary);
             code.TextWrapping = TextWrapping.NoWrap;
             code.TextTrimming = TextTrimming.CharacterEllipsis;
             panel.Children.Add(new Border { Background = _ink.Surface, CornerRadius = new CornerRadius(6), Padding = new Thickness(10, 6), Child = code });
@@ -702,6 +769,174 @@ sealed class TerminalPane : Grid
 
     void Answer(AgentBlock block, PermissionAnswer answer) => _current?.Agent.Answer(block, answer);
 
+    /// <summary>
+    /// Las preguntas de Claude Code (AskUserQuestion): las opciones con su explicación y «Otra respuesta» para escribirla.
+    /// Con una sola pregunta de una opción, el clic ya responde (como en la isla); si no, «Responder» cuando estén todas.
+    /// </summary>
+    Control QuestionView(AgentBlock block)
+    {
+        var questions = block.Questions!;
+        var panel = new StackPanel { Spacing = 10 };
+        if (block.Answer is { } answer)
+        {
+            foreach (var q in questions)
+            {
+                var row = new StackPanel { Spacing = 2 };
+                row.Children.Add(Wrapped(q.Question, 12.5, _ink.Secondary));
+                var chosen = block.Picks?.TryGetValue(q.Question, out var list) == true ? string.Join(", ", list) : "";
+                if (answer != PermissionAnswer.Deny && chosen.Length > 0) row.Children.Add(Wrapped("→ " + chosen, 13, _ink.Text, FontWeight.SemiBold));
+                panel.Children.Add(row);
+            }
+            panel.Children.Add(Ui.Text(answer == PermissionAnswer.Deny
+                ? block.FromIsland ? L.T("Rechazado en la isla") : L.T("No quiso responder")
+                : block.FromIsland ? L.T("Respondido en la isla") : L.T("Respondido"), 12, answer == PermissionAnswer.Deny ? _ink.Danger : _ink.Tertiary));
+            return QuestionCard(panel, answered: true);
+        }
+
+        var picks = questions.ToDictionary(q => q.Question, _ => new List<string>());
+        var instant = questions.Count == 1 && !questions[0].MultiSelect;
+        var refreshers = new List<Action>();
+        Border? send = null;
+        void Refresh()
+        {
+            foreach (var refresh in refreshers) refresh();
+            if (send is not null) send.Opacity = picks.Values.All(p => p.Count > 0) ? 1 : 0.45;
+        }
+        void Submit()
+        {
+            if (picks.Values.Any(p => p.Count == 0)) return;
+            _current?.Agent.Answer(block, picks.ToDictionary(p => p.Key, p => (IReadOnlyList<string>)p.Value.ToList()));
+        }
+
+        for (var i = 0; i < questions.Count; i++)
+        {
+            var q = questions[i];
+            var chosen = picks[q.Question];
+            var head = questions.Count > 1 ? L.T("Pregunta {0} de {1}", i + 1, questions.Count) : L.T("Pregunta");
+            if (q.MultiSelect) head += " · " + L.T("puede elegir varias");
+            panel.Children.Add(Ui.Text(head, 11.5, _ink.Tertiary));
+            var text = Wrapped(q.Question, 13, _ink.Text, FontWeight.SemiBold);
+            text.Margin = new Thickness(0, -6, 0, 0);
+            panel.Children.Add(text);
+
+            var options = new WrapPanel { Orientation = Orientation.Horizontal };
+            var other = new TextBox { MinWidth = 220, MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Left };
+            Plain(other);
+            other.FontSize = 12.5;
+            other.Watermark = L.T("Otra respuesta…");
+            Ui.AutomationName(other, L.T("Otra respuesta…"));
+            foreach (var (label, description) in q.Options)
+            {
+                var content = new StackPanel { Spacing = 2 };
+                content.Children.Add(Ui.Text(label, 12.5, _ink.Text, FontWeight.SemiBold));
+                if (description.Length > 0) content.Children.Add(Wrapped(description, 11.5, _ink.Tertiary));
+                var option = Ui.Press(content, () =>
+                {
+                    if (q.MultiSelect)
+                    {
+                        if (!chosen.Remove(label)) chosen.Add(label);
+                    }
+                    else
+                    {
+                        other.Text = "";
+                        chosen.Clear();
+                        chosen.Add(label);
+                    }
+                    Refresh();
+                    if (instant) Submit();
+                }, null, label);
+                option.CornerRadius = new CornerRadius(8);
+                option.Padding = new Thickness(10, 7);
+                option.Margin = new Thickness(0, 0, 6, 6);
+                option.MaxWidth = 260;
+                option.BorderThickness = new Thickness(1);
+                refreshers.Add(() =>
+                {
+                    var selected = chosen.Contains(label);
+                    option.BorderBrush = selected ? _ink.Accent : _ink.Hairline;
+                    option.Background = selected ? Translucent(_ink.Accent, 0.12) : Brushes.Transparent;
+                });
+                options.Children.Add(option);
+            }
+            panel.Children.Add(options);
+
+            // Lo escrito es la respuesta (en una de varias, se suma a lo elegido).
+            string? typed = null;
+            other.TextChanged += (_, _) =>
+            {
+                if (typed is not null) chosen.Remove(typed);
+                typed = other.Text?.Trim() is { Length: > 0 } t ? t : null;
+                if (typed is not null)
+                {
+                    if (!q.MultiSelect) chosen.Clear();
+                    chosen.Add(typed);
+                }
+                Refresh();
+            };
+            other.KeyDown += (_, e) =>
+            {
+                if (e.Key != Key.Enter) return;
+                e.Handled = true;
+                Submit();
+            };
+            panel.Children.Add(new Border
+            {
+                Background = _ink.Surface,
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 5),
+                Margin = new Thickness(0, -4, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Child = other,
+            });
+        }
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        send = Pill(L.T("Responder"), _ink.Accent, Ink.On(_ink.Accent), Submit);
+        buttons.Children.Add(send);
+        buttons.Children.Add(Pill(L.T("No responder"), _ink.Pill, _ink.Danger, () => Answer(block, PermissionAnswer.Deny)));
+        panel.Children.Add(buttons);
+        Refresh();
+        return QuestionCard(panel, answered: false);
+    }
+
+    TextBlock Wrapped(string text, double size, IBrush brush, FontWeight weight = FontWeight.Normal)
+    {
+        var block = Ui.Text(text, size, brush, weight);
+        block.TextWrapping = TextWrapping.Wrap;
+        return block;
+    }
+
+    Border QuestionCard(Control content, bool answered) => new()
+    {
+        Margin = new Thickness(22, 4, 0, 4),
+        CornerRadius = new CornerRadius(10),
+        BorderBrush = answered ? _ink.Hairline : _ink.Warn,
+        BorderThickness = new Thickness(1),
+        Background = answered ? Brushes.Transparent : Translucent(_ink.Warn, 0.06),
+        Padding = new Thickness(12, 10),
+        Child = content,
+    };
+
+    /// <summary>Un cuadro de texto sin fondo ni borde propios, con la letra y los colores de la Terminal.</summary>
+    void Plain(TextBox box)
+    {
+        box.Padding = new Thickness(0);
+        box.FontFamily = Mono;
+        box.Foreground = _ink.Text;
+        box.CaretBrush = _ink.Accent;
+        box.SelectionBrush = Translucent(_ink.Accent, 0.35);
+        box.VerticalContentAlignment = VerticalAlignment.Center;
+        foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused",
+                     "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused" })
+            box.Resources[key] = Brushes.Transparent;
+        box.Resources["TextControlBorderThemeThickness"] = new Thickness(0);
+        box.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
+        foreach (var key in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused" })
+            box.Resources[key] = _ink.Text;
+        foreach (var key in new[] { "TextControlPlaceholderForeground", "TextControlPlaceholderForegroundPointerOver", "TextControlPlaceholderForegroundFocused" })
+            box.Resources[key] = _ink.Tertiary;
+    }
+
     Control DoneView(AgentBlock block)
     {
         var parts = new List<string> { Duration(block.Duration) };
@@ -750,7 +985,7 @@ sealed class TerminalPane : Grid
         {
             if (i > 0) inlines.Add(new LineBreak());
             foreach (var span in Conversations.Spans(lines[i]))
-                inlines.Add(span.Code ? new Run(span.Text) { FontFamily = Ink.Mono, FontSize = 12.5, Background = _ink.Pill } : new Run(span.Text));
+                inlines.Add(span.Code ? new Run(span.Text) { FontFamily = Mono, FontSize = 12.5, Background = _ink.Pill } : new Run(span.Text));
         }
         var block = Selectable(null, Ink.Sans, 14, _ink.Text);
         block.Inlines = inlines;
@@ -759,7 +994,7 @@ sealed class TerminalPane : Grid
 
     Control Code(string code)
     {
-        var text = Selectable(code.TrimEnd('\n'), Ink.Mono, 12.5, _ink.Text);
+        var text = Selectable(code.TrimEnd('\n'), Mono, 12.5, _ink.Text);
         text.TextWrapping = TextWrapping.NoWrap;
         return new Border
         {
@@ -776,7 +1011,7 @@ sealed class TerminalPane : Grid
         TextWrapping = TextWrapping.Wrap,
         FontFamily = family,
         FontSize = size,
-        LineHeight = size * 1.55,
+        LineHeight = size * _look.LineSpacing,
         Foreground = brush,
         SelectionBrush = Translucent(_ink.Accent, 0.35),
     };
@@ -909,7 +1144,7 @@ sealed class TerminalPane : Grid
         about.TextWrapping = TextWrapping.Wrap;
         panel.Children.Add(about);
 
-        var folder = Ui.Text(_form.Folder, 13, _ink.Text, family: Ink.Mono);
+        var folder = Ui.Text(_form.Folder, 13, _ink.Text, family: Mono);
         folder.TextTrimming = TextTrimming.PrefixCharacterEllipsis;
         panel.Children.Add(Field(L.T("Carpeta"), folder, async anchor =>
         {

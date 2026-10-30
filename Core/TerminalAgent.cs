@@ -46,6 +46,9 @@ sealed class AgentBlock
     public JsonNode? Input { get; init; }
     public JsonNode? Suggestions { get; init; }
     public PermissionAnswer? Answer { get; set; }
+    /// <summary>Si pide responder preguntas (AskUserQuestion): las preguntas y, ya respondidas, lo elegido en cada una.</summary>
+    public IReadOnlyList<AskedQuestion>? Questions { get; init; }
+    public IReadOnlyDictionary<string, IReadOnlyList<string>>? Picks { get; set; }
     /// <summary>Se respondió en la isla, no en el bloque.</summary>
     public bool FromIsland { get; set; }
 
@@ -294,6 +297,7 @@ sealed class AgentTranscript
             Text = target.Length > 0 ? target : Json.Str(req, "description") ?? "",
             Input = Node(input),
             Suggestions = Node(suggestions),
+            Questions = tool == "AskUserQuestion" ? Approvals.QuestionsOf(input) : null,
         }, changed);
     }
 
@@ -417,6 +421,7 @@ static class AgentSteps
         "WebSearch" => L.T("buscó en internet"),
         "WebFetch" => L.T("abrió"),
         "Task" or "Agent" => L.T("delegó"),
+        "AskUserQuestion" => L.T("preguntó"),
         null => L.T("usó una herramienta"),
         _ => tool,
     };
@@ -426,6 +431,11 @@ static class AgentSteps
     {
         if (input.ValueKind != JsonValueKind.Object) return "";
         if ((Json.Str(input, "file_path") ?? Json.Str(input, "notebook_path")) is { } path) return Relative(path, cwd);
+        if (tool == "AskUserQuestion" && input.TryGetProperty("questions", out var questions) && questions.ValueKind == JsonValueKind.Array)
+        {
+            var question = questions.EnumerateArray().Select(q => Json.Str(q, "question")).FirstOrDefault(q => q is not null) ?? "";
+            return questions.GetArrayLength() > 1 && question.Length > 0 ? question + " …" : question;
+        }
         var text = tool switch
         {
             "Bash" or "PowerShell" => Json.Str(input, "command"),
@@ -489,6 +499,18 @@ static class AgentProtocol
         });
     }
 
+    /// <summary>Las respuestas a las preguntas del bloque: se permite la herramienta con lo elegido en «answers».</summary>
+    public static string Answer(AgentBlock permission, IReadOnlyDictionary<string, IReadOnlyList<string>> picks) => Line(new JsonObject
+    {
+        ["type"] = "control_response",
+        ["response"] = new JsonObject
+        {
+            ["subtype"] = "success",
+            ["request_id"] = permission.RequestId,
+            ["response"] = new JsonObject { ["behavior"] = "allow", ["updatedInput"] = Approvals.Answered(permission.Input, permission.Questions, picks) },
+        },
+    });
+
     /// <summary>El permiso como lo manda el hook PermissionRequest, para que la isla lo muestre igual que los demás.</summary>
     public static string IslandRequest(AgentBlock permission, string? sessionId, string cwd) => Line(new JsonObject
     {
@@ -511,6 +533,9 @@ static class AgentProtocol
             var allow = (string?)decision["behavior"] == "allow";
             if (!allow && (string?)decision["behavior"] != "deny") return null;
             var response = (JsonObject)decision.DeepClone();
+            if (allow && response["updatedInput"]?["answers"] is JsonObject answers)
+                permission.Picks = answers.ToDictionary(a => a.Key, a => (IReadOnlyList<string>)(a.Value is JsonArray list
+                    ? [.. list.Select(x => (string?)x ?? "")] : [(string?)a.Value ?? ""]));
             if (allow && response["updatedInput"] is null) response["updatedInput"] = permission.Input?.DeepClone() ?? new JsonObject();
             return (Line(new JsonObject
             {
@@ -615,6 +640,14 @@ sealed class TerminalAgent : IDisposable
     {
         if (permission.Kind != AgentBlockKind.Permission || permission.Answer is not null || !Running) return;
         Resolve(permission, answer, AgentProtocol.Answer(permission, answer));
+    }
+
+    /// <summary>Respondió las preguntas del bloque.</summary>
+    public void Answer(AgentBlock permission, IReadOnlyDictionary<string, IReadOnlyList<string>> picks)
+    {
+        if (permission.Questions is null || permission.Answer is not null || !Running) return;
+        permission.Picks = picks;
+        Resolve(permission, PermissionAnswer.Allow, AgentProtocol.Answer(permission, picks));
     }
 
     void Resolve(AgentBlock permission, PermissionAnswer answer, string line)

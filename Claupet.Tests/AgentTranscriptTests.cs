@@ -123,6 +123,48 @@ public sealed class AgentTranscriptTests
         return t.Blocks[^1];
     }
 
+    const string Questions = """{"questions":[{"question":"¿Color?","header":"Color","options":[{"label":"Rojo","description":""},{"label":"Azul","description":"El del mar"}],"multiSelect":false},{"question":"¿Frutas?","header":"Frutas","options":[{"label":"Pera","description":""},{"label":"Uva","description":""}],"multiSelect":true}]}""";
+
+    [Fact]
+    public void LasPreguntasSeRespondenEnElBloque()
+    {
+        var t = Started();
+        t.Apply($$$"""{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"tu1","name":"AskUserQuestion","input":{{{Questions}}}}]}}""");
+        t.Apply($$$"""{"type":"control_request","request_id":"r-3","request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","input":{{{Questions}}},"tool_use_id":"tu1"}}""");
+
+        Assert.Equal("¿Color? …", t.Blocks[0].Text);
+        var permission = t.Blocks[1];
+        Assert.Equal(["¿Color?", "¿Frutas?"], permission.Questions!.Select(q => q.Question));
+        Assert.Equal("El del mar", permission.Questions![0].Options[1].Description);
+        Assert.True(permission.Questions![1].MultiSelect);
+
+        var line = JsonNode.Parse(AgentProtocol.Answer(permission, new Dictionary<string, IReadOnlyList<string>>
+        {
+            ["¿Color?"] = ["Azul"],
+            ["¿Frutas?"] = ["Pera", "lo que haya"],
+        }))!["response"]!;
+        Assert.Equal("r-3", (string?)line["request_id"]);
+        var input = line["response"]!["updatedInput"]!;
+        Assert.Equal("allow", (string?)line["response"]!["behavior"]);
+        Assert.Equal("Azul", (string?)input["answers"]!["¿Color?"]);
+        Assert.Equal(["Pera", "lo que haya"], input["answers"]!["¿Frutas?"]!.AsArray().Select(x => (string?)x));
+        Assert.Equal(2, input["questions"]!.AsArray().Count);
+    }
+
+    [Fact]
+    public void LasRespuestasDeLaIslaQuedanEnElBloque()
+    {
+        var t = Started();
+        t.Apply($$$"""{"type":"control_request","request_id":"r-3","request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","input":{{{Questions}}},"tool_use_id":"tu1"}}""");
+        var permission = t.Blocks[^1];
+        var request = Approvals.Parse(AgentProtocol.IslandRequest(permission, "s-1", Cwd))!;
+        var reply = Approvals.Answer(request, new Dictionary<string, IReadOnlyList<string>> { ["¿Color?"] = ["Rojo"], ["¿Frutas?"] = ["Uva"] });
+
+        Assert.Equal(PermissionAnswer.Allow, AgentProtocol.FromIsland(permission, reply)!.Value.Answer);
+        Assert.Equal(["Rojo"], permission.Picks!["¿Color?"]);
+        Assert.Equal(["Uva"], permission.Picks!["¿Frutas?"]);
+    }
+
     [Fact]
     public void ElPermisoVaALaIslaComoElDelHook()
     {
