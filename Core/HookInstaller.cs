@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -20,6 +21,16 @@ static class HookInstaller
 
     /// <summary>El hook de los permisos y las preguntas en la isla.</summary>
     public static string ApprovalsCommand(string exePath) => $"\"{exePath}\" --hook --permiso";
+
+    /// <summary>
+    /// El evento que Claude Code le pasa al hook, que siempre llega en UTF-8. Console.In no sirve: en Windows, la app
+    /// (sin consola) lo lee con la página de códigos del sistema y «¿Qué · menú» llega como «Â¿QuÃ© Â· menÃº».
+    /// </summary>
+    public static string ReadEvent(Stream input)
+    {
+        using var reader = new StreamReader(input, new UTF8Encoding(false));
+        return reader.ReadToEnd();
+    }
 
     const string ApprovalsEvent = "PermissionRequest";
 
