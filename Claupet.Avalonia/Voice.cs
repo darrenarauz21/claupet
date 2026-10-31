@@ -182,6 +182,8 @@ sealed class VoiceInput : IDisposable
     // Sin mantener la tecla, también se envía al callar (PauseMs después de hablar) o si no se dice nada en WaitMs.
     const float SpeechLevel = 350f / 6000;  // el umbral de Transcriber, en la escala de Microphone.Level
     const int PauseMs = 1800, WaitMs = 8000;
+    const int DeafChunks = 15; // 1,5 s de ceros justos al abrir: la entrada no oye
+    int _deaf;
     readonly PushToTalk _key = new();
     readonly Microphone _mic = new();
     readonly DispatcherTimer _partialTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
@@ -204,6 +206,18 @@ sealed class VoiceInput : IDisposable
         _mic.Level += level =>
         {
             Level?.Invoke(level);
+            // Solo ceros desde que se abrió: no es silencio de la sala (un micrófono de verdad siempre da algo de ruido),
+            // es una entrada que no oye (silenciada, o una virtual como la de Steam): se dice en vez de esperar en vano.
+            if (_mic.Recording && _deaf >= 0)
+            {
+                if (level > 0) _deaf = -1;
+                else if (++_deaf == DeafChunks)
+                {
+                    Cancel();
+                    Failed?.Invoke(NoSound());
+                    return;
+                }
+            }
             // Whisper (unos 850 MB) se carga al oír voz, no al apretar la tecla: mantener Ctrl derecho para un atajo, sin
             // hablar, ya no lo carga. Dos trozos con voz: un pico suelto (el micrófono al abrirse) no cuenta.
             if (_mic.Recording && _external is null && level > SpeechLevel && ++_warmLoud == 2)
@@ -263,6 +277,16 @@ sealed class VoiceInput : IDisposable
         : OperatingSystem.IsMacOS() ? L.T("No encuentro el micrófono, o macOS no deja usarlo (Ajustes del Sistema › Privacidad y seguridad › Micrófono).")
         : L.T("No encuentro el micrófono, o el sistema no deja usarlo.");
 
+    /// <summary>Lo que se dice si el micrófono está silenciado en Windows.</summary>
+    static string Muted() =>
+        L.T("El micrófono está silenciado en Windows: quítale el silencio con la tecla del micrófono o en Configuración › Sistema › Sonido › Entrada.");
+
+    /// <summary>Lo que se dice si el micrófono se abre pero no da ningún sonido.</summary>
+    static string NoSound() =>
+        OperatingSystem.IsWindows() ? L.T("El micrófono no da ningún sonido: revisa en Configuración › Sistema › Sonido › Entrada cuál está elegido y que no esté silenciado.")
+        : OperatingSystem.IsMacOS() ? L.T("El micrófono no da ningún sonido: revisa la entrada en Ajustes del Sistema › Sonido y que no esté silenciada.")
+        : L.T("El micrófono no da ningún sonido: revisa cuál es la entrada del sistema y que no esté silenciada.");
+
     void Begin()
     {
         _byButton = _buttonPending;
@@ -272,6 +296,12 @@ sealed class VoiceInput : IDisposable
         {
             _key.Reset();
             NeedsModel?.Invoke();
+            return;
+        }
+        if (OperatingSystem.IsWindows() && _mic.Fake is null && WindowsMicrophone.Muted() == true)
+        {
+            _key.Reset();
+            Failed?.Invoke(Muted());
             return;
         }
         if (!_mic.Start())
@@ -284,6 +314,7 @@ sealed class VoiceInput : IDisposable
         _partialSamples = 0;
         _spoke = false;
         _loud = _warmLoud = 0;
+        _deaf = _mic.Fake is null ? 0 : -1; // el audio de las pruebas puede empezar en silencio
         _listenAt = Environment.TickCount64;
         _idle.Stop();
         if (_external is null) _partialTimer.Start(); // Whisper se carga al oír voz (ver Level)
