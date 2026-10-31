@@ -138,7 +138,7 @@ them all.
 
 ### Run it from source
 
-You need the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) and Claude Code signed
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and Claude Code signed
 in. Python 3 is only needed to build the release packages.
 
 ```powershell
@@ -168,7 +168,7 @@ Spanish) are in [DETALLES.md](DETALLES.md#personajes).
 
 | | |
 |---|---|
-| Runtime | .NET 8 (C#) |
+| Runtime | .NET 10 (C#) |
 | UI | Avalonia 11, the same on Windows, Linux and macOS |
 | Speech to text | Whisper.net (whisper.cpp) |
 | Text to speech | ONNX Runtime, plus System.Speech for Windows voices |

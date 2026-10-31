@@ -4,7 +4,7 @@
        la interfaz de la bandeja, la mascota y la isla (esta carpeta). Lo de cada sistema va con OperatingSystem.Is…(). -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Claupet</AssemblyName>
@@ -45,12 +45,12 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.3.0" />
     <!-- En Windows, avisa al desbloquear, al volver de suspender y al cambiar las pantallas (la mascota vuelve a verse). -->
-    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.14" />
     <!-- La voz: Whisper (voz a texto), Supertonic con ONNX Runtime (texto a voz) y PortAudio (el micrófono y los
          parlantes), con sus bibliotecas nativas para Windows, Linux y macOS. System.Speech solo sirve en Windows. -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
     <PackageReference Include="PortAudioSharp2" Version="1.0.6" />
-    <PackageReference Include="System.Speech" Version="8.0.0" />
+    <PackageReference Include="System.Speech" Version="10.0.14" />
     <PackageReference Include="Whisper.net" Version="1.9.1" />
     <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
   </ItemGroup>

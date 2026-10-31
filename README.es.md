@@ -141,7 +141,7 @@ ofrece configurar los avisos de permisos, el inicio con el sistema y las notific
 
 ### Correrla desde el código
 
-Necesita el [SDK de .NET 8](https://dotnet.microsoft.com/download/dotnet/8.0) y Claude Code con la
+Necesita el [SDK de .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0) y Claude Code con la
 sesión iniciada. Python 3 solo hace falta para armar los paquetes.
 
 ```powershell
@@ -171,7 +171,7 @@ gestos. Los detalles están en [DETALLES.md](DETALLES.md#personajes).
 
 | | |
 |---|---|
-| Plataforma | .NET 8 (C#) |
+| Plataforma | .NET 10 (C#) |
 | Interfaz | Avalonia 11, la misma en Windows, Linux y macOS |
 | Voz a texto | Whisper.net (whisper.cpp) |
 | Texto a voz | ONNX Runtime, y System.Speech para las voces de Windows |

@@ -5,7 +5,7 @@ namespace Claupet;
 
 /// <summary>
 /// La ubicación de Windows (Configuración › Privacidad › Ubicación), para el clima de «Mi ciudad». La lee
-/// PowerShell con System.Device.Location: .NET 8 no la trae sin el SDK de Windows, que pesa decenas de MB.
+/// PowerShell con System.Device.Location: .NET no la trae sin el SDK de Windows, que pesa decenas de MB.
 /// Tarda un par de segundos; WeatherService la guarda 6 horas. null si no hay permiso o no responde.
 /// </summary>
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
