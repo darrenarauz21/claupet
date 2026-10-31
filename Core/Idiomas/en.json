@@ -1602,5 +1602,7 @@
   "Se interrumpió.": "Interrupted.",
   "Codex respondió con un error.": "Codex replied with an error.",
   "No se pudo abrir la sesión de Codex: {0}": "Couldn't open the Codex session: {0}",
-  "y {0} más": "and {0} more"
+  "y {0} más": "and {0} more",
+  "Ver los {0} bloques anteriores": "Show the {0} earlier blocks",
+  "Ver los bloques anteriores": "Show the earlier blocks"
 }

@@ -190,7 +190,9 @@ sealed partial class TerminalPane
         foreach (var tab in TabsOf(folder))
         {
             tab.Agent.Dispose();
+            tab.Shell?.Dispose();
             _tabs.Remove(tab);
+            _tabState.Remove(tab);
             if (_current == tab) _current = null;
         }
         _projects.Unlink(folder);

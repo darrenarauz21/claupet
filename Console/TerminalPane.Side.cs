@@ -21,7 +21,11 @@ sealed partial class TerminalPane
     const string ProcesosIcon = "M8,8 H16 V16 H8 Z M5,5 H19 V19 H5 Z M9,2 V5 M15,2 V5 M9,19 V22 M15,19 V22 M2,9 H5 M2,15 H5 M19,9 H22 M19,15 H22";
     const string StopSquare = "M8,8 H16 V16 H8 Z";
 
-    readonly StackPanel _sideBody = new() { Spacing = 2 };
+    /// <summary>
+    /// Lo de la vista elegida. Se crea uno nuevo con cada panel: el de antes sigue dentro de su ScrollViewer aunque ya
+    /// no se vea, y ponerlo en otro hacía fallar el acomodo de la ventana entera (dejaba de mostrar lo nuevo).
+    /// </summary>
+    StackPanel _sideBody = new() { Spacing = 2 };
     DispatcherTimer? _processTimer;
     /// <summary>Sube al cambiar de pestaña o de vista: lo que llega de una lectura vieja se descarta.</summary>
     int _sideVersion;
@@ -75,8 +79,7 @@ sealed partial class TerminalPane
         bar.Children.Add(title);
         panel.Children.Add(bar);
 
-        _sideBody.Children.Clear();
-        _sideBody.Margin = new Thickness(8, 0, 10, 12);
+        _sideBody = new StackPanel { Spacing = 2, Margin = new Thickness(8, 0, 10, 12) };
         var scroll = new ScrollViewer { Content = _sideBody, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         Grid.SetRow(scroll, 1);
         panel.Children.Add(scroll);
