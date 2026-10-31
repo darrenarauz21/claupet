@@ -179,7 +179,7 @@ sealed partial class UsageView
         _ => _t.Text,
     };
 
-    /// <summary>«Todos los ajustes»: la tarjeta que abre Claupet Console, con la cabeza del chibi.</summary>
+    /// <summary>«Todos los ajustes»: la tarjeta que abre Claupet Console, con el ícono de Claupet.</summary>
     double ConsoleCard(DrawingContext? dc, double y)
     {
         var card = new Rect(Pad, y, Inner, 68);
@@ -189,9 +189,9 @@ sealed partial class UsageView
         Gfx.Outline(dc, _t.Border, card, 14);
         var tile = new Rect(card.X + 14, card.Y + (card.Height - 40) / 2, 40, 40);
         Gfx.Fill(dc, _t.Hover, tile, 10);
-        var unit = Math.Max(1, Math.Floor((tile.Width - 8) / 16));
-        Gfx.Pixels(dc, tile.X + (tile.Width - 16 * unit) / 2, tile.Y + (tile.Height - 16 * unit) / 2, unit,
-            fill => ChibiSprite.PaintHead(fill, MascotFrame.Open, small: true));
+        var unit = Math.Max(1, Math.Floor((tile.Width - 8) / ClaupetLogo.Size));
+        Gfx.Pixels(dc, tile.X + (tile.Width - ClaupetLogo.Size * unit) / 2, tile.Y + (tile.Height - ClaupetLogo.Size * unit) / 2, unit,
+            ClaupetLogo.Paint);
         var open = L.T("Abrir");
         var pillWidth = Gfx.Measure(open, Gfx.BodyStrong).Width + 36;
         var pill = new Rect(card.Right - 14 - pillWidth, card.Y + (card.Height - 36) / 2, pillWidth, 36);

@@ -522,7 +522,7 @@ sealed class EditorPane : Grid
     Control Start()
     {
         var panel = new StackPanel { Spacing = 12, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 90, 0, 0), MaxWidth = 460 };
-        panel.Children.Add(new HeadLogo { Width = 44, Height = 44, HorizontalAlignment = HorizontalAlignment.Center });
+        panel.Children.Add(new AppLogo { Width = 44, Height = 44, HorizontalAlignment = HorizontalAlignment.Center });
         panel.Children.Add(new TextBlock
         {
             Text = L.T("Escriba algo nuevo o abra un archivo"),

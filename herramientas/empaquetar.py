@@ -34,19 +34,16 @@ WORK = os.path.join(OUT, "_trabajo")
 AVALONIA = os.path.join(ROOT, "Claupet.Avalonia", "Claupet.Avalonia.csproj")
 VERSION = "2.4.1"
 
-# ── Íconos: la misma mascota que app.ico, en pixeles ─────────────────────────────────────────
+# ── Íconos: el de Claupet, el mismo de app.ico y de Core/ClaupetLogo.cs, en pixeles ───────────
 
-BODY, INK, WHITE = (0xD9, 0x77, 0x57, 255), (0x2A, 0x1F, 0x1A, 255), (255, 255, 255, 255)
-SMALL = (14, 10, [(BODY, 2, 0, 10, 7), (BODY, 0, 3, 2, 2), (BODY, 12, 3, 2, 2),
-                  (BODY, 3, 7, 1, 3), (BODY, 5, 7, 1, 3), (BODY, 8, 7, 1, 3), (BODY, 10, 7, 1, 3),
-                  (INK, 4, 2, 1, 2), (INK, 9, 2, 1, 2)])
-LARGE = (20, 9, [(BODY, 3, 0, 14, 7), (BODY, 1, 3, 2, 2), (BODY, 17, 3, 2, 2),
-                 (BODY, 4, 7, 1, 2), (BODY, 6, 7, 1, 2), (BODY, 13, 7, 1, 2), (BODY, 15, 7, 1, 2),
-                 (INK, 7, 2, 1, 2), (INK, 12, 2, 1, 2), (WHITE, 9, 5, 2, 1)])
+BODY, FACE, EYE, BASE = (0xD9, 0x77, 0x57, 255), (0xF4, 0xE3, 0xD3, 255), (0x1F, 0x1E, 0x1D, 255), (0xB4, 0x53, 0x2F, 255)
+# Los de después van encima: la cara sobre el cuerpo y los ojos sobre la cara.
+LOGO = (9, 9, [(BODY, 1, 1, 7, 6), (BODY, 0, 2, 1, 3), (BODY, 8, 2, 1, 3), (FACE, 2, 3, 5, 3),
+               (EYE, 3, 4, 1, 1), (EYE, 5, 4, 1, 1), (BASE, 2, 7, 5, 2)])
 
 
 def render(size):
-    columns, rows, rects = LARGE if size >= 48 else SMALL
+    columns, rows, rects = LOGO
     unit = max(1, size // columns)
     x0, y0 = (size - columns * unit) // 2, (size - rows * unit) // 2
     pixels = [[(0, 0, 0, 0)] * size for _ in range(size)]

@@ -11,13 +11,14 @@ using Avalonia.Platform;
 using Avalonia.Styling;
 
 /// <summary>
-/// La ventana de Claupet Console: bordes redondeados, la barra de arriba propia (con la cabeza del chibi), el riel
-/// con Chat, Editor y Ajustes y, al lado, la lista de chats, la de archivos o las secciones de los ajustes. Lo del chat
-/// y los ajustes lo manda la bandeja (aquí no se guardan ajustes); el editor trabaja con los archivos directamente.
+/// La ventana de Claupet Console: bordes redondeados, la barra de arriba propia (con el ícono de Claupet), el riel
+/// con Chat, Terminal, Editor y Ajustes y, al lado, la lista de chats, la de sesiones, la de archivos o las secciones de
+/// los ajustes. Lo del chat y los ajustes lo manda la bandeja (aquí no se guardan ajustes); la Terminal y el editor
+/// trabajan solos (con Claude Code y con los archivos).
 /// </summary>
 sealed class ConsoleWindow : Window
 {
-    enum Mode { Chat, Editor, Settings }
+    enum Mode { Chat, Terminal, Editor, Settings }
 
     readonly ConsoleClient _client = new();
     readonly Grid _root = new() { RowDefinitions = new RowDefinitions("48,*") };
@@ -33,7 +34,19 @@ sealed class ConsoleWindow : Window
     readonly ScrollViewer _scroll = new();
     readonly ChatPane _chat = new();
     readonly EditorPane _editor = new();
+    readonly TerminalPane _terminal = new();
     readonly StackPanel _fileList = new() { Spacing = 2 };
+    /// <summary>El borde de la lista de la Terminal, que se arrastra para ensancharla (la Terminal recuerda la medida).</summary>
+    readonly Border _grip = new()
+    {
+        Width = 9,
+        Margin = new Thickness(0, 0, 1, 0),
+        HorizontalAlignment = HorizontalAlignment.Right,
+        Background = Brushes.Transparent,
+        Cursor = new Cursor(StandardCursorType.SizeWestEast),
+        ZIndex = 1,
+        Child = new Border { Width = 2, CornerRadius = new CornerRadius(1), HorizontalAlignment = HorizontalAlignment.Center, Opacity = 0 },
+    };
     /// <summary>La lista de archivos del editor, a la izquierda (se muestra con el botón de la cabecera del editor).</summary>
     bool _editorFiles;
     /// <summary>Ya se preguntó por los cambios sin guardar: ahora sí se cierra.</summary>
@@ -60,7 +73,7 @@ sealed class ConsoleWindow : Window
         _mode = ConsoleApp.Files.Count > 0 ? Mode.Editor : section is null ? Mode.Chat : Mode.Settings;
         _section = section ?? "general";
         Title = "Claupet Console";
-        Icon = Ui.HeadIcon();
+        Icon = Ui.LogoIcon();
         Width = 1080;
         Height = 720;
         MinWidth = 760;
@@ -84,6 +97,8 @@ sealed class ConsoleWindow : Window
             Render(rebuild: true);
         };
         _editor.DocsChanged += () => { if (_mode == Mode.Editor && _editorFiles) RenderFileList(); };
+        _terminal.TabsChanged += () => { if (_mode == Mode.Terminal) _asideTop.Child = _terminal.Header(); };
+        _terminal.ListChanged += () => { if (_mode == Mode.Terminal) Render(rebuild: true); };
         // Los atajos del editor (Ctrl+N, O, S, W) mientras se ve.
         KeyDown += (_, e) => { if (_mode == Mode.Editor) _editor.HandleKey(e); };
         Closing += (_, e) =>
@@ -114,6 +129,9 @@ sealed class ConsoleWindow : Window
         _aside.Children.Add(_asideScroll);
         Grid.SetColumn(_aside, 1);
         _body.Children.Add(_aside);
+        Grid.SetColumn(_grip, 1);
+        _body.Children.Add(_grip);
+        Grip();
         _sceneBox.Child = _scene;
         Grid.SetColumn(_sceneBox, 2);
         _body.Children.Add(_sceneBox);
@@ -138,7 +156,11 @@ sealed class ConsoleWindow : Window
             _ink = Ink.For(IsDark());
             Render(rebuild: true);
         };
-        Closed += (_, _) => _client.Dispose();
+        Closed += (_, _) =>
+        {
+            _terminal.CloseAll();
+            _client.Dispose();
+        };
     }
 
     bool IsDark() => (Application.Current?.ActualThemeVariant ?? ThemeVariant.Light) == ThemeVariant.Dark;
@@ -236,22 +258,31 @@ sealed class ConsoleWindow : Window
             _main.BorderBrush = _ink.Hairline;
             _chat.SetInk(_ink);
             _editor.SetInk(_ink);
+            _terminal.SetInk(_ink);
             _body.ColumnDefinitions[1].Width = new GridLength(_mode switch
             {
                 Mode.Chat => 250,
+                Mode.Terminal => _terminal.ListWidth,
                 Mode.Editor => _editorFiles ? 250 : 0,
                 _ => 210,
             });
             // Sin columna (el editor con los archivos ocultos), nada de ella asoma.
             _aside.IsVisible = _body.ColumnDefinitions[1].Width.Value > 0;
-            _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Editor => FilesHeader(), _ => _heading };
-            _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Editor => _fileList, _ => _sections };
+            _grip.IsVisible = _mode == Mode.Terminal && _terminal.ListWidth > TerminalProjects.MinWidth - 1;
+            ((Border)_grip.Child!).Background = _ink.Accent;
+            _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Terminal => _terminal.Header(), Mode.Editor => FilesHeader(), _ => _heading };
+            _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Terminal => _terminal.List, Mode.Editor => _fileList, _ => _sections };
         }
         _heading.Text = L.T("Ajustes");
         _heading.Foreground = _ink.Text;
         _heading.Margin = new Thickness(10, 2, 10, 12);
 
-        // El editor no necesita a la bandeja: trabaja con los archivos.
+        // La Terminal y el editor no necesitan a la bandeja.
+        if (_mode == Mode.Terminal)
+        {
+            if (_main.Child != _terminal) _main.Child = _terminal;
+            return;
+        }
         if (_mode == Mode.Editor)
         {
             if (_editorFiles) RenderFileList();
@@ -288,8 +319,50 @@ sealed class ConsoleWindow : Window
             if (current) item.Background = _ink.Pill;
             _sections.Children.Add(item);
         }
+        // Los de la Terminal son de la Console (no pasan por la bandeja): se abren en su panel.
+        var terminal = Ui.Press(Ui.Text(L.T("Terminal"), 14.5, _ink.Secondary), () =>
+        {
+            SetMode(Mode.Terminal);
+            _terminal.ShowSettings();
+        }, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name: L.T("Terminal"));
+        terminal.MinHeight = 38;
+        terminal.Padding = new Thickness(12, 0);
+        terminal.CornerRadius = new CornerRadius(12);
+        _sections.Children.Add(terminal);
         _view.Show(shown, _ink, rebuild, _pages.FirstOrDefault(p => p.Id == shown.Parent)?.Title);
         if (_main.Child != _scroll) _main.Child = _scroll;
+    }
+
+    /// <summary>Arrastrar el borde cambia el ancho de la lista (entre TerminalProjects.MinWidth y MaxWidth); al soltar, se guarda.</summary>
+    void Grip()
+    {
+        double? from = null;
+        double width = 0;
+        var line = (Border)_grip.Child!;
+        _grip.PointerEntered += (_, _) => line.Opacity = 0.6;
+        _grip.PointerExited += (_, _) => { if (from is null) line.Opacity = 0; };
+        _grip.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(_grip).Properties.IsLeftButtonPressed) return;
+            from = e.GetPosition(_body).X;
+            width = _body.ColumnDefinitions[1].Width.Value;
+            e.Pointer.Capture(_grip);
+            e.Handled = true;
+        };
+        _grip.PointerMoved += (_, e) =>
+        {
+            if (from is not { } start) return;
+            var next = Math.Clamp(width + e.GetPosition(_body).X - start, TerminalProjects.MinWidth, TerminalProjects.MaxWidth);
+            _body.ColumnDefinitions[1].Width = new GridLength(next);
+        };
+        _grip.PointerReleased += (_, e) =>
+        {
+            if (from is null) return;
+            from = null;
+            e.Pointer.Capture(null);
+            line.Opacity = 0;
+            _terminal.SetListWidth(_body.ColumnDefinitions[1].Width.Value);
+        };
     }
 
     void Select(string id)
@@ -307,6 +380,7 @@ sealed class ConsoleWindow : Window
         Render(rebuild: true);
         if (mode == Mode.Chat) _chat.FocusInput();
         if (mode == Mode.Editor) _editor.FocusText();
+        if (mode == Mode.Terminal) _terminal.FocusInput();
     }
 
     // ── Archivos del editor ─────────────────────────────────────────────────────────────────
@@ -459,7 +533,7 @@ sealed class ConsoleWindow : Window
     {
         var current = chat.Id == _chatId;
         var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        if (chat.Quick) title.Children.Add(new HeadLogo { Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center });
+        if (chat.Quick) title.Children.Add(new AppLogo { Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center });
         title.Children.Add(new TextBlock
         {
             Text = chat.Title,
@@ -493,7 +567,7 @@ sealed class ConsoleWindow : Window
     Control Header()
     {
         var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"), Background = Brushes.Transparent };
-        var logo = new HeadLogo { Width = 18, Height = 18, Margin = new Thickness(18, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
+        var logo = new AppLogo { Width = 18, Height = 18, Margin = new Thickness(18, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
         bar.Children.Add(logo);
         var title = Ui.Text("Claupet Console", 13.5, _ink.Text, FontWeight.SemiBold);
         Grid.SetColumn(title, 1);
@@ -515,15 +589,17 @@ sealed class ConsoleWindow : Window
 
     // Los íconos del riel, en un cuadro de 24 (los del diseño).
     const string ChatIcon = "M5,5 H19 A1,1 0 0 1 20,6 V15 A1,1 0 0 1 19,16 H10 L5,20 V6 A1,1 0 0 1 6,5 Z";
+    const string TerminalIcon = "M4,5 H20 A1,1 0 0 1 21,6 V18 A1,1 0 0 1 20,19 H4 A1,1 0 0 1 3,18 V6 A1,1 0 0 1 4,5 Z M7,10 L10,12.5 L7,15 M12.5,15 H16.5";
     const string EditorIcon = "M14,3 H7 A1,1 0 0 0 6,4 V20 A1,1 0 0 0 7,21 H17 A1,1 0 0 0 18,20 V7 L14,3 Z M14,3 V7 H18 M9.5,12 H14.5 M9.5,16 H12.5";
     const string SettingsIcon = "M15,12 A3,3 0 1 1 9,12 A3,3 0 1 1 15,12 Z M12,2.5 V5 M12,19 V21.5 M5.3,5.3 L7.1,7.1 M16.9,16.9 L18.7,18.7 M2.5,12 H5 "
         + "M19,12 H21.5 M5.3,18.7 L7.1,16.9 M16.9,7.1 L18.7,5.3";
 
-    /// <summary>El riel de la izquierda: Chat, Editor y Ajustes. El editor llega en una próxima etapa.</summary>
+    /// <summary>El riel de la izquierda: Chat, Terminal, Editor y Ajustes.</summary>
     Control Rail()
     {
         var rail = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
         rail.Children.Add(RailButton(ChatIcon, L.T("Chat"), _mode == Mode.Chat, () => SetMode(Mode.Chat)));
+        rail.Children.Add(RailButton(TerminalIcon, L.T("Terminal"), _mode == Mode.Terminal, () => SetMode(Mode.Terminal)));
         rail.Children.Add(RailButton(EditorIcon, L.T("Editor"), _mode == Mode.Editor, () => SetMode(Mode.Editor)));
         rail.Children.Add(RailButton(SettingsIcon, L.T("Ajustes"), _mode == Mode.Settings, () => SetMode(Mode.Settings)));
         return rail;
@@ -594,7 +670,7 @@ sealed class ConsoleWindow : Window
     Control Waiting()
     {
         var panel = new StackPanel { Spacing = 14, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 380 };
-        panel.Children.Add(new HeadLogo { Width = 48, Height = 48 });
+        panel.Children.Add(new AppLogo { Width = 48, Height = 48 });
         // La Console es el mismo Claupet.exe: la bandeja es otro proceso con ese nombre.
         var claupet = Environment.ProcessPath ?? "";
         var processes = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(claupet));

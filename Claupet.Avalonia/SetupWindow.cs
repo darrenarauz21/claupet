@@ -117,7 +117,7 @@ sealed class SetupWindow : Window
             if (row.State is HookInstaller.State.Missing or HookInstaller.State.Outdated) _hooksOn.Add(dir);
         }
 
-        Icon = Ui.HeadIcon();
+        Icon = Ui.LogoIcon();
         Width = 800;
         Height = 600;
         CanResize = false;
@@ -129,7 +129,7 @@ sealed class SetupWindow : Window
         ExtendClientAreaChromeHints = Avalonia.Platform.ExtendClientAreaChromeHints.NoChrome;
         ExtendClientAreaTitleBarHeightHint = -1;
 
-        // La columna de la izquierda: la cara del chibi, el nombre, los pasos y lo que viene.
+        // La columna de la izquierda: el ícono de Claupet, el nombre, los pasos y lo que viene.
         _version = Label("", 11.3, theme.Tertiary, margin: new Thickness(24, 2, 0, 0));
         _soon = Label("", 10.3, theme.Tertiary, FontWeight.SemiBold);
         var top = new StackPanel();
@@ -137,7 +137,7 @@ sealed class SetupWindow : Window
         {
             Width = 64, Height = 64, CornerRadius = new CornerRadius(18), Background = Gfx.B(theme.Raised),
             HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(24, 30, 0, 0),
-            Child = new HeadLogo { Width = 48, Height = 48 },
+            Child = new AppLogo { Width = 48, Height = 48 },
         });
         top.Children.Add(Label("Claupet", 20, theme.Text, family: Serif, margin: new Thickness(22, 10, 0, 0)));
         top.Children.Add(_version);

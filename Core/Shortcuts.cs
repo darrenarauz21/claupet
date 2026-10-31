@@ -6,7 +6,7 @@ namespace Claupet;
 
 /// <summary>
 /// Los accesos directos «Claupet» del menú Inicio y del escritorio, como los de cualquier app: abren Claupet Console
-/// (y Claupet, si no estaba abierto). Llevan la cabeza del chibi, la misma de la ventana. Al arrancar, los encendidos
+/// (y Claupet, si no estaba abierto). Llevan el ícono de Claupet, el mismo de la ventana. Al arrancar, los encendidos
 /// se crean si faltan y se corrigen si apuntan a otro .exe (se movió la carpeta).
 /// </summary>
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
@@ -69,13 +69,13 @@ static class Shortcuts
     }
 
     /// <summary>
-    /// El ícono: la cabeza del chibi en los tamaños que pide Windows, como PNG dentro de un .ico. También lo usa la
+    /// El ícono de Claupet en los tamaños que pide Windows, como PNG dentro de un .ico. También lo usa la
     /// entrada de Configuración › Aplicaciones (Installation), en la carpeta instalada.
     /// </summary>
     public static void WriteIcon(string file)
     {
         int[] sizes = [16, 24, 32, 48, 64, 128, 256];
-        var images = sizes.Select(HeadPng).ToList();
+        var images = sizes.Select(LogoPng).ToList();
         using var stream = new MemoryStream();
         using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
         {
@@ -102,13 +102,13 @@ static class Shortcuts
     }
 
     /// <summary>
-    /// La cabeza del chibi, recortada a lo que pinta y centrada, con cuadritos enteros (nítida). Se pinta a mano sobre
+    /// El ícono de Claupet, recortado a lo que pinta y centrado, con cuadritos enteros (nítido). Se pinta a mano sobre
     /// los pixeles (BGRA): los cuadritos caen en pixeles enteros y no hace falta una biblioteca de imágenes.
     /// </summary>
-    internal static byte[] HeadPng(int size)
+    internal static byte[] LogoPng(int size)
     {
         var pixels = new List<(System.Drawing.Color Color, float X, float Y, float W, float H)>();
-        ChibiSprite.PaintHead((color, x, y, w, h) => pixels.Add((color, x, y, w, h)), MascotFrame.Open);
+        ClaupetLogo.Paint((color, x, y, w, h) => pixels.Add((color, x, y, w, h)));
         var bgra = new byte[size * size * 4];
         if (pixels.Count > 0)
         {

@@ -141,8 +141,9 @@ sealed partial class TrayController
     /// <summary>
     /// Un permiso o una pregunta de Claude Code llegó por el hook: la isla muestra su tarjeta y espera.
     /// Lo que la persona elige vuelve a Claude Code; sin respuesta a tiempo, la tarjeta se va y pregunta la terminal.
+    /// Si se canceló (lo respondió en el bloque de Claupet Terminal), la tarjeta también se va.
     /// </summary>
-    async Task<string?> OnApprovalRequested(ApprovalRequest request)
+    async Task<string?> OnApprovalRequested(ApprovalRequest request, CancellationToken cancel)
     {
         var key = $"{request.SessionId}|{request.Tool}|{request.Target}";
         if (!request.IsQuestion && _alwaysAllow.Contains(key)) return Approvals.Allow();
@@ -151,7 +152,7 @@ sealed partial class TrayController
             ?? Path.GetFileName(request.Cwd.TrimEnd('\\', '/'));
         if (_mascotWindow is not null) _director.Gesture(ChibiMove.Think, 3000);
         var asked = island.AskApproval(request, title);
-        var finished = await Task.WhenAny(asked, Task.Delay(TimeSpan.FromSeconds(Approvals.DecisionSeconds - 5)));
+        var finished = await Task.WhenAny(asked, Task.Delay(TimeSpan.FromSeconds(Approvals.DecisionSeconds - 5), cancel));
         if (finished != asked)
         {
             island.DropApproval();

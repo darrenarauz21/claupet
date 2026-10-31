@@ -202,12 +202,12 @@ public sealed class WindowsCaptureTests
     }
 
     [Fact]
-    public void LaCabezaDelIconoVaCentradaYConFondoTransparente()
+    public void ElIconoVaCentradoYConFondoTransparente()
     {
-        var png = PngImage.Read(Shortcuts.HeadPng(64));
+        var png = PngImage.Read(Shortcuts.LogoPng(64));
         Assert.Equal((64, 64), (png.Width, png.Height));
         Assert.Equal(0u, png[0, 0] >> 24);     // la esquina, transparente
-        Assert.Equal(255u, png[32, 32] >> 24); // el centro, la cara
+        Assert.Equal(255u, png[32, 32] >> 24); // el centro, la cara del ícono
     }
 
     [Fact]

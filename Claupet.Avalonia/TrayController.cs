@@ -450,7 +450,7 @@ sealed partial class TrayController
         _popup.HoldOpen = true;
         try
         {
-            var dialog = new NewSessionWindow(_settings.Accounts, initial, recent, _theme);
+            var dialog = new NewSessionWindow(_settings.Accounts, initial, recent, _theme, a => AssistantAccounts.StatusOf(a, _snapshots).Text);
             dialog.Show();
             dialog.Activate();
             if (await dialog.Result is not { } options) return;

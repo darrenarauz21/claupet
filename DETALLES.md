@@ -274,7 +274,7 @@ los menús, una tarjeta flotante dentro de la ventana con la elegida marcada y l
 separadas abajo, que se maneja también con las flechas, Intro y Esc (`Console/DropList.cs`). Es el mismo `Claupet.exe`
 en otro proceso (`Claupet.exe --console`, código en `Console/`, Avalonia 11): se abre solo cuando se pide y se
 cierra con su ventana. La bandeja no carga Avalonia ni Skia; solo ese proceso. Una sola ventana a la vez:
-abrirla de nuevo la trae al frente. Tiene su propia barra de arriba (la cabeza del chibi, minimizar, maximizar y cerrar) y las esquinas
+abrirla de nuevo la trae al frente. Tiene su propia barra de arriba (el ícono de Claupet, minimizar, maximizar y cerrar) y las esquinas
 redondeadas de Windows 11; sigue el modo claro u oscuro de Windows y el color elegido en Apariencia.
 
 Solo la bandeja guarda los ajustes. Las dos se hablan por una tubería con nombre, `Claupet.Console.<usuario>`,
@@ -351,7 +351,7 @@ La IA en el editor, el texto propuesto, leer en voz alta y su sección de ajuste
 
 Como cualquier app, Claupet tiene su acceso directo en el menú Inicio (encendido por defecto) y, si se pide, en
 el escritorio (Ajustes › General › Accesos directos; `StartMenuShortcut` y `DesktopShortcut`). Abren
-`Claupet.exe --console` con la cabeza del chibi como ícono (`claupet.ico`, junto a los ajustes); si Claupet no
+`Claupet.exe --console` con el ícono de Claupet (`claupet.ico`, junto a los ajustes); si Claupet no
 estaba abierto, la Console lo abre y se conecta cuando está listo. Al arrancar, la bandeja vuelve a crear los
 encendidos si faltan o apuntan a otra carpeta (`Core/Shortcuts.cs`, que usan las dos apps); una copia de prueba
 (`--preview`) no los toca.
