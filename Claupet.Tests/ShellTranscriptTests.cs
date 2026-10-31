@@ -207,12 +207,27 @@ public sealed class ShellTranscriptTests
     }
 
     [Fact]
+    public void UnComandoQueElShellDescartaNoQuedaCorriendo()
+    {
+        // zsh justo después de un Ctrl+C: el eco del comando aparece, pero vuelve al prompt sin la marca C.
+        var t = Started();
+        t.Apply(Echo("echo antes") + "antes\r\n" + Prompt(0));
+        var block = t.Begin("exit 4");
+        t.Apply("exit 4\r\n" + Prompt(1));
+
+        Assert.False(block.Running);
+        Assert.Null(block.ExitCode);
+        Assert.False(t.Busy);
+    }
+
+    [Fact]
     public void CortarConCtrlCOCerrarElPaginadorNoEsUnError()
     {
         Assert.True(new ShellBlock { Kind = ShellBlockKind.Command, ExitCode = 1 }.Failed);
         var interrupted = new ShellBlock { Kind = ShellBlockKind.Command, ExitCode = unchecked((int)0xC000013A) };
         Assert.True(interrupted.Interrupted);
         Assert.False(interrupted.Failed);
+        Assert.True(new ShellBlock { Kind = ShellBlockKind.Command, ExitCode = 130 }.Interrupted);
         var pager = new ShellBlock { Kind = ShellBlockKind.Command, ExitCode = 141 };
         Assert.True(pager.PagerClosed);
         Assert.False(pager.Failed);
@@ -305,6 +320,31 @@ public sealed class ShellTranscriptTests
         {
             var blocks = session.Transcript.Blocks.Where(b => b.Kind == ShellBlockKind.Command).ToList();
             Assert.Equal(["echo hola", "cmd /c exit 3"], blocks.Select(b => b.Command));
+            Assert.Equal(["hola"], blocks[0].Lines);
+            Assert.Equal(0, blocks[0].ExitCode);
+            Assert.Equal(3, blocks[1].ExitCode);
+        }
+    }
+
+    /// <summary>De verdad en Linux o macOS: bash en una pty (Porta.Pty), con la integración de la app.</summary>
+    [Fact]
+    public async Task BashDeVerdadEnLinuxOMacDaBloquesConSuCodigo()
+    {
+        if (OperatingSystem.IsWindows() || Shells.Available().FirstOrDefault(s => s.Kind == ShellKind.Bash) is not { } shell) return;
+        var gate = new object();
+        using var session = new ShellSession(shell, Path.GetTempPath(), action => { lock (gate) action(); });
+        session.Start();
+        await Until(() => session.Transcript.Ready, gate);
+
+        lock (gate) session.Send("echo hola");
+        await Until(() => !session.Transcript.Busy, gate);
+        lock (gate) session.Send("sh -c 'exit 3'");
+        await Until(() => !session.Transcript.Busy, gate);
+
+        lock (gate)
+        {
+            var blocks = session.Transcript.Blocks.Where(b => b.Kind == ShellBlockKind.Command).ToList();
+            Assert.Equal(["echo hola", "sh -c 'exit 3'"], blocks.Select(b => b.Command));
             Assert.Equal(["hola"], blocks[0].Lines);
             Assert.Equal(0, blocks[0].ExitCode);
             Assert.Equal(3, blocks[1].ExitCode);

@@ -10,7 +10,7 @@ namespace Claupet;
 /// programas que preguntan) y lo que pinta llega como texto con secuencias VT por Output. Lo que se escribe en Write le
 /// llega como si se tecleara. Solo en Windows 10 1809 o más nuevo; en Linux y macOS (forkpty) todavía no.
 /// </summary>
-sealed class PseudoConsole : IDisposable
+sealed class PseudoConsole : IPty
 {
     IntPtr _console;
     readonly SafeFileHandle _process;

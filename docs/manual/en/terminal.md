@@ -18,7 +18,8 @@ Claupet Terminal is a view in [Claupet Console](console.md) (the **Terminal** bu
 coding agents and shells in tabs and shows each thing in its own block:
 
 - **Claude Code**, **Codex**, **Gemini CLI** and **Copilot CLI**: whichever are installed on your computer.
-- **Shells** *(Windows)*: PowerShell, Git Bash and WSL bash, each command with its output.
+- **Shells**: PowerShell, Git Bash and WSL bash on Windows; bash, zsh and PowerShell 7 (if installed) on Linux
+  and macOS. Each command with its output, and full-screen programs (vim, less, claude) across the whole session.
 - **Several sessions at once**, grouped by project, each with its own account, model, effort and
   permissions.
 
@@ -26,26 +27,22 @@ coding agents and shells in tabs and shows each thing in its own block:
   <img src="../../capturas/manual/terminal-sesion.png" alt="A Claude Code session in blocks in Claupet Terminal" width="720">
 </p>
 
-## How to open a session
+## How to open a tab
 
 1. In Claupet Console, press **Terminal** on the rail.
-2. Press the **+** button (**New session**), above the list.
-3. Fill in the form:
+2. Press **+** (**New tab**), above the list, or **Ctrl+T**. A small menu opens:
 
-   | Field | What it sets |
+   | Part | What it sets |
    |---|---|
-   | **Folder** | Where the agent works. The list shows linked projects and recent folders first; **Choose another folder…** opens the picker. |
-   | **Account** | The Claude Code account for this session (only signed-in ones). |
-   | **Model** | `opus`, `sonnet`, `fable`, `haiku`, `opusplan` and the `[1m]` variants, or "default model". |
-   | **Effort** | `low`, `medium`, `high`, `xhigh` or `max`, or "default effort". |
-   | **Permissions** | How much it asks before acting (see the table below). |
-   | **Type** | Claude Code, another installed agent or a shell. |
+   | **Open** | Claude Code, another installed agent (Codex, Gemini CLI, Copilot CLI) or one of your computer's terminals. |
+   | **With the account** | *(Claude Code)* This tab's account; the green dot means it's signed in. |
+   | **Model and effort** | *(Claude Code)* `haiku`, `sonnet`, `opus`, `fable` or "default", and the effort: low, medium, high, very high or max. The variants (`opus[1m]`, `sonnet[1m]`, `opusplan`) are chosen inside the session. |
+   | **The folder** | Bottom left: where it opens. Tap it to choose another (linked projects, recent ones or **Choose another folder…**). |
 
-4. Press **Open session**.
+3. Press **Open** (or **Enter**). Tapping the item that's already selected also opens it.
 
-<p align="center">
-  <img src="../../capturas/manual/terminal-nueva-sesion.png" alt="The New session form" width="720">
-</p>
+Claupet remembers what you opened last, with its account, model and effort. Permissions start as they were
+last time and can be changed in the session.
 
 Claude Code's **Permissions** modes:
 
@@ -62,17 +59,23 @@ Claude Code's **Permissions** modes:
 
 ### How to write to it
 
-Type in the box at the bottom, next to **❯**. **Enter** sends and **Shift+Enter** adds a new line. While it's
-working, **Interrupt** (the square at the top, or **Esc**) stops the turn.
+Type in the box at the bottom ("Write to Claude Code…"). **Enter** sends and **Shift+Enter** adds a new line.
+While it's working, **Interrupt** (the two bars at the top, or **Esc**) stops the turn.
 
-At the top of the session you see the project, its branch, the model and effort, how much of the context it
-has used ("context 42%") and the account's 5-hour session usage ("5 h 18%").
+At the top of the session you see the folder, its branch and what's left to push, and how much of the context it
+has used (a bar with its percentage; hovering also shows the account's 5-hour session usage).
+
+### How to copy
+
+- **Your prompt or a whole answer:** hover over the block and tap the **Copy** icon on the right.
+- **Part of it:** select it with the mouse and press **Ctrl+C**, or right-click › **Copy** (**Select all**
+  picks the whole block).
 
 ## The blocks
 
 | Block | What it shows |
 |---|---|
-| **Your prompt** | What you wrote, with **❯** in front. |
+| **Your prompt** | What you wrote, in bold with **›** in front. |
 | **Thinking…** | While it thinks; when it's done, "Thought · 1,234 tokens". |
 | **The answer** | The text, with code blocks set apart. |
 | **A step** | What it did ("read", "edited", "created", "ran", "searched", "delegated"…) and on what, with lines added and removed (`+12 −3`). A click opens its diff or what it returned. |
@@ -111,23 +114,25 @@ In the list on the left, a tab waiting for permission gets an amber dot.
 
 ## How to change the model, effort or permissions mid-session
 
-Below the box where you type there are a few chips: the account, the model, the effort and the permissions.
+In the box at the bottom, on the right (or below it, if the window is narrow), there are the account, the model
+with its effort ("opus · high") and the permissions.
 
-1. Tap the chip you want to change.
-2. Pick another value from the list.
+1. Tap the one you want to change.
+2. Pick another value.
 3. It applies from the next turn.
 
-The account can't be changed in an open session: for another account, open another session.
+The account can't be changed in an open session: if you pick another one, a new tab opens with that account,
+in the same folder and with the same model.
 
 ## Codex, Gemini CLI and Copilot CLI
 
-If they're installed (and on the `PATH`), they show up in **Type** when you open a session. They're shown in
-blocks just like Claude Code, with their permissions here and on the island.
+If they're installed (and on the `PATH`), they show up in the new tab menu. They're shown in blocks just like
+Claude Code, with their permissions here and on the island.
 
-- The model, effort and permissions are chosen **inside the session**, with the chips, from what the agent
-  reports when it opens.
-- The tab's badge tells you what it is: **C** Claude Code, **X** Codex, **G** Gemini CLI, **P** Copilot CLI
-  and **>_** a shell.
+- The model, effort and permissions are chosen **inside the session**, in the box at the bottom, from what the
+  agent reports when it opens.
+- The tab's mark tells you what it is: **✻** Claude Code, **cx** Codex, **✦** Gemini CLI, **gh** Copilot CLI
+  and **>_** a terminal.
 
 ### How to sign in to the other agents
 
@@ -146,8 +151,15 @@ once in any terminal and then type in the session again:
 
 ## Shells in blocks
 
-*Windows 10 (1809) or newer only.* In **Type**, choose **PowerShell**, **Git Bash** or **bash (WSL)**:
-Claupet offers the ones it finds on your computer.
+In the new tab menu, choose a terminal: Claupet offers the ones it finds on your computer.
+
+| System | Terminals |
+|---|---|
+| **Windows 10 (1809) or newer** | PowerShell (7 if available; otherwise Windows PowerShell), Git Bash and WSL bash |
+| **Linux and macOS** | zsh, bash and PowerShell 7 (if installed); your user's shell first |
+
+zsh and bash load your usual files (`.zshrc`, `.zprofile`, `.bashrc` or `.bash_profile`); Claupet only adds
+the block marks.
 
 <p align="center">
   <img src="../../capturas/manual/terminal-shell.png" alt="PowerShell in blocks, each command with its output" width="720">
@@ -183,7 +195,8 @@ session in its folder.
   tabs below.
 - **Collapsed:** how many tabs it has and a dot for each one.
 - **Collapse all projects** / **Expand all projects**: the button at the top of the list.
-- **The "⋯" menu** on each project: **New session here**, **Open the folder** and **Unlink**.
+- **The "⋯" menu** on each project: **New terminal here** (the default terminal), **Open an agent or another
+  tab here…** (the new tab menu, in that folder), **Open the folder** and **Unlink**.
 
 > [!NOTE]
 > Unlinking only removes the project from the list: it doesn't delete the folder. If it had open sessions,
@@ -218,23 +231,35 @@ How sessions look. Open it from **Settings › Terminal** in the Console. It's s
   <img src="../../capturas/manual/terminal-ajustes.png" alt="The Terminal settings with their preview" width="720">
 </p>
 
+In three groups:
+
+**Tabs**
+
+| Option | Values |
+|---|---|
+| **Tab list** | With description or Icons only (also with the button at the top of the list). |
+| **Default terminal** | The one **New terminal here** opens, in each project's menu. |
+
+**Appearance** (at the top, a preview that changes as you pick)
+
 | Option | Values |
 |---|---|
 | **Font** | "The usual one" or an installed monospaced font (Cascadia Mono, Consolas, JetBrains Mono, Fira Code…). |
-| **Size** | From 11.5 to 18 pt. |
+| **Size** | From 11.5 to 18 pt, with **−** and **+**. |
 | **Line spacing** | Tight, Normal or Wide. |
 | **Text color** | The theme's, Amber, Green or Ice. |
-| **Background** | The theme's, Deeper or Console black. |
-| **Session list** | With description or Icons only. |
-| **Animations** | "Thinking", the spinning steps and blocks fading in. Turned off, it uses less. |
+| **Terminal palette** | Claupet, Soft or Vivid: the 16 colors full-screen programs use. |
+| **Cursor** | Block, Bar or Underline (for full-screen programs). |
+| **Background** | The theme's, Darker or Black. |
+| **Animations** | Full or None ("Thinking", loading, sending and fading in). Without them, it uses less. |
+| **Ligatures** | Off, `->` and `!=` look as typed; on, as a single sign (if the font has them). |
 
-Below, a **Preview** and the **Linked projects**, each with **Unlink**. **Defaults** goes back to the
-original values.
+**Linked projects**, each with its folder, how many tabs it has and **Unlink**. **Defaults**, at the top, goes
+back to the original values.
 
 ## Limits
 
 - **Closing Claupet Console closes every Terminal session**: no agent is left running.
-- Shells in blocks don't exist yet on macOS or Linux.
 - The other agents need to be installed and signed in.
 
 ---
