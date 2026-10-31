@@ -212,6 +212,70 @@ sealed class Microphone : IDisposable
 }
 
 /// <summary>
+/// La entrada predeterminada de Windows (la que abre PortAudio): si está silenciada, el micrófono «graba» solo ceros y
+/// parece que no oye. Core Audio; solo se declaran los métodos hasta el último que se usa, en su orden.
+/// </summary>
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+static class WindowsMicrophone
+{
+    /// <summary>True si la entrada predeterminada está silenciada; null si no hay o no se pudo saber.</summary>
+    public static bool? Muted()
+    {
+        object? enumerator = null, device = null, endpoint = null;
+        try
+        {
+            enumerator = new MMDeviceEnumerator();
+            ((IMMDeviceEnumerator)enumerator).GetDefaultAudioEndpoint(1, 0, out var found); // eCapture, eConsole
+            device = found;
+            var iid = typeof(IAudioEndpointVolume).GUID;
+            found.Activate(ref iid, 0x17, IntPtr.Zero, out endpoint); // CLSCTX_ALL
+            ((IAudioEndpointVolume)endpoint).GetMute(out var muted);
+            return muted;
+        }
+        catch (Exception ex) when (ex is COMException or InvalidCastException) { return null; } // sin micrófono: E_NOTFOUND
+        finally
+        {
+            foreach (var com in new[] { endpoint, device, enumerator })
+                if (com is not null) Marshal.ReleaseComObject(com);
+        }
+    }
+
+    [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+    class MMDeviceEnumerator { }
+
+    [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IMMDeviceEnumerator
+    {
+        void EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr devices);
+        void GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice device);
+    }
+
+    [ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IMMDevice
+    {
+        void Activate(ref Guid iid, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object endpoint);
+    }
+
+    [ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IAudioEndpointVolume
+    {
+        void RegisterControlChangeNotify(IntPtr notify);
+        void UnregisterControlChangeNotify(IntPtr notify);
+        void GetChannelCount(out uint count);
+        void SetMasterVolumeLevel(float level, ref Guid context);
+        void SetMasterVolumeLevelScalar(float level, ref Guid context);
+        void GetMasterVolumeLevel(out float level);
+        void GetMasterVolumeLevelScalar(out float level);
+        void SetChannelVolumeLevel(uint channel, float level, ref Guid context);
+        void SetChannelVolumeLevelScalar(uint channel, float level, ref Guid context);
+        void GetChannelVolumeLevel(uint channel, out float level);
+        void GetChannelVolumeLevelScalar(uint channel, out float level);
+        void SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, ref Guid context);
+        void GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
+    }
+}
+
+/// <summary>
 /// La salida de audio, por PortAudio: mono. Los trozos se encolan a medida que se generan y suenan seguidos; si el
 /// dispositivo no acepta la frecuencia, se convierte.
 /// </summary>
