@@ -246,9 +246,11 @@ public sealed class AgentTranscriptTests
     {
         var pipe = "Claupet-prueba-" + Guid.NewGuid().ToString("N");
         var withdrawn = new TaskCompletionSource();
+        var received = new TaskCompletionSource();
         using var server = new ApprovalServer(async (request, cancel) =>
         {
             if (request.Tool == "Write") return Approvals.Allow();
+            received.TrySetResult();
             try { await Task.Delay(Timeout.Infinite, cancel); }
             catch (OperationCanceledException) { withdrawn.TrySetResult(); }
             return null;
@@ -259,7 +261,8 @@ public sealed class AgentTranscriptTests
 
         using var answered = new CancellationTokenSource();
         var waiting = Approvals.AskAppAsync(line.Replace("\"Write\"", "\"Bash\""), answered.Token, pipe);
-        await Task.Delay(300);
+        // Se cancela cuando la isla ya muestra la tarjeta (no tras un tiempo fijo: con las pruebas en paralelo no alcanza).
+        await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
         answered.Cancel();
         Assert.Null(await waiting);
         await withdrawn.Task.WaitAsync(TimeSpan.FromSeconds(5));

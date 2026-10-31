@@ -64,7 +64,7 @@ sealed class AgentBlock
 /// --input-format y --output-format stream-json) y arma con ellos los bloques, sin la pantalla de la TUI. Cada
 /// evento es una línea de JSON; Apply devuelve los bloques que cambiaron. No abre procesos: se prueba con líneas.
 /// </summary>
-sealed class AgentTranscript
+sealed partial class AgentTranscript
 {
     /// <summary>Cuántas líneas de la salida de un paso y del cambio se guardan para mostrar.</summary>
     const int OutputLines = 6, DiffLines = 40;
@@ -594,26 +594,26 @@ static class AgentProtocol
     static string Line(JsonObject o) => o.ToJsonString();
 }
 
-/// <summary>Con qué se abre una sesión de la Terminal: la cuenta, la carpeta, el modelo, el esfuerzo y el modo de permisos.</summary>
-sealed record AgentOptions(string Folder, string? ConfigDir = null, string? Model = null, string? Effort = null, string? PermissionMode = null);
+/// <summary>Con qué se abre una sesión de la Terminal: el agente (AgentKinds), la carpeta, la cuenta, el modelo, el esfuerzo y el modo de permisos.</summary>
+sealed record AgentOptions(string Folder, string? ConfigDir = null, string? Model = null, string? Effort = null, string? PermissionMode = null, string Kind = AgentKinds.Claude);
 
 /// <summary>
-/// Una sesión de Claude Code de la Terminal: el proceso en modo estructurado, con la cuenta (CLAUDE_CONFIG_DIR), el
-/// modelo y el esfuerzo de esa sesión. Los permisos se contestan en su bloque y, si la isla está, también en ella: el
-/// hook de Claupet se aparta (Approvals.TerminalVariable) y la sesión le pasa el pedido a la isla; vale lo que se
-/// responda primero. Cada línea se aplica con post, en el hilo de la vista: los bloques solo cambian ahí.
+/// Una sesión de agente de la Terminal (Claude Code, Codex, Gemini CLI o Copilot CLI): abre el proceso que dice su
+/// IAgentDriver, le escribe lo que este arma y le pasa lo que el agente responde. Los permisos se contestan en su bloque
+/// y, si la isla está, también en ella; vale lo que se responda primero. Cada línea se aplica con post, en el hilo de la
+/// vista: los bloques solo cambian ahí.
 /// </summary>
 sealed class TerminalAgent : IDisposable
 {
     readonly AgentOptions _options;
     readonly Action<Action> _post;
+    readonly IAgentDriver _driver;
     readonly System.Collections.Concurrent.ConcurrentQueue<string> _lines = new();
     int _draining;
     readonly object _write = new();
     /// <summary>Los permisos que esperan también en la isla; al cancelarlos, la isla quita la tarjeta.</summary>
     readonly Dictionary<AgentBlock, CancellationTokenSource> _island = [];
     Process? _process;
-    int _requests;
 
     /// <summary>Los permisos también se preguntan en la isla de la app (si está). Una copia de prueba no la usa.</summary>
     public bool AskIsland { get; init; }
@@ -623,7 +623,11 @@ sealed class TerminalAgent : IDisposable
         _options = options;
         _post = post;
         Effort = options.Effort;
+        _driver = AgentKinds.Driver(options.Kind, Transcript);
     }
+
+    /// <summary>Lo que se puede elegir en esta sesión: los modelos, esfuerzos y modos de su agente.</summary>
+    public IAgentDriver Driver => _driver;
 
     public AgentOptions Options => _options;
     public AgentTranscript Transcript { get; } = new();
@@ -649,35 +653,35 @@ sealed class TerminalAgent : IDisposable
     /// <summary>Los modos de permisos que se pueden elegir para una sesión.</summary>
     public static readonly string[] Modes = ["default", "acceptEdits", "plan", "auto"];
 
-    /// <summary>Abre Claude Code. Si no está o no abre, queda un aviso en la sesión.</summary>
+    /// <summary>Abre el agente. Si no está o no abre, queda un aviso en la sesión.</summary>
     public void Start()
     {
-        if (Assistant.FindClaude() is not { } claude)
+        if (_driver.Start(_options) is not { } start)
         {
-            Notice(L.T("No encontré Claude Code. ¿Está instalado y en el PATH?"));
+            Notice(L.T("No encontré {0}. ¿Está instalado y en el PATH?", _driver.Name));
             return;
         }
-        var start = Assistant.ClaudeStart(claude, _options.ConfigDir, Arguments(_options));
         start.WorkingDirectory = _options.Folder;
-        start.Environment[Approvals.TerminalVariable] = "1";
         var process = new Process { StartInfo = start, EnableRaisingEvents = true };
         try { process.Start(); }
         catch (Exception ex)
         {
-            Notice(L.T("No se pudo abrir Claude Code: {0}", ex.Message));
+            Notice(L.T("No se pudo abrir {0}: {1}", _driver.Name, ex.Message));
             return;
         }
         _process = process;
-        Write(AgentProtocol.Initialize(NextId()));
+        Write(_driver.Opening(_options));
         _ = Task.Run(() => ReadAsync(process));
     }
 
-    /// <summary>Envía un pedido. Si el agente está en un turno, Claude Code lo encola y lo toma al terminar.</summary>
+    /// <summary>Envía un pedido. Si el agente está en un turno, lo encola (Claude Code) o lo toma al terminar.</summary>
     public void Send(string text)
     {
         if (string.IsNullOrWhiteSpace(text) || !Running) return;
-        Changed?.Invoke([Transcript.Ask(text)]);
-        Write(AgentProtocol.UserMessage(text));
+        // El bloque se crea aunque nadie escuche (una prueba): Changed solo avisa.
+        var ask = Transcript.Ask(text);
+        Changed?.Invoke([ask]);
+        Write(_driver.Prompt(text));
     }
 
     /// <summary>El esfuerzo de la sesión: el elegido al abrirla o el último que se cambió.</summary>
@@ -686,33 +690,37 @@ sealed class TerminalAgent : IDisposable
     /// <summary>Cambia el modelo para los turnos que siguen (null: el de la cuenta). La respuesta llega por la transcripción.</summary>
     public void SetModel(string? model)
     {
-        if (!Running || model is not null && !Launcher.IsValid(model)) return;
-        Write(AgentProtocol.SetModel(NextId(), model));
+        if (Running) Write(_driver.SetModel(model));
     }
 
     public void SetPermissionMode(string mode)
     {
-        if (Running && Modes.Contains(mode)) Write(AgentProtocol.SetPermissionMode(NextId(), mode));
+        if (Running && _driver.Modes.Contains(mode)) Write(_driver.SetMode(mode));
     }
 
     public void SetEffort(string effort)
     {
-        if (!Running || !Launcher.Efforts.Contains(effort)) return;
+        if (!Running || !_driver.Efforts.Contains(effort)) return;
         Effort = effort;
-        Write(AgentProtocol.SetEffort(NextId(), effort));
+        Write(_driver.SetEffort(effort));
     }
 
     /// <summary>Corta el turno en curso (como Esc en la TUI). La sesión sigue abierta.</summary>
     public void Interrupt()
     {
-        if (Running && Transcript.Busy) Write(AgentProtocol.Interrupt(NextId()));
+        if (!Running || !Transcript.Busy) return;
+        Write(_driver.Interrupt());
+        // Los permisos que el agente canceló al interrumpir (ACP) se quitan también de la isla.
+        var cancelled = _island.Keys.Where(p => p.Answer is not null).ToList();
+        foreach (var permission in cancelled) StopIsland(permission);
+        if (cancelled.Count > 0) Changed?.Invoke(cancelled);
     }
 
-    /// <summary>Lo respondió en el bloque: va a Claude Code y la isla, si también lo mostraba, lo quita.</summary>
+    /// <summary>Lo respondió en el bloque: va al agente y la isla, si también lo mostraba, lo quita.</summary>
     public void Answer(AgentBlock permission, PermissionAnswer answer)
     {
         if (permission.Kind != AgentBlockKind.Permission || permission.Answer is not null || !Running) return;
-        Resolve(permission, answer, AgentProtocol.Answer(permission, answer));
+        Resolve(permission, answer, _driver.Answer(permission, answer));
     }
 
     /// <summary>Respondió las preguntas del bloque.</summary>
@@ -720,10 +728,10 @@ sealed class TerminalAgent : IDisposable
     {
         if (permission.Questions is null || permission.Answer is not null || !Running) return;
         permission.Picks = picks;
-        Resolve(permission, PermissionAnswer.Allow, AgentProtocol.Answer(permission, picks));
+        Resolve(permission, PermissionAnswer.Allow, _driver.Answer(permission, picks));
     }
 
-    void Resolve(AgentBlock permission, PermissionAnswer answer, string line)
+    void Resolve(AgentBlock permission, PermissionAnswer answer, IEnumerable<string> lines)
     {
         permission.Answer = answer;
         StopIsland(permission);
@@ -733,7 +741,7 @@ sealed class TerminalAgent : IDisposable
             step.State = answer == PermissionAnswer.Deny ? StepState.Denied : StepState.Running;
             changed.Add(step);
         }
-        Write(line);
+        Write(lines);
         Changed?.Invoke(changed);
     }
 
@@ -746,9 +754,9 @@ sealed class TerminalAgent : IDisposable
         _post(() =>
         {
             if (cancel.IsCancellationRequested || reply is null || permission.Answer is not null || !Running) return;
-            if (AgentProtocol.FromIsland(permission, reply) is not { } answer) return;
+            if (_driver.FromIsland(permission, reply) is not { } answer) return;
             permission.FromIsland = true;
-            Resolve(permission, answer.Answer, answer.Line);
+            Resolve(permission, answer.Answer, answer.Lines);
         });
     }
 
@@ -791,9 +799,11 @@ sealed class TerminalAgent : IDisposable
     {
         Volatile.Write(ref _draining, 0);
         var changed = new List<AgentBlock>();
+        var replies = new List<string>();
         while (_lines.TryDequeue(out var line))
-            foreach (var block in Transcript.Apply(line))
+            foreach (var block in _driver.Apply(line, replies))
                 if (!changed.Contains(block)) changed.Add(block);
+        Write(replies);
         if (AskIsland)
             foreach (var permission in changed.Where(b => b.Kind == AgentBlockKind.Permission && b.Answer is null && !_island.ContainsKey(b)))
                 _ = AskIslandAsync(permission);
@@ -806,18 +816,20 @@ sealed class TerminalAgent : IDisposable
         if (_process is { } process) Assistant.Kill(process);
     }
 
-    void Notice(string text) => Changed?.Invoke([Transcript.Notice(text)]);
+    void Notice(string text)
+    {
+        var notice = Transcript.Notice(text);
+        Changed?.Invoke([notice]);
+    }
 
-    string NextId() => $"claupet-{Interlocked.Increment(ref _requests)}";
-
-    void Write(string line)
+    void Write(IEnumerable<string> lines)
     {
         if (_process is not { } process) return;
         lock (_write)
         {
             try
             {
-                process.StandardInput.Write(line + "\n");
+                foreach (var line in lines) process.StandardInput.Write(line + "\n");
                 process.StandardInput.Flush();
             }
             catch (Exception) { }

@@ -1587,5 +1587,16 @@
   "Terminó con el código {0}": "Finished with code {0}",
   "Tipo": "Type",
   "Un shell en bloques: cada comando con su salida, su código de salida y lo que tardó. Los programas de pantalla completa (vim, htop) todavía no se pueden usar.": "A shell in blocks: each command with its output, its exit code and how long it took. Full-screen programs (vim, htop) can't be used yet.",
-  "Ver más líneas": "Show more lines"
+  "Ver más líneas": "Show more lines",
+  "No encontré {0}. ¿Está instalado y en el PATH?": "{0} was not found. Is it installed and on the PATH?",
+  "{0} en bloques, con sus permisos aquí y en la isla. El modelo, el esfuerzo y los permisos se eligen abajo, en la sesión, con lo que el agente dice tener.": "{0} in blocks, with its permissions here and on the island. Model, effort and permissions are chosen below, in the session, from what the agent says it has.",
+  "{0} necesita iniciar sesión: ejecute «{1}» una vez en una terminal y vuelva a escribir aquí ({2}).": "{0} needs you to sign in: run “{1}” once in a terminal and then write here again ({2}).",
+  "{0} no pudo abrir la sesión: {1}": "{0} couldn't open the session: {1}",
+  "El agente se negó a responder.": "The agent refused to answer.",
+  "Se alcanzó el límite de tokens de la respuesta.": "The response hit its token limit.",
+  "Se alcanzó el límite de pasos del turno.": "The turn hit its step limit.",
+  "Se interrumpió.": "Interrupted.",
+  "Codex respondió con un error.": "Codex replied with an error.",
+  "No se pudo abrir la sesión de Codex: {0}": "Couldn't open the Codex session: {0}",
+  "y {0} más": "and {0} more"
 }

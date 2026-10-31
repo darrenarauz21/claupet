@@ -34,8 +34,14 @@ sealed partial class TerminalPane
 
     // ── La pestaña ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>La marca de la pestaña: «C» para Claude Code, «>_» para un shell.</summary>
-    static string KindMark(Tab tab) => tab.Shell is null ? "C" : ">_";
+    /// <summary>La marca de la pestaña: la inicial del agente («C» Claude Code, «X» Codex, «G» Gemini, «P» Copilot) o «>_» para un shell.</summary>
+    static string KindMark(Tab tab) => tab.Shell is not null ? ">_" : tab.Agent.Options.Kind switch
+    {
+        AgentKinds.Codex => "X",
+        AgentKinds.Gemini => "G",
+        AgentKinds.Copilot => "P",
+        _ => "C",
+    };
 
     /// <summary>Trabajando: Claude Code en un turno o el shell con un comando corriendo.</summary>
     static bool Busy(Tab tab) => tab.Shell is { } shell ? shell.Transcript.Busy : tab.Agent.Transcript.Busy;
@@ -59,33 +65,45 @@ sealed partial class TerminalPane
     // ── La sesión nueva ─────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// «Tipo» en la sesión nueva: Claude Code o uno de los shells del equipo. Con un shell se ocultan los campos que son
-    /// solo de Claude Code (desde agentFields) y cambia la explicación de arriba.
+    /// «Tipo» en la sesión nueva: Claude Code, otro agente instalado (Codex, Gemini CLI, Copilot CLI) o uno de los shells
+    /// del equipo. Con otra cosa que Claude Code se ocultan sus campos (desde agentFields) y cambia la explicación de arriba.
     /// </summary>
     void KindField(StackPanel panel, TextBlock about, int agentFields)
     {
         var shells = Shells.Available();
-        if (shells.Count == 0) return;
+        var agents = AgentKinds.Available().Where(k => k != AgentKinds.Claude).ToList();
+        if (shells.Count == 0 && agents.Count == 0) return;
         if (_newShell is { } chosen && !shells.Contains(chosen)) _newShell = null;
+        if (!agents.Contains(_form.Kind)) _form.Kind = AgentKinds.Claude;
         var agentOnly = panel.Children.Skip(agentFields).ToList();
         var claudeAbout = about.Text;
-        var value = Ui.Text(_newShell?.Label ?? "Claude Code", 13, _ink.Text);
+        var value = Ui.Text("", 13, _ink.Text);
         void Show()
         {
-            value.Text = _newShell?.Label ?? "Claude Code";
-            foreach (var field in agentOnly) field.IsVisible = _newShell is null;
-            about.Text = _newShell is null ? claudeAbout : PseudoConsole.IsSupported
+            var claude = _newShell is null && _form.Kind == AgentKinds.Claude;
+            value.Text = _newShell?.Label ?? AgentKinds.Label(_form.Kind);
+            foreach (var field in agentOnly) field.IsVisible = claude;
+            about.Text = claude ? claudeAbout
+                : _newShell is null ? L.T("{0} en bloques, con sus permisos aquí y en la isla. El modelo, el esfuerzo y los permisos se eligen abajo, en la sesión, con lo que el agente dice tener.", AgentKinds.Label(_form.Kind))
+                : PseudoConsole.IsSupported
                 ? L.T("Un shell en bloques: cada comando con su salida, su código de salida y lo que tardó. Los programas de pantalla completa (vim, htop) todavía no se pueden usar.")
                 : L.T("La terminal de comandos todavía no está disponible en este sistema. Por ahora, solo en Windows 10 (1809) o más nuevo.");
         }
         var field = Field(L.T("Tipo"), value, anchor =>
         {
-            var entries = shells.Select(s => new DropList.Entry(s.Id, s.Label, s == _newShell))
-                .Prepend(new DropList.Entry("", "Claude Code", _newShell is null)).ToList();
+            // Los agentes van con «agente:» adelante para no confundirlos con el id de un shell.
+            var entries = agents.Select(k => new DropList.Entry("agente:" + k, AgentKinds.Label(k), _newShell is null && _form.Kind == k))
+                .Prepend(new DropList.Entry("agente:" + AgentKinds.Claude, "Claude Code", _newShell is null && _form.Kind == AgentKinds.Claude))
+                .Concat(shells.Select(s => new DropList.Entry(s.Id, s.Label, s == _newShell))).ToList();
             DropList.Show(anchor, _ink, entries, picked =>
             {
                 if (picked is null) return;
-                _newShell = shells.FirstOrDefault(s => s.Id == picked);
+                if (picked.StartsWith("agente:", StringComparison.Ordinal))
+                {
+                    _newShell = null;
+                    _form.Kind = picked["agente:".Length..];
+                }
+                else _newShell = shells.FirstOrDefault(s => s.Id == picked);
                 Show();
             });
             return Task.CompletedTask;

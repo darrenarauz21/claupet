@@ -435,29 +435,36 @@ sealed partial class TerminalPane : Grid
 
         var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(22, 8, 0, 0) };
         chips.Children.Add(Chip(tab.Account));
-        // El modelo, el esfuerzo y los permisos se cambian aquí durante la sesión; valen desde el turno siguiente.
+        // El modelo, el esfuerzo y los permisos se cambian aquí durante la sesión; valen desde el turno siguiente. Las
+        // listas son las del agente y se leen al tocar (Codex, Gemini y Copilot las dicen al abrir la sesión).
         var agent = tab.Agent;
+        var driver = agent.Driver;
         TextBlock? modelText = null, effortText = null, modeText = null;
-        chips.Children.Add(Chip(ModelLabel(agent.Transcript.Model?.Replace("claude-", "") ?? agent.Options.Model), anchor =>
-            DropList.Show(anchor, _ink, Launcher.Models.Select(m => new DropList.Entry(m, m)).Prepend(new DropList.Entry("", L.T("modelo por defecto"))).ToList(), picked =>
+        void Pick(Control anchor, IReadOnlyList<DropList.Entry> entries, Action<string> chosen)
+        {
+            if (entries.Count == 0) return;
+            DropList.Show(anchor, _ink, entries, picked =>
             {
-                if (picked is null) return;
+                if (picked is not null) chosen(picked);
+            });
+        }
+        chips.Children.Add(Chip(ModelLabel(agent.Transcript.Model?.Replace("claude-", "") ?? agent.Options.Model), anchor =>
+            Pick(anchor, driver.Models.Count == 0 ? [] : driver.Models.Select(m => new DropList.Entry(m, m)).Prepend(new DropList.Entry("", L.T("modelo por defecto"))).ToList(), picked =>
+            {
                 agent.SetModel(picked.Length == 0 ? null : picked);
                 modelText!.Text = picked.Length == 0 ? L.T("modelo por defecto") : picked;
             }), out modelText));
         chips.Children.Add(Chip(agent.Effort ?? L.T("esfuerzo por defecto"), anchor =>
-            DropList.Show(anchor, _ink, Launcher.Efforts.Select(e => new DropList.Entry(e, e, e == agent.Effort)).ToList(), picked =>
+            Pick(anchor, driver.Efforts.Select(e => new DropList.Entry(e, e, e == agent.Effort)).ToList(), picked =>
             {
-                if (picked is null) return;
                 agent.SetEffort(picked);
                 effortText!.Text = picked;
                 PaintStatus();
             }), out effortText));
         var mode = agent.Transcript.PermissionMode ?? agent.Options.PermissionMode ?? "default";
         chips.Children.Add(Chip(ModeLabel(mode), anchor =>
-            DropList.Show(anchor, _ink, TerminalAgent.Modes.Select(m => new DropList.Entry(m, ModeLabel(m), m == (agent.Transcript.PermissionMode ?? mode))).ToList(), picked =>
+            Pick(anchor, driver.Modes.Select(m => new DropList.Entry(m, ModeLabel(m), m == (agent.Transcript.PermissionMode ?? mode))).ToList(), picked =>
             {
-                if (picked is null) return;
                 agent.SetPermissionMode(picked);
                 modeText!.Text = ModeLabel(picked);
             }), out modeText));
@@ -1161,6 +1168,8 @@ sealed partial class TerminalPane : Grid
         public string Folder;
         public string? Account, Model, Effort;
         public string Mode;
+        /// <summary>El agente de la sesión (AgentKinds); con un shell elegido no cuenta.</summary>
+        public string Kind = AgentKinds.Claude;
 
         public NewForm()
         {
@@ -1175,7 +1184,8 @@ sealed partial class TerminalPane : Grid
         "acceptEdits" => L.T("acepta ediciones"),
         "plan" => L.T("solo planifica"),
         "auto" => L.T("automático"),
-        _ => L.T("pregunta antes"),
+        "default" or "" => L.T("pregunta antes"),
+        _ => mode,
     };
 
     Control NewSession()
@@ -1223,7 +1233,7 @@ sealed partial class TerminalPane : Grid
             await Task.CompletedTask;
         }));
 
-        // Desde aquí, los campos que son solo de Claude Code (con un shell se ocultan: TerminalPane.Shell.cs).
+        // Desde aquí, los campos que son solo de Claude Code (con un shell u otro agente se ocultan: TerminalPane.Shell.cs).
         var agentFields = panel.Children.Count;
         var accountLabel = Ui.Text(AccountLabel(accounts, _form.Account), 13, _ink.Text);
         panel.Children.Add(Field(L.T("Cuenta"), accountLabel, anchor =>
@@ -1316,13 +1326,22 @@ sealed partial class TerminalPane : Grid
             return;
         }
         if (!Directory.Exists(_form.Folder)) return;
-        var account = accounts.FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, _form.Account ?? ""));
-        var options = new AgentOptions(_form.Folder, account?.ConfigDir, _form.Model, _form.Effort, _form.Mode);
-        TerminalRecents.Remember(options);
+        var claude = _form.Kind == AgentKinds.Claude;
+        var account = claude ? accounts.FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, _form.Account ?? "")) : null;
+        // Codex, Gemini y Copilot abren con lo suyo: el modelo y lo demás se eligen en la sesión, con lo que dicen tener.
+        var options = claude
+            ? new AgentOptions(_form.Folder, account?.ConfigDir, _form.Model, _form.Effort, _form.Mode)
+            : new AgentOptions(_form.Folder, Kind: _form.Kind);
+        if (claude) TerminalRecents.Remember(options);
+        else
+        {
+            var last = TerminalRecents.Load();
+            TerminalRecents.Remember(new AgentOptions(_form.Folder, last.Account, last.Model, last.Effort, last.Mode));
+        }
         LinkProject(options.Folder);
         // Una copia de prueba (--preview) no le pasa los permisos a la isla de la app de siempre.
         var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview") };
-        var tab = new Tab(agent, account?.Label ?? L.T("cuenta por defecto"));
+        var tab = new Tab(agent, claude ? account?.Label ?? L.T("cuenta por defecto") : AgentKinds.Label(_form.Kind));
         agent.Changed += changed => OnChanged(tab, changed);
         _tabs.Add(tab);
         _current = tab;
