@@ -63,7 +63,7 @@ Claude Code's **Permissions** modes:
 ### How to write to it
 
 Type in the box at the bottom, next to **❯**. **Enter** sends and **Shift+Enter** adds a new line. While it's
-working, **Interrupt** (at the top) stops the turn.
+working, **Interrupt** (the square at the top, or **Esc**) stops the turn.
 
 At the top of the session you see the project, its branch, the model and effort, how much of the context it
 has used ("context 42%") and the account's 5-hour session usage ("5 h 18%").
@@ -160,10 +160,18 @@ with code 1") and how long it took.
 |---|---|
 | **Enter** | Runs the command. |
 | **↑** / **↓** | Go through previous commands. |
-| **Ctrl+C** or **Esc** | Interrupt the one that's running. |
+| **Ctrl+C** | Interrupts the one that's running (with nothing running, clears what you typed). |
 
 - While a command is running, what you type goes to it (for example, to answer "Continue? [Y/N]").
-- Hovering over a block shows **Copy** and **Repeat**.
+  With the box empty, the arrows, **Tab**, **Enter** and **Esc** go straight to it: that's how you pick an
+  option in a question, like `claude`'s trust prompt.
+- Hovering over a block shows the **Copy** and **Repeat** icons.
+
+### Full-screen programs
+
+Programs that use the whole screen (`vim`, `nano`, `less`, the `git log` pager, `claude`, `htop`) fill the
+session, with their colors and sized to the panel, like in any terminal. Keys, text, the mouse wheel and
+**Ctrl+V** (paste) go straight to them. When the program exits, the blocks come back.
 - A block shows the first 30 lines; **Show more lines** opens the rest. The last 400 are kept.
 
 ## Projects
@@ -204,8 +212,7 @@ three tabs:
 
 ## Settings › Terminal
 
-How sessions look. Open it with the gear (**Terminal settings**) at the top of the list, or from
-**Settings › Terminal** in the Console. It's saved on this computer and applies to every tab.
+How sessions look. Open it from **Settings › Terminal** in the Console. It's saved on this computer and applies to every tab.
 
 <p align="center">
   <img src="../../capturas/manual/terminal-ajustes.png" alt="The Terminal settings with their preview" width="720">
@@ -227,8 +234,7 @@ original values.
 ## Limits
 
 - **Closing Claupet Console closes every Terminal session**: no agent is left running.
-- Shells in blocks don't exist yet on macOS or Linux, and they don't work for full-screen programs like
-  `vim` or `htop`.
+- Shells in blocks don't exist yet on macOS or Linux.
 - The other agents need to be installed and signed in.
 
 ---

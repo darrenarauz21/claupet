@@ -14,7 +14,6 @@ using Avalonia.Media;
 /// </summary>
 sealed partial class TerminalPane
 {
-    const string GearIcon = "M12,9 A3,3 0 1 0 12.01,9 Z M19.4,15 A1.7,1.7 0 0 0 19.7,16.9 L19.8,17 A2,2 0 1 1 17,19.8 L16.9,19.7 A1.7,1.7 0 0 0 15,19.4 A1.7,1.7 0 0 0 14,21 V21.2 A2,2 0 1 1 10,21.2 V21 A1.7,1.7 0 0 0 9,19.4 A1.7,1.7 0 0 0 7.1,19.7 L7,19.8 A2,2 0 1 1 4.2,17 L4.3,16.9 A1.7,1.7 0 0 0 4.6,15 A1.7,1.7 0 0 0 3,14 H2.8 A2,2 0 1 1 2.8,10 H3 A1.7,1.7 0 0 0 4.6,9 A1.7,1.7 0 0 0 4.3,7.1 L4.2,7 A2,2 0 1 1 7,4.2 L7.1,4.3 A1.7,1.7 0 0 0 9,4.6 A1.7,1.7 0 0 0 10,3 V2.8 A2,2 0 1 1 14,2.8 V3 A1.7,1.7 0 0 0 15,4.6 A1.7,1.7 0 0 0 16.9,4.3 L17,4.2 A2,2 0 1 1 19.8,7 L19.7,7.1 A1.7,1.7 0 0 0 19.4,9 A1.7,1.7 0 0 0 21,10 H21.2 A2,2 0 1 1 21.2,14 H21 A1.7,1.7 0 0 0 19.4,15 Z";
     const string ListIcon = "M9,6 H20 M9,12 H20 M9,18 H20 M4.5,6 H5 M4.5,12 H5 M4.5,18 H5";
     const string GridIcon = "M4,4 H10 V10 H4 Z M14,4 H20 V10 H14 Z M4,14 H10 V20 H4 Z M14,14 H20 V20 H14 Z";
 
@@ -63,7 +62,7 @@ sealed partial class TerminalPane
             () => ChangeLook(l => l.IconsOnly = !l.IconsOnly)));
         if (!icons && Projects().Count > 1)
             panel.Children.Add(Round(AllFolded ? UnfoldAllIcon : FoldAllIcon, AllFolded ? L.T("Desplegar todos los proyectos") : L.T("Plegar todos los proyectos"), FoldAll));
-        panel.Children.Add(Round(GearIcon, L.T("Ajustes de la Terminal"), () => { if (_settings) CloseSettings(); else ShowSettings(); }));
+        // Los ajustes de la Terminal están en Ajustes › Terminal, con los demás.
         add.Margin = icons ? default : new Thickness(4, 0, 0, 0);
         panel.Children.Add(add);
         return panel;

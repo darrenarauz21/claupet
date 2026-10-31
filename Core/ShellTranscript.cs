@@ -27,7 +27,12 @@ sealed class ShellBlock
     public TimeSpan? Duration { get; set; }
 
     public string Output => string.Join("\n", Lines);
-    public bool Failed => ExitCode is { } code && code != 0;
+    /// <summary>Terminó con error. Cortado con Ctrl+C o con el paginador cerrado antes del final no cuenta (lo pidió la persona).</summary>
+    public bool Failed => ExitCode is { } code && code != 0 && !Interrupted && !PagerClosed;
+    /// <summary>Se cerró el paginador antes del final (q en less): git y otros terminan con 141 (SIGPIPE).</summary>
+    public bool PagerClosed => ExitCode == 141;
+    /// <summary>Lo cortó Ctrl+C: Windows le da STATUS_CONTROL_C_EXIT (0xC000013A).</summary>
+    public bool Interrupted => ExitCode == unchecked((int)0xC000013A);
 }
 
 /// <summary>
@@ -82,6 +87,12 @@ sealed class ShellTranscript
     int _inputRow = -1, _inputCol;
     /// <summary>Se vio la marca B desde el último prompt: lo que se escribe ya es el comando.</summary>
     bool _inputMarked;
+    /// <summary>
+    /// El shell marca con C dónde empieza la salida (PowerShell y bash de la Terminal lo hacen). Desde entonces no se
+    /// adivina por el salto de línea: ConPTY manda saltos sueltos para correr la pantalla cuando el eco de un comando
+    /// largo se parte en la última fila, y la parte de abajo del eco quedaba como salida.
+    /// </summary>
+    bool _marksOutput;
     ShellBlock? _running;
 
     public ShellTranscript(int cols = 120, int rows = 40)
@@ -255,7 +266,7 @@ sealed class ShellTranscript
         if (AltScreen) return;
         NextRow();
         // Sin la marca C, la salida empieza después del eco del comando.
-        if (_phase == Phase.Input && _inputMarked && _running is not null)
+        if (!_marksOutput && _phase == Phase.Input && _inputMarked && _running is not null)
         {
             _phase = Phase.Output;
             _outputTop = _row;
@@ -441,11 +452,15 @@ sealed class ShellTranscript
         }
     }
 
+    /// <summary>
+    /// La pantalla alterna (vim, less, claude…): lo que se pinta ahí no va a los bloques. La muestra la pantalla
+    /// completa de la Terminal (ShellSession.Screen); al salir, el bloque sigue con lo que quede en la normal.
+    /// </summary>
     void Alternate(bool on, List<ShellBlock> changed)
     {
         if (on == AltScreen) return;
         AltScreen = on;
-        if (on) Touch(Notice(L.T("Este programa usa la pantalla completa (como vim o htop), que todavía no se puede mostrar aquí. Ctrl+C o Esc lo interrumpe.")), changed);
+        if (_running is { } running) Touch(running, changed);
     }
 
     void EndOsc(List<ShellBlock> changed)
@@ -498,11 +513,19 @@ sealed class ShellTranscript
                 _inputCol = _col;
                 break;
             case "C":
+                _marksOutput = true;
                 if (_phase == Phase.Output) break;
                 if (_running is null)
                 {
-                    // Un comando que no se envió desde la app: se toma del eco, si todavía se ve.
-                    var block = new ShellBlock { Kind = ShellBlockKind.Command, Command = _inputRow >= 0 ? Echo() : "", Cwd = Cwd, Running = true };
+                    // Un comando que no se envió desde la app: se toma del eco, si todavía se ve. Un Ctrl+C en el prompt
+                    // (el eco es «^C») o una línea vacía no son comandos.
+                    var echo = _inputRow >= 0 ? Echo() : "";
+                    if (echo.Length == 0 || echo == "^C")
+                    {
+                        _phase = Phase.Idle;
+                        break;
+                    }
+                    var block = new ShellBlock { Kind = ShellBlockKind.Command, Command = echo, Cwd = Cwd, Running = true };
                     _blocks.Add(block);
                     StartRunning(block);
                     Touch(block, changed);

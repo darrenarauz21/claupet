@@ -17,6 +17,11 @@ sealed partial class TerminalPane
 {
     /// <summary>Cuántas líneas de la salida se ven en un bloque antes de «… N líneas más».</summary>
     const int ShellPreview = 30;
+    const string CopyIcon = "M9,9 H18 A1,1 0 0 1 19,10 V19 A1,1 0 0 1 18,20 H9 A1,1 0 0 1 8,19 V10 A1,1 0 0 1 9,9 Z M5,15 V5 A1,1 0 0 1 6,4 H15";
+    const string RepeatIcon = "M4,12 A8,8 0 1 0 6.4,6.3 M4,3.5 V8 H8.5";
+
+    /// <summary>La pantalla completa del shell elegido, mientras un programa la usa (vim, less, claude…).</summary>
+    TerminalScreen? _screen;
 
     /// <summary>El shell elegido en la sesión nueva; null es Claude Code.</summary>
     ShellChoice? _newShell;
@@ -124,6 +129,12 @@ sealed partial class TerminalPane
         // El agente de la pestaña no se abre nunca: solo lleva la carpeta (la lista agrupa por ella).
         var tab = new Tab(new TerminalAgent(new AgentOptions(folder), _ => { }), choice.Label) { Shell = shell };
         shell.Changed += changed => OnShellChanged(tab, changed);
+        // Un programa entró o salió de la pantalla completa: la sesión se rearma (la pantalla o los bloques).
+        shell.FullScreenChanged += () =>
+        {
+            if (tab == _current && !_creating && !_settings) Build();
+            else RenderList();
+        };
         _tabs.Add(tab);
         _current = tab;
         _creating = false;
@@ -143,6 +154,28 @@ sealed partial class TerminalPane
         _shellViews.Clear();
         _shellLive.Clear();
         _history = -1;
+        if (shell.FullScreen)
+        {
+            // La pantalla completa ocupa la sesión entera, con las teclas directo al programa.
+            RowDefinitions = new RowDefinitions("46,*");
+            Children.Add(ShellHeader(tab, shell));
+            _screen = new TerminalScreen(shell, _ink, Mono, _look.Size);
+            var frame = new Border
+            {
+                Margin = new Thickness(16, 0, 16, 16),
+                Padding = new Thickness(12, 10),
+                CornerRadius = new CornerRadius(12),
+                Background = _ink.Raised,
+                BorderBrush = _ink.Hairline,
+                BorderThickness = new Thickness(1),
+                Child = _screen,
+            };
+            Grid.SetRow(frame, 1);
+            Children.Add(frame);
+            PaintShellStatus(shell);
+            Dispatcher.UIThread.Post(() => _screen?.Focus(), DispatcherPriority.Input);
+            return;
+        }
         RowDefinitions = new RowDefinitions("46,*,Auto");
         Children.Add(ShellHeader(tab, shell));
         Grid.SetRow(_scroll, 1);
@@ -178,31 +211,39 @@ sealed partial class TerminalPane
         ToolTip.SetTip(where, shell.Folder);
         bar.Children.Add(where);
         _shellStatus = Ui.Text("", 12, _ink.Tertiary, family: Mono);
-        _shellStatus.Margin = new Thickness(12, 0, 0, 0);
+        _shellStatus.Margin = new Thickness(12, 0, 8, 0);
         _shellStatus.TextTrimming = TextTrimming.PrefixCharacterEllipsis;
+        _shellStatus.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(_shellStatus, 1);
         bar.Children.Add(_shellStatus);
-        _shellInterrupt = Pill(L.T("Interrumpir"), _ink.Pill, _ink.Text, shell.Interrupt);
-        ToolTip.SetTip(_shellInterrupt, "Ctrl+C");
+        _shellInterrupt = Round(StopIcon, L.T("Interrumpir (Ctrl+C)"), shell.Interrupt);
         Grid.SetColumn(_shellInterrupt, 2);
         bar.Children.Add(_shellInterrupt);
         var close = Round(CloseIcon, L.T("Cerrar la sesión"), () => CloseTab(tab));
-        close.Margin = new Thickness(4, 0, 0, 0);
+        close.Margin = new Thickness(2, 0, 0, 0);
         Grid.SetColumn(close, 3);
         bar.Children.Add(close);
         return bar;
     }
 
-    /// <summary>La franja de arriba: el shell y su carpeta (o que está abriendo); «Interrumpir» mientras corre un comando.</summary>
+    /// <summary>
+    /// La franja de arriba: lo justo. Mientras abre, «Abriendo…»; en la pantalla completa, el programa; si se fue a otra
+    /// carpeta, esa carpeta (el proyecto y la rama ya están a la izquierda). Interrumpir, mientras corre un comando.
+    /// </summary>
     void PaintShellStatus(ShellSession shell)
     {
         var t = shell.Transcript;
-        _shellStatus.Text = !shell.Running ? shell.Shell.Label
+        _shellStatus.Text = !shell.Running ? L.T("{0} se cerró", shell.Shell.Label)
             : !t.Ready ? L.T("Abriendo {0}…", shell.Shell.Label)
-            : $"{shell.Shell.Label} · {t.Cwd ?? shell.Folder}";
-        ToolTip.SetTip(_shellStatus, _shellStatus.Text);
+            : shell.FullScreen ? (t.Blocks.LastOrDefault(b => b.Running)?.Command ?? shell.Shell.Label)
+            : t.Cwd is { } cwd && !SameFolder(cwd, shell.Folder) ? ShortPath(cwd)
+            : "";
+        ToolTip.SetTip(_shellStatus, t.Cwd ?? shell.Folder);
         _shellInterrupt.IsVisible = t.Busy && shell.Running;
     }
+
+    static bool SameFolder(string a, string b) =>
+        string.Equals(Path.TrimEndingDirectorySeparator(a), Path.TrimEndingDirectorySeparator(b), StringComparison.OrdinalIgnoreCase);
 
     Control ShellComposer(ShellSession shell)
     {
@@ -212,7 +253,7 @@ sealed partial class TerminalPane
         _input.MaxHeight = 180;
         Plain(_input);
         _input.FontSize = _look.Size;
-        _input.Watermark = shell.Transcript.Busy ? L.T("Lo que escriba le llega al comando que corre") : L.T("Escriba un comando");
+        _input.Watermark = shell.Transcript.Busy ? BusyHint : L.T("Escriba un comando");
         Ui.AutomationName(_input, L.T("Comando para {0}", shell.Shell.Label));
 
         var line = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
@@ -235,9 +276,8 @@ sealed partial class TerminalPane
 
         var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(22, 8, 0, 0) };
         chips.Children.Add(Chip(shell.Shell.Label));
-        var hint = Ui.Text(L.T("Intro ejecuta · ↑ los anteriores · Ctrl+C o Esc interrumpe"), 11.5, _ink.Tertiary);
-        hint.Margin = new Thickness(6, 0, 0, 0);
-        chips.Children.Add(hint);
+        // Las teclas, al pasar el cursor por la caja (no una línea más debajo).
+        ToolTip.SetTip(_input, L.T("Intro ejecuta · ↑ los anteriores · Ctrl+C interrumpe · con un comando corriendo y la caja vacía, las flechas, Tab, Intro y Esc le llegan directo"));
 
         var card = new StackPanel();
         card.Children.Add(line);
@@ -254,14 +294,32 @@ sealed partial class TerminalPane
         };
     }
 
-    /// <summary>Las teclas de la caja en un shell: Intro ejecuta, Esc o Ctrl+C (sin selección) interrumpen, ↑ y ↓ recorren los comandos.</summary>
+    /// <summary>Lo que dice la caja mientras corre un comando.</summary>
+    static string BusyHint => L.T("Para el programa que corre");
+
+    /// <summary>
+    /// Las teclas de la caja en un shell: Intro ejecuta, Ctrl+C (sin selección) interrumpe, ↑ y ↓ recorren los comandos.
+    /// Mientras corre uno y con la caja vacía, las flechas, Tab, Esc y las demás teclas de mover le llegan al programa
+    /// (una pregunta con opciones, como la de confianza de claude, se contesta como en cualquier terminal).
+    /// </summary>
     bool ShellKey(ShellSession shell, KeyEventArgs e)
     {
         var selection = _input.SelectionEnd != _input.SelectionStart;
-        if (e.Key == Key.Escape || (e.Key == Key.C && e.KeyModifiers == KeyModifiers.Control && !selection))
+        if (e.Key == Key.C && e.KeyModifiers == KeyModifiers.Control && !selection)
         {
-            if (!shell.Transcript.Busy && e.Key == Key.Escape) return false;
+            if (!shell.Transcript.Busy)
+            {
+                // Sin nada corriendo, Ctrl+C borra lo escrito en la caja (como en el prompt); no se le manda al shell.
+                _input.Text = "";
+                _history = -1;
+                return true;
+            }
             shell.Interrupt();
+            return true;
+        }
+        if (shell.Transcript.Busy && (_input.Text ?? "").Length == 0 && PassThrough(shell, e) is { } keys)
+        {
+            shell.Input(keys);
             return true;
         }
         if (e.Key == Key.Enter && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
@@ -280,6 +338,35 @@ sealed partial class TerminalPane
             return true;
         }
         return false;
+    }
+
+    /// <summary>Lo que manda una tecla de mover al programa que corre (con la caja vacía); null si es para la caja.</summary>
+    static string? PassThrough(ShellSession shell, KeyEventArgs e)
+    {
+        if (e.KeyModifiers is not (KeyModifiers.None or KeyModifiers.Shift)) return null;
+        var screen = shell.Screen;
+        XTerm.Input.Key? key = e.Key switch
+        {
+            Key.Up => XTerm.Input.Key.UpArrow,
+            Key.Down => XTerm.Input.Key.DownArrow,
+            Key.Left => XTerm.Input.Key.LeftArrow,
+            Key.Right => XTerm.Input.Key.RightArrow,
+            Key.Home => XTerm.Input.Key.Home,
+            Key.End => XTerm.Input.Key.End,
+            Key.PageUp => XTerm.Input.Key.PageUp,
+            Key.PageDown => XTerm.Input.Key.PageDown,
+            Key.Delete => XTerm.Input.Key.Delete,
+            _ => null,
+        };
+        if (key is { } k) return screen.GenerateKeyInput(k);
+        return e.Key switch
+        {
+            Key.Escape => "\x1b",
+            Key.Tab => e.KeyModifiers == KeyModifiers.Shift ? "\x1b[Z" : "\t",
+            Key.Back => "\x7f",
+            Key.Space => " ",
+            _ => null,
+        };
     }
 
     void SubmitShell(ShellSession shell)
@@ -307,6 +394,13 @@ sealed partial class TerminalPane
             if (listChanged) RenderList();
             return;
         }
+        if (shell.FullScreen)
+        {
+            // Los bloques no se ven: se rearman al salir de la pantalla completa.
+            PaintShellStatus(shell);
+            if (listChanged) RenderList();
+            return;
+        }
         var atEnd = _scroll.Offset.Y >= _scroll.Extent.Height - _scroll.Viewport.Height - 40;
         if (changed.Count > 0 && _shellViews.Count == 0) _blocks.Children.Clear();
         foreach (var block in changed)
@@ -325,7 +419,7 @@ sealed partial class TerminalPane
         }
         PaintShellStatus(shell);
         if (before.Busy != state.Busy)
-            _input.Watermark = shell.Transcript.Busy ? L.T("Lo que escriba le llega al comando que corre") : L.T("Escriba un comando");
+            _input.Watermark = shell.Transcript.Busy ? BusyHint : L.T("Escriba un comando");
         if (listChanged) RenderList();
         if (atEnd) Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }
@@ -359,10 +453,10 @@ sealed partial class TerminalPane
         Grid.SetColumn(command, 1);
         head.Children.Add(command);
 
-        // Copiar y Repetir aparecen al pasar el cursor (sin mover nada: ya ocupan su lugar).
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(8, 0, 0, 0), Opacity = 0, VerticalAlignment = VerticalAlignment.Top };
-        actions.Children.Add(Pill(L.T("Copiar"), _ink.Raised, _ink.Secondary, () => Copy(block)));
-        if (!block.Running) actions.Children.Add(Pill(L.T("Repetir"), _ink.Raised, _ink.Secondary, () => Repeat(block)));
+        // Copiar y Repetir, con íconos, aparecen al pasar el cursor (sin mover nada: ya ocupan su lugar).
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Margin = new Thickness(8, -4, 0, -4), Opacity = 0, VerticalAlignment = VerticalAlignment.Top };
+        actions.Children.Add(Tool(CopyIcon, L.T("Copiar"), () => Copy(block)));
+        if (!block.Running) actions.Children.Add(Tool(RepeatIcon, L.T("Repetir"), () => Repeat(block)));
         Grid.SetColumn(actions, 2);
         head.Children.Add(actions);
 
@@ -372,7 +466,8 @@ sealed partial class TerminalPane
         Grid.SetColumn(state, 3);
         head.Children.Add(state);
 
-        if (block.Cwd is { } cwd)
+        // La carpeta, solo si no es la de la sesión (la de siempre ya se ve a la izquierda).
+        if (block.Cwd is { } cwd && (_current?.Shell is not { } session || !SameFolder(cwd, session.Folder)))
         {
             var where = Ui.Text(ShortPath(cwd), 11.5, _ink.Tertiary, family: Mono);
             where.TextTrimming = TextTrimming.PrefixCharacterEllipsis;
@@ -410,7 +505,12 @@ sealed partial class TerminalPane
         }
         if (block.Duration is { } took)
             row.Children.Add(Ui.Text(Duration(took), 11.5, _ink.Tertiary));
-        if (block.ExitCode is not { } code) return row;
+        if (block.ExitCode is not { } code || block.PagerClosed) return row;
+        if (block.Interrupted)
+        {
+            row.Children.Add(Ui.Text(L.T("interrumpido"), 11.5, _ink.Tertiary));
+            return row;
+        }
         if (code == 0)
         {
             var ok = Icon(CheckIcon, Added, 13, 2.2);
@@ -476,6 +576,17 @@ sealed partial class TerminalPane
         return text;
     }
 
+
+    /// <summary>Un botón chico con ícono, para las acciones de un bloque (se resalta sobre el fondo del bloque).</summary>
+    Border Tool(string path, string name, Action onClick)
+    {
+        var button = Ui.Press(Icon(path, _ink.Secondary, 13, 1.8), onClick, (b, on) => b.Background = on ? _ink.Track : Brushes.Transparent, name);
+        button.Width = 26;
+        button.Height = 26;
+        button.CornerRadius = new CornerRadius(999);
+        ToolTip.SetTip(button, name);
+        return button;
+    }
 
     /// <summary>Copia la salida; si no tuvo, el comando.</summary>
     void Copy(ShellBlock block)

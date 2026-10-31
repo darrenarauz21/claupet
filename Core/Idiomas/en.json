@@ -1604,5 +1604,12 @@
   "No se pudo abrir la sesión de Codex: {0}": "Couldn't open the Codex session: {0}",
   "y {0} más": "and {0} more",
   "Ver los {0} bloques anteriores": "Show the {0} earlier blocks",
-  "Ver los bloques anteriores": "Show the earlier blocks"
+  "Ver los bloques anteriores": "Show the earlier blocks",
+  "1 turno": "1 turn",
+  "Interrumpir (Ctrl+C)": "Interrupt (Ctrl+C)",
+  "Interrumpir (Esc)": "Interrupt (Esc)",
+  "{0} se cerró": "{0} closed",
+  "interrumpido": "interrupted",
+  "Para el programa que corre": "For the running program",
+  "Intro ejecuta · ↑ los anteriores · Ctrl+C interrumpe · con un comando corriendo y la caja vacía, las flechas, Tab, Intro y Esc le llegan directo": "Enter runs · ↑ previous commands · Ctrl+C interrupts · while a command runs and the box is empty, arrows, Tab, Enter and Esc go straight to it"
 }

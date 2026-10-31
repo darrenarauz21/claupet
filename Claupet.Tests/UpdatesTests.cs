@@ -309,7 +309,7 @@ public sealed class UpdatesTests
     }
 
     [Fact]
-    public void Se_borran_las_extracciones_de_versiones_anteriores_salvo_la_actual_y_las_en_uso()
+    public void Se_borran_las_extracciones_de_versiones_anteriores_salvo_la_actual_y_las_en_uso_enteras()
     {
         using var temp = new TempDir();
         var root = Directory.CreateDirectory(temp[".net/Claupet"]).FullName;
@@ -318,11 +318,15 @@ public sealed class UpdatesTests
         foreach (var old in new[] { "vieja1", "vieja2" })
             File.WriteAllText(Path.Combine(Directory.CreateDirectory(Path.Combine(root, old)).FullName, "onnxruntime.dll"), "x");
         var busy = Directory.CreateDirectory(Path.Combine(root, "en-uso")).FullName;
-        // Abierta sin dejar borrar ni renombrar, como una biblioteca cargada por otra versión.
+        // Una que esa versión todavía no cargó: no se tiene que ir (la cargaría después y fallaría).
+        File.WriteAllText(Path.Combine(busy, "System.Net.Primitives.dll"), "x");
+        // Abierta sin dejar escribir, como una biblioteca cargada por otra versión.
         using (new FileStream(Path.Combine(busy, "libSkiaSharp.dll"), FileMode.Create, FileAccess.ReadWrite, FileShare.Read))
             Assert.Equal(2, Updates.DeleteOldExtractions(current));
         Assert.True(Directory.Exists(current));
-        Assert.True(File.Exists(Path.Combine(busy, "libSkiaSharp.dll")) || File.Exists(Path.Combine(busy + ".borrar", "libSkiaSharp.dll")));
+        Assert.True(File.Exists(Path.Combine(busy, "libSkiaSharp.dll")));
+        Assert.True(File.Exists(Path.Combine(busy, "System.Net.Primitives.dll")));
+        Assert.False(Directory.Exists(busy + ".borrar"));
         Assert.False(Directory.Exists(Path.Combine(root, "vieja1")));
         Assert.False(Directory.Exists(Path.Combine(root, "vieja2")));
         // Ya libre, la próxima vez se va.

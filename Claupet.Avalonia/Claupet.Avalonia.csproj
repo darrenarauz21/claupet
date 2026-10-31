@@ -44,6 +44,8 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.3.0" />
+    <!-- La pantalla completa de los shells de Claupet Terminal (vim, less, claude…): interpreta las secuencias VT. -->
+    <PackageReference Include="XTerm.NET" Version="3.0.0" />
     <!-- En Windows, avisa al desbloquear, al volver de suspender y al cambiar las pantallas (la mascota vuelve a verse). -->
     <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.14" />
     <!-- La voz: Whisper (voz a texto), Supertonic con ONNX Runtime (texto a voz) y PortAudio (el micrófono y los
