@@ -70,7 +70,9 @@ static class LocalModel
         if (!GpuServerReady) return null;
         try
         {
-            using var process = Process.Start(new ProcessStartInfo(GpuServerExe, "--list-devices")
+            // -v antes de --list-devices (que sale al leerlo): así escribe también «ggml_vulkan: N = … | uma: …» por
+            // cada gráfica, aunque la salida esté capturada.
+            using var process = Process.Start(new ProcessStartInfo(GpuServerExe, "-v --list-devices")
             {
                 WorkingDirectory = ServerFolder, UseShellExecute = false, CreateNoWindow = true,
                 RedirectStandardOutput = true, RedirectStandardError = true,
@@ -89,22 +91,29 @@ static class LocalModel
     }
 
     /// <summary>
-    /// De lo que escribe --list-devices, la primera gráfica: «  Vulkan0: AMD Radeon(TM) Graphics (12978 MiB, …)» da su
-    /// nombre. En una terminal escribe además «ggml_vulkan: 0 = … | uma: 1 | …» (uma: comparte la memoria con el
-    /// procesador): con esa línea dice también «integrada». Capturada, como la lee la app, esa no sale.
+    /// De lo que escribe -v --list-devices, la gráfica en que correría: con «ggml_vulkan: N = … | uma: 0|1 | …» (uma:
+    /// comparte la memoria con el procesador), la primera dedicada y, si no hay ninguna, la primera integrada (con
+    /// «integrada»), que es como elige llama.cpp: en una laptop con Intel y NVIDIA, Vulkan0 es la Intel pero corre en la
+    /// NVIDIA. Sin esas líneas, el nombre de la primera de la lista («  Vulkan0: AMD Radeon(TM) Graphics (12978 MiB, …)»).
     /// </summary>
     internal static string? ParseGpu(string text)
     {
-        const string Detail = "ggml_vulkan: 0 = ", Listed = "Vulkan0: ";
+        const string Detail = "ggml_vulkan: ", Listed = "Vulkan0: ";
         var lines = text.Split('\n');
+        string? integrated = null;
         foreach (var line in lines)
         {
             var at = line.IndexOf(Detail, StringComparison.Ordinal);
             if (at < 0) continue;
             var rest = line[(at + Detail.Length)..];
+            var equals = rest.IndexOf(" = ", StringComparison.Ordinal);
+            if (equals < 1 || !rest[..equals].All(char.IsAsciiDigit)) continue; // «Found 2 Vulkan devices:» y otras
+            rest = rest[(equals + 3)..];
             var name = rest.Split([" (", " |"], 2, StringSplitOptions.None)[0].Trim();
-            return rest.Contains("uma: 1", StringComparison.Ordinal) ? L.T("{0} (integrada)", name) : name;
+            if (!rest.Contains("uma: 1", StringComparison.Ordinal)) return name;
+            integrated ??= L.T("{0} (integrada)", name);
         }
+        if (integrated is not null) return integrated;
         foreach (var line in lines)
             if (line.Trim() is var listed && listed.StartsWith(Listed, StringComparison.Ordinal))
                 return listed[Listed.Length..].Split(" (", 2)[0].Trim();
