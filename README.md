@@ -14,7 +14,7 @@
 ![Pets](https://img.shields.io/badge/pets-Chibi%20·%20Dokki%20·%20Gemma%20·%20Ciel-8B5CF6)
 ![License](https://img.shields.io/badge/license-MIT-2A1F1A)
 
-[Download](#download) · [Meet the pets](#meet-the-pets) · [Install](#install) · [For developers](#for-developers)
+[Download](#download) · [Meet the pets](#meet-the-pets) · [Install](#install) · [User guide](docs/manual/en/README.md) · [For developers](#for-developers)
 
 </div>
 
@@ -57,6 +57,8 @@ Copilot too? Claupet follows them as well.
   <img src="docs/capturas/isla-chat.png" alt="The island with an answer" width="48%">
   <img src="docs/capturas/caja.png" alt="The pet carries a file to the island, which summarizes it" width="48%">
 </p>
+
+📖 **[User guide](docs/manual/en/README.md):** every feature, step by step, with screenshots.
 
 ## Meet the pets
 

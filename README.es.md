@@ -14,7 +14,7 @@
 ![Mascotas](https://img.shields.io/badge/mascotas-Chibi%20·%20Dokki%20·%20Gemma%20·%20Ciel-8B5CF6)
 ![Licencia](https://img.shields.io/badge/licencia-MIT-2A1F1A)
 
-[Descargar](#descargar) · [Las mascotas](#conozca-a-las-mascotas) · [Instalar](#instalar) · [Para desarrolladores](#para-desarrolladores)
+[Descargar](#descargar) · [Las mascotas](#conozca-a-las-mascotas) · [Instalar](#instalar) · [Manual de uso](docs/manual/README.md) · [Para desarrolladores](#para-desarrolladores)
 
 </div>
 
@@ -59,6 +59,8 @@ Claupet los sigue a ellos también.
   <img src="docs/capturas/isla-chat.png" alt="La isla con una respuesta" width="48%">
   <img src="docs/capturas/caja.png" alt="La mascota lleva un archivo en una caja hasta la isla, que lo resume" width="48%">
 </p>
+
+📖 **[Manual de uso](docs/manual/README.md):** cada función, paso a paso, con capturas.
 
 ## Conozca a las mascotas
 
