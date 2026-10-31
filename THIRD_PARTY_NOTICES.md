@@ -10,7 +10,7 @@ incluyen las bibliotecas de esta lista, cada una con su propia licencia.
 | Whisper.net | 1.9.1 | MIT, © 2024 sandrohanea | https://github.com/sandrohanea/whisper.net |
 | Whisper.net.Runtime (whisper.cpp) | 1.9.1 | MIT | https://github.com/ggml-org/whisper.cpp |
 | Microsoft.ML.OnnxRuntime | 1.20.1 | MIT, © Microsoft Corporation | https://github.com/microsoft/onnxruntime |
-| System.Speech | 8.0.0 | MIT, © .NET Foundation | https://github.com/dotnet/runtime |
+| System.Speech | 10.0.14 | MIT, © .NET Foundation | https://github.com/dotnet/runtime |
 | Avalonia (Claupet Console; la app de Linux y macOS) | 11.3.22 | MIT | https://github.com/AvaloniaUI/Avalonia |
 | AvaloniaEdit (el motor del editor de Claupet Console) | 11.3.0 | MIT | https://github.com/AvaloniaUI/AvaloniaEdit |
 | SkiaSharp (con Skia) | 2.88.9 | MIT, © Microsoft Corporation (Skia: BSD-3-Clause) | https://github.com/mono/SkiaSharp |

@@ -4,7 +4,7 @@
        dotnet test Claupet.Tests -->
   <PropertyGroup>
     <!-- Solo las pruebas usan System.Drawing (GDI+): comparan los PNG con los que guarda Windows. -->
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

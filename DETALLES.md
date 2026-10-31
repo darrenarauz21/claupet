@@ -911,7 +911,7 @@ donde un `.wav` o `.mp3` con el mismo nombre (`terminado`, `pregunta`, `permiso`
 
 ## Compilar
 
-Requiere el SDK de .NET 8.
+Requiere el SDK de .NET 10.
 
 La app vive todo el día en la bandeja, así que cuida la memoria: lee las conversaciones de Claude Code línea por
 línea y en UTF-8 (`Core/JsonLines.cs`), sin cargar un archivo entero (al abrirse las recorre todas para Actividad y el

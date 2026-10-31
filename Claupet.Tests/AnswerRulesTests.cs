@@ -89,7 +89,7 @@ public sealed class AnswerRulesTests
     }
 
     [Fact]
-    public void AbrirUnaApp() => Assert.Equal(new AssistantAction("abrir", "spotify"), AnswerRules.Match("abre Spotify")?.Action with { Value = "spotify" });
+    public void AbrirUnaApp() => Assert.Equal(new AssistantAction("abrir", "spotify"), AnswerRules.Match("abre Spotify")!.Action! with { Value = "spotify" });
 
     [Fact]
     public void UnRecordatorioConLaHoraCalculada()
