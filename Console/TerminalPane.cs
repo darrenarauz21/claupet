@@ -47,7 +47,20 @@ sealed partial class TerminalPane : Grid
         public ShellSession? Shell { get; init; }
     }
 
+    /// <summary>
+    /// Cuántos bloques de una sesión se dibujan: los últimos. Con todos, cada cambio volvía a acomodar la sesión entera y
+    /// una sesión larga (cientos de pasos) se ponía lenta. Los de antes se ven con «Ver los anteriores».
+    /// </summary>
+    const int ShownBlocks = 150;
+    /// <summary>Cuántos bloques de más se juntan antes de dejar de dibujar los de arriba (para no hacerlo en cada cambio).</summary>
+    const int TrimSlack = 50;
+
     readonly List<Tab> _tabs = [];
+    /// <summary>El primer bloque de la sesión elegida que se dibuja; arriba de él, el botón de los anteriores.</summary>
+    int _shownFrom;
+    Control? _earlier;
+    /// <summary>Lo que muestra la lista de cada pestaña, para rehacerla solo cuando cambia (no con cada pedazo de texto).</summary>
+    readonly Dictionary<Tab, (bool Busy, bool Waiting, bool Running, string Title)> _tabState = [];
     readonly Dictionary<AgentBlock, Border> _views = [];
     /// <summary>Lo que se va escribiendo de una respuesta: se cambia solo el texto, sin rehacer el bloque.</summary>
     readonly Dictionary<AgentBlock, SelectableTextBlock> _live = [];
@@ -125,6 +138,7 @@ sealed partial class TerminalPane : Grid
             tab.Shell?.Dispose();
         }
         _tabs.Clear();
+        _tabState.Clear();
     }
 
     // ── Columna de la izquierda ─────────────────────────────────────────────────────────────
@@ -280,6 +294,7 @@ sealed partial class TerminalPane : Grid
         tab.Shell?.Dispose();
         var index = _tabs.IndexOf(tab);
         _tabs.Remove(tab);
+        _tabState.Remove(tab);
         if (_current == tab)
         {
             _current = _tabs.Count == 0 ? null : _tabs[Math.Clamp(index, 0, _tabs.Count - 1)];
@@ -302,6 +317,7 @@ sealed partial class TerminalPane : Grid
         StopSide();
         _views.Clear();
         _live.Clear();
+        _earlier = null;
         _blocks.Children.Clear();
         // Con un fondo propio, la Terminal lo pinta (tapa la escena del tema); si no, se ve el de la ventana.
         Background = _look.OwnBackground ? _ink.Surface : null;
@@ -338,10 +354,77 @@ sealed partial class TerminalPane : Grid
         var composer = Composer(_current);
         Grid.SetRow(composer, 2);
         Children.Add(composer);
-        foreach (var block in _current.Agent.Transcript.Blocks) _blocks.Children.Add(View(block, appear: false));
-        if (_current.Agent.Transcript.Blocks.Count == 0) _blocks.Children.Add(Starting());
+        var blocks = _current.Agent.Transcript.Blocks;
+        _shownFrom = Math.Max(0, blocks.Count - ShownBlocks);
+        ShowBlocks(blocks);
         PaintStatus();
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
+    }
+
+    /// <summary>Dibuja los bloques desde _shownFrom y, si hay de antes, el botón para verlos.</summary>
+    void ShowBlocks(IReadOnlyList<AgentBlock> blocks)
+    {
+        _views.Clear();
+        _live.Clear();
+        _blocks.Children.Clear();
+        _earlier = _shownFrom > 0 ? Earlier() : null;
+        if (_earlier is not null) _blocks.Children.Add(_earlier);
+        for (var i = _shownFrom; i < blocks.Count; i++) _blocks.Children.Add(View(blocks[i], appear: false));
+        if (blocks.Count == 0) _blocks.Children.Add(Starting());
+    }
+
+    /// <summary>«Ver los N anteriores»: dibuja otros tantos de arriba.</summary>
+    Control Earlier()
+    {
+        var label = Ui.Text(L.T("Ver los {0} bloques anteriores", _shownFrom), 12, _ink.Tertiary);
+        var press = Ui.Press(label, () =>
+        {
+            if (_current is not { Shell: null } tab) return;
+            _shownFrom = Math.Max(0, _shownFrom - ShownBlocks);
+            ShowBlocks(tab.Agent.Transcript.Blocks);
+        }, (b, on) => label.Foreground = on ? _ink.Secondary : _ink.Tertiary, L.T("Ver los bloques anteriores"));
+        press.HorizontalAlignment = HorizontalAlignment.Center;
+        press.Padding = new Thickness(10, 4);
+        press.Margin = new Thickness(0, 2, 0, 6);
+        press.CornerRadius = new CornerRadius(8);
+        return press;
+    }
+
+    /// <summary>Con la sesión al final, los bloques de arriba que sobran dejan de dibujarse (siguen con «Ver los anteriores»).</summary>
+    void TrimBlocks(IReadOnlyList<AgentBlock> blocks)
+    {
+        if (blocks.Count - _shownFrom <= ShownBlocks + TrimSlack) return;
+        var from = blocks.Count - ShownBlocks;
+        var gone = new List<Control>();
+        for (var i = _shownFrom; i < from; i++)
+        {
+            if (!_views.Remove(blocks[i], out var view)) continue;
+            _live.Remove(blocks[i]);
+            gone.Add(view);
+        }
+        if (_earlier is not null) gone.Add(_earlier);
+        _blocks.Children.RemoveAll(gone);
+        _shownFrom = from;
+        _earlier = Earlier();
+        _blocks.Children.Insert(0, _earlier);
+    }
+
+    /// <summary>La posición del bloque en la sesión (se busca desde el final: lo que cambia suele ser lo último).</summary>
+    static int IndexOf(IReadOnlyList<AgentBlock> blocks, AgentBlock block)
+    {
+        for (var i = blocks.Count - 1; i >= 0; i--)
+            if (ReferenceEquals(blocks[i], block)) return i;
+        return -1;
+    }
+
+    /// <summary>Si cambió lo que la lista muestra de la pestaña (su punto, su título). Lo recuerda para la próxima.</summary>
+    bool ListStateChanged(Tab tab)
+    {
+        var t = tab.Agent.Transcript;
+        var state = (t.Busy, Waiting(t), tab.Agent.Running, Title(tab));
+        if (_tabState.TryGetValue(tab, out var before) && before == state) return false;
+        _tabState[tab] = state;
+        return true;
     }
 
     Control Starting()
@@ -401,7 +484,6 @@ sealed partial class TerminalPane : Grid
         if (t.FiveHour is { } five) parts.Add(L.T("5 h {0:0} %", five));
         _context.Text = string.Join("  ", parts);
         _interrupt.IsVisible = t.Busy && tab.Agent.Running;
-        _send.Child = Icon(SendIcon, Ink.On(_ink.Accent), 15, 2.2);
         _send.Opacity = tab.Agent.Running ? 1 : 0.45;
     }
 
@@ -551,13 +633,16 @@ sealed partial class TerminalPane : Grid
             RefreshGit(tab.Agent.Options.Folder, force: true);
             if (tab == _current && !_creating && !_settings && _projects.PanelOpen && _projects.PanelTab != "procesos") LoadSide(tab);
         }
+        // La lista se rehace solo si cambió lo que muestra de la pestaña: con cada pedazo de texto la rehacía entera.
+        var listChanged = ListStateChanged(tab);
         if (tab != _current || _creating || _settings)
         {
-            if (changed.Count > 0) RenderList();
+            if (listChanged) RenderList();
             return;
         }
+        var blocks = tab.Agent.Transcript.Blocks;
         var atEnd = _scroll.Offset.Y >= _scroll.Extent.Height - _scroll.Viewport.Height - 40;
-        if (changed.Count > 0 && _blocks.Children.Count == 1 && _views.Count == 0) _blocks.Children.Clear();
+        if (changed.Count > 0 && _blocks.Children.Count == 1 && _views.Count == 0 && _earlier is null) _blocks.Children.Clear();
         foreach (var block in changed)
         {
             if (_live.TryGetValue(block, out var text) && block.Open)
@@ -566,19 +651,26 @@ sealed partial class TerminalPane : Grid
                 continue;
             }
             var old = _views.GetValueOrDefault(block);
+            // Un bloque de arriba de los que se dibujan (el resultado de un paso viejo): se verá al pedir los anteriores.
+            if (old is null && _shownFrom > 0 && IndexOf(blocks, block) is var at and >= 0 && at < _shownFrom) continue;
             var view = View(block, appear: old is null);
             if (old is not null && _blocks.Children.IndexOf(old) is var index and >= 0) _blocks.Children[index] = view;
             else _blocks.Children.Add(view);
         }
-        // Bloques que ya no están (un «pensando» que se reemplazó).
-        foreach (var gone in _views.Keys.Where(b => !tab.Agent.Transcript.Blocks.Contains(b)).ToList())
+        // Bloques que ya no están en la sesión.
+        if (_views.Count > 0)
         {
-            _blocks.Children.Remove(_views[gone]);
-            _views.Remove(gone);
-            _live.Remove(gone);
+            var present = blocks.ToHashSet();
+            foreach (var gone in _views.Keys.Where(b => !present.Contains(b)).ToList())
+            {
+                _blocks.Children.Remove(_views[gone]);
+                _views.Remove(gone);
+                _live.Remove(gone);
+            }
         }
+        if (atEnd) TrimBlocks(blocks);
         PaintStatus();
-        if (changed.Any(b => b.Kind is AgentBlockKind.Ask or AgentBlockKind.Done or AgentBlockKind.Permission or AgentBlockKind.Notice) || changed.Count == 0)
+        if (listChanged || changed.Count == 0 || changed.Any(b => b.Kind is AgentBlockKind.Ask or AgentBlockKind.Done or AgentBlockKind.Permission or AgentBlockKind.Notice))
             RenderList();
         if (atEnd) Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }
