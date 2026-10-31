@@ -23,8 +23,6 @@ sealed partial class TerminalPane
     /// <summary>La pantalla completa del shell elegido, mientras un programa la usa (vim, less, claude…).</summary>
     TerminalScreen? _screen;
 
-    /// <summary>El shell elegido en la sesión nueva; null es Claude Code.</summary>
-    ShellChoice? _newShell;
     readonly Dictionary<ShellBlock, Border> _shellViews = [];
     /// <summary>La salida de los comandos que corren: se rellena en su lugar, sin rehacer el bloque (ni su giro).</summary>
     readonly Dictionary<ShellBlock, Action> _shellLive = [];
@@ -39,14 +37,8 @@ sealed partial class TerminalPane
 
     // ── La pestaña ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>La marca de la pestaña: la inicial del agente («C» Claude Code, «X» Codex, «G» Gemini, «P» Copilot) o «>_» para un shell.</summary>
-    static string KindMark(Tab tab) => tab.Shell is not null ? ">_" : tab.Agent.Options.Kind switch
-    {
-        AgentKinds.Codex => "X",
-        AgentKinds.Gemini => "G",
-        AgentKinds.Copilot => "P",
-        _ => "C",
-    };
+    /// <summary>La marca de la pestaña: la del agente (✻ Claude Code, cx Codex, ✦ Gemini, gh Copilot) o «>_» para una terminal.</summary>
+    static string KindMark(Tab tab) => tab.Shell is not null ? ">_" : AgentMark(tab.Agent.Options.Kind);
 
     /// <summary>Trabajando: Claude Code en un turno o el shell con un comando corriendo.</summary>
     static bool Busy(Tab tab) => tab.Shell is { } shell ? shell.Transcript.Busy : tab.Agent.Transcript.Busy;
@@ -67,63 +59,12 @@ sealed partial class TerminalPane
     static string ShellDescribe(ShellSession shell) =>
         shell.Transcript.Cwd is { } cwd ? $"{shell.Shell.Label} · {ShortPath(cwd)}" : shell.Shell.Label;
 
-    // ── La sesión nueva ─────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// «Tipo» en la sesión nueva: Claude Code, otro agente instalado (Codex, Gemini CLI, Copilot CLI) o uno de los shells
-    /// del equipo. Con otra cosa que Claude Code se ocultan sus campos (desde agentFields) y cambia la explicación de arriba.
-    /// </summary>
-    void KindField(StackPanel panel, TextBlock about, int agentFields)
+    void OpenShell(ShellChoice choice, string folder)
     {
-        var shells = Shells.Available();
-        var agents = AgentKinds.Available().Where(k => k != AgentKinds.Claude).ToList();
-        if (shells.Count == 0 && agents.Count == 0) return;
-        if (_newShell is { } chosen && !shells.Contains(chosen)) _newShell = null;
-        if (!agents.Contains(_form.Kind)) _form.Kind = AgentKinds.Claude;
-        var agentOnly = panel.Children.Skip(agentFields).ToList();
-        var claudeAbout = about.Text;
-        var value = Ui.Text("", 13, _ink.Text);
-        void Show()
-        {
-            var claude = _newShell is null && _form.Kind == AgentKinds.Claude;
-            value.Text = _newShell?.Label ?? AgentKinds.Label(_form.Kind);
-            foreach (var field in agentOnly) field.IsVisible = claude;
-            about.Text = claude ? claudeAbout
-                : _newShell is null ? L.T("{0} en bloques, con sus permisos aquí y en la isla. El modelo, el esfuerzo y los permisos se eligen abajo, en la sesión, con lo que el agente dice tener.", AgentKinds.Label(_form.Kind))
-                : PseudoConsole.IsSupported
-                ? L.T("Un shell en bloques: cada comando con su salida, su código de salida y lo que tardó. Los programas de pantalla completa (vim, htop) todavía no se pueden usar.")
-                : L.T("La terminal de comandos todavía no está disponible en este sistema. Por ahora, solo en Windows 10 (1809) o más nuevo.");
-        }
-        var field = Field(L.T("Tipo"), value, anchor =>
-        {
-            // Los agentes van con «agente:» adelante para no confundirlos con el id de un shell.
-            var entries = agents.Select(k => new DropList.Entry("agente:" + k, AgentKinds.Label(k), _newShell is null && _form.Kind == k))
-                .Prepend(new DropList.Entry("agente:" + AgentKinds.Claude, "Claude Code", _newShell is null && _form.Kind == AgentKinds.Claude))
-                .Concat(shells.Select(s => new DropList.Entry(s.Id, s.Label, s == _newShell))).ToList();
-            DropList.Show(anchor, _ink, entries, picked =>
-            {
-                if (picked is null) return;
-                if (picked.StartsWith("agente:", StringComparison.Ordinal))
-                {
-                    _newShell = null;
-                    _form.Kind = picked["agente:".Length..];
-                }
-                else _newShell = shells.FirstOrDefault(s => s.Id == picked);
-                Show();
-            });
-            return Task.CompletedTask;
-        });
-        panel.Children.Insert(panel.Children.IndexOf(about) + 1, field);
-        Show();
-    }
-
-    void OpenShell(ShellChoice choice)
-    {
-        if (!Directory.Exists(_form.Folder)) return;
-        var folder = _form.Folder;
-        // Se recuerda la carpeta; la cuenta, el modelo y lo demás quedan como estaban para Claude Code.
+        if (!Directory.Exists(folder)) return;
+        // Se recuerda la carpeta y la terminal; la cuenta, el modelo y lo demás quedan como estaban para Claude Code.
         var last = TerminalRecents.Load();
-        TerminalRecents.Remember(new AgentOptions(folder, last.Account, last.Model, last.Effort, last.Mode));
+        TerminalRecents.Remember(new AgentOptions(folder, last.Account, last.Model, last.Effort, last.Mode), choice.Id);
         LinkProject(folder);
         var shell = new ShellSession(choice, folder, action => Dispatcher.UIThread.Post(action));
         // El agente de la pestaña no se abre nunca: solo lleva la carpeta (la lista agrupa por ella).
@@ -135,13 +76,7 @@ sealed partial class TerminalPane
             if (tab == _current && !_creating && !_settings) Build();
             else RenderList();
         };
-        _tabs.Add(tab);
-        _current = tab;
-        _creating = false;
-        _input.Text = "";
-        Build();
-        RenderList();
-        TabsChanged?.Invoke();
+        Add(tab);
         shell.Start();
         _input.Focus();
     }
@@ -159,7 +94,7 @@ sealed partial class TerminalPane
             // La pantalla completa ocupa la sesión entera, con las teclas directo al programa.
             RowDefinitions = new RowDefinitions("46,*");
             Children.Add(ShellHeader(tab, shell));
-            _screen = new TerminalScreen(shell, _ink, Mono, _look.Size);
+            _screen = new TerminalScreen(shell, _ink, Mono, _look.Size, _look);
             var frame = new Border
             {
                 Margin = new Thickness(16, 0, 16, 16),
@@ -176,6 +111,7 @@ sealed partial class TerminalPane
             Dispatcher.UIThread.Post(() => _screen?.Focus(), DispatcherPriority.Input);
             return;
         }
+        FitShell();
         RowDefinitions = new RowDefinitions("46,*,Auto");
         Children.Add(ShellHeader(tab, shell));
         Grid.SetRow(_scroll, 1);
@@ -230,6 +166,20 @@ sealed partial class TerminalPane
     /// La franja de arriba: lo justo. Mientras abre, «Abriendo…»; en la pantalla completa, el programa; si se fue a otra
     /// carpeta, esa carpeta (el proyecto y la rama ya están a la izquierda). Interrumpir, mientras corre un comando.
     /// </summary>
+    /// <summary>Los márgenes del marco de la pantalla completa: afuera (16 a los lados y abajo) y adentro (12 y 10).</summary>
+    const double FrameX = 16 * 2 + 12 * 2, FrameY = 46 + 16 + 10 * 2;
+
+    /// <summary>
+    /// La consola del shell elegido toma el tamaño que tendría su pantalla completa en este panel (también mientras se
+    /// ven los bloques): un programa de pantalla completa arranca con su tamaño, sin cambiarlo mientras pinta.
+    /// </summary>
+    void FitShell()
+    {
+        if (_current?.Shell is not { } shell || Bounds.Width <= 0 || Bounds.Height <= 0) return;
+        var (width, height) = TerminalScreen.Cell(Mono, _look.Size);
+        shell.Resize((int)Math.Floor((Bounds.Width - FrameX) / width), (int)Math.Floor((Bounds.Height - FrameY) / height));
+    }
+
     void PaintShellStatus(ShellSession shell)
     {
         var t = shell.Transcript;

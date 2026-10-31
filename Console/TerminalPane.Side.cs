@@ -237,7 +237,9 @@ sealed partial class TerminalPane
             Border row;
             if (target is not null)
             {
-                row = Ui.Press(content, () => ShowNew(target), branch.Current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, branch.Name);
+                Border? pressed = null;
+                pressed = Ui.Press(content, () => ShowNew(target, pressed), branch.Current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, branch.Name);
+                row = pressed;
                 ToolTip.SetTip(row, L.T("Abrir una sesión en {0}", target));
             }
             else row = new Border { Child = content };

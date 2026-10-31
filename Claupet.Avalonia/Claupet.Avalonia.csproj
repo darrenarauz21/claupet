@@ -15,6 +15,7 @@
     <ApplicationIcon>..\app.ico</ApplicationIcon>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <PortaPtyStageConPtyHost>false</PortaPtyStageConPtyHost>
   </PropertyGroup>
 
   <ItemGroup>
@@ -46,6 +47,10 @@
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.3.0" />
     <!-- La pantalla completa de los shells de Claupet Terminal (vim, less, claude…): interpreta las secuencias VT. -->
     <PackageReference Include="XTerm.NET" Version="3.0.0" />
+    <!-- Los shells de Claupet Terminal en Linux y macOS: una pty abierta por su ayudante nativo (en Windows va la ConPTY
+         propia, Core/PseudoConsole.cs). Su ConPTY de Windows no se usa: ni conpty.dll ni OpenConsole.exe en el paquete. -->
+    <PackageReference Include="Porta.Pty" Version="2.2.3" />
+    <PackageReference Include="Microsoft.Windows.Console.ConPTY" Version="1.24.260710001" ExcludeAssets="all" />
     <!-- En Windows, avisa al desbloquear, al volver de suspender y al cambiar las pantallas (la mascota vuelve a verse). -->
     <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.14" />
     <!-- La voz: Whisper (voz a texto), Supertonic con ONNX Runtime (texto a voz) y PortAudio (el micrófono y los

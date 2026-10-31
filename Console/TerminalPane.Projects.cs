@@ -71,8 +71,9 @@ sealed partial class TerminalPane
             foreach (var tab in tabs) _list.Children.Add(TabItem(tab));
             if (tabs.Count == 0)
             {
-                var open = Ui.Press(Ui.Text(L.T("Sesión nueva aquí"), 12.5, _ink.Tertiary), () => ShowNew(folder),
-                    (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Sesión nueva aquí"));
+                Border? open = null;
+                open = Ui.Press(Ui.Text(L.T("Nueva pestaña aquí"), 12.5, _ink.Tertiary), () => ShowNew(folder, open),
+                    (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Nueva pestaña aquí"));
                 open.Padding = new Thickness(30, 5, 10, 5);
                 open.CornerRadius = new CornerRadius(8);
                 _list.Children.Add(open);
@@ -93,35 +94,15 @@ sealed partial class TerminalPane
         var status = _git.TryGetValue(folder, out var git) ? git.Status : null;
         var branch = status?.Branch ?? tabs.FirstOrDefault()?.Branch ?? GitBranch.Of(folder);
 
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
-        var chevron = Icon(folded ? ChevronRightIcon : ChevronDownIcon, _ink.Tertiary, 11, 2);
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Height = 26 };
+        var chevron = Icon(folded ? ChevronRightIcon : ChevronDownIcon, _ink.Tertiary, 10, 2);
         chevron.Margin = new Thickness(0, 0, 7, 0);
         row.Children.Add(chevron);
-
-        var text = new StackPanel { Spacing = 1 };
-        // El nombre y la rama se cortan con «…» dentro de la columna (en un StackPanel horizontal se salían del borde).
-        var title = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*") };
-        var label = Ui.Text(name, 12.5, _ink.Secondary, FontWeight.SemiBold);
+        var label = Ui.Text(name, 12, _ink.Secondary, FontWeight.SemiBold);
         label.TextTrimming = TextTrimming.CharacterEllipsis;
-        label.MaxWidth = 150;
-        title.Children.Add(label);
-        if (branch is not null && !folded)
-        {
-            var icon = Icon(BranchIcon, _ink.Tertiary, 11, 1.8);
-            icon.Margin = new Thickness(6, 0, 4, 0);
-            Grid.SetColumn(icon, 1);
-            title.Children.Add(icon);
-            var branchText = Ui.Text(branch, 12, _ink.Tertiary, family: Mono);
-            branchText.TextTrimming = TextTrimming.CharacterEllipsis;
-            ToolTip.SetTip(branchText, branch);
-            Grid.SetColumn(branchText, 2);
-            title.Children.Add(branchText);
-        }
-        text.Children.Add(title);
-        if (!folded && status is not null)
-            text.Children.Add(Ui.Text(status.Summary, 11.5, status.Changed > 0 || status.Ahead > 0 ? _ink.Secondary : _ink.Tertiary));
-        Grid.SetColumn(text, 1);
-        row.Children.Add(text);
+        label.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(label, 1);
+        row.Children.Add(label);
 
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         if (folded && tabs.Count > 0)
@@ -165,25 +146,43 @@ sealed partial class TerminalPane
             b.Background = on ? _ink.Pill : Brushes.Transparent;
             more.Opacity = on ? 1 : 0;
         }, folded ? L.T("Desplegar {0}", name) : L.T("Plegar {0}", name));
-        head.Padding = new Thickness(8, 5, 6, 5);
-        head.Margin = new Thickness(2, 8, 2, 2);
-        head.CornerRadius = new CornerRadius(8);
+        head.Padding = new Thickness(6, 0, 2, 0);
+        head.Margin = new Thickness(2, 6, 2, 0);
+        head.CornerRadius = new CornerRadius(7);
         ToolTip.SetTip(head, folder);
-        return head;
+        if (folded || branch is null && status is null) return head;
+        // Desplegado: la rama y cómo está el repositorio, debajo del nombre («feat/x · ↑2 · 3 sin commit»).
+        var info = new TextBlock
+        {
+            FontSize = 11.5,
+            Foreground = _ink.Tertiary,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(25, 0, 8, 4),
+        };
+        if (branch is not null) info.Inlines!.Add(new Avalonia.Controls.Documents.Run(branch) { FontFamily = Mono });
+        if (status is not null)
+            info.Inlines!.Add(new Avalonia.Controls.Documents.Run((branch is not null ? " · " : "") + status.Summary)
+            {
+                Foreground = status.Changed > 0 || status.Ahead > 0 ? _ink.Secondary : _ink.Tertiary,
+            });
+        ToolTip.SetTip(info, branch);
+        return new StackPanel { Children = { head, info } };
     }
 
     void ProjectMenu(Control anchor, string folder, int sessions)
     {
-        DropList.Show(anchor, _ink,
-        [
-            new("nueva", L.T("Sesión nueva aquí"), Action: true),
-            new("carpeta", L.T("Abrir la carpeta"), Action: true),
-            new("desvincular", sessions > 0 ? L.T("Desvincular (cierra sus {0} sesiones)", sessions) : L.T("Desvincular el proyecto"), Danger: true),
-        ], picked =>
+        var shell = DefaultShell;
+        var entries = new List<DropList.Entry>();
+        if (shell is not null) entries.Add(new("terminal", L.T("Nueva terminal aquí ({0})", shell.Label), Action: true));
+        entries.Add(new("nueva", L.T("Abrir un agente u otra pestaña aquí…"), Action: true));
+        entries.Add(new("carpeta", L.T("Abrir la carpeta"), Action: true));
+        entries.Add(new("desvincular", sessions > 0 ? L.T("Desvincular (cierra sus {0} pestañas)", sessions) : L.T("Desvincular el proyecto"), Danger: true));
+        DropList.Show(anchor, _ink, entries, picked =>
         {
             switch (picked)
             {
-                case "nueva": ShowNew(folder); break;
+                case "terminal" when shell is not null: OpenShell(shell, folder); break;
+                case "nueva": ShowNew(folder, anchor); break;
                 case "carpeta": _ = TopLevel.GetTopLevel(this)?.Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(folder)); break;
                 case "desvincular": Unlink(folder); break;
             }

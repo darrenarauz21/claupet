@@ -2,8 +2,8 @@ using System.Text;
 
 namespace Claupet;
 
-/// <summary>Los shells que puede abrir la Terminal: PowerShell, Git Bash (o el bash del sistema) y bash en WSL.</summary>
-enum ShellKind { PowerShell, Bash, Wsl }
+/// <summary>Los shells que puede abrir la Terminal: PowerShell, bash (Git Bash en Windows), bash en WSL y zsh (Linux y macOS).</summary>
+enum ShellKind { PowerShell, Bash, Wsl, Zsh }
 
 /// <summary>Un shell que hay en el equipo: cuál es, cómo se llama en la lista y su programa (y, en WSL, la distribución).</summary>
 sealed record ShellChoice(ShellKind Kind, string Label, string Program, string? Distro = null)
@@ -39,8 +39,15 @@ static class Shells
                 if (WslDistro() is { } distro && Existing(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "wsl.exe")) is { } wsl)
                     found.Add(new ShellChoice(ShellKind.Wsl, $"bash (WSL · {distro})", wsl, distro));
             }
-            else if ((Existing("/bin/bash") ?? OnPath("bash")) is { } bash)
-                found.Add(new ShellChoice(ShellKind.Bash, "bash", bash));
+            else
+            {
+                // Linux y macOS: el shell de la persona primero (en macOS suele ser zsh), después los otros que haya.
+                if ((Existing("/bin/zsh") ?? OnPath("zsh")) is { } zsh) found.Add(new ShellChoice(ShellKind.Zsh, "zsh", zsh));
+                if ((Existing("/bin/bash") ?? OnPath("bash")) is { } bash) found.Add(new ShellChoice(ShellKind.Bash, "bash", bash));
+                if (OnPath("pwsh") is { } pwsh) found.Add(new ShellChoice(ShellKind.PowerShell, "PowerShell", pwsh));
+                var mine = Path.GetFileName(Environment.GetEnvironmentVariable("SHELL") ?? "");
+                found = [.. found.OrderBy(s => Path.GetFileName(s.Program) == mine ? 0 : 1)];
+            }
         }
         catch (Exception) { }
         return found;
@@ -96,27 +103,46 @@ static class Shells
         return preferred ?? names.FirstOrDefault();
     }
 
-    /// <summary>La línea de comandos que abre el shell con las marcas, y las variables que necesita.</summary>
-    public static (string CommandLine, Dictionary<string, string> Env) Launch(ShellChoice shell, string folder)
+    /// <summary>Cómo se abre el shell con las marcas: su programa y argumentos (y la línea entera, en Windows) y sus variables.</summary>
+    public static ShellLaunch Launch(ShellChoice shell, string folder)
     {
         var env = new Dictionary<string, string> { ["TERM_PROGRAM"] = "Claupet" };
         // less (el paginador de git) en la pantalla alterna, como en cualquier terminal: se ve en la pantalla completa
         // de la Terminal y, al salir, no deja la página en el bloque. F: si cabe, no pagina; R: con colores.
         if (Environment.GetEnvironmentVariable("LESS") is null) env["LESS"] = "FR";
+        if (!OperatingSystem.IsWindows())
+        {
+            env["TERM"] = "xterm-256color";
+            env["COLORTERM"] = "truecolor";
+        }
+        string[] args;
         switch (shell.Kind)
         {
             case ShellKind.PowerShell:
-                var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(PowerShellScript));
-                return ($"{Quote(shell.Program)} -NoLogo -NoExit -EncodedCommand {encoded}", env);
+                args = ["-NoLogo", "-NoExit", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(PowerShellScript))];
+                break;
             case ShellKind.Wsl:
-                var rc = WriteRc();
-                return ($"{Quote(shell.Program)} -d {Quote(shell.Distro ?? "")} --cd {Quote(folder)} -e bash --rcfile {Quote(WslPath(rc))} -i", env);
+                args = ["-d", shell.Distro ?? "", "--cd", folder, "-e", "bash", "--rcfile", WslPath(WriteRc()), "-i"];
+                break;
+            case ShellKind.Zsh:
+                // zsh lee sus archivos de ZDOTDIR: los de la app cargan los de la persona y agregan las marcas. En macOS,
+                // como en Terminal, como shell de entrada (.zprofile, donde suele estar Homebrew).
+                env["CLAUPET_USER_ZDOTDIR"] = Environment.GetEnvironmentVariable("ZDOTDIR") is { Length: > 0 } own ? own
+                    : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                env["ZDOTDIR"] = WriteZsh();
+                args = OperatingSystem.IsMacOS() ? ["-l", "-i"] : ["-i"];
+                break;
             default:
-                // CHERE_INVOKING: el /etc/profile de Git Bash no salta a la carpeta personal.
-                env["CHERE_INVOKING"] = "1";
-                env["TERM"] = "xterm-256color";
-                return ($"{Quote(shell.Program)} --rcfile {Quote(WriteRc().Replace('\\', '/'))} -i", env);
+                if (OperatingSystem.IsWindows())
+                {
+                    // CHERE_INVOKING: el /etc/profile de Git Bash no salta a la carpeta personal.
+                    env["CHERE_INVOKING"] = "1";
+                    env["TERM"] = "xterm-256color";
+                }
+                args = ["--rcfile", OperatingSystem.IsWindows() ? WriteRc().Replace('\\', '/') : WriteRc(), "-i"];
+                break;
         }
+        return new ShellLaunch(shell.Program, args, string.Join(" ", args.Prepend(shell.Program).Select(Quote)), env);
     }
 
     /// <summary>
@@ -154,16 +180,71 @@ static class Shells
     const string BashRc = """
         # Claupet Terminal: las marcas de los bloques (OSC 133). Lo crea la app en cada sesión.
         if [ -n "$MSYSTEM" ] && [ -f /etc/profile ]; then . /etc/profile; fi
-        if [ -f ~/.bashrc ]; then . ~/.bashrc; fi
+        if [ "$(uname)" = Darwin ]; then
+          [ -f /etc/profile ] && . /etc/profile
+          if [ -f ~/.bash_profile ]; then . ~/.bash_profile; elif [ -f ~/.bashrc ]; then . ~/.bashrc; fi
+        elif [ -f ~/.bashrc ]; then . ~/.bashrc; fi
         __claupet_prompt() {
           local code=$?
-          printf '\e]133;D;%s\a\e]7;file://%s%s\a' "$code" "${HOSTNAME:-localhost}" "$PWD"
+          printf '\033]133;D;%s\007\033]7;file://%s%s\007' "$code" "${HOSTNAME:-localhost}" "$PWD"
           return $code
         }
         PROMPT_COMMAND="__claupet_prompt${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
         PS1="\[\e]133;A\a\]${PS1:-\\w \$ }\[\e]133;B\a\]"
         PS0=$'\e]133;C\a'
         """;
+
+    /// <summary>
+    /// zsh (Linux y macOS): los archivos de ZDOTDIR de la app cargan los de la persona (desde CLAUPET_USER_ZDOTDIR) y
+    /// agregan las marcas: D y la carpeta en precmd (el primero, para tener el código de lo último), C en preexec, y A y B
+    /// alrededor del prompt (otra vez al final de precmd, por si un tema lo rearma). Después, ZDOTDIR vuelve a ser el
+    /// de la persona (su historial y su .zlogin).
+    /// </summary>
+    static readonly (string Name, string Text)[] ZshFiles =
+    [
+        (".zshenv", """
+            # Claupet Terminal: carga lo de siempre. Lo crea la app en cada sesión.
+            __claupet_zdotdir="$ZDOTDIR"
+            ZDOTDIR="${CLAUPET_USER_ZDOTDIR:-$HOME}"
+            [[ -f "$ZDOTDIR/.zshenv" ]] && source "$ZDOTDIR/.zshenv"
+            ZDOTDIR="$__claupet_zdotdir"
+            """),
+        (".zprofile", """
+            ZDOTDIR="${CLAUPET_USER_ZDOTDIR:-$HOME}"
+            [[ -f "$ZDOTDIR/.zprofile" ]] && source "$ZDOTDIR/.zprofile"
+            ZDOTDIR="$__claupet_zdotdir"
+            """),
+        (".zshrc", """
+            # Claupet Terminal: lo de siempre y las marcas de los bloques (OSC 133).
+            ZDOTDIR="${CLAUPET_USER_ZDOTDIR:-$HOME}"
+            unset __claupet_zdotdir
+            [[ -f "$ZDOTDIR/.zshrc" ]] && source "$ZDOTDIR/.zshrc"
+            __claupet_precmd() {
+              local code=$?
+              printf '\033]133;D;%s\007\033]7;file://%s%s\007' "$code" "${HOST:-localhost}" "$PWD"
+            }
+            __claupet_preexec() { printf '\033]133;C\007'; }
+            __claupet_marks() {
+              [[ "$PS1" == *'133;A'* ]] || PS1=$'%{\e]133;A\a%}'"$PS1"$'%{\e]133;B\a%}'
+            }
+            precmd_functions=(__claupet_precmd $precmd_functions __claupet_marks)
+            preexec_functions+=(__claupet_preexec)
+            """),
+    ];
+
+    /// <summary>Escribe los archivos de zsh en la carpeta temporal de la app y devuelve esa carpeta (el ZDOTDIR del shell).</summary>
+    static string WriteZsh()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "Claupet", "zsh");
+        Directory.CreateDirectory(dir);
+        foreach (var (name, text) in ZshFiles)
+        {
+            var path = Path.Combine(dir, name);
+            var content = text.ReplaceLineEndings("\n") + "\n";
+            if (!File.Exists(path) || File.ReadAllText(path) != content) File.WriteAllText(path, content, new UTF8Encoding(false));
+        }
+        return dir;
+    }
 
     /// <summary>Escribe el rcfile de bash en la carpeta temporal de la app y devuelve su ruta.</summary>
     static string WriteRc()
@@ -213,7 +294,7 @@ sealed class ShellSession : IDisposable
     readonly Action<Action> _post;
     readonly StringBuilder _pending = new();
     bool _posted;
-    PseudoConsole? _console;
+    IPty? _console;
     int _cols = Cols, _rows = Rows;
 
     public ShellSession(ShellChoice shell, string folder, Action<Action> post)
@@ -251,15 +332,14 @@ sealed class ShellSession : IDisposable
     /// <summary>Abre el shell. Si no se puede (otro sistema, no abre), queda un aviso en la sesión.</summary>
     public void Start()
     {
-        if (!PseudoConsole.IsSupported)
+        if (!Pty.IsSupported)
         {
             Notice(L.T("La terminal de comandos todavía no está disponible en este sistema. Por ahora, solo en Windows 10 (1809) o más nuevo."));
             return;
         }
         try
         {
-            var (commandLine, env) = Shells.Launch(Shell, Folder);
-            _console = PseudoConsole.Start(commandLine, Folder, Cols, Rows, env);
+            _console = Pty.Start(Shells.Launch(Shell, Folder), Folder, _cols, _rows);
         }
         catch (Exception ex)
         {
@@ -294,29 +374,26 @@ sealed class ShellSession : IDisposable
     }
 
     /// <summary>
-    /// El tamaño de la pantalla completa (el del panel). Solo mientras un programa la usa: al salir, la consola vuelve
-    /// al tamaño de los bloques (se arman con ese ancho).
+    /// El tamaño de la consola: el del panel de la sesión, siempre (como cualquier terminal, el de su ventana). Así un
+    /// programa de pantalla completa ya arranca con su tamaño: cambiarlo mientras pinta dejaba filas corridas, porque
+    /// ConPTY y la pantalla de aquí reacomodan distinto lo que ya estaba.
     /// </summary>
-    public void ResizeScreen(int cols, int rows)
-    {
-        // Lo que ya llegó se pinta con el tamaño de antes (y puede ser que el programa ya haya salido).
-        Flush();
-        if (FullScreen) SetSize(cols, rows);
-    }
-
-    /// <summary>Las dos pantallas, la de ConPTY y la de aquí, cambian juntas (si no, el programa pinta en filas corridas).</summary>
-    void SetSize(int cols, int rows)
+    public void Resize(int cols, int rows)
     {
         cols = Math.Clamp(cols, 20, 400);
         rows = Math.Clamp(rows, 5, 200);
         if (cols == _cols && rows == _rows) return;
+        // Lo que ya llegó se pinta con el tamaño de antes; después cambian las tres juntas: la de ConPTY, la de los
+        // bloques y la de la pantalla completa.
+        Flush();
         _cols = cols;
         _rows = rows;
+        Transcript.Resize(cols, rows);
         Screen.Resize(cols, rows);
         _console?.Resize(cols, rows);
     }
 
-    void Read(PseudoConsole console)
+    void Read(IPty console)
     {
         var decoder = new UTF8Encoding(false).GetDecoder();
         var bytes = new byte[8192];
@@ -360,11 +437,10 @@ sealed class ShellSession : IDisposable
     void SetFullScreen(bool on)
     {
         FullScreen = on;
-        if (!on) SetSize(Cols, Rows);
         FullScreenChanged?.Invoke();
     }
 
-    async Task WatchAsync(PseudoConsole console)
+    async Task WatchAsync(IPty console)
     {
         var code = await console.Exited;
         // Lo último que pintó llega un poco después del final del proceso.

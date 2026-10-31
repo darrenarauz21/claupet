@@ -18,7 +18,8 @@ Claupet Terminal es una vista de [Claupet Console](console.md) (el botón **Term
 agentes de código y shells en pestañas y muestra cada cosa en su bloque:
 
 - **Claude Code**, **Codex**, **Gemini CLI** y **Copilot CLI**: los que estén instalados en su equipo.
-- **Shells** *(Windows)*: PowerShell, Git Bash y bash de WSL, cada comando con su salida.
+- **Shells**: PowerShell, Git Bash y bash de WSL en Windows; bash, zsh y PowerShell 7 (si está) en Linux y
+  macOS. Cada comando con su salida, y los programas de pantalla completa (vim, less, claude) en la sesión entera.
 - **Varias sesiones a la vez**, agrupadas por proyecto, cada una con su cuenta, su modelo, su esfuerzo y
   sus permisos.
 
@@ -26,26 +27,22 @@ agentes de código y shells en pestañas y muestra cada cosa en su bloque:
   <img src="../../capturas/manual/terminal-sesion.png" alt="Una sesión de Claude Code en bloques en Claupet Terminal" width="720">
 </p>
 
-## Cómo abrir una sesión
+## Cómo abrir una pestaña
 
 1. En Claupet Console, pulse **Terminal** en el riel.
-2. Pulse el botón **+** (**Sesión nueva**), arriba de la lista.
-3. Complete el formulario:
+2. Pulse **+** (**Nueva pestaña**), arriba de la lista, o **Ctrl+T**. Se abre un menú chico:
 
-   | Campo | Qué elige |
+   | Parte | Qué elige |
    |---|---|
-   | **Carpeta** | Dónde trabaja el agente. La lista trae primero los proyectos vinculados y las carpetas recientes; **Elegir otra carpeta…** abre el selector. |
-   | **Cuenta** | La cuenta de Claude Code de esta sesión (solo las que tienen la sesión iniciada). |
-   | **Modelo** | `opus`, `sonnet`, `fable`, `haiku`, `opusplan` y las variantes `[1m]`, o «modelo por defecto». |
-   | **Esfuerzo** | `low`, `medium`, `high`, `xhigh` o `max`, o «esfuerzo por defecto». |
-   | **Permisos** | Cuánto pregunta antes de actuar (ver la tabla de abajo). |
-   | **Tipo** | Claude Code, otro agente instalado o un shell. |
+   | **Abrir** | Claude Code, otro agente instalado (Codex, Gemini CLI, Copilot CLI) o una de las terminales de su equipo. |
+   | **Con la cuenta** | *(Claude Code)* La cuenta de esta pestaña; el punto verde dice que tiene la sesión iniciada. |
+   | **Modelo y esfuerzo** | *(Claude Code)* `haiku`, `sonnet`, `opus`, `fable` o «por defecto», y el esfuerzo: bajo, medio, alto, muy alto o máximo. Las variantes (`opus[1m]`, `sonnet[1m]`, `opusplan`) se eligen dentro de la sesión. |
+   | **La carpeta** | Abajo, a la izquierda: dónde se abre. Tóquela para elegir otra (los proyectos vinculados, las recientes o **Elegir otra carpeta…**). |
 
-4. Pulse **Abrir sesión**.
+3. Pulse **Abrir** (o **Intro**). Tocar de nuevo lo que ya está elegido también lo abre.
 
-<p align="center">
-  <img src="../../capturas/manual/terminal-nueva-sesion.png" alt="El formulario de Sesión nueva" width="720">
-</p>
+Claupet recuerda lo último que abrió, con su cuenta, su modelo y su esfuerzo. Los permisos empiezan como la
+última vez y se cambian en la sesión.
 
 Los modos de **Permisos** de Claude Code:
 
@@ -62,22 +59,28 @@ Los modos de **Permisos** de Claude Code:
 
 ### Cómo escribirle
 
-Escriba en el cuadro de abajo, junto a **❯**. **Intro** envía y **Mayús+Intro** hace otra línea. Mientras
-trabaja, **Interrumpir** (el cuadrado de arriba, o **Esc**) corta el turno.
+Escriba en la caja de abajo («Escriba a Claude Code…»). **Intro** envía y **Mayús+Intro** hace otra línea.
+Mientras trabaja, **Interrumpir** (las dos barras de arriba, o **Esc**) corta el turno.
 
-Arriba de la sesión se ven el proyecto, su rama, el modelo y el esfuerzo, cuánto del contexto lleva
-(«contexto 42 %») y el uso de la sesión de 5 horas de la cuenta («5 h 18 %»).
+Arriba de la sesión se ven la carpeta, su rama y lo que falta subir, y cuánto del contexto lleva (una barra
+con su porcentaje; al pasar el mouse, también el uso de la sesión de 5 horas de la cuenta).
+
+### Cómo copiar
+
+- **Lo pedido o una respuesta entera:** pase el mouse por el bloque y toque el ícono de **Copiar**, a la derecha.
+- **Una parte:** selecciónela con el mouse y pulse **Ctrl+C**, o haga clic derecho › **Copiar**
+  (**Seleccionar todo** elige el bloque entero).
 
 ## Los bloques
 
 | Bloque | Qué muestra |
 |---|---|
-| **El pedido** | Lo que usted escribió, con **❯** adelante. |
-| **Pensando…** | Mientras piensa; al terminar, «Pensó · 1.234 tokens». |
+| **El pedido** | Lo que usted escribió, con **›** adelante y en negrita. |
+| **Pensando** | Tres puntos que se mueven mientras piensa; al terminar, «Pensó · 1.234 tokens». |
 | **La respuesta** | El texto, con los bloques de código aparte. |
-| **Un paso** | Qué hizo («leyó», «editó», «creó», «ejecutó», «buscó», «delegó»…) y sobre qué, con las líneas sumadas y quitadas (`+12 −3`). Un clic abre su diff o lo que devolvió. |
-| **La lista de tareas** | ☑ hecha, ◐ en curso, ☐ pendiente. |
-| **Un permiso o una pregunta** | Con borde ámbar hasta que responda. |
+| **Un paso** | Qué hizo («Leyó», «Editó», «Creó», «Ejecutó», «Buscó», «Delegó»…) y sobre qué, con las líneas sumadas y quitadas (`+12 −3`). Un clic abre su diff o lo que devolvió. |
+| **La lista de tareas** | En una línea, la que hace y cuántas van («2 de 5»). Un clic la abre: ☑ hecha, ◐ en curso, ☐ pendiente. |
+| **Un permiso o una pregunta** | Con **?** en ámbar y «pide permiso» hasta que responda. |
 | **El cierre del turno** | ✓ y cuánto tardó, los turnos y el costo si el agente lo informa; o ✕ con el error. |
 
 ## Permisos y preguntas
@@ -111,23 +114,25 @@ En la lista de la izquierda, una pestaña que espera permiso lleva el punto en �
 
 ## Cómo cambiar el modelo, el esfuerzo o los permisos a mitad de sesión
 
-Debajo del cuadro para escribir hay unos chips: la cuenta, el modelo, el esfuerzo y los permisos.
+En la caja de abajo, a la derecha (o debajo, si la ventana es angosta), están la cuenta, el modelo con el
+esfuerzo («opus · alto») y los permisos.
 
-1. Toque el chip que quiere cambiar.
-2. Elija otro valor de la lista.
+1. Toque el que quiere cambiar.
+2. Elija otro valor.
 3. Vale desde el turno siguiente.
 
-La cuenta no se cambia en una sesión abierta: para otra cuenta, abra otra sesión.
+La cuenta no se cambia en una sesión abierta: si elige otra, se abre una pestaña nueva con esa cuenta, en la
+misma carpeta y con el mismo modelo.
 
 ## Codex, Gemini CLI y Copilot CLI
 
-Si están instalados (y en el `PATH`), aparecen en **Tipo** al abrir una sesión. Se ven en bloques igual que
+Si están instalados (y en el `PATH`), aparecen en el menú de la pestaña nueva. Se ven en bloques igual que
 Claude Code, con sus permisos aquí y en la isla.
 
-- El modelo, el esfuerzo y los permisos se eligen **dentro de la sesión**, con los chips, entre lo que el
-  agente dice tener al abrirse.
-- La marca de la pestaña dice qué es: **C** Claude Code, **X** Codex, **G** Gemini CLI, **P** Copilot CLI y
-  **>_** un shell.
+- El modelo, el esfuerzo y los permisos se eligen **dentro de la sesión**, en la caja de abajo, entre lo que
+  el agente dice tener al abrirse.
+- La marca de la pestaña dice qué es: **✻** Claude Code, **cx** Codex, **✦** Gemini CLI, **gh** Copilot CLI y
+  **>_** una terminal.
 
 ### Cómo iniciar sesión en los otros agentes
 
@@ -146,8 +151,15 @@ falta. Hágalo una vez en una terminal cualquiera y vuelva a escribir en la sesi
 
 ## Shells en bloques
 
-*Solo en Windows 10 (1809) o más nuevo.* En **Tipo**, elija **PowerShell**, **Git Bash** o **bash (WSL)**:
-Claupet ofrece los que encuentra en su equipo.
+En el menú de la pestaña nueva, elija una terminal: Claupet ofrece las que encuentra en su equipo.
+
+| Sistema | Terminales |
+|---|---|
+| **Windows 10 (1809) o más nuevo** | PowerShell (la 7 si está; si no, Windows PowerShell), Git Bash y bash de WSL |
+| **Linux y macOS** | zsh, bash y PowerShell 7 (si está instalado); primero, la de su usuario |
+
+En zsh y bash se cargan sus archivos de siempre (`.zshrc`, `.zprofile`, `.bashrc` o `.bash_profile`); Claupet
+solo agrega las marcas de los bloques.
 
 <p align="center">
   <img src="../../capturas/manual/terminal-shell.png" alt="PowerShell en bloques, cada comando con su salida" width="720">
@@ -183,7 +195,8 @@ una sesión en su carpeta.
   pestañas debajo.
 - **Plegado:** cuántas pestañas tiene y un punto por cada una.
 - **Plegar todos los proyectos** / **Desplegar todos los proyectos**: el botón de arriba de la lista.
-- **El menú «⋯»** de cada proyecto: **Sesión nueva aquí**, **Abrir la carpeta** y **Desvincular**.
+- **El menú «⋯»** de cada proyecto: **Nueva terminal aquí** (la terminal por defecto), **Abrir un agente u
+  otra pestaña aquí…** (el menú de la pestaña nueva, en esa carpeta), **Abrir la carpeta** y **Desvincular**.
 
 > [!NOTE]
 > Desvincular solo quita el proyecto de la lista: no borra la carpeta. Si tenía sesiones abiertas, las
@@ -217,23 +230,35 @@ Cómo se ven las sesiones. Se abre desde **Ajustes › Terminal** en la Console.
   <img src="../../capturas/manual/terminal-ajustes.png" alt="Los ajustes de la Terminal con su vista previa" width="720">
 </p>
 
+En tres grupos:
+
+**Pestañas**
+
 | Opción | Valores |
 |---|---|
-| **Letra** | «La de siempre» o una de ancho fijo instalada (Cascadia Mono, Consolas, JetBrains Mono, Fira Code…). |
-| **Tamaño** | De 11,5 a 18 pt. |
+| **Lista de pestañas** | Con descripción o Solo íconos (también con el botón de arriba de la lista). |
+| **Terminal por defecto** | La que abre **Nueva terminal aquí**, en el menú de cada proyecto. |
+
+**Apariencia** (arriba, una vista previa que cambia al elegir)
+
+| Opción | Valores |
+|---|---|
+| **Fuente** | «La de siempre» o una de ancho fijo instalada (Cascadia Mono, Consolas, JetBrains Mono, Fira Code…). |
+| **Tamaño** | De 11,5 a 18 pt, con **−** y **+**. |
 | **Interlineado** | Junto, Normal o Amplio. |
 | **Color del texto** | El del tema, Ámbar, Verde o Hielo. |
-| **Fondo** | El del tema, Más profundo o Negro, de consola. |
-| **Lista de sesiones** | Con descripción o Solo íconos. |
-| **Animaciones** | «Pensando», el giro de los pasos y los bloques que aparecen. Apagadas, gasta menos. |
+| **Paleta de la terminal** | Claupet, Suave o Viva: los 16 colores que usan los programas de pantalla completa. |
+| **Cursor** | Bloque, Barra o Subrayado (el de los programas de pantalla completa). |
+| **Fondo** | Del tema, Más oscuro o Negro. |
+| **Animaciones** | Completas o Ninguna («Pensando», cargando, enviando y al aparecer). Sin ellas, gasta menos. |
+| **Ligaduras** | Apagadas, `->` y `!=` se ven como se escribieron; encendidas, en un solo signo (si la letra los tiene). |
 
-Debajo, una **Vista previa** y los **Proyectos vinculados**, cada uno con **Desvincular**. **Lo de
-siempre** vuelve a los valores de entrada.
+**Proyectos vinculados**, cada uno con su carpeta, cuántas pestañas tiene y **Desvincular**. **Lo de siempre**,
+arriba, vuelve a los valores de entrada.
 
 ## Límites
 
 - **Cerrar Claupet Console cierra todas las sesiones** de la Terminal: ningún agente queda corriendo.
-- Los shells en bloques todavía no existen en macOS ni en Linux.
 - Los otros agentes tienen que estar instalados y con la sesión iniciada.
 
 ---

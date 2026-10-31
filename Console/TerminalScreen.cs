@@ -21,20 +21,11 @@ using XTracking = XTerm.Input.MouseTrackingMode;
 /// </summary>
 sealed class TerminalScreen : Control
 {
-    // Los 16 colores de siempre, legibles sobre el fondo de la Terminal (One Half oscuro y claro).
-    static readonly int[] Dark16 =
-    [
-        0x282C34, 0xE06C75, 0x98C379, 0xE5C07B, 0x61AFEF, 0xC678DD, 0x56B6C2, 0xDCDFE4,
-        0x5A6374, 0xE06C75, 0x98C379, 0xE5C07B, 0x61AFEF, 0xC678DD, 0x56B6C2, 0xFFFFFF,
-    ];
-    static readonly int[] Light16 =
-    [
-        0x383A42, 0xE45649, 0x50A14F, 0xC18401, 0x0184BC, 0xA626A4, 0x0997B3, 0xA0A1A7,
-        0x4F525D, 0xDF6C75, 0x50A14F, 0xC18401, 0x0184BC, 0xA626A4, 0x0997B3, 0x383A42,
-    ];
-
     readonly ShellSession _shell;
     readonly Ink _ink;
+    /// <summary>Los 16 colores de la paleta elegida en Ajustes › Terminal, y la forma del cursor.</summary>
+    readonly int[] _palette;
+    readonly string _cursor;
     readonly double _size;
     readonly Typeface _regular, _bold, _italic, _boldItalic;
     readonly Dictionary<int, IBrush> _brushes = [];
@@ -43,18 +34,18 @@ sealed class TerminalScreen : Control
     /// <summary>El botón apretado con el seguimiento del mouse encendido (para mandar también cuándo se suelta).</summary>
     XMouse? _pressed;
 
-    public TerminalScreen(ShellSession shell, Ink ink, FontFamily mono, double size)
+    public TerminalScreen(ShellSession shell, Ink ink, FontFamily mono, double size, TerminalLook look)
     {
         _shell = shell;
         _ink = ink;
+        _palette = look.Colors16(ink.Dark);
+        _cursor = look.Cursor;
         _size = size;
         _regular = new Typeface(mono);
         _bold = new Typeface(mono, FontStyle.Normal, FontWeight.Bold);
         _italic = new Typeface(mono, FontStyle.Italic);
         _boldItalic = new Typeface(mono, FontStyle.Italic, FontWeight.Bold);
-        var probe = Text("MMMMMMMMMM", _regular, Brushes.White);
-        _cellWidth = probe.WidthIncludingTrailingWhitespace / 10;
-        _cellHeight = Math.Ceiling(probe.Height);
+        (_cellWidth, _cellHeight) = Cell(mono, size);
         Focusable = true;
         ClipToBounds = true;
         FocusAdorner = null;
@@ -63,6 +54,13 @@ sealed class TerminalScreen : Control
         DetachedFromVisualTree += (_, _) => _shell.ScreenChanged -= InvalidateVisual;
         GotFocus += (_, _) => InvalidateVisual();
         LostFocus += (_, _) => InvalidateVisual();
+    }
+
+    /// <summary>El ancho y el alto de una celda con esa letra y ese tamaño (el panel calcula con lo mismo).</summary>
+    public static (double Width, double Height) Cell(FontFamily mono, double size)
+    {
+        var probe = new FormattedText("MMMMMMMMMM", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface(mono), size, Brushes.White);
+        return (probe.WidthIncludingTrailingWhitespace / 10, Math.Ceiling(probe.Height));
     }
 
     /// <summary>Cuántas columnas y filas caben (la consola toma ese tamaño).</summary>
@@ -80,7 +78,7 @@ sealed class TerminalScreen : Control
         {
             _resizePending = false;
             var (cols, rows) = Fit(Bounds.Size);
-            if (cols > 0 && rows > 0 && TopLevel.GetTopLevel(this) is not null) _shell.ResizeScreen(cols, rows);
+            if (cols > 0 && rows > 0 && TopLevel.GetTopLevel(this) is not null) _shell.Resize(cols, rows);
         }, Avalonia.Threading.DispatcherPriority.Background);
     }
 
@@ -128,7 +126,17 @@ sealed class TerminalScreen : Control
         }
         var row = buffer.Y + buffer.YBase - buffer.YDisp;
         if (screen.CursorVisible && IsFocused && row >= 0 && row < screen.Rows)
-            context.FillRectangle(Translucent(_ink.Accent, 0.6), new Rect(buffer.X * _cellWidth, row * _cellHeight, _cellWidth, _cellHeight));
+        {
+            var x = buffer.X * _cellWidth;
+            var y = row * _cellHeight;
+            var cursor = _cursor switch
+            {
+                "barra" => new Rect(x, y, 2, _cellHeight),
+                "subrayado" => new Rect(x, y + _cellHeight - 2, _cellWidth, 2),
+                _ => new Rect(x, y, _cellWidth, _cellHeight),
+            };
+            context.FillRectangle(_cursor == "bloque" ? Translucent(_ink.Accent, 0.6) : _ink.Accent, cursor);
+        }
     }
 
     static string Content(BufferCell cell) => string.IsNullOrEmpty(cell.Content) ? " " : cell.Content;
@@ -155,7 +163,7 @@ sealed class TerminalScreen : Control
     IBrush? Color(int mode, int color)
     {
         if (mode == 0 && color is < 0 or >= 256) return null;
-        var rgb = mode != 0 ? color & 0xFFFFFF : color < 16 ? (_ink.Dark ? Dark16 : Light16)[color] : _shell.Screen.Colors[color] & 0xFFFFFF;
+        var rgb = mode != 0 ? color & 0xFFFFFF : color < 16 ? _palette[color] : _shell.Screen.Colors[color] & 0xFFFFFF;
         if (!_brushes.TryGetValue(rgb, out var brush))
             _brushes[rgb] = brush = new SolidColorBrush(Avalonia.Media.Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
         return brush;

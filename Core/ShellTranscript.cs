@@ -31,8 +31,8 @@ sealed class ShellBlock
     public bool Failed => ExitCode is { } code && code != 0 && !Interrupted && !PagerClosed;
     /// <summary>Se cerró el paginador antes del final (q en less): git y otros terminan con 141 (SIGPIPE).</summary>
     public bool PagerClosed => ExitCode == 141;
-    /// <summary>Lo cortó Ctrl+C: Windows le da STATUS_CONTROL_C_EXIT (0xC000013A).</summary>
-    public bool Interrupted => ExitCode == unchecked((int)0xC000013A);
+    /// <summary>Lo cortó Ctrl+C: Windows le da STATUS_CONTROL_C_EXIT (0xC000013A); en Linux y macOS, 130 (128 + SIGINT).</summary>
+    public bool Interrupted => ExitCode is unchecked((int)0xC000013A) or 130;
 }
 
 /// <summary>
@@ -79,7 +79,7 @@ sealed class ShellTranscript
     int _frozenDropped;
     Parse _parse;
     Phase _phase;
-    readonly int _cols;
+    int _cols;
     int _row, _col;
     /// <summary>La fila donde empieza la salida del comando que corre: las de arriba (el prompt, el eco) no son de él.</summary>
     int _outputTop;
@@ -99,6 +99,32 @@ sealed class ShellTranscript
     {
         _cols = Math.Max(10, cols);
         for (var i = 0; i < Math.Max(2, rows); i++) _screen.Add(new Row());
+    }
+
+    /// <summary>
+    /// La consola cambió de tamaño (el del panel). Las filas que sobran salen por arriba si el cursor está abajo (lo de un
+    /// comando que corre pasa a su salida) o se quitan de abajo; las que faltan se agregan abajo. Lo que la consola vuelve
+    /// a pintar después pone cada fila en su lugar.
+    /// </summary>
+    public void Resize(int cols, int rows)
+    {
+        _cols = Math.Max(10, cols);
+        rows = Math.Max(2, rows);
+        while (_screen.Count < rows) _screen.Add(new Row());
+        while (_screen.Count > rows)
+        {
+            if (_row >= rows)
+            {
+                var top = _screen[0];
+                _screen.RemoveAt(0);
+                if (_running is { } running && top.Owner == running) Freeze(Cut(top), top.Wrapped);
+                _row--;
+                _inputRow = _inputRow >= 0 ? _inputRow - 1 : -1;
+                _outputTop = Math.Max(0, _outputTop - 1);
+            }
+            else _screen.RemoveAt(_screen.Count - 1);
+        }
+        _col = Math.Min(_col, _cols);
     }
 
     public IReadOnlyList<ShellBlock> Blocks => _blocks;
@@ -542,6 +568,14 @@ sealed class ShellTranscript
                 {
                     Finish(done, parts.Length > 1 && int.TryParse(parts[1], out var exit) ? exit : null);
                     Touch(done, changed);
+                }
+                else if (_running is { } dropped && _phase == Phase.Input && _inputMarked && _marksOutput)
+                {
+                    // Volvió al prompt sin empezar el comando que se escribió (lo descartó, como zsh justo después de
+                    // un Ctrl+C): no corrió. Si no, el bloque quedaba corriendo y la sesión, ocupada para siempre.
+                    Finish(dropped, null);
+                    Touch(dropped, changed);
+                    _phase = Phase.Idle;
                 }
                 if (_phase != Phase.Input || _running is null) _phase = Phase.Idle;
                 _inputMarked = false;
