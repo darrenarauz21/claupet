@@ -71,6 +71,9 @@ sealed class PseudoConsole : IDisposable
             // Sin esto, si la app tiene la salida redirigida (las pruebas), el programa la heredaría en vez de la consola.
             info.Info.Flags = UseStdHandles;
             environment = Marshal.StringToHGlobalUni(Block(env));
+            // «No hacer caso de Ctrl+C» se hereda: si a la app la abrió un proceso que lo tenía (una consola, otro
+            // programa), el shell y sus comandos tampoco atendían Ctrl+C e «Interrumpir» no cortaba nada.
+            SetConsoleCtrlHandler(IntPtr.Zero, false);
             if (!CreateProcessW(null, new StringBuilder(commandLine), IntPtr.Zero, IntPtr.Zero, false,
                     ExtendedStartupInfoPresent | UnicodeEnvironment, environment, cwd, ref info, out var created))
                 throw new Win32Exception();
@@ -244,6 +247,9 @@ sealed class PseudoConsole : IDisposable
 
     [DllImport("kernel32.dll")]
     static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll")]
+    static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
 
     [DllImport("kernel32.dll")]
     static extern bool GetExitCodeProcess(SafeFileHandle process, out uint code);

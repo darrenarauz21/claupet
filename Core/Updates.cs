@@ -435,8 +435,9 @@ sealed class Updates : IDisposable
 
     /// <summary>
     /// Cada versión extrae sus bibliotecas (unos 32 MB) a su propia carpeta y nadie borraba las de antes: se borran las
-    /// hermanas de la actual. Primero se renombra cada una: en Windows, con una biblioteca cargada (otra versión abierta)
-    /// no se deja, y queda para la próxima vez.
+    /// hermanas de la actual. Una que otra versión todavía tiene abierta (la Console de antes de actualizar) no se toca
+    /// y queda para la próxima vez: Windows sí deja renombrarla y borrar lo que no cargó, y esa versión fallaba después
+    /// al cargar una biblioteca que se había llevado el borrado («System.Net.Primitives» al abrir una sesión).
     /// </summary>
     internal static int DeleteOldExtractions(string current)
     {
@@ -446,6 +447,7 @@ sealed class Updates : IDisposable
         foreach (var dir in Directory.EnumerateDirectories(root))
         {
             if (string.Equals(Path.GetFullPath(dir), Path.GetFullPath(current), StringComparison.OrdinalIgnoreCase)) continue;
+            if (InUse(dir)) continue;
             var doomed = dir.EndsWith(".borrar", StringComparison.Ordinal) ? dir : dir + ".borrar";
             try
             {
@@ -456,6 +458,21 @@ sealed class Updates : IDisposable
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } // en uso: la próxima vez
         }
         return deleted;
+    }
+
+    /// <summary>Alguna de sus bibliotecas está cargada: no se deja abrir para escribir (Windows la tiene mapeada).</summary>
+    static bool InUse(string dir)
+    {
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(dir, "*.dll", SearchOption.AllDirectories))
+            {
+                try { using var _ = new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
+        return false;
     }
 
     void Set(Action change) => _post(() =>

@@ -100,6 +100,9 @@ static class Shells
     public static (string CommandLine, Dictionary<string, string> Env) Launch(ShellChoice shell, string folder)
     {
         var env = new Dictionary<string, string> { ["TERM_PROGRAM"] = "Claupet" };
+        // less (el paginador de git) en la pantalla alterna, como en cualquier terminal: se ve en la pantalla completa
+        // de la Terminal y, al salir, no deja la página en el bloque. F: si cabe, no pagina; R: con colores.
+        if (Environment.GetEnvironmentVariable("LESS") is null) env["LESS"] = "FR";
         switch (shell.Kind)
         {
             case ShellKind.PowerShell:
@@ -119,7 +122,8 @@ static class Shells
     /// <summary>
     /// PowerShell (5.1 y 7): el prompt de siempre entre A y B, con D;código y la carpeta (OSC 7) antes. El código es 0 si
     /// lo último salió bien; si no, $LASTEXITCODE (un programa) o 1 (un cmdlet). C sale al aceptarse la línea, después del
-    /// eco. Sin predicciones de PSReadLine: el comando llega entero desde la caja de la Terminal.
+    /// eco, y solo si trae un comando (con Ctrl+C, PSReadLine devuelve la línea vacía y no hay salida que empiece). Sin
+    /// predicciones de PSReadLine: el comando llega entero desde la caja de la Terminal.
     /// </summary>
     const string PowerShellScript = """
         $global:__ClaupetPrompt = $function:prompt
@@ -139,7 +143,7 @@ static class Shells
             $global:__ClaupetReadLine = $function:PSConsoleHostReadLine
             function global:PSConsoleHostReadLine {
                 $line = & $global:__ClaupetReadLine
-                [Console]::Write([char]27 + ']133;C' + [char]7)
+                if ("$line".Trim()) { [Console]::Write([char]27 + ']133;C' + [char]7) }
                 $line
             }
             try { Set-PSReadLineOption -PredictionSource None -ErrorAction Stop } catch { }
@@ -210,18 +214,36 @@ sealed class ShellSession : IDisposable
     readonly StringBuilder _pending = new();
     bool _posted;
     PseudoConsole? _console;
+    int _cols = Cols, _rows = Rows;
 
     public ShellSession(ShellChoice shell, string folder, Action<Action> post)
     {
         Shell = shell;
         Folder = folder;
         _post = post;
+        // Lo que el programa pregunta a la terminal (dónde está el cursor, qué terminal es) se contesta como cualquiera.
+        Screen.DataReceived += (_, e) => _console?.Write(e.Data);
     }
 
     public ShellChoice Shell { get; }
     public string Folder { get; }
     public ShellTranscript Transcript { get; } = new(Cols, Rows);
     public bool Running { get; private set; }
+
+    /// <summary>
+    /// La pantalla tal como la pinta el shell, con colores (XTerm.NET). Los bloques salen de Transcript; esta se muestra
+    /// cuando un programa usa la pantalla completa (la alterna: vim, less, claude, htop).
+    /// </summary>
+    public XTerm.Terminal Screen { get; } = new(new XTerm.Options.TerminalOptions { Cols = Cols, Rows = Rows, Scrollback = 100 });
+
+    /// <summary>Un programa está usando la pantalla completa.</summary>
+    public bool FullScreen { get; private set; }
+
+    /// <summary>Entró o salió de la pantalla completa. Se avisa en el hilo de post.</summary>
+    public event Action? FullScreenChanged;
+
+    /// <summary>Cambió lo que se ve en la pantalla completa (hay que volver a dibujarla).</summary>
+    public event Action? ScreenChanged;
 
     /// <summary>Cambiaron esos bloques (o el estado de la sesión). Se avisa en el hilo de post.</summary>
     public event Action<IReadOnlyList<ShellBlock>>? Changed;
@@ -265,6 +287,35 @@ sealed class ShellSession : IDisposable
     /// <summary>Ctrl+C: corta el comando que corre (o borra lo escrito en el prompt).</summary>
     public void Interrupt() => _console?.Write("\x03");
 
+    /// <summary>Lo que se teclea en la pantalla completa, tal cual (las secuencias ya armadas).</summary>
+    public void Input(string data)
+    {
+        if (Running && data.Length > 0) _console?.Write(data);
+    }
+
+    /// <summary>
+    /// El tamaño de la pantalla completa (el del panel). Solo mientras un programa la usa: al salir, la consola vuelve
+    /// al tamaño de los bloques (se arman con ese ancho).
+    /// </summary>
+    public void ResizeScreen(int cols, int rows)
+    {
+        // Lo que ya llegó se pinta con el tamaño de antes (y puede ser que el programa ya haya salido).
+        Flush();
+        if (FullScreen) SetSize(cols, rows);
+    }
+
+    /// <summary>Las dos pantallas, la de ConPTY y la de aquí, cambian juntas (si no, el programa pinta en filas corridas).</summary>
+    void SetSize(int cols, int rows)
+    {
+        cols = Math.Clamp(cols, 20, 400);
+        rows = Math.Clamp(rows, 5, 200);
+        if (cols == _cols && rows == _rows) return;
+        _cols = cols;
+        _rows = rows;
+        Screen.Resize(cols, rows);
+        _console?.Resize(cols, rows);
+    }
+
     void Read(PseudoConsole console)
     {
         var decoder = new UTF8Encoding(false).GetDecoder();
@@ -298,7 +349,19 @@ sealed class ShellSession : IDisposable
             _pending.Clear();
             _posted = false;
         }
-        if (text.Length > 0) Raise(Transcript.Apply(text));
+        if (text.Length == 0) return;
+        Screen.Write(text);
+        var changed = Transcript.Apply(text);
+        if (Screen.IsAlternateBufferActive != FullScreen) SetFullScreen(Screen.IsAlternateBufferActive);
+        else if (FullScreen) ScreenChanged?.Invoke();
+        Raise(changed);
+    }
+
+    void SetFullScreen(bool on)
+    {
+        FullScreen = on;
+        if (!on) SetSize(Cols, Rows);
+        FullScreenChanged?.Invoke();
     }
 
     async Task WatchAsync(PseudoConsole console)
@@ -317,6 +380,7 @@ sealed class ShellSession : IDisposable
             // La consola de mentira sigue abierta aunque el shell haya terminado: se cierra.
             _console = null;
             console.Dispose();
+            if (FullScreen) SetFullScreen(false);
             Raise(changed);
         });
     }
@@ -332,5 +396,6 @@ sealed class ShellSession : IDisposable
         _console = null;
         Running = false;
         console?.Dispose();
+        Screen.Dispose();
     }
 }

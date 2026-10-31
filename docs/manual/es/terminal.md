@@ -63,7 +63,7 @@ Los modos de **Permisos** de Claude Code:
 ### Cómo escribirle
 
 Escriba en el cuadro de abajo, junto a **❯**. **Intro** envía y **Mayús+Intro** hace otra línea. Mientras
-trabaja, **Interrumpir** (arriba) corta el turno.
+trabaja, **Interrumpir** (el cuadrado de arriba, o **Esc**) corta el turno.
 
 Arriba de la sesión se ven el proyecto, su rama, el modelo y el esfuerzo, cuánto del contexto lleva
 («contexto 42 %») y el uso de la sesión de 5 horas de la cuenta («5 h 18 %»).
@@ -160,10 +160,18 @@ código 1») y cuánto tardó.
 |---|---|
 | **Intro** | Ejecuta el comando. |
 | **↑** / **↓** | Recorren los comandos anteriores. |
-| **Ctrl+C** o **Esc** | Interrumpen el que corre. |
+| **Ctrl+C** | Interrumpe el que corre (sin nada corriendo, borra lo escrito). |
 
 - Mientras un comando corre, lo que escriba le llega a él (por ejemplo, para responder «¿Continuar? [S/N]»).
-- Al pasar el cursor sobre un bloque aparecen **Copiar** y **Repetir**.
+  Con el cuadro vacío, las flechas, **Tab**, **Intro** y **Esc** le llegan directo: así se elige una opción
+  de una pregunta, como la de confianza de `claude`.
+- Al pasar el cursor sobre un bloque aparecen los íconos de **Copiar** y **Repetir**.
+
+### Programas de pantalla completa
+
+Los programas que usan toda la pantalla (`vim`, `nano`, `less`, el paginador de `git log`, `claude`, `htop`)
+se ven en la sesión entera, con sus colores y del tamaño del panel, como en cualquier terminal. Las teclas, el
+texto, la rueda del mouse y **Ctrl+V** (pegar) les llegan directo. Al salir del programa vuelven los bloques.
 - Un bloque muestra las primeras 30 líneas; **Ver más líneas** abre el resto. Se guardan las últimas 400.
 
 ## Proyectos
@@ -203,8 +211,7 @@ El botón **Ramas, cambios y procesos**, arriba de la sesión, abre un panel a l
 
 ## Ajustes › Terminal
 
-Cómo se ven las sesiones. Se abre con el engranaje (**Ajustes de la Terminal**) de arriba de la lista, o
-desde **Ajustes › Terminal** en la Console. Se guarda en este equipo y vale para todas las pestañas.
+Cómo se ven las sesiones. Se abre desde **Ajustes › Terminal** en la Console. Se guarda en este equipo y vale para todas las pestañas.
 
 <p align="center">
   <img src="../../capturas/manual/terminal-ajustes.png" alt="Los ajustes de la Terminal con su vista previa" width="720">
@@ -226,8 +233,7 @@ siempre** vuelve a los valores de entrada.
 ## Límites
 
 - **Cerrar Claupet Console cierra todas las sesiones** de la Terminal: ningún agente queda corriendo.
-- Los shells en bloques todavía no existen en macOS ni en Linux, y no sirven para programas de pantalla
-  completa como `vim` o `htop`.
+- Los shells en bloques todavía no existen en macOS ni en Linux.
 - Los otros agentes tienen que estar instalados y con la sesión iniciada.
 
 ---

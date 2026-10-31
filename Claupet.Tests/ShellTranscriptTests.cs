@@ -169,20 +169,65 @@ public sealed class ShellTranscriptTests
     }
 
     [Fact]
-    public void LaPantallaAlternativaDaUnAvisoYNoEnsuciaElBloque()
+    public void LaPantallaAlternativaNoEnsuciaElBloqueNiDejaAvisos()
     {
         var t = Started();
         var block = t.Begin("vim");
         var changed = t.Apply(Echo("vim") + $"{E}[?1049h{E}[H~\r\n~\r\n~");
 
+        // La muestra la pantalla completa de la Terminal (ShellSession.Screen): aquí no hay aviso ni salida.
         Assert.True(t.AltScreen);
-        var notice = Assert.Single(changed, b => b.Kind == ShellBlockKind.Notice);
-        Assert.Contains("pantalla completa", notice.Command);
+        Assert.DoesNotContain(changed, b => b.Kind == ShellBlockKind.Notice);
         Assert.Empty(block.Lines);
 
         t.Apply($"{E}[?1049l" + Prompt(0));
         Assert.False(t.AltScreen);
         Assert.False(block.Running);
+        Assert.Equal(0, block.ExitCode);
+    }
+
+    [Fact]
+    public void ElEcoLargoPartidoEnLaUltimaFilaNoQuedaComoSalida()
+    {
+        // Lo que manda ConPTY de verdad con el prompt abajo de todo: el eco se parte y la pantalla corre con un salto
+        // suelto (LF, sin CR); después lo vuelve a pintar entero en su lugar y recién ahí llega la marca C.
+        var t = new ShellTranscript(40, 4);
+        t.Apply($"{E}[2J{E}[H" + Prompt());
+        t.Apply(Echo("echo uno") + "uno\r\n" + Prompt(0));
+        t.Apply(Osc("133;D;0") + "\r\n\r\n");
+        const string command = "cd C:\\una\\carpeta\\con\\un\\nombre\\largo\\de\\verdad";
+        var block = t.Begin(command);
+        t.Apply(Osc("133;A") + "PS C:\\> " + Osc("133;B"));
+        t.Apply($"{E}[93m{command[..32]}{E}[m\n{E}[4;9H{command}{E}[m\n");
+        t.Apply(Osc("133;C") + Prompt(0));
+
+        Assert.False(block.Running);
+        Assert.Equal(0, block.ExitCode);
+        Assert.Empty(block.Lines);
+    }
+
+    [Fact]
+    public void CortarConCtrlCOCerrarElPaginadorNoEsUnError()
+    {
+        Assert.True(new ShellBlock { Kind = ShellBlockKind.Command, ExitCode = 1 }.Failed);
+        var interrupted = new ShellBlock { Kind = ShellBlockKind.Command, ExitCode = unchecked((int)0xC000013A) };
+        Assert.True(interrupted.Interrupted);
+        Assert.False(interrupted.Failed);
+        var pager = new ShellBlock { Kind = ShellBlockKind.Command, ExitCode = 141 };
+        Assert.True(pager.PagerClosed);
+        Assert.False(pager.Failed);
+    }
+
+    [Fact]
+    public void CtrlCEnElPromptNoEsUnComando()
+    {
+        // PSReadLine pinta «^C» y antes la marca C llegaba igual: quedaban bloques «^C» con código 1.
+        var t = Started();
+        var changed = t.Apply($"{E}[91m^C{E}[m" + Osc("133;C") + "\r\n" + Prompt(1));
+
+        Assert.Empty(changed);
+        Assert.DoesNotContain(t.Blocks, b => b.Kind == ShellBlockKind.Command);
+        Assert.False(t.Busy);
     }
 
     [Fact]

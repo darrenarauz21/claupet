@@ -99,16 +99,22 @@ sealed partial class TerminalPane
         row.Children.Add(chevron);
 
         var text = new StackPanel { Spacing = 1 };
-        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        // El nombre y la rama se cortan con «…» dentro de la columna (en un StackPanel horizontal se salían del borde).
+        var title = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*") };
         var label = Ui.Text(name, 12.5, _ink.Secondary, FontWeight.SemiBold);
         label.TextTrimming = TextTrimming.CharacterEllipsis;
+        label.MaxWidth = 150;
         title.Children.Add(label);
         if (branch is not null && !folded)
         {
-            title.Children.Add(Icon(BranchIcon, _ink.Tertiary, 11, 1.8));
+            var icon = Icon(BranchIcon, _ink.Tertiary, 11, 1.8);
+            icon.Margin = new Thickness(6, 0, 4, 0);
+            Grid.SetColumn(icon, 1);
+            title.Children.Add(icon);
             var branchText = Ui.Text(branch, 12, _ink.Tertiary, family: Mono);
             branchText.TextTrimming = TextTrimming.CharacterEllipsis;
-            branchText.MaxWidth = 110;
+            ToolTip.SetTip(branchText, branch);
+            Grid.SetColumn(branchText, 2);
             title.Children.Add(branchText);
         }
         text.Children.Add(title);

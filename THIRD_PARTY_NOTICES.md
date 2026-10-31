@@ -13,6 +13,7 @@ incluyen las bibliotecas de esta lista, cada una con su propia licencia.
 | System.Speech | 10.0.14 | MIT, © .NET Foundation | https://github.com/dotnet/runtime |
 | Avalonia (Claupet Console; la app de Linux y macOS) | 11.3.22 | MIT | https://github.com/AvaloniaUI/Avalonia |
 | AvaloniaEdit (el motor del editor de Claupet Console) | 11.3.0 | MIT | https://github.com/AvaloniaUI/AvaloniaEdit |
+| XTerm.NET (la pantalla completa de los shells de Claupet Terminal) | 3.0.0 | MIT | https://github.com/tomlm/XTerm.NET |
 | SkiaSharp (con Skia) | 2.88.9 | MIT, © Microsoft Corporation (Skia: BSD-3-Clause) | https://github.com/mono/SkiaSharp |
 | HarfBuzzSharp (con HarfBuzz) | 8.3.1.1 | MIT, © Microsoft Corporation (HarfBuzz: Old MIT) | https://github.com/mono/SkiaSharp |
 | ANGLE (Avalonia.Angle.Windows.Natives) | 2.1.25547.20250602 | BSD-3-Clause, © The ANGLE Project Authors | https://chromium.googlesource.com/angle/angle |

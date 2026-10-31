@@ -126,7 +126,8 @@ sealed partial class TerminalPane : Grid
 
     public void FocusInput()
     {
-        if (!_creating) _input.Focus();
+        if (_screen is { } screen) screen.Focus();
+        else if (!_creating) _input.Focus();
     }
 
     /// <summary>Al cerrar la Console: ningún Claude Code queda corriendo.</summary>
@@ -318,6 +319,7 @@ sealed partial class TerminalPane : Grid
         _views.Clear();
         _live.Clear();
         _earlier = null;
+        _screen = null;
         _blocks.Children.Clear();
         // Con un fondo propio, la Terminal lo pinta (tapa la escena del tema); si no, se ve el de la ventana.
         Background = _look.OwnBackground ? _ink.Surface : null;
@@ -459,7 +461,7 @@ sealed partial class TerminalPane : Grid
         _context.Margin = new Thickness(8, 0);
         Grid.SetColumn(_context, 2);
         bar.Children.Add(_context);
-        _interrupt = Pill(L.T("Interrumpir"), _ink.Pill, _ink.Text, () => tab.Agent.Interrupt());
+        _interrupt = Round(StopIcon, L.T("Interrumpir (Esc)"), () => tab.Agent.Interrupt());
         Grid.SetColumn(_interrupt, 3);
         bar.Children.Add(_interrupt);
         var panel = Round(PanelIcon, L.T("Ramas, cambios y procesos"), ToggleSide);
@@ -550,9 +552,8 @@ sealed partial class TerminalPane : Grid
                 agent.SetPermissionMode(picked);
                 modeText!.Text = ModeLabel(picked);
             }), out modeText));
-        var hint = Ui.Text(L.T("Intro envía · Mayús+Intro, otra línea"), 11.5, _ink.Tertiary);
-        hint.Margin = new Thickness(6, 0, 0, 0);
-        chips.Children.Add(hint);
+        // Las teclas, al pasar el cursor por la caja (no una línea más debajo).
+        ToolTip.SetTip(_input, L.T("Intro envía · Mayús+Intro, otra línea"));
 
         var card = new StackPanel();
         card.Children.Add(line);
@@ -1091,7 +1092,7 @@ sealed partial class TerminalPane : Grid
     Control DoneView(AgentBlock block)
     {
         var parts = new List<string> { Duration(block.Duration) };
-        if (block.Turns > 0) parts.Add(L.T("{0} turnos", block.Turns));
+        if (block.Turns > 0) parts.Add(block.Turns == 1 ? L.T("1 turno") : L.T("{0} turnos", block.Turns));
         if (block.Cost > 0) parts.Add(L.T("US$ {0:0.0000}", block.Cost));
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 2, 0, 8) };
         row.Children.Add(Icon(block.Failed ? CrossIcon : CheckIcon, block.Failed ? _ink.Danger : Added, 13, 2.2));
