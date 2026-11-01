@@ -176,32 +176,57 @@ sealed class ApprovalServer : IDisposable
     readonly Func<ApprovalRequest, CancellationToken, Task<string?>> _ask;
     readonly string _pipeName;
 
+    /// <summary>Cuántas instancias del pipe esperan a la vez: mientras una atiende un pedido, otra sigue libre.</summary>
+    const int Listeners = 2;
+
     public ApprovalServer(Func<ApprovalRequest, CancellationToken, Task<string?>> ask, string? pipeName = null)
     {
         _ui = SynchronizationContext.Current ?? new SynchronizationContext();
         _ask = ask;
         _pipeName = pipeName ?? Approvals.PipeName;
-        _ = Task.Run(ListenAsync);
+        // Escucha desde ya: las primeras instancias se crean aquí mismo y no en el hilo de cada ciclo, que puede arrancar
+        // tarde. Así quien pregunta apenas se abrió la app, o justo después de otro pedido, encuentra el pipe esperando
+        // dentro de los 300 ms que espera el hook.
+        for (var i = 0; i < Listeners; i++)
+        {
+            var first = TryCreate();
+            _ = Task.Run(() => ListenAsync(first));
+        }
     }
 
-    async Task ListenAsync()
+    NamedPipeServerStream? TryCreate()
+    {
+        try
+        {
+            return new NamedPipeServerStream(_pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
+                PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        }
+        catch (Exception) { return null; } // otro proceso con el mismo nombre, por ejemplo: el ciclo lo vuelve a intentar
+    }
+
+    async Task ListenAsync(NamedPipeServerStream? next)
     {
         while (!_stop.IsCancellationRequested)
         {
-            NamedPipeServerStream? pipe = null;
+            var pipe = next ?? TryCreate();
+            next = null;
             try
             {
-                pipe = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
-                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+                if (pipe is null)
+                {
+                    await Task.Delay(1000, _stop.Token);
+                    continue;
+                }
                 await pipe.WaitForConnectionAsync(_stop.Token);
                 var connected = pipe;
                 pipe = null;
                 _ = Task.Run(() => HandleAsync(connected));
             }
             catch (OperationCanceledException) { break; }
-            catch (Exception) { await Task.Delay(1000); } // otro proceso con el mismo nombre, por ejemplo
+            catch (Exception) { await Task.Delay(1000); }
             finally { pipe?.Dispose(); }
         }
+        next?.Dispose(); // se cerró antes de que el ciclo empezara
     }
 
     async Task HandleAsync(NamedPipeServerStream pipe)
