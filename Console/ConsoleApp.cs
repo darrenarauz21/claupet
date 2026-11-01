@@ -49,7 +49,7 @@ static class ConsoleApp
             return 0;
         }
         _ = Task.Run(ListenAsync);
-        StartTrayIfClosed();
+        StartTrayIfClosed(args.Contains(PreviewFlag));
 
         return AppBuilder.Configure<ConsoleApplication>().UsePlatformDetect().LogToTrace().StartWithClassicDesktopLifetime(args);
     }
@@ -99,12 +99,26 @@ static class ConsoleApp
     /// Desde un acceso directo, Claupet puede no estar abierto: se abre (el chat y los ajustes los atiende él) y la
     /// Console se conecta en cuanto esté listo.
     /// </summary>
-    static void StartTrayIfClosed()
+    static void StartTrayIfClosed(bool preview)
     {
         if (ConsoleLink.TrayRunning() || Environment.ProcessPath is not { } exe) return;
-        try { Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = AppContext.BaseDirectory })?.Dispose(); }
+        try { Process.Start(TrayStart(exe, preview))?.Dispose(); }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException) { ErrorLog.Write(ex); }
     }
+
+    /// <summary>
+    /// Cómo se abre la bandeja desde la Console: con este mismo .exe y, si la Console es de prueba (--preview), también de
+    /// prueba. Sin eso, la bandeja de una copia de prueba abría el asistente, que la instalaba encima de la instalada.
+    /// </summary>
+    internal static ProcessStartInfo TrayStart(string exe, bool preview)
+    {
+        var start = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = AppContext.BaseDirectory };
+        if (preview) start.ArgumentList.Add(PreviewFlag);
+        return start;
+    }
+
+    /// <summary>Una copia de prueba: abre aunque haya otra Claupet y no toca los hooks, el inicio ni la instalación.</summary>
+    public const string PreviewFlag = "--preview";
 }
 
 sealed class ConsoleApplication : Application

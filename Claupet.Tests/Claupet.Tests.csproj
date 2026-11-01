@@ -16,6 +16,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <!-- Avalonia sin pantalla (la misma versión que la app): las pruebas que acomodan y dibujan controles. -->
+    <PackageReference Include="Avalonia.Headless" Version="11.3.22" />
   </ItemGroup>
 
   <ItemGroup>

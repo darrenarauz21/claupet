@@ -16,6 +16,17 @@ public sealed class TerminalLookTests
     }
 
     [Fact]
+    public void LaTransparenciaEsLaOpacidadQueFaltaDeLasTerminales()
+    {
+        Assert.Equal(0, new TerminalLook().Transparency); // como hasta ahora: sólidas
+        Assert.Equal(1, new TerminalLook().ShellOpacity);
+        Assert.Equal(0.6, new TerminalLook { Transparency = 40 }.ShellOpacity, 6);
+        Assert.Equal(0.2, new TerminalLook { Transparency = 80 }.ShellOpacity, 6);
+        Assert.Equal(0.55, new TerminalLook { Transparency = 45 }.ShellOpacity, 6); // la barra va de 5 en 5
+        Assert.Equal(80, TerminalLook.MaxTransparency);
+    }
+
+    [Fact]
     public void ElFondoNegroEsSiempreOscuroYElTextoSigueSiendoLegible()
     {
         var look = new TerminalLook { Background = "negro", Text = "ambar" };

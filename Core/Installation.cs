@@ -108,13 +108,22 @@ static class Installation
     }
 
     /// <summary>
+    /// Se puede instalar este .exe: es el paquete entero (un solo archivo, como el de las versiones publicadas). Una
+    /// compilación de desarrollo (bin\…) es solo el lanzador, con Claupet.dll y lo demás al lado: copiado solo, no abre.
+    /// </summary>
+    public static bool CanInstall(string exe) =>
+        !File.Exists(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(exe)) ?? "", "Claupet.dll"));
+
+    /// <summary>
     /// Copia este .exe a la carpeta (si no está ya ahí), le quita la marca de «descargado de internet» (la persona ya
     /// aceptó abrirlo; cualquier instalador deja así lo que copia) y lo registra en Configuración › Aplicaciones. Si en la
     /// carpeta hay otra versión, se cambia como en una actualización: la de antes queda con «.anterior» y se borra al
-    /// abrir la nueva. Devuelve el .exe instalado.
+    /// abrir la nueva. Devuelve el .exe instalado. Una compilación de desarrollo no se instala (CanInstall).
     /// </summary>
     public static string Install(string source, string folder, string version)
     {
+        if (!CanInstall(source))
+            throw new IOException(L.T("Esta copia es una compilación de desarrollo (sin empaquetar): no se instala."));
         folder = Path.GetFullPath(folder);
         Directory.CreateDirectory(folder);
         var target = Path.Combine(folder, ExeName);

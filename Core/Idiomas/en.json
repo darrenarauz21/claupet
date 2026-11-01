@@ -1694,5 +1694,9 @@
   "Nueva terminal aquí ({0})": "New terminal here ({0})",
   "Abrir un agente u otra pestaña aquí…": "Open an agent or another tab here…",
   "Desvincular (cierra sus {0} pestañas)": "Unlink (closes its {0} tabs)",
-  "Nueva pestaña (Ctrl+T)": "New tab (Ctrl+T)"
+  "Nueva pestaña (Ctrl+T)": "New tab (Ctrl+T)",
+  "Esta copia es una compilación de desarrollo (sin empaquetar): no se instala.": "This copy is a development build (not packaged): it can't be installed.",
+  "Transparencia": "Transparency",
+  "La pantalla, los bloques y la caja de las terminales dejan ver el fondo del tema": "The terminal screen, blocks and input box let the theme background show through",
+  "{0} %": "{0}%"
 }

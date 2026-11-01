@@ -318,13 +318,12 @@ sealed partial class TerminalPane
     }
 
     /// <summary>La pestaña nueva pasa a ser la elegida.</summary>
-    void Add(Tab tab)
+    internal void Add(Tab tab)
     {
-        if (_current is { } previous && !_settings && !_creating) previous.Draft = _input.Text ?? "";
+        if (_current is { } previous && !_creating) previous.Draft = _input.Text ?? "";
         _tabs.Add(tab);
         _current = tab;
         _creating = false;
-        _settings = false;
         _input.Text = "";
         Build();
         RenderList();

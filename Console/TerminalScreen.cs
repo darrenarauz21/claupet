@@ -91,6 +91,9 @@ sealed class TerminalScreen : Control
 
     public override void Render(DrawingContext context)
     {
+        // Todo el cuadro recibe el mouse, no solo donde hay texto: Avalonia busca qué hay bajo el puntero en lo dibujado,
+        // y sin un fondo propio la rueda y los clics de las celdas vacías se los llevaba el marco (no le llegaban al programa).
+        context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
         var screen = _shell.Screen;
         var buffer = screen.Buffer;
         for (var y = 0; y < screen.Rows; y++)

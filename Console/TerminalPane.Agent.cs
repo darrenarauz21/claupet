@@ -114,10 +114,23 @@ sealed partial class TerminalPane
 
     // ── Abajo ───────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// La caja de abajo es una sola para todas las pestañas y cada una la acomoda a su manera: antes de ponerla en otra se
+    /// le quita lo que le dejó la anterior. La de un shell la pone en la columna 1, que en la de Claude Code es la de la
+    /// cuenta y el modelo, y la caja quedaba encima de ellos; la de Claude Code, angosta, la deja ocupando tres columnas.
+    /// </summary>
+    void ResetInput()
+    {
+        foreach (var property in new AvaloniaProperty[]
+            { Grid.RowProperty, Grid.ColumnProperty, Grid.RowSpanProperty, Grid.ColumnSpanProperty, MarginProperty, MinWidthProperty, VerticalAlignmentProperty })
+            _input.ClearValue(property);
+    }
+
     Control Composer(Tab tab)
     {
         var agent = tab.Agent;
         var claude = agent.Options.Kind == AgentKinds.Claude;
+        ResetInput();
         _input.AcceptsReturn = true;
         _input.TextWrapping = TextWrapping.Wrap;
         _input.MinHeight = 22;

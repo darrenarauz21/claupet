@@ -93,7 +93,8 @@ sealed class SetupWindow : Window
         _railColor = theme.Dark ? SD.Color.FromArgb(0x2E, 0x2E, 0x2B) : SD.Color.FromArgb(0xF0, 0xEE, 0xE6);
         _startLanguage = Language = L.Language;
         TermsAccepted = Terms.Accepted(settings);
-        if (OperatingSystem.IsWindows() && !Installation.IsInstalled(exePath))
+        // Una compilación de desarrollo no ofrece instalarse: copiaría solo su lanzador encima de la instalada.
+        if (OperatingSystem.IsWindows() && !Installation.IsInstalled(exePath) && Installation.CanInstall(exePath))
         {
             InstallFolder = Installation.Folder ?? Installation.DefaultFolder;
             _installProblem = Installation.Problem(InstallFolder);
