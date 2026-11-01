@@ -310,7 +310,7 @@ sealed class ConsoleWindow : Window
         foreach (var page in _pages.Where(p => p.Parent is null))
         {
             var id = page.Id;
-            var current = id == (shown.Parent ?? _section);
+            var current = !_terminalSettings && id == (shown.Parent ?? _section);
             var item = Ui.Press(Ui.Text(page.Title, 14.5, current ? _ink.Text : _ink.Secondary), () => Select(id),
                 current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name: page.Title);
             item.MinHeight = 38;
@@ -319,16 +319,23 @@ sealed class ConsoleWindow : Window
             if (current) item.Background = _ink.Pill;
             _sections.Children.Add(item);
         }
-        // Los de la Terminal son de la Console (no pasan por la bandeja): se abren en su panel.
-        var terminal = Ui.Press(Ui.Text(L.T("Terminal"), 14.5, _ink.Secondary), () =>
-        {
-            SetMode(Mode.Terminal);
-            _terminal.ShowSettings();
-        }, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name: L.T("Terminal"));
+        // Los de la Terminal son de la Console (no pasan por la bandeja), pero su página va aquí, con las demás: antes se
+        // abría en el panel de la Terminal y sacaba de Ajustes.
+        var terminal = Ui.Press(Ui.Text(L.T("Terminal"), 14.5, _terminalSettings ? _ink.Text : _ink.Secondary), SelectTerminal,
+            _terminalSettings ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name: L.T("Terminal"));
         terminal.MinHeight = 38;
         terminal.Padding = new Thickness(12, 0);
         terminal.CornerRadius = new CornerRadius(12);
+        if (_terminalSettings) terminal.Background = _ink.Pill;
         _sections.Children.Add(terminal);
+        if (_terminalSettings)
+        {
+            // Se rehace con la ventana (otro tema); lo que llega de la bandeja no la toca (no se pierde dónde se estaba).
+            if (rebuild || _terminalPage is null)
+                _terminalPage = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = _terminal.SettingsPage() };
+            if (_main.Child != _terminalPage) _main.Child = _terminalPage;
+            return;
+        }
         _view.Show(shown, _ink, rebuild, _pages.FirstOrDefault(p => p.Id == shown.Parent)?.Title);
         if (_main.Child != _scroll) _main.Child = _scroll;
     }
@@ -367,11 +374,24 @@ sealed class ConsoleWindow : Window
 
     void Select(string id)
     {
-        if (id == _section || _pages.All(p => p.Id != id)) return;
+        if ((id == _section && !_terminalSettings) || _pages.All(p => p.Id != id)) return;
+        _terminalSettings = false;
         _section = id;
         Render(rebuild: true);
         _scroll.Offset = default;
     }
+
+    /// <summary>Ajustes › Terminal: su página en Ajustes, como una sección más.</summary>
+    void SelectTerminal()
+    {
+        if (_terminalSettings) return;
+        _terminalSettings = true;
+        Render(rebuild: true);
+    }
+
+    /// <summary>Se ve Ajustes › Terminal (y no una de las secciones de la bandeja), y su página.</summary>
+    bool _terminalSettings;
+    ScrollViewer? _terminalPage;
 
     void SetMode(Mode mode)
     {

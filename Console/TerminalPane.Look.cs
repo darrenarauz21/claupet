@@ -9,33 +9,24 @@ using Avalonia.Layout;
 using Avalonia.Media;
 
 /// <summary>
-/// Ajustes › Terminal (se abre desde Ajustes de la Console): las pestañas, la apariencia con su vista previa y los
-/// proyectos vinculados. También los botones de la cabecera de la lista.
+/// Ajustes › Terminal (en la página de Ajustes de la Console, con las demás secciones): las pestañas, la apariencia con
+/// su vista previa y los proyectos vinculados. También los botones de la cabecera de la lista.
 /// </summary>
 sealed partial class TerminalPane
 {
     const string ListIcon = "M9,6 H20 M9,12 H20 M9,18 H20 M4.5,6 H5 M4.5,12 H5 M4.5,18 H5";
     const string GridIcon = "M4,4 H10 V10 H4 Z M14,4 H20 V10 H14 Z M4,14 H10 V20 H4 Z M14,14 H20 V20 H14 Z";
 
-    /// <summary>Abre los ajustes de la Terminal en su panel (desde Ajustes de la Console o el engranaje).</summary>
-    public void ShowSettings()
-    {
-        if (_current is { } previous && !_creating) previous.Draft = _input.Text ?? "";
-        _settings = true;
-        Build();
-        RenderList();
-    }
+    /// <summary>La página de Ajustes › Terminal que se muestra ahora (al cambiar algo, se rehace en su lugar).</summary>
+    Border? _settingsPage;
 
-    void CloseSettings()
-    {
-        _settings = false;
-        if (_current is not null && !_creating) _input.Text = _current.Draft;
-        Build();
-        RenderList();
-        FocusInput();
-    }
+    /// <summary>
+    /// Ajustes › Terminal para la página de Ajustes de la Console. Antes se abría en el panel de la Terminal y sacaba de
+    /// Ajustes. Uno nuevo cada vez: el de antes puede seguir dentro de su ScrollViewer.
+    /// </summary>
+    public Control SettingsPage() => _settingsPage = new Border { Child = LookPage() };
 
-    /// <summary>Guarda lo elegido y lo aplica: los bloques, la lista y la página misma (su vista previa).</summary>
+    /// <summary>Guarda lo elegido y lo aplica: los bloques, la lista y la página de ajustes (su vista previa).</summary>
     void ChangeLook(Action<TerminalLook> change)
     {
         var listWidth = ListWidth;
@@ -44,6 +35,7 @@ sealed partial class TerminalPane
         ApplyLook();
         Build();
         RenderList();
+        if (_settingsPage is { } page) page.Child = LookPage();
         if (ListWidth != listWidth) ListChanged?.Invoke();
     }
 
@@ -85,7 +77,7 @@ sealed partial class TerminalPane
     {
         var panel = new StackPanel { Spacing = 18, Margin = new Thickness(28, 22, 28, 28), HorizontalAlignment = HorizontalAlignment.Left };
 
-        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
+        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         head.Children.Add(new TextBlock
         {
             Text = L.T("Terminal"),
@@ -98,15 +90,11 @@ sealed partial class TerminalPane
         var reset = TextButton(L.T("Lo de siempre"), () => ChangeLook(l =>
         {
             var fresh = new TerminalLook();
-            (l.Font, l.Size, l.LineSpacing, l.Text, l.Background, l.Animate, l.IconsOnly, l.Palette, l.Cursor, l.Ligatures, l.DefaultShell) =
-                (fresh.Font, fresh.Size, fresh.LineSpacing, fresh.Text, fresh.Background, fresh.Animate, fresh.IconsOnly, fresh.Palette, fresh.Cursor, fresh.Ligatures, fresh.DefaultShell);
+            (l.Font, l.Size, l.LineSpacing, l.Text, l.Background, l.Animate, l.IconsOnly, l.Palette, l.Cursor, l.Ligatures, l.DefaultShell, l.Transparency) =
+                (fresh.Font, fresh.Size, fresh.LineSpacing, fresh.Text, fresh.Background, fresh.Animate, fresh.IconsOnly, fresh.Palette, fresh.Cursor, fresh.Ligatures, fresh.DefaultShell, fresh.Transparency);
         }));
         Grid.SetColumn(reset, 1);
         head.Children.Add(reset);
-        var close = Round(CloseIcon, L.T("Cerrar los ajustes"), CloseSettings);
-        close.Margin = new Thickness(4, 0, 0, 0);
-        Grid.SetColumn(close, 2);
-        head.Children.Add(close);
         panel.Children.Add(head);
 
         // Pestañas
@@ -129,9 +117,10 @@ sealed partial class TerminalPane
         // Apariencia
         var fonts = TerminalLook.InstalledFonts();
         var dark = _ink.Dark;
+        var preview = LookPreview();
         var appearance = new List<Control>
         {
-            LookPreview(),
+            preview,
             SettingRow(L.T("Fuente"), null, ValuePick(_look.Font ?? L.T("La de siempre"), anchor => DropList.Show(anchor, _ink,
                 fonts.Select(f => new DropList.Entry(f, f, f == _look.Font)).Prepend(new DropList.Entry("", L.T("La de siempre"), _look.Font is null)).ToList(),
                 picked =>
@@ -150,6 +139,8 @@ sealed partial class TerminalPane
                 Segmented(TerminalLook.Cursors.Select(c => (c, TerminalLook.CursorLabel(c))).ToList(), _look.Cursor, v => ChangeLook(l => l.Cursor = v))),
             SettingRow(L.T("Fondo"), null,
                 Segmented([("tema", L.T("Del tema")), ("profundo", L.T("Más oscuro")), ("negro", L.T("Negro"))], _look.Background, v => ChangeLook(l => l.Background = v))),
+            SettingRow(L.T("Transparencia"), L.T("La pantalla, los bloques y la caja de las terminales dejan ver el fondo del tema"),
+                TransparencySlider(preview)),
             SettingRow(L.T("Animaciones"), L.T("Pensando, cargando, enviando y al aparecer"),
                 Segmented([("si", L.T("Completas")), ("no", L.T("Ninguna"))], _look.Animate ? "si" : "no", v => ChangeLook(l => l.Animate = v == "si"))),
             SettingRow(L.T("Ligaduras"), L.T("Une -> y != en un solo signo"), Switch(_look.Ligatures, on => ChangeLook(l => l.Ligatures = on))),
@@ -336,8 +327,59 @@ sealed partial class TerminalPane
         return button;
     }
 
+    /// <summary>
+    /// La transparencia, en una barra de 0 a 80 % (de 5 en 5): mientras se arrastra cambian el número y la vista previa; un
+    /// momento después de soltarla se guarda y se rehace la sesión de la Terminal (rehacer la página mientras se arrastra
+    /// soltaría la barra).
+    /// </summary>
+    Control TransparencySlider(Border preview)
+    {
+        var ground = preview.Background is ISolidColorBrush seen ? new SolidColorBrush(seen.Color) : (IBrush)_ink.Window;
+        var number = Ui.Text(L.T("{0} %", _look.Transparency), 12, _ink.Secondary, family: Mono);
+        number.MinWidth = 44;
+        number.TextAlignment = TextAlignment.Right;
+        number.VerticalAlignment = VerticalAlignment.Center;
+        var slider = new Slider
+        {
+            Minimum = 0,
+            Maximum = TerminalLook.MaxTransparency,
+            TickFrequency = 5,
+            IsSnapToTickEnabled = true,
+            Value = _look.Transparency,
+            Width = 200,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        // Los colores de la barra, los de la Terminal (no el acento de Windows).
+        foreach (var key in new[] { "SliderTrackValueFill", "SliderTrackValueFillPointerOver", "SliderTrackValueFillPressed",
+                     "SliderThumbBackground", "SliderThumbBackgroundPointerOver", "SliderThumbBackgroundPressed" })
+            slider.Resources[key] = _ink.Accent;
+        foreach (var key in new[] { "SliderTrackFill", "SliderTrackFillPointerOver", "SliderTrackFillPressed" })
+            slider.Resources[key] = _ink.Track;
+        Ui.AutomationName(slider, L.T("Transparencia"));
+        var save = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        save.Tick += (_, _) =>
+        {
+            save.Stop();
+            _look.Save();
+            Build(); // la sesión de la Terminal (no se ve desde Ajustes), con la transparencia nueva
+        };
+        slider.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != Avalonia.Controls.Primitives.RangeBase.ValueProperty) return;
+            _look.Transparency = (int)Math.Round(slider.Value);
+            number.Text = L.T("{0} %", _look.Transparency);
+            preview.Background = Seen(ground, _look.ShellOpacity);
+            save.Stop();
+            save.Start();
+        };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        row.Children.Add(slider);
+        row.Children.Add(number);
+        return row;
+    }
+
     /// <summary>La vista previa: un bloque de la terminal con lo elegido (letra, tamaño, interlineado, colores y cursor).</summary>
-    Control LookPreview()
+    Border LookPreview()
     {
         var palette = _look.Colors16(_ink.Dark);
         var size = _look.Size;
@@ -385,7 +427,7 @@ sealed partial class TerminalPane
         lines.Children.Add(tag);
         return new Border
         {
-            Background = _look.OwnBackground ? _ink.Surface : _ink.Window,
+            Background = Seen(_look.OwnBackground ? _ink.Surface : _ink.Window, _look.ShellOpacity),
             Padding = new Thickness(14, 10, 14, 12),
             Child = lines,
         };

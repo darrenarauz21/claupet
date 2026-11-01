@@ -24,7 +24,7 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
     static readonly string[] CodexModes = ["default", "acceptEdits", "plan", "auto"];
 
     readonly Dictionary<string, string> _pending = [];
-    readonly Queue<string> _queue = new();
+    readonly Queue<(string Text, IReadOnlyList<AgentImage>? Images)> _queue = new();
     readonly List<(string Id, IReadOnlyList<string> Efforts, bool IsDefault)> _models = [];
     AgentOptions? _options;
     int _requests;
@@ -254,9 +254,9 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
         });
     }
 
-    public IEnumerable<string> Prompt(string text)
+    public IEnumerable<string> Prompt(string text, IReadOnlyList<AgentImage>? images = null)
     {
-        _queue.Enqueue(text);
+        _queue.Enqueue((text, images));
         var lines = new List<string>();
         Next(lines);
         return lines;
@@ -265,13 +265,17 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
     /// <summary>Si la sesión ya existe y no corre un turno, manda el siguiente pedido de la cola.</summary>
     void Next(List<string> lines)
     {
-        if (_thread is null || _active || !_queue.TryDequeue(out var text)) return;
+        if (_thread is null || _active || !_queue.TryDequeue(out var next)) return;
+        var (text, images) = next;
+        var input = new JsonArray();
+        foreach (var image in images ?? []) input.Add(new JsonObject { ["type"] = "localImage", ["path"] = image.SaveTemp() });
+        input.Add(new JsonObject { ["type"] = "text", ["text"] = text, ["text_elements"] = new JsonArray() });
         _active = true;
         transcript.CodexBusy();
         var turn = new JsonObject
         {
             ["threadId"] = _thread,
-            ["input"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text, ["text_elements"] = new JsonArray() }),
+            ["input"] = input,
         };
         if (_modelChanged)
         {

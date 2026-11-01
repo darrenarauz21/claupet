@@ -9,7 +9,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Claupet</AssemblyName>
     <RootNamespace>Claupet</RootNamespace>
-    <Version>2.5.2</Version>
+    <Version>2.5.3</Version>
     <AssemblyTitle>Claupet</AssemblyTitle>
     <Product>Claupet</Product>
     <ApplicationIcon>..\app.ico</ApplicationIcon>
@@ -47,6 +47,8 @@
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.3.0" />
     <!-- La pantalla completa de los shells de Claupet Terminal (vim, less, claude…): interpreta las secuencias VT. -->
     <PackageReference Include="XTerm.NET" Version="3.0.0" />
+    <!-- Los .md de la vista de archivos de Claupet Terminal, dibujados como documento (títulos, listas, tablas…). -->
+    <PackageReference Include="Markdig" Version="1.4.1" />
     <!-- Los shells de Claupet Terminal en Linux y macOS: una pty abierta por su ayudante nativo (en Windows va la ConPTY
          propia, Core/PseudoConsole.cs). Su ConPTY de Windows no se usa: ni conpty.dll ni OpenConsole.exe en el paquete. -->
     <PackageReference Include="Porta.Pty" Version="2.2.3" />

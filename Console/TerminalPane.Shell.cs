@@ -70,10 +70,15 @@ sealed partial class TerminalPane
         // El agente de la pestaña no se abre nunca: solo lleva la carpeta (la lista agrupa por ella).
         var tab = new Tab(new TerminalAgent(new AgentOptions(folder), _ => { }), choice.Label) { Shell = shell };
         shell.Changed += changed => OnShellChanged(tab, changed);
+        // Lo que copia un programa (OSC 52: claude al seleccionar con el mouse, vim, tmux) va al portapapeles.
+        shell.Screen.ClipboardWriteRequested += (_, e) =>
+        {
+            if (!string.IsNullOrEmpty(e.Text) && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) _ = clipboard.SetTextAsync(e.Text);
+        };
         // Un programa entró o salió de la pantalla completa: la sesión se rearma (la pantalla o los bloques).
         shell.FullScreenChanged += () =>
         {
-            if (tab == _current && !_creating && !_settings) Build();
+            if (tab == _current && !_creating) Build();
             else RenderList();
         };
         Add(tab);
@@ -92,23 +97,16 @@ sealed partial class TerminalPane
         if (shell.FullScreen)
         {
             // La pantalla completa ocupa la sesión entera, con las teclas directo al programa.
-            RowDefinitions = new RowDefinitions("46,*");
+            RowDefinitions = new RowDefinitions { new RowDefinition(ShellHeaderHeight, GridUnitType.Pixel), new RowDefinition(1, GridUnitType.Star) };
             Children.Add(ShellHeader(tab, shell));
             _screen = new TerminalScreen(shell, _ink, Mono, _look.Size, _look);
-            var frame = new Border
-            {
-                Margin = new Thickness(16, 0, 16, 16),
-                Padding = new Thickness(12, 10),
-                CornerRadius = new CornerRadius(12),
-                Background = _ink.Raised,
-                BorderBrush = _ink.Hairline,
-                BorderThickness = new Thickness(1),
-                Child = _screen,
-            };
+            _screen.LinkOpened += OpenLink; // Ctrl+clic: la URL en el navegador, el archivo en su vista
+            var frame = ShellFrame(_screen, _ink, _look.ShellOpacity);
             Grid.SetRow(frame, 1);
             Children.Add(frame);
             PaintShellStatus(shell);
             Dispatcher.UIThread.Post(() => _screen?.Focus(), DispatcherPriority.Input);
+            AddPreview(tab);
             return;
         }
         FitShell();
@@ -128,6 +126,7 @@ sealed partial class TerminalPane
             _blocks.Children.Add(hint);
         }
         PaintShellStatus(shell);
+        AddPreview(tab);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }
 
@@ -163,23 +162,48 @@ sealed partial class TerminalPane
     }
 
     /// <summary>
-    /// La franja de arriba: lo justo. Mientras abre, «Abriendo…»; en la pantalla completa, el programa; si se fue a otra
-    /// carpeta, esa carpeta (el proyecto y la rama ya están a la izquierda). Interrumpir, mientras corre un comando.
+    /// Las medidas de la pantalla completa: la franja de arriba, el margen de afuera (a los lados y abajo), el borde y el
+    /// relleno de adentro. FrameX y FrameY son lo que el marco le quita al panel, borde incluido: sin él, la consola
+    /// tomaba una columna o una fila de más que la pantalla, y al aparecer esta cambiaba de tamaño mientras el programa
+    /// pintaba (filas corridas).
     /// </summary>
-    /// <summary>Los márgenes del marco de la pantalla completa: afuera (16 a los lados y abajo) y adentro (12 y 10).</summary>
-    const double FrameX = 16 * 2 + 12 * 2, FrameY = 46 + 16 + 10 * 2;
+    internal const double ShellHeaderHeight = 46, FrameMargin = 16, FrameBorder = 1, FramePadX = 12, FramePadY = 10;
+    internal const double FrameX = 2 * (FrameMargin + FrameBorder + FramePadX);
+    internal const double FrameY = ShellHeaderHeight + FrameMargin + 2 * (FrameBorder + FramePadY);
+
+    /// <summary>Un fondo de las terminales con la opacidad elegida en Ajustes › Terminal (Transparencia); con 1, el mismo.</summary>
+    static IBrush Seen(IBrush brush, double opacity) =>
+        opacity >= 1 || brush is not ISolidColorBrush solid ? brush : new SolidColorBrush(solid.Color, solid.Opacity * opacity);
+
+    /// <summary>El marco de la pantalla completa, con las medidas de FrameX y FrameY y la opacidad elegida (Transparencia).</summary>
+    internal static Border ShellFrame(Control screen, Ink ink, double opacity = 1) => new()
+    {
+        Margin = new Thickness(FrameMargin, 0, FrameMargin, FrameMargin),
+        Padding = new Thickness(FramePadX, FramePadY),
+        CornerRadius = new CornerRadius(12),
+        Background = Seen(ink.Raised, opacity),
+        BorderBrush = ink.Hairline,
+        BorderThickness = new Thickness(FrameBorder),
+        Child = screen,
+    };
 
     /// <summary>
     /// La consola del shell elegido toma el tamaño que tendría su pantalla completa en este panel (también mientras se
-    /// ven los bloques): un programa de pantalla completa arranca con su tamaño, sin cambiarlo mientras pinta.
+    /// ven los bloques): un programa de pantalla completa arranca con su tamaño, sin cambiarlo mientras pinta. Con la
+    /// pantalla completa a la vista, el tamaño lo pone ella con el suyo (TerminalScreen.OnSizeChanged): calcularlo
+    /// también aquí mandaba dos tamaños seguidos.
     /// </summary>
     void FitShell()
     {
-        if (_current?.Shell is not { } shell || Bounds.Width <= 0 || Bounds.Height <= 0) return;
+        if (_screen is not null || _current?.Shell is not { } shell || Bounds.Width <= 0 || Bounds.Height <= 0) return;
         var (width, height) = TerminalScreen.Cell(Mono, _look.Size);
         shell.Resize((int)Math.Floor((Bounds.Width - FrameX) / width), (int)Math.Floor((Bounds.Height - FrameY) / height));
     }
 
+    /// <summary>
+    /// La franja de arriba: lo justo. Mientras abre, «Abriendo…»; en la pantalla completa, el programa; si se fue a otra
+    /// carpeta, esa carpeta (el proyecto y la rama ya están a la izquierda). Interrumpir, mientras corre un comando.
+    /// </summary>
     void PaintShellStatus(ShellSession shell)
     {
         var t = shell.Transcript;
@@ -197,6 +221,7 @@ sealed partial class TerminalPane
 
     Control ShellComposer(ShellSession shell)
     {
+        ResetInput();
         _input.AcceptsReturn = true;
         _input.TextWrapping = TextWrapping.Wrap;
         _input.MinHeight = 22;
@@ -236,7 +261,7 @@ sealed partial class TerminalPane
         {
             Margin = new Thickness(16, 4, 16, 14),
             CornerRadius = new CornerRadius(14),
-            Background = _ink.Raised,
+            Background = Seen(_ink.Raised, _look.ShellOpacity),
             BorderBrush = _ink.Hairline,
             BorderThickness = new Thickness(1),
             Padding = new Thickness(14, 10, 8, 8),
@@ -339,7 +364,7 @@ sealed partial class TerminalPane
         var listChanged = !_shellState.TryGetValue(shell, out var before) || before != state
             || changed.Any(b => b.Kind == ShellBlockKind.Command && !b.Running);
         _shellState[shell] = state;
-        if (tab != _current || _creating || _settings)
+        if (tab != _current || _creating)
         {
             if (listChanged) RenderList();
             return;
@@ -431,7 +456,7 @@ sealed partial class TerminalPane
 
         var card = new Border
         {
-            Background = _ink.Pill,
+            Background = Seen(_ink.Pill, _look.ShellOpacity),
             CornerRadius = new CornerRadius(10),
             BorderBrush = block.Failed ? Translucent(_ink.Danger, 0.45) : Brushes.Transparent,
             BorderThickness = new Thickness(1),

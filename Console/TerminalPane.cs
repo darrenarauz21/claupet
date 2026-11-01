@@ -36,13 +36,21 @@ sealed partial class TerminalPane : Grid
     /// <summary>Las animaciones (aparecer, pensando, el giro de un paso). Se apagan en Ajustes › Terminal.</summary>
     public static bool Animate { get; set; } = true;
 
-    sealed class Tab(TerminalAgent agent, string account)
+    internal sealed class Tab(TerminalAgent agent, string account)
     {
         public TerminalAgent Agent { get; } = agent;
         public string Account { get; } = account;
         public string? Branch { get; set; } = GitBranch.Of(agent.Options.Folder);
         public string Project => Path.GetFileName(Agent.Options.Folder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : Agent.Options.Folder;
         public string Draft { get; set; } = "";
+        /// <summary>Las imágenes pegadas en la caja («[Imagen #1]»…): van con el pedido si su marca sigue en el texto.</summary>
+        public List<AgentImage> Images { get; } = [];
+        /// <summary>El archivo que se ve en la tarjeta flotante (y su línea), si hay uno abierto (TerminalPane.Viewer.cs).</summary>
+        public (string Path, int? Line)? Preview { get; set; }
+        /// <summary>Los archivos fijados en el panel de la derecha, con su ícono junto a Ramas, Cambios y Procesos.</summary>
+        public List<string> Docked { get; } = [];
+        /// <summary>El archivo fijado que se mira en el panel (en vez de la vista de PanelTab); null, ninguno.</summary>
+        public string? SideFile { get; set; }
         /// <summary>Una terminal de comandos (TerminalPane.Shell.cs). Entonces Agent no se abre: solo lleva la carpeta.</summary>
         public ShellSession? Shell { get; init; }
     }
@@ -70,8 +78,6 @@ sealed partial class TerminalPane : Grid
     TerminalLook _look = TerminalLook.Load();
     /// <summary>Los colores del tema, antes de aplicarles el fondo y el color del texto de la Terminal.</summary>
     Ink? _theme;
-    /// <summary>Se muestran los ajustes de la Terminal en vez de la sesión.</summary>
-    bool _settings;
     readonly ScrollViewer _scroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     readonly TextBox _input = new();
     readonly StackPanel _list = new() { Spacing = 1 };
@@ -196,7 +202,7 @@ sealed partial class TerminalPane : Grid
     /// <summary>Una pestaña en la lista, en una línea: su marca, el nombre, lo que la describe (más chico) y su punto.</summary>
     Control TabItem(Tab tab)
     {
-        var current = tab == _current && !_creating && !_settings;
+        var current = tab == _current && !_creating;
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("20,*,Auto"), Height = 34 };
         var claude = tab.Shell is null && tab.Agent.Options.Kind == AgentKinds.Claude;
         var kind = Ui.Text(KindMark(tab), 11, claude ? _ink.Accent : _ink.Tertiary, family: Mono);
@@ -240,7 +246,7 @@ sealed partial class TerminalPane : Grid
     /// <summary>Una pestaña en la lista de íconos: el de Claude Code con el punto de su estado encima.</summary>
     Control TabIcon(Tab tab)
     {
-        var current = tab == _current && !_creating && !_settings;
+        var current = tab == _current && !_creating;
         var t = tab.Agent.Transcript;
         var kind = Ui.Text(KindMark(tab), 13, _ink.Accent, FontWeight.Bold, Mono);
         kind.HorizontalAlignment = HorizontalAlignment.Center;
@@ -282,12 +288,11 @@ sealed partial class TerminalPane : Grid
 
     static string ModelLabel(string? model) => model ?? L.T("modelo por defecto");
 
-    void Select(Tab tab)
+    internal void Select(Tab tab)
     {
-        if (_current is { } previous && !_settings) previous.Draft = _input.Text ?? "";
+        if (_current is { } previous) previous.Draft = _input.Text ?? "";
         _current = tab;
         _creating = false;
-        _settings = false;
         _input.Text = tab.Draft;
         Build();
         RenderList();
@@ -328,11 +333,6 @@ sealed partial class TerminalPane : Grid
         _blocks.Children.Clear();
         // Con un fondo propio, la Terminal lo pinta (tapa la escena del tema); si no, se ve el de la ventana.
         Background = _look.OwnBackground ? _ink.Surface : null;
-        if (_settings)
-        {
-            Children.Add(LookPage());
-            return;
-        }
         if (_creating || _current is null)
         {
             Children.Add(EmptyState());
@@ -362,6 +362,7 @@ sealed partial class TerminalPane : Grid
         _shownFrom = Math.Max(0, blocks.Count - ShownBlocks);
         ShowBlocks(blocks);
         PaintStatus();
+        AddPreview(_current);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }
 
@@ -441,7 +442,7 @@ sealed partial class TerminalPane : Grid
 
     void OnInputKey(object? sender, KeyEventArgs e)
     {
-        if (_current?.Shell is { } shell && !_creating && !_settings)
+        if (_current?.Shell is { } shell && !_creating)
         {
             e.Handled = ShellKey(shell, e);
             return;
@@ -450,6 +451,13 @@ sealed partial class TerminalPane : Grid
         {
             e.Handled = true;
             tab.Agent.Interrupt();
+            return;
+        }
+        // Ctrl+V: con una imagen en el portapapeles, va con el pedido («[Imagen #1]»); si no, se pega el texto.
+        if (e.Key == Key.V && e.KeyModifiers == KeyModifiers.Control && _current is { Shell: null } pasting)
+        {
+            e.Handled = true;
+            _ = PasteIntoComposerAsync(pasting);
             return;
         }
         if (e.Key != Key.Enter || e.KeyModifiers.HasFlag(KeyModifiers.Shift)) return;
@@ -464,11 +472,20 @@ sealed partial class TerminalPane : Grid
             SubmitShell(shell);
             return;
         }
-        if (_current is not { } tab || !tab.Agent.Running) return;
+        if (_current is not { } tab) return;
         var text = _input.Text?.Trim() ?? "";
         if (text.Length == 0) return;
+        // Los comandos de la Terminal: /resume abre el historial, /clear y /new una pestaña nueva como esta.
+        if (Command(tab, text))
+        {
+            _input.Text = "";
+            return;
+        }
+        if (!tab.Agent.Running) return;
         _input.Text = "";
-        tab.Agent.Send(text);
+        var images = tab.Images.Where((_, i) => text.Contains($"[Imagen #{i + 1}]", StringComparison.Ordinal)).ToList();
+        tab.Images.Clear();
+        tab.Agent.Send(text, images);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }
 
@@ -479,11 +496,11 @@ sealed partial class TerminalPane : Grid
         if (changed.Any(b => b.Kind == AgentBlockKind.Done))
         {
             RefreshGit(tab.Agent.Options.Folder, force: true);
-            if (tab == _current && !_creating && !_settings && _projects.PanelOpen && _projects.PanelTab != "procesos") LoadSide(tab);
+            if (tab == _current && !_creating && _projects.PanelOpen && _projects.PanelTab != "procesos") LoadSide(tab);
         }
         // La lista se rehace solo si cambió lo que muestra de la pestaña: con cada pedazo de texto la rehacía entera.
         var listChanged = ListStateChanged(tab);
-        if (tab != _current || _creating || _settings)
+        if (tab != _current || _creating)
         {
             if (listChanged) RenderList();
             return;

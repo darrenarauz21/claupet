@@ -8,6 +8,8 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Media;
 using XTerm.Buffer;
+using Avalonia.Platform.Storage;
+using SelectionMode = XTerm.Selection.SelectionMode;
 using XKey = XTerm.Input.Key;
 using XMods = XTerm.Input.KeyModifiers;
 using XMouse = XTerm.Input.MouseButton;
@@ -18,6 +20,8 @@ using XTracking = XTerm.Input.MouseTrackingMode;
 /// La pantalla completa de un shell de Claupet Terminal: lo que pinta un programa en la pantalla alterna (vim, less,
 /// claude, htop), con sus colores y del tamaño del panel. La interpreta XTerm.NET (ShellSession.Screen) y aquí se dibuja
 /// celda por celda; las teclas, el texto, la rueda y los clics le llegan al programa como en cualquier terminal.
+/// Como en Windows Terminal: si el programa no usa el mouse (o con Mayús), arrastrar sombrea el texto; Ctrl+C o el clic
+/// derecho lo copian, y el clic derecho sin nada sombreado pega.
 /// </summary>
 sealed class TerminalScreen : Control
 {
@@ -33,6 +37,17 @@ sealed class TerminalScreen : Control
     readonly StringBuilder _run = new();
     /// <summary>El botón apretado con el seguimiento del mouse encendido (para mandar también cuándo se suelta).</summary>
     XMouse? _pressed;
+    /// <summary>Se está sombreando con el mouse (aquí, no en el programa); _dragged: el mouse se movió (un clic solo no sombrea).</summary>
+    bool _selecting, _dragged;
+    /// <summary>La última celda bajo el mouse (el arrastre se manda una vez por celda).</summary>
+    (int Col, int Row) _lastCell = (-1, -1);
+
+    /// <summary>Ctrl+clic sobre una URL o un archivo (como en Windows Terminal): la Terminal lo abre.</summary>
+    public event Action<TextLink>? LinkOpened;
+    bool _handShown;
+    static Cursor? _handCursor, _beamCursor;
+    static Cursor HandCursor => _handCursor ??= new Cursor(StandardCursorType.Hand);
+    static Cursor BeamCursor => _beamCursor ??= new Cursor(StandardCursorType.Ibeam);
 
     public TerminalScreen(ShellSession shell, Ink ink, FontFamily mono, double size, TerminalLook look)
     {
@@ -49,7 +64,7 @@ sealed class TerminalScreen : Control
         Focusable = true;
         ClipToBounds = true;
         FocusAdorner = null;
-        Cursor = new Cursor(StandardCursorType.Ibeam);
+        Cursor = BeamCursor;
         AttachedToVisualTree += (_, _) => _shell.ScreenChanged += InvalidateVisual;
         DetachedFromVisualTree += (_, _) => _shell.ScreenChanged -= InvalidateVisual;
         GotFocus += (_, _) => InvalidateVisual();
@@ -78,7 +93,9 @@ sealed class TerminalScreen : Control
         {
             _resizePending = false;
             var (cols, rows) = Fit(Bounds.Size);
-            if (cols > 0 && rows > 0 && TopLevel.GetTopLevel(this) is not null) _shell.Resize(cols, rows);
+            if (cols <= 0 || rows <= 0 || TopLevel.GetTopLevel(this) is null) return;
+            if (cols != _shell.Screen.Cols || rows != _shell.Screen.Rows) _shell.Screen.Selection.ClearSelection();
+            _shell.Resize(cols, rows);
         }, Avalonia.Threading.DispatcherPriority.Background);
     }
 
@@ -91,6 +108,9 @@ sealed class TerminalScreen : Control
 
     public override void Render(DrawingContext context)
     {
+        // Todo el cuadro recibe el mouse, no solo donde hay texto: Avalonia busca qué hay bajo el puntero en lo dibujado,
+        // y sin un fondo propio la rueda y los clics de las celdas vacías se los llevaba el marco (no le llegaban al programa).
+        context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
         var screen = _shell.Screen;
         var buffer = screen.Buffer;
         for (var y = 0; y < screen.Rows; y++)
@@ -123,6 +143,13 @@ sealed class TerminalScreen : Control
                     }
                 Draw(context, _run.ToString(), start, y, x - start, attributes);
             }
+        }
+        if (screen.Selection.TryGetSelection(out var range))
+        {
+            var shade = Translucent(_ink.Accent, 0.35);
+            for (var y = 0; y < screen.Rows; y++)
+                if (range.TryGetRowSpan(y, screen.Cols, out var from, out var to) && to >= from)
+                    context.FillRectangle(shade, new Rect(from * _cellWidth, y * _cellHeight, (to - from + 1) * _cellWidth, _cellHeight));
         }
         var row = buffer.Y + buffer.YBase - buffer.YDisp;
         if (screen.CursorVisible && IsFocused && row >= 0 && row < screen.Rows)
@@ -180,6 +207,23 @@ sealed class TerminalScreen : Control
         var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
         var alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
         var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        var selection = _shell.Screen.Selection;
+        if (ctrl && !alt && e.Key == Key.C && (selection.HasSelection || shift))
+        {
+            // Ctrl+C con algo sombreado lo copia (sin cortar el programa); Ctrl+Mayús+C copia siempre.
+            e.Handled = true;
+            _ = CopySelectionAsync();
+            return;
+        }
+        if (selection.HasSelection && e.Key is not (Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift or Key.LeftAlt or Key.RightAlt))
+        {
+            ClearSelection();
+            if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                return;
+            }
+        }
         if (ctrl && !alt && e.Key == Key.V)
         {
             // Pegar, como Windows Terminal (Ctrl+V y Ctrl+Mayús+V).
@@ -247,13 +291,69 @@ sealed class TerminalScreen : Control
         _shell.Input(e.Text);
     }
 
+    /// <summary>
+    /// Pegar: el texto del portapapeles; si son archivos copiados, sus rutas (claude adjunta así las imágenes); si es una
+    /// imagen (una captura), la tecla con la que el programa la pega por su cuenta: la de claude es Alt+V en Windows y
+    /// Ctrl+V en los demás.
+    /// </summary>
     async Task PasteAsync()
     {
         if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
-        var text = await clipboard.TryGetTextAsync();
-        if (string.IsNullOrEmpty(text)) return;
+        string? text = null;
+        try
+        {
+            text = await clipboard.TryGetTextAsync();
+            if (string.IsNullOrEmpty(text) && await clipboard.TryGetFilesAsync() is { } files)
+                text = string.Join(" ", files.Select(f => f.TryGetLocalPath()).OfType<string>().Select(QuotePath));
+            if (string.IsNullOrEmpty(text))
+            {
+                if (await clipboard.TryGetBitmapAsync() is { } bitmap)
+                {
+                    bitmap.Dispose();
+                    _shell.Input(OperatingSystem.IsWindows() ? "\x1bv" : "\x16");
+                }
+                return;
+            }
+        }
+        catch (Exception)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+        }
+        // La URL de una imagen, con claude corriendo: se baja y se pega su ruta, que claude adjunta («[Image #1]»), como
+        // la de un archivo. Para otro programa (o si no se pudo bajar), la URL tal cual.
+        if (RunsClaude() && PastedImages.Reference(text, null) is { Url: true } reference
+            && await PastedImages.LoadAsync(reference) is { } image)
+            text = QuotePath(image.SaveTemp());
         text = text.ReplaceLineEndings("\r");
         _shell.Input(_shell.Screen.BracketedPasteMode ? "\x1b[200~" + text + "\x1b[201~" : text);
+    }
+
+    /// <summary>Lo que corre en la pantalla completa es claude (el comando del bloque abierto empieza con «claude»).</summary>
+    bool RunsClaude() =>
+        _shell.Transcript.Blocks.LastOrDefault(b => b.Running)?.Command.TrimStart() is { } command
+        && Path.GetFileNameWithoutExtension(command.Split(' ', 2)[0].Trim('"', '\'')).Equals("claude", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Una ruta para pegarla: entre comillas si tiene espacios.</summary>
+    static string QuotePath(string path) =>
+        !path.Any(char.IsWhiteSpace) ? path
+        : OperatingSystem.IsWindows() ? $"\"{path}\"" : "'" + path.Replace("'", "'\\''") + "'";
+
+    /// <summary>Copia lo sombreado (sin los espacios del final de cada fila) y lo quita.</summary>
+    async Task CopySelectionAsync()
+    {
+        var selection = _shell.Screen.Selection;
+        if (!selection.HasSelection) return;
+        var lines = selection.GetSelectionText().ReplaceLineEndings("\n").Split('\n').Select(line => line.TrimEnd()).ToList();
+        while (lines.Count > 1 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+        var text = string.Join(Environment.NewLine, lines);
+        ClearSelection();
+        if (text.Length > 0 && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
+    }
+
+    void ClearSelection()
+    {
+        _shell.Screen.Selection.ClearSelection();
+        InvalidateVisual();
     }
 
     // ── Mouse ───────────────────────────────────────────────────────────────────────────────
@@ -265,27 +365,149 @@ sealed class TerminalScreen : Control
         (keys.HasFlag(KeyModifiers.Shift) ? XMods.Shift : XMods.None) | (keys.HasFlag(KeyModifiers.Alt) ? XMods.Alt : XMods.None)
         | (keys.HasFlag(KeyModifiers.Control) ? XMods.Control : XMods.None);
 
+    /// <summary>El mouse es de Claupet (sombrear, copiar, pegar) si el programa no lo usa, o con Mayús (como Windows Terminal).</summary>
+    bool OwnsMouse(KeyModifiers keys) => _shell.Screen.MouseTrackingMode == XTracking.None || keys.HasFlag(KeyModifiers.Shift);
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
         Focus();
         e.Handled = true;
         var screen = _shell.Screen;
-        if (screen.MouseTrackingMode == XTracking.None) return;
         var point = e.GetCurrentPoint(this).Properties;
-        XMouse button = point.IsRightButtonPressed ? XMouse.Right : point.IsMiddleButtonPressed ? XMouse.Middle : XMouse.Left;
         var (col, row) = Cell(e.GetPosition(this));
+        _lastCell = (col, row);
+        // Ctrl+clic sobre un enlace lo abre (aunque el programa use el mouse); en otro lado, sigue como siempre.
+        if (point.IsLeftButtonPressed && e.KeyModifiers.HasFlag(KeyModifiers.Control) && LinkAt(col, row) is { } link)
+        {
+            LinkOpened?.Invoke(link);
+            return;
+        }
+        if (OwnsMouse(e.KeyModifiers))
+        {
+            if (point.IsRightButtonPressed)
+            {
+                // Clic derecho: copia lo sombreado o, si no hay nada, pega.
+                _ = screen.Selection.HasSelection ? CopySelectionAsync() : PasteAsync();
+                return;
+            }
+            if (!point.IsLeftButtonPressed) return;
+            // Uno sombrea al arrastrar; dos, la palabra; tres, la fila.
+            var mode = e.ClickCount switch { 2 => SelectionMode.Word, >= 3 => SelectionMode.Line, _ => SelectionMode.Normal };
+            screen.Selection.StartSelection(col, row, mode);
+            _selecting = true;
+            _dragged = mode != SelectionMode.Normal;
+            e.Pointer.Capture(this);
+            InvalidateVisual();
+            return;
+        }
+        if (screen.Selection.HasSelection) ClearSelection();
+        XMouse button = point.IsRightButtonPressed ? XMouse.Right : point.IsMiddleButtonPressed ? XMouse.Middle : XMouse.Left;
         _pressed = button;
+        e.Pointer.Capture(this);
         _shell.Input(screen.GenerateMouseEvent(button, col, row, XMouseEvent.Down, Mods(e.KeyModifiers)));
+    }
+
+    /// <summary>
+    /// El enlace en esa celda: el que puso el programa (OSC 8, como los de claude) o una URL o un archivo que existe en el
+    /// texto de la fila (con las filas partidas por el ancho, juntas). null si no hay.
+    /// </summary>
+    internal TextLink? LinkAt(int col, int row)
+    {
+        var screen = _shell.Screen;
+        var buffer = screen.Buffer;
+        var index = buffer.YDisp + row;
+        if (index < 0 || index >= buffer.Lines.Length || buffer.Lines[index] is not { } line) return null;
+        if (line.TryGetLinkAt(col, out var hyperlink) && !string.IsNullOrEmpty(hyperlink.Url))
+        {
+            if (hyperlink.Url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || hyperlink.Url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                return new TextLink(0, 0, LinkKind.Url, hyperlink.Url);
+            if (Uri.TryCreate(hyperlink.Url, UriKind.Absolute, out var uri) && uri.IsFile && File.Exists(uri.LocalPath))
+                return new TextLink(0, 0, LinkKind.File, uri.LocalPath);
+        }
+        // La fila con las que la continúan o a las que continúa (IsWrapped: sigue a la de arriba).
+        var first = index;
+        while (first > 0 && buffer.Lines[first] is { IsWrapped: true }) first--;
+        var last = index;
+        while (last + 1 < buffer.Lines.Length && buffer.Lines[last + 1] is { IsWrapped: true }) last++;
+        var text = new StringBuilder();
+        var at = 0;
+        for (var i = first; i <= last; i++)
+        {
+            if (buffer.Lines[i] is not { } part) break;
+            if (i == index) at = text.Length + part.TranslateToString(false, 0, col).Length;
+            text.Append(part.TranslateToString(i == last));
+        }
+        var cwd = _shell.Transcript.Cwd ?? _shell.Folder;
+        return TextLinks.Find(text.ToString(), cwd).FirstOrDefault(l => at >= l.Start && at < l.Start + l.Length);
+    }
+
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+        var (col, row) = Cell(e.GetPosition(this));
+        if ((col, row) == _lastCell) return;
+        _lastCell = (col, row);
+        // Con Ctrl apretado, la mano sobre un enlace (así se sabe que Ctrl+clic lo abre).
+        var hand = e.KeyModifiers.HasFlag(KeyModifiers.Control) && LinkAt(col, row) is not null;
+        if (hand != _handShown)
+        {
+            _handShown = hand;
+            Cursor = hand ? HandCursor : BeamCursor;
+        }
+        var screen = _shell.Screen;
+        if (_selecting)
+        {
+            _dragged = true;
+            screen.Selection.UpdateSelection(col, row);
+            InvalidateVisual();
+            return;
+        }
+        // Al programa: el arrastre con el botón apretado (así selecciona claude) y, si lo pidió, también el movimiento solo.
+        if (_pressed is { } button && screen.MouseTrackingMode is XTracking.ButtonEvent or XTracking.AnyEvent)
+            _shell.Input(screen.GenerateMouseEvent(button, col, row, XMouseEvent.Drag, Mods(e.KeyModifiers)));
+        else if (_pressed is null && screen.MouseTrackingMode == XTracking.AnyEvent)
+            _shell.Input(screen.GenerateMouseEvent(XMouse.Left, col, row, XMouseEvent.Move, Mods(e.KeyModifiers)));
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        var (col, row) = Cell(e.GetPosition(this));
+        if (_selecting)
+        {
+            _selecting = false;
+            e.Pointer.Capture(null);
+            if (!_dragged) ClearSelection();
+            else
+            {
+                _shell.Screen.Selection.EndSelection();
+                InvalidateVisual();
+            }
+            return;
+        }
         if (_pressed is not { } button) return;
         _pressed = null;
-        var (col, row) = Cell(e.GetPosition(this));
+        e.Pointer.Capture(null);
         _shell.Input(_shell.Screen.GenerateMouseEvent(button, col, row, XMouseEvent.Up, Mods(e.KeyModifiers)));
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        // Se soltó fuera de la ventana (o la tomó otro): se termina lo que estaba a medias.
+        if (_selecting)
+        {
+            _selecting = false;
+            if (_dragged) _shell.Screen.Selection.EndSelection();
+            else ClearSelection();
+        }
+        if (_pressed is { } button)
+        {
+            _pressed = null;
+            var (col, row) = _lastCell;
+            _shell.Input(_shell.Screen.GenerateMouseEvent(button, Math.Max(col, 0), Math.Max(row, 0), XMouseEvent.Up, XMods.None));
+        }
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)

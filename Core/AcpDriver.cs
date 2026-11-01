@@ -28,7 +28,7 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
 
     // Los pedidos que esperan respuesta: el método y el valor que se pidió (el modo o el modelo).
     readonly Dictionary<long, (string Method, string? Value)> _pending = [];
-    readonly Queue<string> _queue = new();
+    readonly Queue<(string Text, IReadOnlyList<AgentImage>? Images)> _queue = new();
     readonly Stopwatch _clock = new();
     long _requests;
     AgentOptions? _options;
@@ -392,25 +392,36 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
         return lines;
     }
 
-    public IEnumerable<string> Prompt(string text)
+    public IEnumerable<string> Prompt(string text, IReadOnlyList<AgentImage>? images = null)
     {
-        _queue.Enqueue(text);
+        _queue.Enqueue((text, images));
         // Sin sesión (porque falló al abrir), el pedido la vuelve a pedir: quizá ya inició sesión en una terminal.
         if (_session is null) return _initialized && !_creating ? [NewSession()] : [];
         return Next();
     }
 
+    /// <summary>El contenido del pedido en ACP: las imágenes (bloques image con sus bytes) y el texto.</summary>
+    static JsonArray Content(string text, IReadOnlyList<AgentImage>? images)
+    {
+        var parts = new JsonArray();
+        foreach (var image in images ?? [])
+            parts.Add(new JsonObject { ["type"] = "image", ["mimeType"] = image.MediaType, ["data"] = image.Base64 });
+        parts.Add(new JsonObject { ["type"] = "text", ["text"] = text });
+        return parts;
+    }
+
     /// <summary>El siguiente pedido guardado, si hay sesión y no corre un turno.</summary>
     IEnumerable<string> Next()
     {
-        if (_session is null || _turn || !_queue.TryDequeue(out var text)) return [];
+        if (_session is null || _turn || !_queue.TryDequeue(out var next)) return [];
+        var (text, images) = next;
         _turn = true;
         _clock.Restart();
         transcript.AcpTurn();
         return [Request("session/prompt", new JsonObject
         {
             ["sessionId"] = _session,
-            ["prompt"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = text }),
+            ["prompt"] = Content(text, images),
         })];
     }
 

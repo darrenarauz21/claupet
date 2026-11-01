@@ -97,6 +97,33 @@ public sealed class InstallationTests : IDisposable
     }
 
     [Fact]
+    public void UnaCompilacionDeDesarrolloNoSeInstalaNiReemplazaALaInstalada()
+    {
+        var folder = _dir["Programas/Claupet"];
+        var exe = Installation.Install(Download("versión 1"), folder, "2.5.2");
+        // bin\Release\net10.0: el lanzador, con Claupet.dll al lado (copiado solo, no abre).
+        var build = _dir.Write("repo/bin/Release/Claupet.exe", "lanzador");
+        _dir.Write("repo/bin/Release/Claupet.dll", "la app");
+
+        Assert.True(Installation.CanInstall(Download()));
+        Assert.False(Installation.CanInstall(build));
+        Assert.Throws<IOException>(() => Installation.Install(build, folder, "2.5.3"));
+
+        Assert.Equal("versión 1", File.ReadAllText(exe));
+        Assert.False(File.Exists(exe + UpdateInstaller.Previous));
+        using var key = Registry.CurrentUser.OpenSubKey(_testKey)!;
+        Assert.Equal("2.5.2", key.GetValue("DisplayVersion"));
+    }
+
+    [Fact]
+    public void LaConsoleDePruebaAbreUnaBandejaDePrueba()
+    {
+        // Sin --preview, la bandeja de una copia de prueba abría el asistente, que la instalaba encima de la instalada.
+        Assert.Equal(["--preview"], ConsoleApp.TrayStart(@"C:\repo\bin\Claupet.exe", preview: true).ArgumentList);
+        Assert.Empty(ConsoleApp.TrayStart(@"C:\Programas\Claupet\Claupet.exe", preview: false).ArgumentList);
+    }
+
+    [Fact]
     public void LaInstaladaPoneAlDiaSuVersionAlAbrirse()
     {
         var exe = Installation.Install(Download(), _dir["Programas/Claupet"], "2.4.0");

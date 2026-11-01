@@ -41,6 +41,21 @@ static class AgentKinds
 /// abre procesos ni escribe: devuelve las líneas que TerminalAgent escribe por la entrada del agente, así se prueba con
 /// líneas. Lo que lee lo vuelca en la transcripción (bloques), igual para todos los agentes.
 /// </summary>
+/// <summary>Una imagen pegada en la caja de un agente: su tipo (image/png…) y sus bytes en base64.</summary>
+sealed record AgentImage(string MediaType, string Base64)
+{
+    /// <summary>La imagen guardada en un archivo temporal (para los agentes que la reciben por su ruta, como Codex).</summary>
+    public string SaveTemp()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "Claupet", "imagenes");
+        Directory.CreateDirectory(dir);
+        var extension = MediaType switch { "image/jpeg" => ".jpg", "image/gif" => ".gif", "image/webp" => ".webp", _ => ".png" };
+        var path = Path.Combine(dir, Guid.NewGuid().ToString("N") + extension);
+        File.WriteAllBytes(path, Convert.FromBase64String(Base64));
+        return path;
+    }
+}
+
 interface IAgentDriver
 {
     /// <summary>El nombre del agente para los avisos («No encontré {0}»).</summary>
@@ -56,7 +71,8 @@ interface IAgentDriver
     IReadOnlyList<AgentBlock> Apply(string line, List<string> replies);
 
     /// <summary>Un pedido de la persona (el bloque Ask ya lo puso TerminalAgent). Si la sesión aún no está lista, se guarda.</summary>
-    IEnumerable<string> Prompt(string text);
+    /// <summary>Un pedido, con las imágenes pegadas (si el agente las recibe; si no, va solo el texto).</summary>
+    IEnumerable<string> Prompt(string text, IReadOnlyList<AgentImage>? images = null);
 
     IEnumerable<string> SetModel(string? model);
     IEnumerable<string> SetEffort(string effort);
@@ -130,7 +146,7 @@ sealed class ClaudeDriver(AgentTranscript transcript) : IAgentDriver
 
     public IEnumerable<string> Opening(AgentOptions options) => [AgentProtocol.Initialize(NextId())];
     public IReadOnlyList<AgentBlock> Apply(string line, List<string> replies) => transcript.Apply(line);
-    public IEnumerable<string> Prompt(string text) => [AgentProtocol.UserMessage(text)];
+    public IEnumerable<string> Prompt(string text, IReadOnlyList<AgentImage>? images = null) => [AgentProtocol.UserMessage(text, images)];
 
     public IEnumerable<string> SetModel(string? model) =>
         model is not null && !Launcher.IsValid(model) ? [] : [AgentProtocol.SetModel(NextId(), model)];

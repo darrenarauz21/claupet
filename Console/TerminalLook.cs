@@ -30,6 +30,11 @@ sealed class TerminalLook
     public bool Ligatures { get; set; }
     /// <summary>La terminal de «Nueva terminal aquí» (el id: «powershell», «bash», «wsl», «zsh»); null, la primera que haya.</summary>
     public string? DefaultShell { get; set; }
+    /// <summary>
+    /// Cuánto se transparentan, en %, la pantalla completa de las terminales, sus bloques y su caja: con el fondo del tema,
+    /// se ve su escena detrás (como la opacidad de Windows Terminal, sin desenfoque). 0, sólidos.
+    /// </summary>
+    public int Transparency { get; set; }
 
     public const double DefaultSize = 13.5;
     public static readonly double[] Sizes = [11.5, 12.5, 13.5, 14.5, 16, 18];
@@ -38,6 +43,8 @@ sealed class TerminalLook
     public static readonly string[] Backgrounds = ["tema", "profundo", "negro"];
     public static readonly string[] Palettes = ["claupet", "suave", "viva"];
     public static readonly string[] Cursors = ["bloque", "barra", "subrayado"];
+    /// <summary>Lo más transparente que se puede elegir: más allá, el texto se pierde en la escena del tema.</summary>
+    public const int MaxTransparency = 80;
 
     /// <summary>Las letras de ancho fijo conocidas; se ofrecen solo las instaladas.</summary>
     static readonly string[] KnownFonts = ["Cascadia Mono", "Cascadia Code", "Consolas", "JetBrains Mono", "Fira Code", "Source Code Pro",
@@ -58,6 +65,7 @@ sealed class TerminalLook
                 if (!Backgrounds.Contains(look.Background)) look.Background = "tema";
                 if (!Palettes.Contains(look.Palette)) look.Palette = "claupet";
                 if (!Cursors.Contains(look.Cursor)) look.Cursor = "bloque";
+                look.Transparency = Math.Clamp(look.Transparency, 0, MaxTransparency);
                 return look;
             }
         }
@@ -106,6 +114,9 @@ sealed class TerminalLook
 
     /// <summary>Hay un fondo propio (no el del tema ni su escena).</summary>
     public bool OwnBackground => Background != "tema";
+
+    /// <summary>La opacidad de la pantalla, los bloques y la caja de las terminales: 1 sin transparencia.</summary>
+    public double ShellOpacity => 1 - Math.Clamp(Transparency, 0, 100) / 100.0;
 
     /// <summary>
     /// Los 16 colores de la paleta elegida, para un fondo oscuro o claro: Claupet (los de la Terminal, cálidos y
@@ -195,7 +206,7 @@ sealed class TerminalProjects
             {
                 projects.ListWidth = Math.Clamp(projects.ListWidth, MinWidth, MaxWidth);
                 projects.PanelWidth = Math.Clamp(projects.PanelWidth, PanelMin, PanelMax);
-                if (projects.PanelTab is not ("ramas" or "cambios" or "procesos")) projects.PanelTab = "ramas";
+                if (projects.PanelTab is not ("ramas" or "cambios" or "procesos" or "historial")) projects.PanelTab = "ramas";
                 return projects;
             }
         }
