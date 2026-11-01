@@ -20,6 +20,7 @@ sealed partial class TerminalPane
     const string CambiosIcon = "M7,3 H14 L19,8 V20 A1,1 0 0 1 18,21 H7 A1,1 0 0 1 6,20 V4 A1,1 0 0 1 7,3 Z M12.5,9 V15 M9.5,12 H15.5 M9.5,18 H15.5";
     const string ProcesosIcon = "M8,8 H16 V16 H8 Z M5,5 H19 V19 H5 Z M9,2 V5 M15,2 V5 M9,19 V22 M15,19 V22 M2,9 H5 M2,15 H5 M19,9 H22 M19,15 H22";
     const string StopSquare = "M8,8 H16 V16 H8 Z";
+    const string HistoryIcon = "M12,3.5 A8.5,8.5 0 1 0 12.01,3.5 Z M12,7.5 V12 L15,14";
 
     /// <summary>
     /// Lo de la vista elegida. Se crea uno nuevo con cada panel: el de antes sigue dentro de su ScrollViewer aunque ya
@@ -55,40 +56,86 @@ sealed partial class TerminalPane
         var panel = new Grid { RowDefinitions = new RowDefinitions("44,*") };
         var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(10, 0, 12, 0) };
         var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
-        foreach (var (id, icon, name) in new[] { ("ramas", RamasIcon, L.T("Ramas")), ("cambios", CambiosIcon, L.T("Cambios")), ("procesos", ProcesosIcon, L.T("Procesos")) })
-        {
-            var selected = _projects.PanelTab == id;
-            var button = Ui.Press(Icon(icon, selected ? _ink.Text : _ink.Tertiary, 15, 1.7), () =>
+        // Un archivo fijado que ya no está en la lista (se quitó) no se muestra.
+        if (tab.SideFile is { } stale && !tab.Docked.Contains(stale)) tab.SideFile = null;
+        var file = tab.SideFile;
+        foreach (var (id, icon, name) in new[] { ("ramas", RamasIcon, L.T("Ramas")), ("cambios", CambiosIcon, L.T("Cambios")), ("procesos", ProcesosIcon, L.T("Procesos")), ("historial", HistoryIcon, L.T("Historial")) })
+            tabs.Children.Add(SideTab(icon, name, file is null && _projects.PanelTab == id, () =>
             {
+                tab.SideFile = null;
                 _projects.PanelTab = id;
                 _projects.Save();
                 Build();
-            }, selected ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name);
-            button.Width = 30;
-            button.Height = 28;
-            button.CornerRadius = new CornerRadius(8);
-            if (selected) button.Background = _ink.Pill;
-            ToolTip.SetTip(button, name);
-            tabs.Children.Add(button);
-        }
+            }));
+        // Los archivos fijados, cada uno con su ícono (al costado, su nombre).
+        foreach (var docked in tab.Docked)
+            tabs.Children.Add(SideTab(IsImage(docked) ? ImageFileIcon : FileIcon, Path.GetFileName(docked), file == docked, () =>
+            {
+                tab.SideFile = docked;
+                Build();
+            }, LinkBrush));
         bar.Children.Add(tabs);
-        var title = Ui.Text(_projects.PanelTab switch { "cambios" => L.T("Cambios"), "procesos" => L.T("Procesos"), _ => L.T("Ramas") }, 12.5, _ink.Tertiary);
-        title.HorizontalAlignment = HorizontalAlignment.Right;
-        title.VerticalAlignment = VerticalAlignment.Center;
+        Control title;
+        if (file is not null)
+        {
+            // El nombre del archivo y su × (lo quita del panel).
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            var name = Ui.Text(Path.GetFileName(file), 12.5, _ink.Secondary);
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            name.MaxWidth = 150;
+            name.VerticalAlignment = VerticalAlignment.Center;
+            ToolTip.SetTip(name, file);
+            row.Children.Add(name);
+            var remove = Round(CloseIcon, L.T("Quitar del panel"), () => Undock(tab, file));
+            remove.Width = 24;
+            remove.Height = 24;
+            row.Children.Add(remove);
+            title = row;
+        }
+        else
+        {
+            var text = Ui.Text(_projects.PanelTab switch { "cambios" => L.T("Cambios"), "procesos" => L.T("Procesos"), "historial" => L.T("Historial"), _ => L.T("Ramas") }, 12.5, _ink.Tertiary);
+            text.HorizontalAlignment = HorizontalAlignment.Right;
+            text.VerticalAlignment = VerticalAlignment.Center;
+            title = text;
+        }
         Grid.SetColumn(title, 1);
         bar.Children.Add(title);
         panel.Children.Add(bar);
 
-        _sideBody = new StackPanel { Spacing = 2, Margin = new Thickness(8, 0, 10, 12) };
-        var scroll = new ScrollViewer { Content = _sideBody, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        Grid.SetRow(scroll, 1);
-        panel.Children.Add(scroll);
+        if (file is not null)
+        {
+            // La vista del archivo tiene su propio desplazamiento: va sin el ScrollViewer de las listas.
+            var view = new Border { BorderBrush = _ink.Hairline, BorderThickness = new Thickness(0, 1, 0, 0), Child = FileView(file, null) };
+            Grid.SetRow(view, 1);
+            panel.Children.Add(view);
+        }
+        else
+        {
+            _sideBody = new StackPanel { Spacing = 2, Margin = new Thickness(8, 0, 10, 12) };
+            var scroll = new ScrollViewer { Content = _sideBody, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+            Grid.SetRow(scroll, 1);
+            panel.Children.Add(scroll);
+        }
 
         var border = new Border { BorderBrush = _ink.Hairline, BorderThickness = new Thickness(1, 0, 0, 0), Child = panel };
         Grid.SetColumn(border, 1);
         grid.Children.Add(border);
-        LoadSide(tab);
+        if (file is null) LoadSide(tab);
         return grid;
+    }
+
+    /// <summary>Un ícono de la franja del panel (una vista o un archivo fijado), resaltado si es el que se ve.</summary>
+    Border SideTab(string icon, string name, bool selected, Action onClick, IBrush? brush = null)
+    {
+        var button = Ui.Press(Icon(icon, brush ?? (selected ? _ink.Text : _ink.Tertiary), 15, 1.7), onClick,
+            selected ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name);
+        button.Width = 30;
+        button.Height = 28;
+        button.CornerRadius = new CornerRadius(8);
+        if (selected) button.Background = _ink.Pill;
+        ToolTip.SetTip(button, name);
+        return button;
     }
 
     /// <summary>El borde izquierdo del panel: arrastrándolo cambia su ancho, que se recuerda.</summary>
@@ -129,6 +176,7 @@ sealed partial class TerminalPane
     /// <summary>Lee lo de la vista elegida (git en segundo plano; los procesos cada 3 s mientras se ven).</summary>
     void LoadSide(Tab tab)
     {
+        if (tab.SideFile is not null) return; // se ve un archivo fijado, no una lista
         var version = ++_sideVersion;
         var folder = tab.Agent.Options.Folder;
         switch (_projects.PanelTab)
@@ -138,6 +186,15 @@ sealed partial class TerminalPane
                 _processTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
                 _processTimer.Tick += (_, _) => ShowProcesses();
                 _processTimer.Start();
+                return;
+            case "historial":
+                Loading();
+                var configDir = tab.Agent.Options.ConfigDir ?? global::Claupet.Account.DefaultDir;
+                _ = Task.Run(() =>
+                {
+                    var sessions = ClaudeHistory.List(configDir, folder);
+                    Dispatcher.UIThread.Post(() => { if (version == _sideVersion) ShowHistory(tab, sessions); });
+                });
                 return;
             case "cambios":
                 Loading();
@@ -253,6 +310,51 @@ sealed partial class TerminalPane
 
     static bool Same(string a, string b) =>
         string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)), StringComparison.OrdinalIgnoreCase);
+
+    // ── Historial ───────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Las sesiones anteriores de Claude Code en esta carpeta (con esta cuenta): al tocar una, se retoma.</summary>
+    void ShowHistory(Tab tab, IReadOnlyList<PastSession> sessions)
+    {
+        _sideBody.Children.Clear();
+        if (tab.Agent.Options.Kind != AgentKinds.Claude)
+        {
+            _sideBody.Children.Add(Hint(L.T("El historial es el de Claude Code: se ve en una pestaña de Claude Code.")));
+            return;
+        }
+        if (sessions.Count == 0)
+        {
+            _sideBody.Children.Add(Hint(L.T("Todavía no hay sesiones de Claude Code en esta carpeta con esta cuenta.")));
+            return;
+        }
+        var here = tab.Agent.Transcript.SessionId ?? tab.Agent.Options.Resume;
+        foreach (var past in sessions)
+        {
+            var text = new StackPanel { Spacing = 1 };
+            var title = Ui.Text(past.Title, 12.5, _ink.Text);
+            title.TextTrimming = TextTrimming.CharacterEllipsis;
+            text.Children.Add(title);
+            var when = Ago(past.LastUsed) + (past.Id == here ? " · " + L.T("esta pestaña") : "");
+            text.Children.Add(Ui.Text(when, 11.5, past.Id == here ? _ink.Accent : _ink.Tertiary));
+            var row = Ui.Press(text, () => Resume(tab, past), (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, past.Title);
+            row.Padding = new Thickness(8, 6);
+            row.CornerRadius = new CornerRadius(8);
+            ToolTip.SetTip(row, past.Title);
+            _sideBody.Children.Add(row);
+        }
+        _sideBody.Children.Add(Hint(L.T("Toque una para retomarla en una pestaña nueva, con lo de antes a la vista (también con /resume).")));
+    }
+
+    /// <summary>Cuándo: «hace 5 min», «hace 3 h», «ayer» o la fecha.</summary>
+    static string Ago(DateTime when)
+    {
+        var span = DateTime.Now - when;
+        return span.TotalMinutes < 1 ? L.T("recién")
+            : span.TotalHours < 1 ? L.T("hace {0} min", (int)span.TotalMinutes)
+            : span.TotalDays < 1 && when.Date == DateTime.Today ? L.T("hace {0} h", (int)span.TotalHours)
+            : when.Date == DateTime.Today.AddDays(-1) ? L.T("ayer, {0:HH:mm}", when)
+            : when.ToString("d MMM, HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+    }
 
     // ── Cambios ─────────────────────────────────────────────────────────────────────────────
 

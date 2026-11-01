@@ -533,6 +533,7 @@ sealed partial class TerminalPane
         target.VerticalAlignment = VerticalAlignment.Center;
         ApplyLigatures(target);
         ToolTip.SetTip(target, block.Text);
+        LinkStepTarget(target, block);
         Grid.SetColumn(target, 2);
         row.Children.Add(target);
         if (block.Added + block.Removed > 0)
@@ -703,6 +704,7 @@ sealed partial class TerminalPane
         Grid.SetColumn(meta, 2);
         head.Children.Add(meta);
         panel.Children.Add(head);
+        if (PlanLink(block) is { } plan) panel.Children.Add(plan);
 
         if (Preview(block) is { Length: > 0 } preview && block.Answer is null)
         {
@@ -947,21 +949,6 @@ sealed partial class TerminalPane
     }
 
     IBrush Added => _ink.Dark ? new SolidColorBrush(Color.FromRgb(0xA8, 0xC7, 0xA0)) : new SolidColorBrush(Color.FromRgb(0x3F, 0x6B, 0x3A));
-
-    SelectableTextBlock Paragraph(string text)
-    {
-        var inlines = new InlineCollection();
-        var lines = text.Replace("\r\n", "\n").Split('\n');
-        for (var i = 0; i < lines.Length; i++)
-        {
-            if (i > 0) inlines.Add(new LineBreak());
-            foreach (var span in Conversations.Spans(lines[i]))
-                inlines.Add(span.Code ? new Run(span.Text) { FontFamily = Mono, FontSize = 12.5, Background = _ink.Pill } : new Run(span.Text));
-        }
-        var block = Selectable(null, Ink.Sans, 13.5, _ink.Text);
-        block.Inlines = inlines;
-        return block;
-    }
 
     Control Code(string code)
     {

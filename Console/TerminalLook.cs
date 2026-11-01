@@ -206,7 +206,7 @@ sealed class TerminalProjects
             {
                 projects.ListWidth = Math.Clamp(projects.ListWidth, MinWidth, MaxWidth);
                 projects.PanelWidth = Math.Clamp(projects.PanelWidth, PanelMin, PanelMax);
-                if (projects.PanelTab is not ("ramas" or "cambios" or "procesos")) projects.PanelTab = "ramas";
+                if (projects.PanelTab is not ("ramas" or "cambios" or "procesos" or "historial")) projects.PanelTab = "ramas";
                 return projects;
             }
         }

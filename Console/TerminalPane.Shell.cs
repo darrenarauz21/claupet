@@ -70,6 +70,11 @@ sealed partial class TerminalPane
         // El agente de la pestaña no se abre nunca: solo lleva la carpeta (la lista agrupa por ella).
         var tab = new Tab(new TerminalAgent(new AgentOptions(folder), _ => { }), choice.Label) { Shell = shell };
         shell.Changed += changed => OnShellChanged(tab, changed);
+        // Lo que copia un programa (OSC 52: claude al seleccionar con el mouse, vim, tmux) va al portapapeles.
+        shell.Screen.ClipboardWriteRequested += (_, e) =>
+        {
+            if (!string.IsNullOrEmpty(e.Text) && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) _ = clipboard.SetTextAsync(e.Text);
+        };
         // Un programa entró o salió de la pantalla completa: la sesión se rearma (la pantalla o los bloques).
         shell.FullScreenChanged += () =>
         {
@@ -95,11 +100,13 @@ sealed partial class TerminalPane
             RowDefinitions = new RowDefinitions { new RowDefinition(ShellHeaderHeight, GridUnitType.Pixel), new RowDefinition(1, GridUnitType.Star) };
             Children.Add(ShellHeader(tab, shell));
             _screen = new TerminalScreen(shell, _ink, Mono, _look.Size, _look);
+            _screen.LinkOpened += OpenLink; // Ctrl+clic: la URL en el navegador, el archivo en su vista
             var frame = ShellFrame(_screen, _ink, _look.ShellOpacity);
             Grid.SetRow(frame, 1);
             Children.Add(frame);
             PaintShellStatus(shell);
             Dispatcher.UIThread.Post(() => _screen?.Focus(), DispatcherPriority.Input);
+            AddPreview(tab);
             return;
         }
         FitShell();
@@ -119,6 +126,7 @@ sealed partial class TerminalPane
             _blocks.Children.Add(hint);
         }
         PaintShellStatus(shell);
+        AddPreview(tab);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }
 

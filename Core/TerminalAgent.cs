@@ -91,6 +91,21 @@ sealed partial class AgentTranscript
     public double? ContextPercent => ContextWindow > 0 ? Math.Min(100, ContextUsed * 100.0 / ContextWindow) : null;
 
     /// <summary>Un pedido de la persona: su bloque y empieza un turno.</summary>
+    /// <summary>Lo pedido en una sesión anterior (al retomarla): se ve igual, sin que el agente se ponga a trabajar.</summary>
+    public AgentBlock Past(string text)
+    {
+        Close();
+        return Add(new AgentBlock { Kind = AgentBlockKind.Ask, Text = text });
+    }
+
+    /// <summary>Terminó de leerse una sesión anterior: lo que quedó abierto se cierra y el agente no está trabajando.</summary>
+    public void EndReplay(string? sessionId)
+    {
+        Close();
+        Busy = false;
+        SessionId = sessionId ?? SessionId;
+    }
+
     public AgentBlock Ask(string text)
     {
         var block = Add(new AgentBlock { Kind = AgentBlockKind.Ask, Text = text });
@@ -523,11 +538,28 @@ static class AgentProtocol
         ["request"] = new JsonObject { ["subtype"] = "interrupt" },
     });
 
-    public static string UserMessage(string text) => Line(new JsonObject
+    public static string UserMessage(string text, IReadOnlyList<AgentImage>? images = null)
     {
-        ["type"] = "user",
-        ["message"] = new JsonObject { ["role"] = "user", ["content"] = text },
-    });
+        JsonNode content = text;
+        if (images is { Count: > 0 })
+        {
+            // Como Claude Code con una imagen pegada: los bloques de imagen y después el texto.
+            var parts = new JsonArray();
+            foreach (var image in images)
+                parts.Add(new JsonObject
+                {
+                    ["type"] = "image",
+                    ["source"] = new JsonObject { ["type"] = "base64", ["media_type"] = image.MediaType, ["data"] = image.Base64 },
+                });
+            parts.Add(new JsonObject { ["type"] = "text", ["text"] = text });
+            content = parts;
+        }
+        return Line(new JsonObject
+        {
+            ["type"] = "user",
+            ["message"] = new JsonObject { ["role"] = "user", ["content"] = content },
+        });
+    }
 
     /// <summary>La respuesta a un permiso. «Siempre aquí» devuelve las sugerencias que trajo el pedido (las guarda Claude Code).</summary>
     public static string Answer(AgentBlock permission, PermissionAnswer answer)
@@ -595,7 +627,8 @@ static class AgentProtocol
 }
 
 /// <summary>Con qué se abre una sesión de la Terminal: el agente (AgentKinds), la carpeta, la cuenta, el modelo, el esfuerzo y el modo de permisos.</summary>
-sealed record AgentOptions(string Folder, string? ConfigDir = null, string? Model = null, string? Effort = null, string? PermissionMode = null, string Kind = AgentKinds.Claude);
+/// <summary>Resume: el id de una sesión de Claude Code para retomarla (--resume), con su conversación.</summary>
+sealed record AgentOptions(string Folder, string? ConfigDir = null, string? Model = null, string? Effort = null, string? PermissionMode = null, string Kind = AgentKinds.Claude, string? Resume = null);
 
 /// <summary>
 /// Una sesión de agente de la Terminal (Claude Code, Codex, Gemini CLI o Copilot CLI): abre el proceso que dice su
@@ -647,6 +680,7 @@ sealed class TerminalAgent : IDisposable
         if (Launcher.IsValid(o.Model) && o.Model is { } model) args.AddRange(["--model", model]);
         if (o.Effort is { } effort && Launcher.Efforts.Contains(effort)) args.AddRange(["--effort", effort]);
         if (o.PermissionMode is { } mode && Modes.Contains(mode)) args.AddRange(["--permission-mode", mode]);
+        if (o.Resume is { } resume && Guid.TryParse(resume, out _)) args.AddRange(["--resume", resume]);
         return args;
     }
 
@@ -675,13 +709,13 @@ sealed class TerminalAgent : IDisposable
     }
 
     /// <summary>Envía un pedido. Si el agente está en un turno, lo encola (Claude Code) o lo toma al terminar.</summary>
-    public void Send(string text)
+    public void Send(string text, IReadOnlyList<AgentImage>? images = null)
     {
         if (string.IsNullOrWhiteSpace(text) || !Running) return;
         // El bloque se crea aunque nadie escuche (una prueba): Changed solo avisa.
         var ask = Transcript.Ask(text);
         Changed?.Invoke([ask]);
-        Write(_driver.Prompt(text));
+        Write(_driver.Prompt(text, images));
     }
 
     /// <summary>El esfuerzo de la sesión: el elegido al abrirla o el último que se cambió.</summary>

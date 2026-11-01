@@ -43,6 +43,14 @@ sealed partial class TerminalPane : Grid
         public string? Branch { get; set; } = GitBranch.Of(agent.Options.Folder);
         public string Project => Path.GetFileName(Agent.Options.Folder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : Agent.Options.Folder;
         public string Draft { get; set; } = "";
+        /// <summary>Las imágenes pegadas en la caja («[Imagen #1]»…): van con el pedido si su marca sigue en el texto.</summary>
+        public List<AgentImage> Images { get; } = [];
+        /// <summary>El archivo que se ve en la tarjeta flotante (y su línea), si hay uno abierto (TerminalPane.Viewer.cs).</summary>
+        public (string Path, int? Line)? Preview { get; set; }
+        /// <summary>Los archivos fijados en el panel de la derecha, con su ícono junto a Ramas, Cambios y Procesos.</summary>
+        public List<string> Docked { get; } = [];
+        /// <summary>El archivo fijado que se mira en el panel (en vez de la vista de PanelTab); null, ninguno.</summary>
+        public string? SideFile { get; set; }
         /// <summary>Una terminal de comandos (TerminalPane.Shell.cs). Entonces Agent no se abre: solo lleva la carpeta.</summary>
         public ShellSession? Shell { get; init; }
     }
@@ -354,6 +362,7 @@ sealed partial class TerminalPane : Grid
         _shownFrom = Math.Max(0, blocks.Count - ShownBlocks);
         ShowBlocks(blocks);
         PaintStatus();
+        AddPreview(_current);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }
 
@@ -444,6 +453,13 @@ sealed partial class TerminalPane : Grid
             tab.Agent.Interrupt();
             return;
         }
+        // Ctrl+V: con una imagen en el portapapeles, va con el pedido («[Imagen #1]»); si no, se pega el texto.
+        if (e.Key == Key.V && e.KeyModifiers == KeyModifiers.Control && _current is { Shell: null } pasting)
+        {
+            e.Handled = true;
+            _ = PasteIntoComposerAsync(pasting);
+            return;
+        }
         if (e.Key != Key.Enter || e.KeyModifiers.HasFlag(KeyModifiers.Shift)) return;
         e.Handled = true;
         Submit();
@@ -456,11 +472,20 @@ sealed partial class TerminalPane : Grid
             SubmitShell(shell);
             return;
         }
-        if (_current is not { } tab || !tab.Agent.Running) return;
+        if (_current is not { } tab) return;
         var text = _input.Text?.Trim() ?? "";
         if (text.Length == 0) return;
+        // Los comandos de la Terminal: /resume abre el historial, /clear y /new una pestaña nueva como esta.
+        if (Command(tab, text))
+        {
+            _input.Text = "";
+            return;
+        }
+        if (!tab.Agent.Running) return;
         _input.Text = "";
-        tab.Agent.Send(text);
+        var images = tab.Images.Where((_, i) => text.Contains($"[Imagen #{i + 1}]", StringComparison.Ordinal)).ToList();
+        tab.Images.Clear();
+        tab.Agent.Send(text, images);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }
 
