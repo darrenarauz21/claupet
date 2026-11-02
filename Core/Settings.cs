@@ -27,10 +27,7 @@ sealed class Account
         return name.TrimStart('.');
     }
 
-    /// <summary>Una ruta vacía no es ninguna carpeta: da false en vez de fallar (sin sesiones recientes, la cuenta guardada
-    /// es null y llega como ""; Path.GetFullPath("") lanzaba y el + de la Terminal no abría nada).</summary>
     public static bool SamePath(string a, string b) =>
-        !string.IsNullOrWhiteSpace(a) && !string.IsNullOrWhiteSpace(b) &&
         string.Equals(Normalize(a), Normalize(b), StringComparison.OrdinalIgnoreCase);
 
     public static string Normalize(string p) => Path.GetFullPath(p).TrimEnd('\\', '/');
