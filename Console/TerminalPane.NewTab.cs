@@ -161,7 +161,7 @@ sealed partial class TerminalPane
         foreach (var m in model is { Length: > 0 } last && !main.Contains(last) ? [.. main, last] : main)
         {
             var value = m.Length == 0 ? null : m;
-            var chip = ChoiceChip(value ?? L.T("por defecto"), () =>
+            var chip = ChoiceChip(value is null ? L.T("por defecto") : Format.ModelChoice(value), () =>
             {
                 model = value;
                 Paint();

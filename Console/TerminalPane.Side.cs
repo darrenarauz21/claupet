@@ -28,6 +28,13 @@ sealed partial class TerminalPane
     /// </summary>
     StackPanel _sideBody = new() { Spacing = 2 };
     DispatcherTimer? _processTimer;
+    /// <summary>El botón apretado sobre el panel: Procesos no lo rehace en ese momento.</summary>
+    PressGuard? _sideGuard;
+    /// <summary>Los procesos que se dibujaron (en qué panel y cuáles): si siguen los mismos, solo cambian los MB.</summary>
+    (StackPanel Body, string Key)? _processShown;
+    readonly Dictionary<int, TextBlock> _processMb = [];
+
+    sealed record ProcessLine(int Pid, string Name, string Detail, long Memory, int Depth, Tab? Session);
     /// <summary>Sube al cambiar de pestaña o de vista: lo que llega de una lectura vieja se descarta.</summary>
     int _sideVersion;
     /// <summary>El archivo de Cambios que se está mirando y sus líneas.</summary>
@@ -113,6 +120,7 @@ sealed partial class TerminalPane
         else
         {
             _sideBody = new StackPanel { Spacing = 2, Margin = new Thickness(8, 0, 10, 12) };
+            _sideGuard = new PressGuard(_sideBody, () => { });
             var scroll = new ScrollViewer { Content = _sideBody, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
             Grid.SetRow(scroll, 1);
             panel.Children.Add(scroll);
@@ -188,6 +196,8 @@ sealed partial class TerminalPane
                 _processTimer.Start();
                 return;
             case "historial":
+                _deletingSession = null;
+                _confirmClearHistory = false;
                 Loading();
                 var configDir = tab.Agent.Options.ConfigDir ?? global::Claupet.Account.DefaultDir;
                 _ = Task.Run(() =>
@@ -328,21 +338,141 @@ sealed partial class TerminalPane
             return;
         }
         var here = tab.Agent.Transcript.SessionId ?? tab.Agent.Options.Resume;
+        var open = OpenSessions();
+        var configDir = tab.Agent.Options.ConfigDir ?? global::Claupet.Account.DefaultDir;
         foreach (var past in sessions)
         {
+            if (_deletingSession == past.Id)
+            {
+                _sideBody.Children.Add(ConfirmRow(L.T("¿Borrarla del historial?"), () =>
+                {
+                    _deletingSession = null;
+                    ShowHistory(tab, sessions);
+                }, () =>
+                {
+                    _deletingSession = null;
+                    DeleteHistory(tab, () => ClaudeHistory.Delete(configDir, past.Path));
+                }));
+                continue;
+            }
             var text = new StackPanel { Spacing = 1 };
             var title = Ui.Text(past.Title, 12.5, _ink.Text);
             title.TextTrimming = TextTrimming.CharacterEllipsis;
             text.Children.Add(title);
-            var when = Ago(past.LastUsed) + (past.Id == here ? " · " + L.T("esta pestaña") : "");
+            var isOpen = open.Contains(past.Id);
+            var when = Ago(past.LastUsed) + (past.Id == here ? " · " + L.T("esta pestaña") : isOpen ? " · " + L.T("abierta") : "");
             text.Children.Add(Ui.Text(when, 11.5, past.Id == here ? _ink.Accent : _ink.Tertiary));
-            var row = Ui.Press(text, () => Resume(tab, past), (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, past.Title);
+            var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            content.Children.Add(text);
+            // La papelera al pasar el mouse; la de una sesión abierta en una pestaña no está (Claude Code la sigue escribiendo).
+            Border? trash = null;
+            if (!isOpen)
+            {
+                trash = Tool(ChatPane.TrashIcon, L.T("Borrar del historial"), () =>
+                {
+                    _deletingSession = past.Id;
+                    _confirmClearHistory = false;
+                    ShowHistory(tab, sessions);
+                });
+                trash.Opacity = 0;
+                trash.Margin = new Thickness(6, 0, -2, 0);
+                trash.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn(trash, 1);
+                content.Children.Add(trash);
+            }
+            var row = Ui.Press(content, () => Resume(tab, past), (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, past.Title);
             row.Padding = new Thickness(8, 6);
             row.CornerRadius = new CornerRadius(8);
+            if (trash is not null)
+            {
+                row.PointerEntered += (_, _) => trash.Opacity = 1;
+                row.PointerExited += (_, _) => trash.Opacity = 0;
+            }
             ToolTip.SetTip(row, past.Title);
             _sideBody.Children.Add(row);
         }
         _sideBody.Children.Add(Hint(L.T("Toque una para retomarla en una pestaña nueva, con lo de antes a la vista (también con /resume).")));
+
+        // Borrar todo el historial de esta carpeta (menos lo abierto en pestañas), preguntando antes ahí mismo.
+        if (sessions.All(s => open.Contains(s.Id))) return;
+        if (_confirmClearHistory)
+        {
+            var confirm = ConfirmRow(L.T("¿Borrar todo el historial de esta carpeta? No se puede deshacer."), () =>
+            {
+                _confirmClearHistory = false;
+                ShowHistory(tab, sessions);
+            }, () =>
+            {
+                _confirmClearHistory = false;
+                var folder = tab.Agent.Options.Folder;
+                DeleteHistory(tab, () => ClaudeHistory.DeleteAll(configDir, folder, open) > 0);
+            });
+            confirm.Margin = new Thickness(0, 12, 0, 0);
+            _sideBody.Children.Add(confirm);
+            return;
+        }
+        var clear = Ui.Press(Ui.Text(L.T("Borrar todo el historial"), 12, _ink.Danger), () =>
+        {
+            _confirmClearHistory = true;
+            _deletingSession = null;
+            ShowHistory(tab, sessions);
+        }, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Borrar todo el historial"));
+        clear.Padding = new Thickness(8, 6);
+        clear.CornerRadius = new CornerRadius(8);
+        clear.Margin = new Thickness(0, 12, 0, 0);
+        clear.HorizontalAlignment = HorizontalAlignment.Left;
+        ToolTip.SetTip(clear, L.T("Las sesiones abiertas en una pestaña se quedan."));
+        _sideBody.Children.Add(clear);
+    }
+
+    /// <summary>La sesión del historial que pregunta «¿Borrarla?» en su fila (null: ninguna).</summary>
+    string? _deletingSession;
+    /// <summary>«Borrar todo el historial» está preguntando si se borra.</summary>
+    bool _confirmClearHistory;
+
+    /// <summary>Las sesiones de Claude Code abiertas en alguna pestaña: no se borran.</summary>
+    HashSet<string> OpenSessions()
+    {
+        var open = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in _tabs)
+        {
+            if (t.Agent.Transcript.SessionId is { } id) open.Add(id);
+            if (t.Agent.Options.Resume is { } resumed) open.Add(resumed);
+        }
+        return open;
+    }
+
+    /// <summary>Borra en segundo plano y vuelve a leer el historial.</summary>
+    void DeleteHistory(Tab tab, Func<bool> delete)
+    {
+        Loading();
+        _ = Task.Run(() =>
+        {
+            delete();
+            Dispatcher.UIThread.Post(() => LoadSide(tab));
+        });
+    }
+
+    /// <summary>Una pregunta con Cancelar y Borrar (en rojo), ahí mismo en la lista.</summary>
+    Control ConfirmRow(string question, Action cancel, Action confirm)
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        var text = Ui.Text(question, 12.5, _ink.Text);
+        text.TextWrapping = TextWrapping.Wrap;
+        panel.Children.Add(text);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Right };
+        var no = Ui.Press(Ui.Text(L.T("Cancelar"), 12, _ink.Secondary), cancel, (b, on) => b.Background = on ? _ink.Track : Brushes.Transparent, L.T("Cancelar"));
+        no.Padding = new Thickness(10, 4);
+        no.CornerRadius = new CornerRadius(999);
+        buttons.Children.Add(no);
+        IBrush onDanger = _ink.Dark ? new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)) : Brushes.White;
+        var yes = Ui.Press(Ui.Text(L.T("Borrar"), 12, onDanger, FontWeight.SemiBold), confirm, (b, on) => b.Opacity = on ? 0.88 : 1, L.T("Borrar"));
+        yes.Background = _ink.Danger;
+        yes.Padding = new Thickness(12, 4);
+        yes.CornerRadius = new CornerRadius(999);
+        buttons.Children.Add(yes);
+        panel.Children.Add(buttons);
+        return new Border { Child = panel, Padding = new Thickness(8, 8), CornerRadius = new CornerRadius(8), Background = _ink.Pill };
     }
 
     /// <summary>Cuándo: «hace 5 min», «hace 3 h», «ayer» o la fecha.</summary>
@@ -457,35 +587,75 @@ sealed partial class TerminalPane
     // ── Procesos ────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Cada sesión de la Terminal con su memoria y, debajo, lo que abrió (un servidor, sus MCP…).</summary>
+    /// <summary>
+    /// Lee los procesos fuera del hilo de la interfaz (cada 3 s). Si son los mismos de antes solo cambian los MB: rehacer
+    /// las filas con cada vuelta hacía parpadear el puntero y perder el clic en «Detener».
+    /// </summary>
     void ShowProcesses()
     {
+        if (_sideGuard?.Held == true) return; // se intenta en la próxima vuelta
+        var version = _sideVersion;
+        var running = _tabs.Where(t => t.Agent.ProcessId is not null)
+            .Select(t => (Tab: t, Pid: t.Agent.ProcessId!.Value, Label: $"{t.Account} · {t.Project}")).ToList();
+        _ = Task.Run(() =>
+        {
+            var lines = new List<ProcessLine>();
+            if (running.Count == 0) return lines;
+            var all = ProcessTree.Snapshot();
+            foreach (var (tab, pid, label) in running)
+            {
+                var children = ProcessTree.Descendants(all, pid).Where(p => p.Name is not ("conhost" or "cmd")).ToList();
+                // La memoria de la sesión es la de Claude Code: su proceso y los suyos de node/claude (no lo que abrió aparte).
+                var own = new[] { pid }.Concat(children.Where(c => c.Name is "claude" or "node" && c.ParentPid == pid).Select(c => c.Pid));
+                lines.Add(new(pid, "claude", label, own.Sum(p => ProcessTree.Memory(p) ?? 0), 0, tab));
+                foreach (var child in children.Where(c => !(c.Name is "claude" or "node" && c.ParentPid == pid)))
+                    lines.Add(new(child.Pid, child.Name, $"pid {child.Pid}", ProcessTree.Memory(child.Pid) ?? 0, 1, null));
+            }
+            return lines;
+        }).ContinueWith(read =>
+        {
+            if (!read.IsCompletedSuccessfully) return;
+            Dispatcher.UIThread.Post(() => { if (version == _sideVersion) PaintProcesses(read.Result); });
+        }, TaskScheduler.Default);
+    }
+
+    static string Megabytes(long memory) => L.T("{0:0} MB", memory / 1048576.0);
+
+    void PaintProcesses(IReadOnlyList<ProcessLine> lines)
+    {
+        var key = string.Join("|", lines.Select(l => $"{l.Depth}:{l.Pid}:{l.Name}:{l.Detail}"));
+        if (_processShown is { } shown && shown.Body == _sideBody && shown.Key == key)
+        {
+            foreach (var line in lines)
+                if (_processMb.TryGetValue(line.Pid, out var mb)) mb.Text = Megabytes(line.Memory);
+            return;
+        }
+        if (_sideGuard?.Held == true) return;
+        _processShown = (_sideBody, key);
+        _processMb.Clear();
         _sideBody.Children.Clear();
-        var running = _tabs.Where(t => t.Agent.ProcessId is not null).ToList();
-        if (running.Count == 0)
+        if (lines.Count == 0)
         {
             _sideBody.Children.Add(Hint(L.T("Ninguna sesión está corriendo.")));
             return;
         }
-        var all = ProcessTree.Snapshot();
-        foreach (var tab in running)
+        foreach (var line in lines)
         {
-            var pid = tab.Agent.ProcessId!.Value;
-            var children = ProcessTree.Descendants(all, pid).Where(p => p.Name is not ("conhost" or "cmd")).ToList();
-            // La memoria de la sesión es la de Claude Code: su proceso y los suyos de node/claude (no lo que abrió aparte).
-            var own = new[] { pid }.Concat(children.Where(c => c.Name is "claude" or "node" && c.ParentPid == pid).Select(c => c.Pid));
-            var memory = own.Sum(p => ProcessTree.Memory(p) ?? 0);
-            _sideBody.Children.Add(ProcessRow("claude", $"{tab.Account} · {tab.Project}", memory, L.T("Detener la sesión"), () => tab.Agent.Stop(), 0));
-            foreach (var child in children.Where(c => !(c.Name is "claude" or "node" && c.ParentPid == pid)))
-                _sideBody.Children.Add(ProcessRow(child.Name, $"pid {child.Pid}", ProcessTree.Memory(child.Pid) ?? 0, L.T("Detener {0}", child.Name), () =>
+            var pid = line.Pid;
+            var row = line.Session is { } tab
+                ? ProcessRow(line.Name, line.Detail, line.Memory, L.T("Detener la sesión"), () => tab.Agent.Stop(), 0, out var mb)
+                : ProcessRow(line.Name, line.Detail, line.Memory, L.T("Detener {0}", line.Name), () =>
                 {
-                    ProcessTree.Stop(child.Pid);
+                    ProcessTree.Stop(pid);
                     ShowProcesses();
-                }, 1));
+                }, 1, out mb);
+            _processMb[pid] = mb;
+            _sideBody.Children.Add(row);
         }
         _sideBody.Children.Add(Hint(L.T("Se actualiza cada 3 segundos. Detener corta el proceso y lo que abrió.")));
     }
 
-    Control ProcessRow(string name, string detail, long memory, string stopName, Action stop, int depth)
+    Control ProcessRow(string name, string detail, long memory, string stopName, Action stop, int depth, out TextBlock mb)
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(depth * 14, 0, 0, 0) };
         var text = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
@@ -495,7 +665,7 @@ sealed partial class TerminalPane
         small.VerticalAlignment = VerticalAlignment.Center;
         text.Children.Add(small);
         row.Children.Add(text);
-        var mb = Ui.Text(L.T("{0:0} MB", memory / 1048576.0), 11.5, _ink.Tertiary, family: Mono);
+        mb = Ui.Text(Megabytes(memory), 11.5, _ink.Tertiary, family: Mono);
         mb.VerticalAlignment = VerticalAlignment.Center;
         mb.Margin = new Thickness(8, 0, 6, 0);
         Grid.SetColumn(mb, 1);

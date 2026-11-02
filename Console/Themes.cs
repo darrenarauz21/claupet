@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
+using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
@@ -104,7 +105,9 @@ static class Themes
                         Thumb = new Thumb { Theme = thumb },
                         [!Track.MinimumProperty] = bar[!RangeBase.MinimumProperty],
                         [!Track.MaximumProperty] = bar[!RangeBase.MaximumProperty],
-                        [!!Track.ValueProperty] = bar[!!RangeBase.ValueProperty],
+                        // Como en la de Fluent: un enlace de la plantilla. Con bar[!!Value] el arrastre lo dejaba como valor
+                        // propio de la barra y tapaba el del ScrollViewer: después del primer paso ya no seguía la rueda.
+                        [!Track.ValueProperty] = new TemplateBinding(RangeBase.ValueProperty) { Mode = BindingMode.TwoWay },
                         [!Track.ViewportSizeProperty] = bar[!ScrollBar.ViewportSizeProperty],
                         [!Track.OrientationProperty] = bar[!ScrollBar.OrientationProperty],
                     };

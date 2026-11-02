@@ -48,7 +48,12 @@ sealed partial class TerminalPane
         RefreshGit(folder, force: true);
     }
 
-    void RenderList()
+    PressGuard? _listGuard;
+
+    /// <summary>Rehace la lista; con el botón apretado sobre ella, al soltar (ver PressGuard).</summary>
+    void RenderList() => (_listGuard ??= new PressGuard(_list, RenderListNow)).Run();
+
+    void RenderListNow()
     {
         _list.Children.Clear();
         var projects = Projects();

@@ -18,7 +18,7 @@ using Avalonia.Styling;
 /// </summary>
 sealed class ConsoleWindow : Window
 {
-    enum Mode { Chat, Terminal, Editor, Settings }
+    enum Mode { Chat, Terminal, Editor, Canvas, Settings }
 
     readonly ConsoleClient _client = new();
     readonly Grid _root = new() { RowDefinitions = new RowDefinitions("48,*") };
@@ -30,11 +30,22 @@ sealed class ConsoleWindow : Window
     readonly StackPanel _sections = new() { Spacing = 2 };
     readonly StackPanel _chatList = new() { Spacing = 2 };
     readonly ScrollViewer _asideScroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+    /// <summary>
+    /// Lo que llega de la bandeja (el estado, la lista de chats) rehace la columna: con el botón apretado en ella espera
+    /// a que se suelte (ver PressGuard). Y si lo que se ve no cambió, no se rehace: el puntero parpadeaba.
+    /// </summary>
+    PressGuard? _stateGuard, _chatsGuard;
+    (Ink Ink, string Text)? _sectionsShown, _chatsShown;
     readonly SettingsView _view = new() { MaxWidth = 700, HorizontalAlignment = HorizontalAlignment.Left };
     readonly ScrollViewer _scroll = new();
     readonly ChatPane _chat = new();
     readonly EditorPane _editor = new();
     readonly TerminalPane _terminal = new();
+    /// <summary>Claupet Canvas: dibuja el Markdown de sus secciones con el de la Terminal.</summary>
+    readonly CanvasPane _canvas;
+    readonly StackPanel _canvasList = new() { Spacing = 2 };
+    /// <summary>La lista de canvas, a la izquierda (se oculta con el botón de la barra de Canvas).</summary>
+    bool _canvasFiles = true;
     readonly StackPanel _fileList = new() { Spacing = 2 };
     /// <summary>El borde de la lista de la Terminal, que se arrastra para ensancharla (la Terminal recuerda la medida).</summary>
     readonly Border _grip = new()
@@ -90,6 +101,21 @@ sealed class ConsoleWindow : Window
         _scroll.SizeChanged += (_, e) => _view.Width = Math.Clamp(e.NewSize.Width - 64, 0, 700);
         _view.Action += (key, value) => _client.Send(new ConsoleMessage { Type = ConsoleLink.Action, Key = key, Value = value });
         _view.Navigate += Select;
+        // El ✦ de Canvas le pide el cambio a un agente de la Terminal; si no había ninguno, se ve la Terminal para enviarlo.
+        _canvas = new CanvasPane((text, folder) => _terminal.MarkdownPage(text, folder), askAgent: (text, folder) =>
+        {
+            var sent = _terminal.AskAgent(text, folder);
+            if (!sent) SetMode(Mode.Terminal);
+            return sent;
+        });
+        _canvas.ListToggled += () =>
+        {
+            _canvasFiles = !_canvasFiles;
+            Render(rebuild: true);
+        };
+        _canvas.ListChanged += () => { if (_mode == Mode.Canvas) RenderCanvasList(); };
+        // Un agente creó o pidió mostrar un canvas: se ve en seguida.
+        _canvas.OpenRequested += () => SetMode(Mode.Canvas);
         _chat.Request += OnChatRequest;
         _editor.FilesToggled += () =>
         {
@@ -100,7 +126,11 @@ sealed class ConsoleWindow : Window
         _terminal.TabsChanged += () => { if (_mode == Mode.Terminal) _asideTop.Child = _terminal.Header(); };
         _terminal.ListChanged += () => { if (_mode == Mode.Terminal) Render(rebuild: true); };
         // Los atajos del editor (Ctrl+N, O, S, W) mientras se ve.
-        KeyDown += (_, e) => { if (_mode == Mode.Editor) _editor.HandleKey(e); };
+        KeyDown += (_, e) =>
+        {
+            if (_mode == Mode.Editor) _editor.HandleKey(e);
+            else if (_mode == Mode.Canvas) _canvas.HandleKey(e);
+        };
         Closing += (_, e) =>
         {
             if (_closing || !_editor.HasUnsaved) return;
@@ -141,6 +171,7 @@ sealed class ConsoleWindow : Window
         Content = _root;
         Render(rebuild: true);
         foreach (var file in ConsoleApp.Files) _editor.Open(file);
+        _canvas.CheckOpenRequest();
         _client.Start();
 
         PropertyChanged += (_, e) =>
@@ -159,6 +190,7 @@ sealed class ConsoleWindow : Window
         Closed += (_, _) =>
         {
             _terminal.CloseAll();
+            _canvas.Close();
             _client.Dispose();
         };
     }
@@ -193,7 +225,8 @@ sealed class ConsoleWindow : Window
                 }
                 rebuild |= _pages.Count == 0;
                 _pages = message.Pages ?? [];
-                Render(rebuild);
+                if (rebuild) Render(rebuild: true);
+                else (_stateGuard ??= new PressGuard(_aside, () => Render(false))).Run();
                 break;
             case ConsoleLink.Options:
                 var anchor = (_mode == Mode.Chat ? _chat.AnchorFor(message.Key) : _view.AnchorFor(message.Key)) ?? _main;
@@ -218,9 +251,15 @@ sealed class ConsoleWindow : Window
                 break;
             case ConsoleLink.Chats:
                 _chats = message.Chats ?? [];
-                // La que se mostraba ya no está (se borró): queda la rápida.
-                if (_chats.All(c => c.Id != _chatId)) _chatId = ConsoleLink.QuickChat;
-                if (_mode == Mode.Chat) RenderChatList();
+                // La que se mostraba ya no está (se borró): queda la primera de la lista (la rápida, si sigue ahí).
+                // Si no queda ninguna, la rápida igual se puede usar (al escribir en ella vuelve a la lista).
+                if (_chats.All(c => c.Id != _chatId))
+                {
+                    var next = _chats.FirstOrDefault()?.Id ?? ConsoleLink.QuickChat;
+                    if (next != _chatId) _client.Send(new ConsoleMessage { Type = ConsoleLink.ChatOpen, Key = next });
+                    _chatId = next;
+                }
+                if (_mode == Mode.Chat) (_chatsGuard ??= new PressGuard(_aside, () => { if (_mode == Mode.Chat) RenderChatList(); })).Run();
                 break;
             case ConsoleLink.Chat when message.Chat is { } chat && chat.Id == _chatId:
                 _chat.Show(chat);
@@ -259,25 +298,27 @@ sealed class ConsoleWindow : Window
             _chat.SetInk(_ink);
             _editor.SetInk(_ink);
             _terminal.SetInk(_ink);
+            _canvas.SetInk(_ink);
             _body.ColumnDefinitions[1].Width = new GridLength(_mode switch
             {
                 Mode.Chat => 250,
                 Mode.Terminal => _terminal.ListWidth,
                 Mode.Editor => _editorFiles ? 250 : 0,
+                Mode.Canvas => _canvasFiles ? 260 : 0,
                 _ => 210,
             });
             // Sin columna (el editor con los archivos ocultos), nada de ella asoma.
             _aside.IsVisible = _body.ColumnDefinitions[1].Width.Value > 0;
             _grip.IsVisible = _mode == Mode.Terminal && _terminal.ListWidth > TerminalProjects.MinWidth - 1;
             ((Border)_grip.Child!).Background = _ink.Accent;
-            _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Terminal => _terminal.Header(), Mode.Editor => FilesHeader(), _ => _heading };
-            _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Terminal => _terminal.List, Mode.Editor => _fileList, _ => _sections };
+            _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Terminal => _terminal.Header(), Mode.Editor => FilesHeader(), Mode.Canvas => CanvasHeader(), _ => _heading };
+            _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Terminal => _terminal.List, Mode.Editor => _fileList, Mode.Canvas => _canvasList, _ => _sections };
         }
         _heading.Text = L.T("Ajustes");
         _heading.Foreground = _ink.Text;
         _heading.Margin = new Thickness(10, 2, 10, 12);
 
-        // La Terminal y el editor no necesitan a la bandeja.
+        // La Terminal, el editor y Canvas no necesitan a la bandeja.
         if (_mode == Mode.Terminal)
         {
             if (_main.Child != _terminal) _main.Child = _terminal;
@@ -289,10 +330,17 @@ sealed class ConsoleWindow : Window
             if (_main.Child != _editor) _main.Child = _editor;
             return;
         }
+        if (_mode == Mode.Canvas)
+        {
+            RenderCanvasList();
+            if (_main.Child != _canvas) _main.Child = _canvas;
+            return;
+        }
         if (!_connected || _pages.Count == 0)
         {
             _sections.Children.Clear();
             _chatList.Children.Clear();
+            _sectionsShown = _chatsShown = null;
             _main.Child = Waiting();
             return;
         }
@@ -306,6 +354,24 @@ sealed class ConsoleWindow : Window
         if (_pages.All(p => p.Id != _section)) _section = _sectionParent is { } up && _pages.Any(p => p.Id == up) ? up : _pages[0].Id;
         var shown = _pages.First(p => p.Id == _section);
         _sectionParent = shown.Parent;
+        var sectionsKey = (_ink, string.Join("", _pages.Where(p => p.Parent is null).Select(p => p.Id + "" + p.Title)
+            .Prepend($"{L.Language}|{_terminalSettings}|{shown.Parent ?? _section}")));
+        if (_sectionsShown != sectionsKey) RenderSections(shown, sectionsKey);
+        if (_terminalSettings)
+        {
+            // Se rehace con la ventana (otro tema); lo que llega de la bandeja no la toca (no se pierde dónde se estaba).
+            if (rebuild || _terminalPage is null)
+                _terminalPage = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = _terminal.SettingsPage() };
+            if (_main.Child != _terminalPage) _main.Child = _terminalPage;
+            return;
+        }
+        _view.Show(shown, _ink, rebuild, _pages.FirstOrDefault(p => p.Id == shown.Parent)?.Title);
+        if (_main.Child != _scroll) _main.Child = _scroll;
+    }
+
+    void RenderSections(SettingsPage shown, (Ink, string) key)
+    {
+        _sectionsShown = key;
         _sections.Children.Clear();
         foreach (var page in _pages.Where(p => p.Parent is null))
         {
@@ -328,16 +394,6 @@ sealed class ConsoleWindow : Window
         terminal.CornerRadius = new CornerRadius(12);
         if (_terminalSettings) terminal.Background = _ink.Pill;
         _sections.Children.Add(terminal);
-        if (_terminalSettings)
-        {
-            // Se rehace con la ventana (otro tema); lo que llega de la bandeja no la toca (no se pierde dónde se estaba).
-            if (rebuild || _terminalPage is null)
-                _terminalPage = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = _terminal.SettingsPage() };
-            if (_main.Child != _terminalPage) _main.Child = _terminalPage;
-            return;
-        }
-        _view.Show(shown, _ink, rebuild, _pages.FirstOrDefault(p => p.Id == shown.Parent)?.Title);
-        if (_main.Child != _scroll) _main.Child = _scroll;
     }
 
     /// <summary>Arrastrar el borde cambia el ancho de la lista (entre TerminalProjects.MinWidth y MaxWidth); al soltar, se guarda.</summary>
@@ -406,12 +462,25 @@ sealed class ConsoleWindow : Window
     // ── Archivos del editor ─────────────────────────────────────────────────────────────────
 
     /// <summary>«Archivos» y el botón de uno nuevo, como «Chats».</summary>
-    Control FilesHeader()
+    Control FilesHeader() => ListHeader(L.T("Archivos"), _editor.New, L.T("Texto nuevo"));
+
+    /// <summary>«Canvas» y el botón de uno nuevo.</summary>
+    Control CanvasHeader() => ListHeader("Canvas", _canvas.New, L.T("Canvas nuevo"));
+
+    /// <summary>Los canvas, del más reciente al más viejo.</summary>
+    void RenderCanvasList()
+    {
+        _canvasList.Children.Clear();
+        _canvasList.Children.Add(_canvas.ListView());
+    }
+
+    /// <summary>El título de la columna y su botón «+».</summary>
+    Control ListHeader(string title, Action add, string addName)
     {
         var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(8, 2, 6, 10) };
         bar.Children.Add(new TextBlock
         {
-            Text = L.T("Archivos"),
+            Text = title,
             FontFamily = Ink.Display,
             FontSize = 19,
             FontWeight = FontWeight.SemiBold,
@@ -432,14 +501,14 @@ sealed class ConsoleWindow : Window
                 Height = 24,
             },
         };
-        var add = Ui.Press(plus, _editor.New, (b, on) => b.Opacity = on ? 0.88 : 1, L.T("Documento nuevo"));
-        add.Width = 34;
-        add.Height = 34;
-        add.CornerRadius = new CornerRadius(999);
-        add.Background = _ink.Accent;
-        ToolTip.SetTip(add, L.T("Documento nuevo"));
-        Grid.SetColumn(add, 1);
-        bar.Children.Add(add);
+        var button = Ui.Press(plus, add, (b, on) => b.Opacity = on ? 0.88 : 1, addName);
+        button.Width = 34;
+        button.Height = 34;
+        button.CornerRadius = new CornerRadius(999);
+        button.Background = _ink.Accent;
+        ToolTip.SetTip(button, addName);
+        Grid.SetColumn(button, 1);
+        bar.Children.Add(button);
         return bar;
     }
 
@@ -528,6 +597,11 @@ sealed class ConsoleWindow : Window
     /// <summary>La rápida arriba y las guardadas agrupadas por cuándo se usaron (Hoy, Ayer, Esta semana, Antes).</summary>
     void RenderChatList()
     {
+        // La rápida llega siempre con la hora de ahora: su fecha no cuenta (va arriba, sin grupo).
+        var key = (_ink, string.Join("", _chats.Select(c => string.Join("", c.Id, c.Title, c.Preview, c.Quick ? "" : Conversations.GroupOf(c.Updated, DateTime.Now)))
+            .Prepend($"{L.Language}|{_chatId}|{_deleting}")));
+        if (_chatsShown == key) return;
+        _chatsShown = key;
         _chatList.Children.Clear();
         string? group = null;
         foreach (var chat in _chats)
@@ -581,21 +655,21 @@ sealed class ConsoleWindow : Window
                 Foreground = _ink.Tertiary,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
-        // La papelera aparece al pasar el mouse (y en la abierta): borra la conversación del historial; la rápida, la vacía.
+        // La papelera aparece al pasar el mouse (y en la abierta): borra la conversación de la lista (la rápida vuelve al usarse).
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         row.Children.Add(stack);
         var trash = Ui.Press(TrashGlyph(_ink.Tertiary), () =>
         {
             _deleting = id;
             RenderChatList();
-        }, (b, on) => b.Background = on ? _ink.Track : Brushes.Transparent, chat.Quick ? L.T("Vaciar la conversación") : L.T("Borrar la conversación"));
+        }, (b, on) => b.Background = on ? _ink.Track : Brushes.Transparent, L.T("Borrar la conversación"));
         trash.Width = 28;
         trash.Height = 28;
         trash.CornerRadius = new CornerRadius(999);
         trash.Margin = new Thickness(6, 0, -4, 0);
         trash.VerticalAlignment = VerticalAlignment.Center;
         trash.Opacity = current ? 1 : 0;
-        ToolTip.SetTip(trash, chat.Quick ? L.T("Vaciar la conversación") : L.T("Borrar la conversación"));
+        ToolTip.SetTip(trash, L.T("Borrar la conversación"));
         Grid.SetColumn(trash, 1);
         row.Children.Add(trash);
         var item = Ui.Press(row, () => OpenChat(id), current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, chat.Title);
@@ -613,7 +687,7 @@ sealed class ConsoleWindow : Window
     {
         var id = chat.Id;
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
-        var question = Ui.Text(chat.Quick ? L.T("¿Vaciarla?") : L.T("¿Borrarla?"), 13.5, _ink.Text);
+        var question = Ui.Text(L.T("¿Borrarla?"), 13.5, _ink.Text);
         row.Children.Add(question);
         var cancel = Ui.Press(Ui.Text(L.T("Cancelar"), 12.5, _ink.Secondary), () =>
         {
@@ -625,12 +699,13 @@ sealed class ConsoleWindow : Window
         Grid.SetColumn(cancel, 1);
         row.Children.Add(cancel);
         IBrush onDanger = _ink.Dark ? new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)) : Brushes.White;
-        var confirm = Ui.Press(Ui.Text(chat.Quick ? L.T("Vaciar") : L.T("Borrar"), 12.5, onDanger, FontWeight.SemiBold), () =>
+        var confirm = Ui.Press(Ui.Text(L.T("Borrar"), 12.5, onDanger, FontWeight.SemiBold), () =>
         {
             _deleting = null;
-            _client.Send(new ConsoleMessage { Type = chat.Quick ? ConsoleLink.ChatClear : ConsoleLink.ChatDelete, Key = id });
+            // La rápida también se borra de la lista (la bandeja la vacía); vaciarla sin quitarla está en la cabecera del chat.
+            _client.Send(new ConsoleMessage { Type = ConsoleLink.ChatDelete, Key = id });
             RenderChatList();
-        }, (b, on) => b.Opacity = on ? 0.88 : 1, chat.Quick ? L.T("Vaciar") : L.T("Borrar"));
+        }, (b, on) => b.Opacity = on ? 0.88 : 1, L.T("Borrar"));
         confirm.Background = _ink.Danger;
         confirm.Padding = new Thickness(12, 5);
         confirm.CornerRadius = new CornerRadius(999);
@@ -685,16 +760,18 @@ sealed class ConsoleWindow : Window
     const string ChatIcon = "M5,5 H19 A1,1 0 0 1 20,6 V15 A1,1 0 0 1 19,16 H10 L5,20 V6 A1,1 0 0 1 6,5 Z";
     const string TerminalIcon = "M4,5 H20 A1,1 0 0 1 21,6 V18 A1,1 0 0 1 20,19 H4 A1,1 0 0 1 3,18 V6 A1,1 0 0 1 4,5 Z M7,10 L10,12.5 L7,15 M12.5,15 H16.5";
     const string EditorIcon = "M14,3 H7 A1,1 0 0 0 6,4 V20 A1,1 0 0 0 7,21 H17 A1,1 0 0 0 18,20 V7 L14,3 Z M14,3 V7 H18 M9.5,12 H14.5 M9.5,16 H12.5";
+    const string CanvasIcon = "M4,4 H20 A1,1 0 0 1 21,5 V19 A1,1 0 0 1 20,20 H4 A1,1 0 0 1 3,19 V5 A1,1 0 0 1 4,4 Z M3,9 H21 M10,9 V20 M13,13 H18 M13,16.5 H16.5";
     const string SettingsIcon = "M15,12 A3,3 0 1 1 9,12 A3,3 0 1 1 15,12 Z M12,2.5 V5 M12,19 V21.5 M5.3,5.3 L7.1,7.1 M16.9,16.9 L18.7,18.7 M2.5,12 H5 "
         + "M19,12 H21.5 M5.3,18.7 L7.1,16.9 M16.9,7.1 L18.7,5.3";
 
-    /// <summary>El riel de la izquierda: Chat, Terminal, Editor y Ajustes.</summary>
+    /// <summary>El riel de la izquierda: Chat, Terminal, Editor, Canvas y Ajustes.</summary>
     Control Rail()
     {
         var rail = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
         rail.Children.Add(RailButton(ChatIcon, L.T("Chat"), _mode == Mode.Chat, () => SetMode(Mode.Chat)));
         rail.Children.Add(RailButton(TerminalIcon, L.T("Terminal"), _mode == Mode.Terminal, () => SetMode(Mode.Terminal)));
         rail.Children.Add(RailButton(EditorIcon, L.T("Editor"), _mode == Mode.Editor, () => SetMode(Mode.Editor)));
+        rail.Children.Add(RailButton(CanvasIcon, "Canvas", _mode == Mode.Canvas, () => SetMode(Mode.Canvas)));
         rail.Children.Add(RailButton(SettingsIcon, L.T("Ajustes"), _mode == Mode.Settings, () => SetMode(Mode.Settings)));
         return rail;
     }

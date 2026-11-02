@@ -219,6 +219,8 @@ sealed partial class TerminalPane
             string text;
             using (var reader = new StreamReader(new MemoryStream(bytes), new UTF8Encoding(false), detectEncodingFromByteOrderMarks: true))
                 text = reader.ReadToEnd();
+            // Un plan (*.plan.json) se ve como plan: resumen, tablero y cronograma, no su JSON.
+            if (Plan.IsPlanFile(path)) return PlanFileView(path, text);
             // Un .md se lee como documento (títulos, listas, tablas…), no con sus # y sus **.
             if (MarkdownExtensions.Contains(Path.GetExtension(path).ToLowerInvariant()))
                 return MarkdownView(text, Path.GetDirectoryName(path) ?? "");

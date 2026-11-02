@@ -94,7 +94,8 @@ public sealed class AcpDriverTests
         var created = s.Last;
         Assert.Equal("session/new", (string?)created["method"]);
         Assert.Equal(Folder, (string?)created["params"]!["cwd"]);
-        Assert.Empty(created["params"]!["mcpServers"]!.AsArray());
+        // Claupet Canvas va como servidor MCP de la sesión.
+        Assert.Equal(CanvasMcp.Name, (string?)created["params"]!["mcpServers"]![0]!["name"]);
 
         s.Feed(GeminiSession);
         var prompt = s.Last;

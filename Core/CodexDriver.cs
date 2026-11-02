@@ -110,6 +110,8 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
             foreach (var arg in new[] { "/d", "/s", "/c", codex }) start.ArgumentList.Add(arg);
         }
         else start.FileName = codex;
+        // Claupet Canvas (MCP), con «-c» antes del subcomando: así no se toca el config.toml de la persona.
+        foreach (var arg in CanvasMcp.CodexArguments(options.Folder)) start.ArgumentList.Add(arg);
         start.ArgumentList.Add("app-server");
         return start;
     }

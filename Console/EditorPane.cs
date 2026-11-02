@@ -189,7 +189,7 @@ sealed class EditorPane : Grid
             var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = L.T("Guardar como"),
-                SuggestedFileName = doc.Path is null ? L.T("Documento") + ".md" : System.IO.Path.GetFileName(doc.Path),
+                SuggestedFileName = doc.Path is null ? L.T("Texto") + ".md" : System.IO.Path.GetFileName(doc.Path),
                 DefaultExtension = doc.Code ? null : "md",
                 ShowOverwritePrompt = true,
             });
@@ -427,7 +427,7 @@ sealed class EditorPane : Grid
 
         _tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
         var modes = new StackPanel { Orientation = Orientation.Horizontal };
-        _documentTab = ModeTab(L.T("Documento"), code: false);
+        _documentTab = ModeTab(L.T("Texto"), code: false);
         _codeTab = ModeTab(L.T("Código"), code: true);
         modes.Children.Add(_documentTab);
         modes.Children.Add(_codeTab);
@@ -545,7 +545,7 @@ sealed class EditorPane : Grid
             HorizontalAlignment = HorizontalAlignment.Center,
         });
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 10) };
-        buttons.Children.Add(Pill(L.T("Documento nuevo"), _ink.Accent, new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)), New));
+        buttons.Children.Add(Pill(L.T("Texto nuevo"), _ink.Accent, new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)), New));
         buttons.Children.Add(Pill(L.T("Abrir…"), _ink.Pill, _ink.Text, () => _ = OpenAsync()));
         panel.Children.Add(buttons);
         var recents = _recents.Where(File.Exists).Take(6).ToList();

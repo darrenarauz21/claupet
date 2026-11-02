@@ -2,10 +2,10 @@
 
 **Español** · [English](../en/console.md)
 
-La ventana grande de Claupet: el chat, la Terminal, el editor y todos los ajustes, en un solo lugar.
+La ventana grande de Claupet: el chat, la Terminal, el editor, Canvas y todos los ajustes, en un solo lugar.
 
 **En esta página:** [Cómo abrirla](#cómo-abrirla) · [El riel](#el-riel) · [Chat](#chat) ·
-[Editor](#editor) · [Ajustes](#ajustes) · [Accesos directos](#accesos-directos)
+[Editor](#editor) · [Canvas](#canvas) · [Ajustes](#ajustes) · [Accesos directos](#accesos-directos)
 
 ## Cómo abrirla
 
@@ -24,13 +24,14 @@ Hay una sola Console a la vez. Sigue el modo claro u oscuro del sistema y el col
 
 ## El riel
 
-A la izquierda, un riel con cuatro botones:
+A la izquierda, un riel con cinco botones:
 
 | Botón | Para qué |
 |---|---|
 | 💬 **Chat** | Conversar con Claupet y guardar las conversaciones. |
 | ⌨️ **Terminal** | Sesiones de agentes y shells en bloques. Tiene su propia página: [Claupet Terminal](terminal.md). |
 | 📝 **Editor** | Abrir y escribir documentos y código. |
+| 🎨 **Canvas** | Documentos vivos que usted y cualquier IA editan a la vez. |
 | ⚙️ **Ajustes** | Todas las opciones de Claupet, por secciones. |
 
 ## Chat
@@ -65,7 +66,7 @@ Un editor sencillo para documentos y código.
 
 | Qué | Cómo |
 |---|---|
-| **Documento** | El Markdown se ve sin sus marcas (títulos, negritas, enlaces, viñetas), salvo en la línea del cursor. |
+| **Texto** | El Markdown se ve sin sus marcas (títulos, negritas, enlaces, viñetas), salvo en la línea del cursor. |
 | **Código** | Números de línea y colores para C#, JavaScript, Python, PowerShell, SQL, HTML, CSS, JSON, XML y otros. |
 | **Archivos** | **Mostrar los archivos** lista los abiertos y los recientes. Las pestañas llevan un punto si hay cambios sin guardar. |
 
@@ -78,6 +79,38 @@ Un editor sencillo para documentos y código.
 | Ctrl+W | Cerrar |
 
 Guarda en UTF-8 y, si cierra un archivo con cambios, pregunta antes.
+
+## Canvas
+
+Documentos vivos que usted y cualquier IA editan a la vez, al estilo de un canvas. Un canvas es una lista de secciones,
+cada una con su tipo:
+
+| Tipo | Qué es |
+|---|---|
+| **Texto** | Markdown: títulos, listas, tablas, enlaces. |
+| **Código** | En cualquier lenguaje. |
+| **HTML** | Una página o una app entera (con su CSS y JavaScript). Se ve en el navegador, aislada. |
+| **Diagrama** | Mermaid. Se dibuja en el navegador. |
+| **SVG**, **Datos** (JSON o CSV, que se ve como tabla) e **Imagen** | Gráficos, tablas y resultados, imágenes. |
+
+**Con los agentes.** Pídale a un agente de la [Terminal](terminal.md) «hazlo en un canvas»: Claude Code, Codex, Gemini
+CLI y Copilot reciben Claupet Canvas al abrirse (es un servidor MCP), con el modelo que usen. El canvas aparece en la
+Console y se actualiza mientras el agente lo edita; lo que acaba de cambiar se marca un momento. El agente no reescribe
+todo: cambia el pedazo que hace falta, así que puede seguir escribiendo usted en otra sección.
+
+**Comentarios.** El botón de comentario de cada sección deja una nota (para la IA o para usted). Los agentes los leen,
+los responden y los marcan como resueltos.
+
+**Versiones.** Cada cambio, suyo o de un agente, es una versión nueva. **Versiones** muestra quién cambió qué y permite
+volver a una anterior (la de ahora queda guardada).
+
+**Exportar.** Markdown, una página HTML que se abre sola en cualquier navegador, o JSON. También **Ver en el navegador**.
+
+**Desde otras apps.** **⋯ › Usar desde otras apps** copia la configuración MCP para pegarla en Claude Desktop, Cursor,
+VS Code o cualquier app con MCP: sus modelos verán y editarán los mismos canvas. A mano, el comando es
+`Claupet --canvas-mcp`.
+
+Se guardan en la carpeta de datos de Claupet, en `Canvas` (en Windows, `%APPDATA%\Claupet\Canvas`).
 
 ## Ajustes
 
