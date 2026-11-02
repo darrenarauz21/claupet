@@ -1715,5 +1715,14 @@
   "Toque una para retomarla en una pestaña nueva, con lo de antes a la vista (también con /resume).": "Tap one to resume it in a new tab, with what came before in view (also with /resume).",
   "ayer, {0:HH:mm}": "yesterday, {0:HH:mm}",
   "esta pestaña": "this tab",
-  "recién": "just now"
+  "recién": "just now",
+  "Silenciar": "Mute",
+  "Activar el sonido": "Unmute",
+  "Abrir en la terminal": "Open in the terminal",
+  "Abra una con +, escríbale en el Chat o suelte un archivo aquí.": "Open one with +, write in the Chat or drop a file here.",
+  "Borrar la conversación": "Delete the conversation",
+  "¿Vaciar la conversación rápida? No se puede deshacer.": "Clear the quick conversation? This can’t be undone.",
+  "¿Vaciarla?": "Clear it?",
+  "¿Borrarla?": "Delete it?",
+  "Vaciar": "Clear"
 }

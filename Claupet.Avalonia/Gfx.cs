@@ -16,7 +16,7 @@ sealed record UiFont(Typeface Typeface, double Size)
     public double LineHeight => _lineHeight ??= Gfx.Measure("Ág", this).Height;
 }
 
-enum Glyph { Refresh, Add, Check, Close, Bell, BellOff, ChevronDown, ChevronUp, Settings, Back, Message, Read, Search, Edit, Run, Agent, Web, Ask, Other, Send, Stop, Mic, Volume, Mute }
+enum Glyph { Refresh, Add, Check, Close, Bell, BellOff, ChevronDown, ChevronUp, Settings, Back, Message, Read, Search, Edit, Run, Agent, Web, Ask, Other, Send, Stop, Mic, Volume, Mute, Activity, Copy }
 
 /// <summary>Fuentes, colores, texto, íconos vectoriales y pixeles para la interfaz de Avalonia.</summary>
 static class Gfx
@@ -121,6 +121,8 @@ static class Gfx
         [Glyph.Mic] = Geometry.Parse("M8,2 A2,2 0 0 1 10,4 L10,7.5 A2,2 0 0 1 6,7.5 L6,4 A2,2 0 0 1 8,2 Z M4.5,7.5 A3.5,3.5 0 0 0 11.5,7.5 M8,11 L8,13.5"),
         [Glyph.Volume] = Geometry.Parse("M2.5,6 L5,6 L8.5,3 L8.5,13 L5,10 L2.5,10 Z M10.5,6 A2.8,2.8 0 0 1 10.5,10 M12,4 A5.5,5.5 0 0 1 12,12"),
         [Glyph.Mute] = Geometry.Parse("M2.5,6 L5,6 L8.5,3 L8.5,13 L5,10 L2.5,10 Z M10.5,6 L14,9.5 M14,6 L10.5,9.5"),
+        [Glyph.Activity] = Geometry.Parse("M1.5,8.5 L4.5,8.5 L6.5,4 L9.5,12.5 L11.5,8.5 L14.5,8.5"),
+        [Glyph.Copy] = Geometry.Parse("M5.5,5.5 L13,5.5 L13,13.5 L5.5,13.5 Z M3,10.5 L3,2.5 L10.5,2.5"),
     };
 
     public static void Icon(DrawingContext? dc, Glyph glyph, SD.Color color, Rect box, double size = 16)

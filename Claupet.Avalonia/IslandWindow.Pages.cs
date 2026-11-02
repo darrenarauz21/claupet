@@ -29,6 +29,7 @@ sealed partial class IslandWindow
         var shape = IslandGeometry(x, _y, w, h, radius);
         dc.DrawGeometry(Gfx.B(Ground), null, shape);
         _hits.Clear();
+        _tips.Clear();
         var inputBefore = _inputBounds;
         _inputBounds = default;
         var bounds = new Rect(x, _y, w, h);
@@ -45,12 +46,33 @@ sealed partial class IslandWindow
                 else y = ComposeTopBar(null, bounds);
                 if (bodyAlpha > 0.01)
                     using (dc.PushOpacity(bodyAlpha)) ComposePage(dc, bounds, y);
+                if (barAlpha > 0.99) DrawTip(dc, bounds);
             }
             else if (barAlpha > 0.01)
                 using (dc.PushOpacity(barAlpha)) DrawCompact(dc, bounds);
         }
         // El campo de texto va donde quedó el dibujado: se acomoda después de dibujar.
         if (_inputBounds != inputBefore) Dispatcher.UIThread.Post(PlaceInput);
+    }
+
+    /// <summary>Lo que dice cada botón de solo ícono, por su clave (se arma al dibujar, como los toques).</summary>
+    readonly Dictionary<string, string> _tips = [];
+
+    void Tip(string key, string text) => _tips[key] = text;
+
+    /// <summary>El nombre del botón de ícono bajo el mouse, en una pastilla debajo (o encima, si no cabe), dentro de la isla.</summary>
+    void DrawTip(DrawingContext dc, Rect bounds)
+    {
+        if (_hoverKey is not { } key || !_tips.TryGetValue(key, out var text)) return;
+        if (_hits.LastOrDefault(h => h.Key == key) is not { Key: not null } hit) return;
+        var size = Gfx.Measure(text, Small);
+        var w = size.Width + 16;
+        const double h = 22;
+        var x = Math.Clamp(hit.Bounds.Center.X - w / 2, bounds.X + 6, bounds.Right - w - 6);
+        var y = hit.Bounds.Bottom + 4 + h <= bounds.Bottom - 4 ? hit.Bounds.Bottom + 4 : hit.Bounds.Y - 4 - h;
+        var rect = new Rect(x, y, w, h);
+        Gfx.Fill(dc, Hex(0x3A3A37), rect, h / 2);
+        Gfx.Write(dc, text, Small, Ink, rect, TextAlignment.Center, center: true);
     }
 
     static Geometry IslandGeometry(double x, double y, double w, double h, double r)
@@ -179,26 +201,29 @@ sealed partial class IslandWindow
         var y = b.Y + 8;
         var x = b.X + 10;
         const double height = 28;
-        foreach (var (key, label, page) in new (string, string, Page?)[] { ("tab:home", L.T("Actividad"), Page.Home), ("tab:chat", L.T("Chat"), Page.Chat), ("tab:new", L.T("+ Sesión"), null) })
+        // Las pestañas con íconos (el nombre aparece al pasar el mouse): Actividad, Chat y sesión nueva.
+        foreach (var (key, glyph, label, page) in new (string, Glyph, string, Page?)[]
+            { ("tab:home", Glyph.Activity, L.T("Actividad"), Page.Home), ("tab:chat", Glyph.Message, L.T("Chat"), Page.Chat), ("tab:new", Glyph.Add, L.T("Sesión nueva"), null) })
         {
-            var w = Gfx.Measure(label, Small).Width + 24;
-            var rect = new Rect(x, y, w, height);
+            var rect = new Rect(x, y, 38, height);
             Hit(rect, key);
+            Tip(key, label);
             if (dc is not null)
             {
                 var selected = page == _page;
                 if (selected) Gfx.Fill(dc, Tab, rect, height / 2);
                 else if (_hoverKey == key) Gfx.Fill(dc, Hex(0x242422), rect, height / 2);
-                Gfx.Write(dc, label, Small, selected ? Ink : Dim, rect, TextAlignment.Center, center: true);
+                Gfx.Icon(dc, glyph, selected ? Ink : Dim, rect, 15);
             }
             x = rect.Right + 4;
         }
 
         var right = b.Right - 10;
-        foreach (var (key, glyph) in new[] { ("gear", Glyph.Settings), ("mute", _muted ? Glyph.Mute : Glyph.Volume) })
+        foreach (var (key, glyph, tip) in new[] { ("gear", Glyph.Settings, L.T("Ajustes")), ("mute", _muted ? Glyph.Mute : Glyph.Volume, _muted ? L.T("Activar el sonido") : L.T("Silenciar")) })
         {
             var rect = new Rect(right - 30, y - 1, 30, 30);
             Hit(rect, key);
+            Tip(key, tip);
             if (dc is not null)
             {
                 if (_hoverKey == key) Gfx.Fill(dc, Raised, rect, 8);
@@ -237,7 +262,7 @@ sealed partial class IslandWindow
         if (list.Count == 0)
         {
             Gfx.Write(dc, L.T("No hay sesiones activas."), Body, Soft, new Rect(x + 4, y + 6, width, 20), center: true);
-            Gfx.Write(dc, L.T("Abra una con «+ Sesión», escríbale en el Chat o suelte un archivo aquí."), Small, Faint,
+            Gfx.Write(dc, L.T("Abra una con +, escríbale en el Chat o suelte un archivo aquí."), Small, Faint,
                 new Rect(x + 4, y + 28, width, 18), center: true);
             return y + 50;
         }
@@ -256,8 +281,9 @@ sealed partial class IslandWindow
 
         // Primera línea: estado, título, cuenta y modelo, y el botón de la terminal.
         var tag = s.Account.Label + (s.Model is { } model ? " · " + Format.Model(model) : "");
-        var tagW = Gfx.Measure(tag, Small).Width;
-        var termW = Gfx.Measure(L.T("Terminal"), Small).Width + 18;
+        // La cuenta y el modelo ocupan hasta un 45 % de la línea (con «…»): un nombre largo no tapa el título.
+        const double termW = 30;
+        var tagW = Math.Min(Gfx.Measure(tag, Small).Width, (textW - termW) * 0.45);
         var bodyY = row + lineH + 4;
         var card = new Rect(x, top, width, ComposeSessionBody(null, s, textX, bodyY, textW) + pad - top);
         var term = new Rect(x + width - pad - termW, row - 1, termW, 22);
@@ -276,11 +302,12 @@ sealed partial class IslandWindow
             Gfx.Write(dc, s.DisplayTitle, BodyStrong, Ink, new Rect(textX, row, Math.Max(1, textW - tagW - termW - 16), lineH), center: true);
             Gfx.Write(dc, tag, Small, Dim, new Rect(term.X - 8 - tagW, row, tagW + 2, lineH), center: true);
             Gfx.Outline(dc, _hoverKey == "term:" + s.SessionId ? Soft : Edge, term, 11);
-            Gfx.Write(dc, L.T("Terminal"), Small, Soft, term, TextAlignment.Center, center: true);
+            Gfx.Icon(dc, Glyph.Run, Soft, term, 13);
             ComposeSessionBody(dc, s, textX, bodyY, textW);
         }
         Hit(card, key, s);
         Hit(term, "term:" + s.SessionId, s);
+        Tip("term:" + s.SessionId, L.T("Abrir en la terminal"));
         return card.Bottom;
     }
 
@@ -641,13 +668,17 @@ sealed partial class IslandWindow
             var ax = tx;
             foreach (var (key, label) in new[] { ("res:ask", L.T("Preguntar algo más")), ("res:copy", L.T("Copiar")), ("res:session", L.T("Seguir en una sesión")) })
             {
-                var w = Gfx.Measure(label, Small).Width + 24;
+                // Copiar va con su ícono (el nombre, al pasar el mouse); lo demás no es obvio sin texto.
+                var copy = key == "res:copy";
+                var w = copy ? 34 : Gfx.Measure(label, Small).Width + 24;
                 var rect = new Rect(ax, footY, w, 28);
                 Hit(rect, key);
+                if (copy) Tip(key, label);
                 if (dc is not null)
                 {
                     Gfx.Outline(dc, _hoverKey == key ? Soft : Edge, rect, 14);
-                    Gfx.Write(dc, label, Small, key == "res:ask" ? Lighten(_accent) : Soft, rect, TextAlignment.Center, center: true);
+                    if (copy) Gfx.Icon(dc, Glyph.Copy, Soft, rect, 14);
+                    else Gfx.Write(dc, label, Small, key == "res:ask" ? Lighten(_accent) : Soft, rect, TextAlignment.Center, center: true);
                 }
                 ax = rect.Right + 8;
             }
@@ -742,13 +773,16 @@ sealed partial class IslandWindow
         var bx = tx;
         foreach (var (key, label) in new[] { ("week:copy", L.T("Copiar")), ("week:close", L.T("Listo")) })
         {
-            var bw = Gfx.Measure(label, Small).Width + 26;
+            var copy = key == "week:copy";
+            var bw = copy ? 34 : Gfx.Measure(label, Small).Width + 26;
             var rect = new Rect(bx, buttonsY, bw, 28);
             Hit(rect, key);
+            if (copy) Tip(key, label);
             if (dc is not null)
             {
                 Gfx.Outline(dc, _hoverKey == key ? Soft : Edge, rect, 14);
-                Gfx.Write(dc, label, Small, key == "week:copy" ? Lighten(_accent) : Soft, rect, TextAlignment.Center, center: true);
+                if (copy) Gfx.Icon(dc, Glyph.Copy, Lighten(_accent), rect, 14);
+                else Gfx.Write(dc, label, Small, Soft, rect, TextAlignment.Center, center: true);
             }
             bx = rect.Right + 8;
         }

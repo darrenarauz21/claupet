@@ -21,6 +21,8 @@ static class Ui
         FontWeight = weight,
         FontFamily = family ?? Ink.Sans,
         VerticalAlignment = VerticalAlignment.Center,
+        // Si no cabe, termina en «…» en vez de salirse de su lugar (un nombre, una carpeta o una rama largos).
+        TextTrimming = TextTrimming.CharacterEllipsis,
     };
 
     /// <summary>
