@@ -11,15 +11,31 @@ namespace Claupet;
 /// </summary>
 static class CanvasExport
 {
-    public static readonly string[] Formats = ["markdown", "html", "json"];
+    public static readonly string[] Formats = ["markdown", "html", "json", "pdf", "docx"];
 
-    public static string Extension(string format) => format switch { "html" => ".html", "json" => ".json", _ => ".md" };
+    public static string Extension(string format) => format switch { "html" => ".html", "json" => ".json", "pdf" => ".pdf", "docx" => ".docx", _ => ".md" };
+
+    /// <summary>PDF y Word son archivos, no texto: solo se guardan (Save), no se devuelven.</summary>
+    public static bool IsFile(string format) => format is "pdf" or "docx";
+
+    /// <summary>Guarda el canvas en ese formato (PDF con Edge o Chrome, Word con Open XML; los demás, como texto UTF-8).</summary>
+    public static void Save(string format, CanvasDoc doc, string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        switch (format)
+        {
+            case "pdf": CanvasPdf.Write(doc, path); break;
+            case "docx": CanvasDocx.Write(doc, path); break;
+            default: File.WriteAllText(path, To(format, doc), new UTF8Encoding(false)); break;
+        }
+    }
 
     public static string To(string format, CanvasDoc doc) => format switch
     {
         "html" => Html(doc),
         "json" => JsonSerializer.Serialize(doc, CanvasJson.Options),
         "markdown" or "md" => Markdown(doc),
+        "pdf" or "docx" => throw new CanvasException(L.T("{0} se guarda como archivo: diga dónde (path).", format.ToUpperInvariant())),
         _ => throw new CanvasException(L.T("Formato «{0}» no válido; puede ser: {1}.", format, string.Join(", ", Formats))),
     };
 
@@ -108,6 +124,7 @@ static class CanvasExport
         var sections = only is null ? doc.Sections : doc.Sections.Where(s => s.Id == only).ToList();
         var body = new StringBuilder();
         var mermaid = false;
+        var frames = false;
         foreach (var s in sections)
         {
             body.Append($"<section id=\"{s.Id}\" class=\"{s.Kind}\">");
@@ -120,7 +137,8 @@ static class CanvasExport
                 case CanvasKinds.Html:
                 case CanvasKinds.Svg:
                     var page = s.Kind == CanvasKinds.Svg ? $"<!doctype html><body style=\"margin:0\">{s.Content}</body>" : s.Content;
-                    body.Append($"<iframe sandbox=\"allow-scripts allow-forms allow-modals allow-popups\" srcdoc=\"{WebUtility.HtmlEncode(page)}\"></iframe>");
+                    body.Append($"<iframe sandbox=\"allow-scripts allow-forms allow-modals allow-popups\" srcdoc=\"{WebUtility.HtmlEncode(page + FrameHeight)}\"></iframe>");
+                    frames = true;
                     break;
                 case CanvasKinds.Diagram when (s.Language ?? "mermaid").Equals("mermaid", StringComparison.OrdinalIgnoreCase):
                     mermaid = true;
@@ -147,6 +165,7 @@ static class CanvasExport
             ? "<script type=\"module\">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';"
               + "mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});</script>"
             : "";
+        if (frames) script += FrameListener;
         return $$"""
             <!doctype html>
             <html lang="{{L.Language}}">
@@ -165,6 +184,17 @@ static class CanvasExport
             """;
     }
 
+    /// <summary>
+    /// Dentro de cada iframe: avisa a la página su alto (el del contenido), para que el marco mida eso y no deje un hueco
+    /// (ni en pantalla ni en el PDF). El iframe sigue aislado: solo manda un número.
+    /// </summary>
+    const string FrameHeight = "<script>(function(){function h(){var b=document.body;if(!b)return;var m=parseFloat(getComputedStyle(b).marginBottom)||0;"
+        + "parent.postMessage({claupetHeight:Math.ceil(b.getBoundingClientRect().bottom+m)},'*')}addEventListener('load',h);"
+        + "if(window.ResizeObserver)addEventListener('DOMContentLoaded',function(){new ResizeObserver(h).observe(document.body)})})()</script>";
+
+    const string FrameListener = "<script>addEventListener('message',function(e){var n=e.data&&e.data.claupetHeight;if(typeof n!=='number')return;"
+        + "for(var f of document.querySelectorAll('iframe'))if(f.contentWindow===e.source){f.style.height=Math.max(40,Math.min(n+2,4000))+'px';break}})</script>";
+
     const string Style = """
         <style>
         :root{color-scheme:light dark;--bg:#F8F6F1;--fg:#1F1E1D;--muted:#6B6963;--line:#14000000;--code:#ECE9E1}
@@ -173,9 +203,12 @@ static class CanvasExport
         h1{font-size:2em;margin:0 0 .6em}section{margin:0 0 28px}h3{font-size:1em;color:var(--muted);margin:0 0 8px}
         pre{background:var(--code);padding:14px 16px;border-radius:10px;overflow:auto;font:13.5px/1.5 "Cascadia Mono",Consolas,monospace}
         code{font-family:"Cascadia Mono",Consolas,monospace}p code{background:var(--code);padding:1px 5px;border-radius:5px}
-        iframe{width:100%;min-height:420px;border:1px solid rgba(127,127,127,.25);border-radius:10px;background:#fff}
+        iframe{display:block;width:100%;height:420px;border:1px solid rgba(127,127,127,.25);border-radius:10px;background:#fff}
         img{max-width:100%;border-radius:10px}table{border-collapse:collapse}td,th{border:1px solid rgba(127,127,127,.3);padding:6px 10px}
-        pre.mermaid{background:none;text-align:center}.missing{color:var(--muted)}
+        pre.mermaid{background:none;text-align:center}blockquote{margin:0 0 1em;padding:2px 0 2px 14px;border-left:3px solid #D97757;color:var(--muted)}.missing{color:var(--muted)}
+        @page{size:A4;margin:18mm 16mm}
+        @media print{:root{--bg:#fff;--fg:#1F1E1D;--muted:#6B6963;--code:#F1EEE6}body{max-width:none;padding:0;font-size:11.5pt}
+        section{break-inside:avoid-page}pre{white-space:pre-wrap;overflow:visible}h1{font-size:22pt}}
         </style>
         """;
 

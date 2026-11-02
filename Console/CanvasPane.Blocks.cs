@@ -55,6 +55,10 @@ static class CanvasIcons
     public const string Link = "M10,14 A4,4 0 0 0 15.7,14 L18.5,11.2 A4,4 0 0 0 12.8,5.5 L11.5,6.8 M14,10 A4,4 0 0 0 8.3,10 L5.5,12.8 A4,4 0 0 0 11.2,18.5 L12.5,17.2";
     public const string Folder = "M3.5,7 A1.5,1.5 0 0 1 5,5.5 H9.5 L11.5,7.5 H19 A1.5,1.5 0 0 1 20.5,9 V17.5 A1.5,1.5 0 0 1 19,19 H5 A1.5,1.5 0 0 1 3.5,17.5 Z";
     public const string Warn = "M12,4 L21,19.5 H3 Z M12,10 V14 M12,17 H12.01";
+    /// <summary>Una hoja con la esquina doblada y una línea gruesa (PDF).</summary>
+    public const string Pdf = "M14,3 H6.5 V21 H17.5 V6.5 Z M14,3 V6.5 H17.5 M9,12 H15 M9,15.5 H13";
+    /// <summary>Una hoja con renglones (Word).</summary>
+    public const string Docx = "M14,3 H6.5 V21 H17.5 V6.5 Z M14,3 V6.5 H17.5 M9,11 H15 M9,14 H15 M9,17 H12.5";
     public const string Json = "M8,4 C6,4 6,6 6,8 C6,10 5,11 4,12 C5,13 6,14 6,16 C6,18 6,20 8,20 M16,4 C18,4 18,6 18,8 C18,10 19,11 20,12 C19,13 18,14 18,16 C18,18 18,20 16,20";
 
     public static string Of(string kind) => kind switch
@@ -73,11 +77,16 @@ static class CanvasIcons
 
 sealed partial class CanvasPane
 {
-    const double Column = 780;
+    const double Column = 760;
+    /// <summary>A la izquierda, lugar para el tipo y el asa; a la derecha, para los avatares (y aire antes de la barra de desplazamiento).</summary>
+    const double Gutter = 56, Aside = 66;
+    /// <summary>El aire de adentro de cada sección.</summary>
+    static readonly Thickness BlockPadding = new(14, 10);
 
     Control Document(CanvasDoc doc)
     {
-        var column = new StackPanel { MaxWidth = Column, Margin = new Thickness(70, 14, 70, 140) };
+        var column = new StackPanel { MaxWidth = Column, Margin = new Thickness(Gutter, 10, Aside, 140), HorizontalAlignment = HorizontalAlignment.Stretch };
+        column.Width = double.NaN;
         for (var i = 0; i < doc.Sections.Count; i++)
         {
             var after = i == 0 ? "start" : doc.Sections[i - 1].Id;
@@ -109,14 +118,14 @@ sealed partial class CanvasPane
         plus.BoxShadow = Shadow(soft: true);
         plus.HorizontalAlignment = HorizontalAlignment.Center;
         Fade(plus, 0, scale: true);
-        var zone = new Grid { Height = last ? 34 : 14, Background = Brushes.Transparent };
+        var zone = new Grid { Height = last ? 36 : 18, Background = Brushes.Transparent };
         zone.Children.Add(line);
         zone.Children.Add(plus);
         if (last)
         {
             plus.VerticalAlignment = VerticalAlignment.Top;
             line.VerticalAlignment = VerticalAlignment.Top;
-            line.Margin = new Thickness(14, 11, 14, 0);
+            line.Margin = new Thickness(14, 12, 14, 0);
         }
         zone.PointerEntered += (_, _) => { line.RenderTransform = TransformOperations.Parse("scaleX(1)"); Fade(plus, 1, scale: true); };
         zone.PointerExited += (_, _) => { line.RenderTransform = TransformOperations.Parse("scaleX(0)"); Fade(plus, 0, scale: true); };
@@ -132,7 +141,7 @@ sealed partial class CanvasPane
         var body = new Border
         {
             CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(14, 8),
+            Padding = BlockPadding,
             Background = editing ? _ink.Raised : Brushes.Transparent,
             BoxShadow = editing ? Shadow() : default,
             Transitions = [new BrushTransition { Property = Border.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(200) }],
@@ -154,7 +163,7 @@ sealed partial class CanvasPane
         }
 
         // A la izquierda: el tipo y el asa; arriba a la derecha: las herramientas. Aparecen al pasar el mouse.
-        var gutter = new StackPanel { Spacing = 2, Margin = new Thickness(-44, 8, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+        var gutter = new StackPanel { Spacing = 2, Margin = new Thickness(-42, 8, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
         var kind = new Border { Width = 28, Height = 28, CornerRadius = new CornerRadius(8), Background = _ink.Pill, Child = Glyph(CanvasIcons.Of(section.Kind), _ink.Tertiary, 14) };
         ToolTip.SetTip(kind, CanvasKinds.Label(section.Kind) + (section.Language is { } lang && section.Kind != CanvasKinds.Markdown ? " · " + lang : ""));
         gutter.Children.Add(kind);
@@ -185,7 +194,7 @@ sealed partial class CanvasPane
         }
 
         // A la derecha: quién la escribió y sus comentarios abiertos.
-        var who = new StackPanel { Spacing = 6, Margin = new Thickness(0, 10, -58, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top };
+        var who = new StackPanel { Spacing = 6, Margin = new Thickness(0, 10, -40, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top };
         var avatar = Avatar(section.Author, 22);
         ToolTip.SetTip(avatar, $"{CanvasJson.AuthorLabel(section.Author)} · {Format.Ago(section.Updated)}");
         who.Children.Add(avatar);
@@ -272,7 +281,7 @@ sealed partial class CanvasPane
         return new Border
         {
             Background = _ink.Raised,
-            BorderBrush = _ink.Line,
+            BorderBrush = _ink.Hairline,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(12),
             ClipToBounds = true,
@@ -379,8 +388,8 @@ sealed partial class CanvasPane
         {
             Background = WithAlpha(_ink.Pill, 0xB0),
             CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(14, 12),
-            Child = new ScrollViewer { Content = block, MaxHeight = 460, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
+            Padding = new Thickness(14, 11),
+            Child = new ScrollViewer { Content = block, MaxHeight = 420, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
         };
     }
 
@@ -397,7 +406,7 @@ sealed partial class CanvasPane
     /// <summary>Una página (HTML o SVG): un escenario con su botón grande; se abre en el navegador, donde corre aislada.</summary>
     Control Stage(CanvasDoc doc, CanvasSection section)
     {
-        var grid = new Grid { Height = 170 };
+        var grid = new Grid { Height = 132 };
         var back = new Border
         {
             CornerRadius = new CornerRadius(12),

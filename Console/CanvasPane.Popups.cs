@@ -261,6 +261,8 @@ sealed partial class CanvasPane
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
         foreach (var (icon, name, run) in new (string, string, Action)[]
         {
+            (CanvasIcons.Pdf, "PDF", () => _ = SaveAsAsync(doc, "pdf")),
+            (CanvasIcons.Docx, "Word", () => _ = SaveAsAsync(doc, "docx")),
             (CanvasIcons.Text, "Markdown", () => _ = SaveAsAsync(doc, "markdown")),
             (CanvasIcons.Html, L.T("Página HTML"), () => _ = SaveAsAsync(doc, "html")),
             (CanvasIcons.Json, "JSON", () => _ = SaveAsAsync(doc, "json")),
@@ -326,6 +328,8 @@ sealed partial class CanvasPane
                 commands.Add((icon, "+ " + name, null, () => AddSection(kind, end, view)));
             commands.Add((CanvasIcons.History, L.T("Versiones"), null, ToggleHistory));
             commands.Add((CanvasIcons.Play, L.T("Ver en el navegador"), null, () => Preview(doc, null)));
+            commands.Add((CanvasIcons.Pdf, L.T("Exportar a PDF"), null, () => _ = SaveAsAsync(doc, "pdf")));
+            commands.Add((CanvasIcons.Docx, L.T("Exportar a Word"), null, () => _ = SaveAsAsync(doc, "docx")));
             commands.Add((CanvasIcons.Copy, L.T("Copiar como Markdown"), null, () => { _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(CanvasExport.Markdown(doc)); Toast(L.T("Copiado"), CanvasIcons.Copy); }));
         }
         foreach (var summary in _list.Take(8))

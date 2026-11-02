@@ -386,7 +386,7 @@ sealed partial class CanvasPane : Grid
 
     Control Bar()
     {
-        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Height = 56, Margin = new Thickness(10, 0, 12, 0) };
+        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Height = 56, Margin = new Thickness(12, 0, 14, 0) };
         var toggle = IconButton(CanvasIcons.Side, L.T("Lista"), () => ListToggled?.Invoke());
         toggle.VerticalAlignment = VerticalAlignment.Center;
         bar.Children.Add(toggle);
@@ -704,12 +704,15 @@ sealed partial class CanvasPane : Grid
             ShowOverwritePrompt = true,
         });
         if (file?.TryGetLocalPath() is not { } path) return;
+        // El PDF tarda unos segundos (lo imprime el navegador): se hace aparte y se avisa al empezar.
+        if (format == "pdf") Toast(L.T("Creando el PDF…"), CanvasIcons.Pdf);
+        var copy = doc.Clone();
         try
         {
-            await File.WriteAllTextAsync(path, CanvasExport.To(format, doc), new UTF8Encoding(false));
+            await Task.Run(() => CanvasExport.Save(format, copy, path));
             Toast(L.T("Exportado"), CanvasIcons.Check);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Toast(ex.Message, CanvasIcons.Warn); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CanvasException) { Toast(ex.Message, CanvasIcons.Warn); }
     }
 
     // ── Avisos ──────────────────────────────────────────────────────────────────────────

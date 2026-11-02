@@ -1888,5 +1888,14 @@
   "Página HTML": "HTML page",
   "Borrar el canvas": "Delete the canvas",
   "Sí, borrar «{0}»": "Yes, delete “{0}”",
-  "Buscar o insertar…": "Search or insert…"
+  "Buscar o insertar…": "Search or insert…",
+  "Exportar a PDF": "Export to PDF",
+  "Exportar a Word": "Export to Word",
+  "Creando el PDF…": "Creating the PDF…",
+  "{0} se guarda como archivo: diga dónde (path).": "{0} is saved as a file: say where (path).",
+  "Para exportar a PDF hace falta Microsoft Edge, Google Chrome o Chromium.": "Exporting to PDF needs Microsoft Edge, Google Chrome or Chromium.",
+  "No se pudo abrir {0}.": "Could not open {0}.",
+  "El PDF tardó demasiado.": "The PDF took too long.",
+  "No se pudo crear el PDF.": "Could not create the PDF.",
+  "No se pudo crear el PDF: {0}": "Could not create the PDF: {0}"
 }

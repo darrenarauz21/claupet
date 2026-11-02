@@ -135,7 +135,15 @@ public sealed class PlanTests
         foreach (var view in new[] { "Resumen", "Tablero", "Cronograma", "Código" }) Assert.Contains(view, names);
 
         if (Environment.GetEnvironmentVariable("CLAUPET_PLAN_SHOT") is { Length: > 0 } shot)
+        {
+            // Las secciones entran con una animación: se espera a que termine.
+            for (var i = 0; i < 8; i++)
+            {
+                Thread.Sleep(120);
+                Headless.Frame(window);
+            }
             window.CaptureRenderedFrame()?.Save(shot);
+        }
         pane.Close();
         window.Close();
     });

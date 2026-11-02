@@ -144,7 +144,7 @@ static class CanvasMcp
                     ["base_version"] = new JsonObject { ["type"] = "integer", ["description"] = "Version you read; rejects the edit if the canvas changed since (optional)." },
                 }, ["id", "ops"]),
             Tool("canvas_export",
-                "Export a canvas as markdown, html (standalone page) or json. With an absolute path, writes the file there; without, returns the text.",
+                "Export a canvas as markdown, html (standalone page), json, pdf or docx (Word). With an absolute path, writes the file there; without, returns the text (pdf and docx need a path).",
                 new JsonObject
                 {
                     ["id"] = Str("Canvas id."),
@@ -257,11 +257,10 @@ static class CanvasMcp
                     var id = Required(args, "id");
                     var format = Required(args, "format").ToLowerInvariant();
                     var doc = store.Load(id) ?? throw new CanvasException($"No canvas {id}.");
-                    var text = CanvasExport.To(format, doc);
-                    if (Arg(args, "path") is not { } path) return text;
+                    if (Arg(args, "path") is not { } path) return CanvasExport.To(format, doc);
                     if (!Path.IsPathFullyQualified(path)) throw new CanvasException("path must be absolute.");
                     Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                    File.WriteAllText(path, text, new UTF8Encoding(false));
+                    CanvasExport.Save(format, doc, path);
                     return $"Wrote {path}.";
                 }
                 case "canvas_open":

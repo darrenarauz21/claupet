@@ -32,7 +32,7 @@ public class CanvasPaneTests
         terminal.SetInk(Ink.For(false));
         var pane = new CanvasPane((text, folder) => terminal.MarkdownPage(text, folder), store);
         pane.SetInk(Ink.For(false));
-        var window = new Avalonia.Controls.Window { Width = 1200, Height = 1500, Content = pane };
+        var window = new Avalonia.Controls.Window { Width = SizeW(), Height = 1500, Content = pane };
         window.Show();
         Headless.Frame(window);
         Assert.Equal(doc.Id, pane.CurrentId);
@@ -52,6 +52,8 @@ public class CanvasPaneTests
         window.Close();
         Dispatcher.UIThread.RunJobs();
     });
+
+    static double SizeW() => double.TryParse(Environment.GetEnvironmentVariable("CLAUPET_CANVAS_WIDTH"), out var w) ? w : 1200;
 
     static bool Glows(Avalonia.Controls.Control root) =>
         Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(root).OfType<Avalonia.Controls.Border>().Any(b => b.Tag is "glow");

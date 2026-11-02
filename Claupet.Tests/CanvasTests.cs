@@ -124,6 +124,74 @@ public sealed class CanvasTests : IDisposable
         Assert.Contains("```mermaid", md);
     }
 
+    // 1×1 PNG transparente.
+    const string Png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+    CanvasDoc Rich() => _store.Create("Informe & <prueba>", null,
+    [
+        Insert("markdown", "# Uno\n\nTexto **negrita**, *cursiva*, `código` y [enlace](https://claupet.dev).\n\n- a\n  - b\n1. c\n\n> cita\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n---\n\n```js\nlet x = 1;\n```"),
+        Insert("code", "print('hola')\n\nfin", language: "python"),
+        Insert("data", "nombre,valor\n\"a, b\",1\nc,2", language: "csv"),
+        Insert("image", Png),
+        Insert("html", "<b>x</b>"),
+    ]);
+
+    [Fact]
+    public void Exporta_a_word_un_docx_valido_con_todo()
+    {
+        var path = Path.Combine(_root, "salida.docx");
+        CanvasExport.Save("docx", Rich(), path);
+        using var zip = System.IO.Compression.ZipFile.OpenRead(path);
+        foreach (var entry in zip.Entries.Where(e => e.Name.EndsWith(".xml") || e.Name.EndsWith(".rels")))
+        {
+            using var stream = entry.Open();
+            System.Xml.Linq.XDocument.Load(stream); // XML bien formado en todas las partes
+        }
+        string Read(string name) { using var r = new StreamReader(zip.GetEntry(name)!.Open()); return r.ReadToEnd(); }
+        var body = Read("word/document.xml");
+        Assert.Contains("Informe &amp; &lt;prueba&gt;", body);
+        Assert.Contains("w:val=\"Heading1\"", body);
+        Assert.Contains("<w:b/>", body);
+        Assert.Contains("<w:hyperlink", body);
+        Assert.Contains("<w:numId w:val=\"1\"/>", body);
+        Assert.Contains("<w:numId w:val=\"2\"/>", body);
+        Assert.Contains("w:val=\"Quote\"", body);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(body, "<w:tbl>").Count);
+        Assert.Contains("a, b", body);
+        Assert.Contains("print(&apos;hola&apos;)".Replace("&apos;", "'"), body);
+        Assert.Contains("<a:blip r:embed=", body);
+        Assert.NotNull(zip.GetEntry("word/media/imagen1.png"));
+        Assert.Contains("https://claupet.dev", Read("word/_rels/document.xml.rels"));
+        Assert.Contains("Extension=\"png\"", Read("[Content_Types].xml"));
+        if (Environment.GetEnvironmentVariable("CLAUPET_EXPORT_DIR") is { Length: > 0 } dir) File.Copy(path, Path.Combine(dir, "Canvas.docx"), true);
+    }
+
+    [Fact]
+    public void Exporta_a_pdf_con_el_navegador()
+    {
+        if (CanvasPdf.FindBrowser() is null) return; // sin Edge ni Chrome no hay con qué imprimir
+        var path = Path.Combine(_root, "salida.pdf");
+        CanvasExport.Save("pdf", Rich(), path);
+        var head = new byte[5];
+        using (var file = File.OpenRead(path)) file.ReadExactly(head);
+        Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(head));
+        Assert.True(new FileInfo(path).Length > 2000);
+        if (Environment.GetEnvironmentVariable("CLAUPET_EXPORT_DIR") is { Length: > 0 } dir) File.Copy(path, Path.Combine(dir, "Canvas.pdf"), true);
+    }
+
+    [Fact]
+    public void Pdf_y_docx_sin_ruta_piden_una()
+    {
+        var doc = Rich();
+        Assert.Throws<CanvasException>(() => CanvasExport.To("pdf", doc));
+        var server = new CanvasMcp.Server(_store, null, null);
+        var text = ToolText(Ask(server, 1, "tools/call", new { name = "canvas_export", arguments = new { id = doc.Id, format = "docx" } }), error: true);
+        Assert.Contains("DOCX", text);
+        var path = Path.Combine(_root, "mcp.docx");
+        ToolText(Ask(server, 2, "tools/call", new { name = "canvas_export", arguments = new { id = doc.Id, format = "docx", path } }));
+        Assert.True(File.Exists(path));
+    }
+
     // ── MCP ─────────────────────────────────────────────────────────────────────────────
 
     static JsonElement Ask(CanvasMcp.Server server, int id, string method, object? parameters = null)
