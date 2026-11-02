@@ -297,6 +297,7 @@
   "Enviar": "Send",
   "Siguiente": "Next",
   "Responder en la terminal": "Answer in the terminal",
+  "Ya solo se puede responder en la terminal": "It can only be answered in the terminal now",
   "Leer": "Read",
   "Resumir": "Summarize",
   "Respondiendo… (clic en el botón para cancelar)": "Answering… (click the button to cancel)",

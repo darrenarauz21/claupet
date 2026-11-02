@@ -61,6 +61,8 @@ sealed partial class IslandWindow : Window
     public event Action<string>? ResultAction;
     /// <summary>Clic en el micrófono del campo: empezar a escuchar o terminar y enviar.</summary>
     public event Action? MicClicked;
+    /// <summary>Respondió el permiso o la pregunta de la tarjeta (null: «Responder en la terminal»).</summary>
+    public event Action<ApprovalRequest, ApprovalAnswer?>? ApprovalAnswered;
 
     // ── Estado ──────────────────────────────────────────────────────────────────────────────
     readonly DispatcherTimer _poll = new() { Interval = TimeSpan.FromMilliseconds(50) };
@@ -463,44 +465,52 @@ sealed partial class IslandWindow : Window
 
     ApprovalRequest? _approval;
     string _approvalTitle = "";
-    TaskCompletionSource<ApprovalAnswer?>? _approvalTask;
+    /// <summary>Quien preguntó ya no espera: la tarjeta sigue, pero se responde en la terminal.</summary>
+    bool _approvalDetached;
     int _questionIndex;
     readonly Dictionary<string, List<string>> _picks = new();
 
     /// <summary>Hay un permiso o una pregunta esperando respuesta.</summary>
-    public bool Pending => _approvalTask is not null;
+    public bool Pending => _approval is not null;
 
     /// <summary>
-    /// Muestra la tarjeta del pedido (sube sola, aunque la isla esté oculta) y espera la respuesta.
-    /// Uno a la vez: si ya hay otro esperando, este va a la terminal (null).
+    /// La tarjeta del pedido que espera (el primero de PendingApprovals), o ninguna. Uno nuevo sube solo, aunque la isla
+    /// esté oculta; el mismo de antes solo se actualiza (detached: ya solo se responde en la terminal). Lo que pase con la
+    /// ventana (plegarla, esconderla, cerrarla) no responde ni quita nada: los pedidos viven en PendingApprovals.
     /// </summary>
-    public Task<ApprovalAnswer?> AskApproval(ApprovalRequest request, string title)
+    public void ShowApproval(ApprovalRequest? request, string title, bool detached)
     {
-        if (_approvalTask is not null) return Task.FromResult<ApprovalAnswer?>(null);
+        if (ReferenceEquals(request, _approval))
+        {
+            if (detached == _approvalDetached) return;
+            _approvalDetached = detached;
+            Relayout();
+            return;
+        }
         _approval = request;
         _approvalTitle = title;
+        _approvalDetached = detached;
         _questionIndex = 0;
         _picks.Clear();
-        _approvalTask = new TaskCompletionSource<ApprovalAnswer?>();
-        ShowPage(request.IsQuestion ? Page.Question : Page.Permission, ScreenAtCursor());
-        return _approvalTask.Task;
-    }
-
-    /// <summary>Se venció el tiempo (o lo respondió en la terminal): la tarjeta se va sin respuesta.</summary>
-    public void DropApproval() => ResolveApproval(null);
-
-    void ResolveApproval(ApprovalAnswer? answer)
-    {
-        var task = _approvalTask;
-        _approvalTask = null;
-        _approval = null;
-        if (_page is Page.Permission or Page.Question)
+        if (request is not null) ShowPage(request.IsQuestion ? Page.Question : Page.Permission, ScreenAtCursor());
+        else if (_page is Page.Permission or Page.Question)
         {
             _clickOpened = false;
             ShowPage(Page.Home);
             _clickOpened = false;
         }
-        task?.TrySetResult(answer);
+        else Relayout();
+    }
+
+    /// <summary>Sin pedidos (la isla se apaga o la app se cierra).</summary>
+    public void DropApproval() => ShowApproval(null, "", false);
+
+    /// <summary>Respondió en la tarjeta: se avisa y la tarjeta se va (si hay otro pedido, llega enseguida con ShowApproval).</summary>
+    void ResolveApproval(ApprovalAnswer? answer)
+    {
+        if (_approval is not { } request || _approvalDetached) return;
+        DropApproval();
+        ApprovalAnswered?.Invoke(request, answer);
     }
 
     /// <summary>La sesión del pedido, si está entre las que se leen (para su título y su terminal).</summary>
@@ -1168,7 +1178,7 @@ sealed partial class IslandWindow : Window
         _poll.Stop();
         _frame.Stop();
         _choiceTask?.TrySetResult(null);
-        _approvalTask?.TrySetResult(null);
+        // Los permisos y las preguntas no se responden al cerrar la ventana: siguen en PendingApprovals.
         base.OnClosed(e);
     }
 

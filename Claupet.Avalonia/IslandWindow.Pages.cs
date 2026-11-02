@@ -880,9 +880,13 @@ sealed partial class IslandWindow
         FoldButton(dc, x + width - pad + 6, row);
 
         var bx = tx;
-        bx = CardButton(dc, "ap:deny", L.T("Denegar"), false, bx, buttonsY);
-        bx = CardButton(dc, "ap:allow", L.T("Permitir"), true, bx, buttonsY);
-        bx = CardButton(dc, "ap:always", L.T("Siempre en esta sesión"), false, bx, buttonsY);
+        if (_approvalDetached) bx = DetachedNote(dc, bx, buttonsY, 32);
+        else
+        {
+            bx = CardButton(dc, "ap:deny", L.T("Denegar"), false, bx, buttonsY);
+            bx = CardButton(dc, "ap:allow", L.T("Permitir"), true, bx, buttonsY);
+            bx = CardButton(dc, "ap:always", L.T("Siempre en esta sesión"), false, bx, buttonsY);
+        }
         var terminal = L.T("Abrir terminal");
         var termW = Gfx.Measure(terminal, Small).Width + 12;
         var termRect = new Rect(x + width - pad - termW, buttonsY, termW, 32);
@@ -892,6 +896,15 @@ sealed partial class IslandWindow
             Gfx.Write(dc, terminal, Small, _hoverKey == "ap:term" ? Soft : Dim, termRect, TextAlignment.Center, center: true);
         }
         return card.Bottom;
+    }
+
+    /// <summary>En lugar de los botones, cuando quien preguntó ya no espera: se responde en la terminal. Devuelve dónde sigue.</summary>
+    double DetachedNote(DrawingContext? dc, double x, double y, double height)
+    {
+        var note = L.T("Ya solo se puede responder en la terminal");
+        var rect = new Rect(x, y, Gfx.Measure(note, Small).Width + 4, height);
+        Gfx.Write(dc, note, Small, Hex(0xF0C27A), rect, center: true);
+        return rect.Right + 12;
     }
 
     double ComposeQuestion(DrawingContext? dc, Rect b, double y)
@@ -941,7 +954,7 @@ sealed partial class IslandWindow
         {
             var (rect, label, description) = cells[i];
             var key = "q:opt:" + i;
-            Hit(rect, key, label);
+            if (!_approvalDetached) Hit(rect, key, label);
             if (dc is null) continue;
             var selected = chosen.Contains(label);
             Gfx.Fill(dc, selected ? SD.Color.FromArgb(30, _accent) : _hoverKey == key ? Raised : Card, rect, 10);
@@ -953,6 +966,16 @@ sealed partial class IslandWindow
 
         // Elegir varias: «Siguiente» o «Enviar» confirma; una sola: el clic ya responde.
         var fx = x + pad;
+        if (_approvalDetached)
+        {
+            // Ya no se puede responder desde aquí: lo dice y ofrece la terminal de la sesión.
+            fx = DetachedNote(dc, fx, footY, 30);
+            var open = L.T("Abrir terminal");
+            var openRect = new Rect(fx, footY, Gfx.Measure(open, Small).Width + 12, 30);
+            Hit(openRect, "ap:term");
+            Gfx.Write(dc, open, Small, _hoverKey == "ap:term" ? Soft : Dim, openRect, TextAlignment.Center, center: true);
+            return card.Bottom;
+        }
         if (q.MultiSelect)
         {
             var label = _questionIndex == questions.Count - 1 ? L.T("Enviar") : L.T("Siguiente");

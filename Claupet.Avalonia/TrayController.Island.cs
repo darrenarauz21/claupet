@@ -11,6 +11,8 @@ sealed partial class TrayController
 {
     IslandWindow? _island;
     ApprovalServer? _approvals;
+    /// <summary>Los permisos y las preguntas que esperan: no dependen de la ventana de la isla (cerrarla no los quita).</summary>
+    PendingApprovals? _pendingApprovals;
     CancellationTokenSource? _analyzing;
     ChatTarget? _islandChat;
     /// <summary>Los permisos que se respondieron «Siempre en esta sesión» (sesión, herramienta y destino).</summary>
@@ -37,6 +39,7 @@ sealed partial class TrayController
         {
             _approvals?.Dispose();
             _approvals = null;
+            _pendingApprovals?.Clear(); // sin isla no hay dónde responderlos: decide la terminal
             if (_island is { } old)
             {
                 _island = null;
@@ -44,6 +47,11 @@ sealed partial class TrayController
                 old.Close();
             }
             return;
+        }
+        if (_pendingApprovals is null)
+        {
+            _pendingApprovals = new PendingApprovals();
+            _pendingApprovals.Changed += PushApproval;
         }
         // Una copia de prueba (--preview) no responde los permisos: los sigue respondiendo la app de siempre.
         if (!Program.Args.Contains("--preview")) _approvals ??= new ApprovalServer(OnApprovalRequested);
@@ -88,6 +96,7 @@ sealed partial class TrayController
                 _micFromIsland = !(_voice?.Listening ?? false);
                 _voice?.Toggle();
             };
+            island.ApprovalAnswered += OnApprovalAnswered;
             _ = ScanSessionsAsync();
         }
         _island.WhileBusy = _settings.IslandWhileBusy;
@@ -99,6 +108,14 @@ sealed partial class TrayController
         PushIslandUsage();
         _island.SetChat(_quick.Turns.ToList(), IslandChat.Streaming, IslandChat.Asking);
         if (_lastSessions is { } sessions) _island.SetSessions(sessions);
+        PushApproval(); // una isla nueva muestra lo que sigue esperando
+    }
+
+    /// <summary>La isla muestra el primer pedido que espera (o ninguno).</summary>
+    void PushApproval()
+    {
+        var current = _pendingApprovals?.Current;
+        _island?.ShowApproval(current?.Request, current?.Title ?? "", current?.Detached ?? false);
     }
 
     /// <summary>Le pregunta en el chat de la isla (lo escrito o lo dicho con el micrófono).</summary>
@@ -139,37 +156,51 @@ sealed partial class TrayController
     }
 
     /// <summary>
-    /// Un permiso o una pregunta de Claude Code llegó por el hook: la isla muestra su tarjeta y espera.
-    /// Lo que la persona elige vuelve a Claude Code; sin respuesta a tiempo, la tarjeta se va y pregunta la terminal.
-    /// Si se canceló (lo respondió en el bloque de Claupet Terminal), la tarjeta también se va.
+    /// Un permiso o una pregunta de Claude Code llegó por el hook (o de Claupet Terminal): espera en la isla, detrás de
+    /// los que ya esperaban. Lo que la persona elige vuelve a Claude Code. Se quita solo cuando se respondió: en la isla,
+    /// en el bloque de Claupet Terminal (que cierra el pipe) o en la terminal de la persona (lo dice el registro de la
+    /// sesión, en ScanSessionsAsync). Si el hook deja de esperar (Claude Code le da 120 s), la tarjeta sigue, pero ya
+    /// solo se responde en la terminal.
     /// </summary>
     async Task<string?> OnApprovalRequested(ApprovalRequest request, CancellationToken cancel)
     {
-        var key = $"{request.SessionId}|{request.Tool}|{request.Target}";
-        if (!request.IsQuestion && _alwaysAllow.Contains(key)) return Approvals.Allow();
-        if (_island is not { } island) return null;
+        if (!request.IsQuestion && _alwaysAllow.Contains(AlwaysKey(request))) return Approvals.Allow();
+        if (_island is null || _pendingApprovals is not { } pending) return null;
         var title = (_lastSessions ?? []).FirstOrDefault(s => s.SessionId == request.SessionId)?.DisplayTitle
             ?? Path.GetFileName(request.Cwd.TrimEnd('\\', '/'));
         if (_mascotWindow is not null) _director.Gesture(ChibiMove.Think, 3000);
-        var asked = island.AskApproval(request, title);
-        var finished = await Task.WhenAny(asked, Task.Delay(TimeSpan.FromSeconds(Approvals.DecisionSeconds - 5), cancel));
-        if (finished != asked)
+        var item = pending.Add(request, title);
+        try
         {
-            island.DropApproval();
+            var wait = request.FromTerminal ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(Approvals.DecisionSeconds - 5);
+            return await item.Reply.WaitAsync(wait, cancel);
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
+        {
+            pending.Gone(item); // quien preguntó ya no espera
             return null;
         }
-        var answer = await asked;
+    }
+
+    /// <summary>Respondió en la tarjeta de la isla: la respuesta va a quien preguntó y el pedido se quita.</summary>
+    void OnApprovalAnswered(ApprovalRequest request, IslandWindow.ApprovalAnswer? answer)
+    {
+        if (_pendingApprovals is not { } pending || pending.Items.FirstOrDefault(i => ReferenceEquals(i.Request, request)) is not { } item) return;
+        string? reply = null;
         switch (answer?.Choice)
         {
-            case IslandWindow.ApprovalChoice.Allow: return Approvals.Allow();
+            case IslandWindow.ApprovalChoice.Allow: reply = Approvals.Allow(); break;
             case IslandWindow.ApprovalChoice.Always:
-                _alwaysAllow.Add(key);
-                return Approvals.Allow();
-            case IslandWindow.ApprovalChoice.Deny: return Approvals.Deny();
-            case IslandWindow.ApprovalChoice.Answered when answer.Picks is { } picks: return Approvals.Answer(request, picks);
-            default: return null;
+                _alwaysAllow.Add(AlwaysKey(request));
+                reply = Approvals.Allow();
+                break;
+            case IslandWindow.ApprovalChoice.Deny: reply = Approvals.Deny(); break;
+            case IslandWindow.ApprovalChoice.Answered when answer.Picks is { } picks: reply = Approvals.Answer(request, picks); break;
         }
+        pending.Answer(item, reply);
     }
+
+    static string AlwaysKey(ApprovalRequest request) => $"{request.SessionId}|{request.Tool}|{request.Target}";
 
     /// <summary>
     /// Analiza un archivo (o una carpeta) con el modelo de la isla: la isla muestra los pasos reales y el resumen
