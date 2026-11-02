@@ -549,19 +549,27 @@ sealed class ConsoleWindow : Window
         }
     }
 
+    /// <summary>La conversación de la lista que pregunta «¿Borrar?» en su fila (null: ninguna).</summary>
+    string? _deleting;
+
     Control ChatItem(ChatSummary chat)
     {
         var current = chat.Id == _chatId;
-        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        if (chat.Quick) title.Children.Add(new AppLogo { Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center });
-        title.Children.Add(new TextBlock
+        var id = chat.Id;
+        if (_deleting == id) return DeleteRow(chat);
+        // Una grilla y no una fila de StackPanel: el título largo termina en «…» en vez de salirse de la lista.
+        var title = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        if (chat.Quick) title.Children.Add(new AppLogo { Width = 14, Height = 14, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+        var name = new TextBlock
         {
             Text = chat.Title,
             FontFamily = Ink.Sans,
             FontSize = 14.5,
             Foreground = _ink.Text,
             TextTrimming = TextTrimming.CharacterEllipsis,
-        });
+        };
+        Grid.SetColumn(name, 1);
+        title.Children.Add(name);
         var stack = new StackPanel { Spacing = 2 };
         stack.Children.Add(title);
         if (chat.Preview.Length > 0)
@@ -573,14 +581,80 @@ sealed class ConsoleWindow : Window
                 Foreground = _ink.Tertiary,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             });
-        var id = chat.Id;
-        var item = Ui.Press(stack, () => OpenChat(id), current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, chat.Title);
+        // La papelera aparece al pasar el mouse (y en la abierta): borra la conversación del historial; la rápida, la vacía.
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        row.Children.Add(stack);
+        var trash = Ui.Press(TrashGlyph(_ink.Tertiary), () =>
+        {
+            _deleting = id;
+            RenderChatList();
+        }, (b, on) => b.Background = on ? _ink.Track : Brushes.Transparent, chat.Quick ? L.T("Vaciar la conversación") : L.T("Borrar la conversación"));
+        trash.Width = 28;
+        trash.Height = 28;
+        trash.CornerRadius = new CornerRadius(999);
+        trash.Margin = new Thickness(6, 0, -4, 0);
+        trash.VerticalAlignment = VerticalAlignment.Center;
+        trash.Opacity = current ? 1 : 0;
+        ToolTip.SetTip(trash, chat.Quick ? L.T("Vaciar la conversación") : L.T("Borrar la conversación"));
+        Grid.SetColumn(trash, 1);
+        row.Children.Add(trash);
+        var item = Ui.Press(row, () => OpenChat(id), current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, chat.Title);
+        item.PointerEntered += (_, _) => trash.Opacity = 1;
+        item.PointerExited += (_, _) => trash.Opacity = current ? 1 : 0;
         item.MinHeight = 46;
         item.Padding = new Thickness(12, 8);
         item.CornerRadius = new CornerRadius(12);
         if (current) item.Background = _ink.Pill;
         return item;
     }
+
+    /// <summary>La fila preguntando si se borra (no se puede deshacer): Cancelar o Borrar, ahí mismo.</summary>
+    Control DeleteRow(ChatSummary chat)
+    {
+        var id = chat.Id;
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
+        var question = Ui.Text(chat.Quick ? L.T("¿Vaciarla?") : L.T("¿Borrarla?"), 13.5, _ink.Text);
+        row.Children.Add(question);
+        var cancel = Ui.Press(Ui.Text(L.T("Cancelar"), 12.5, _ink.Secondary), () =>
+        {
+            _deleting = null;
+            RenderChatList();
+        }, (b, on) => b.Background = on ? _ink.Track : Brushes.Transparent, L.T("Cancelar"));
+        cancel.Padding = new Thickness(10, 5);
+        cancel.CornerRadius = new CornerRadius(999);
+        Grid.SetColumn(cancel, 1);
+        row.Children.Add(cancel);
+        IBrush onDanger = _ink.Dark ? new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)) : Brushes.White;
+        var confirm = Ui.Press(Ui.Text(chat.Quick ? L.T("Vaciar") : L.T("Borrar"), 12.5, onDanger, FontWeight.SemiBold), () =>
+        {
+            _deleting = null;
+            _client.Send(new ConsoleMessage { Type = chat.Quick ? ConsoleLink.ChatClear : ConsoleLink.ChatDelete, Key = id });
+            RenderChatList();
+        }, (b, on) => b.Opacity = on ? 0.88 : 1, chat.Quick ? L.T("Vaciar") : L.T("Borrar"));
+        confirm.Background = _ink.Danger;
+        confirm.Padding = new Thickness(12, 5);
+        confirm.CornerRadius = new CornerRadius(999);
+        confirm.Margin = new Thickness(4, 0, 0, 0);
+        Grid.SetColumn(confirm, 2);
+        row.Children.Add(confirm);
+        return new Border { Child = row, MinHeight = 46, Padding = new Thickness(12, 8), CornerRadius = new CornerRadius(12), Background = _ink.Pill };
+    }
+
+    Viewbox TrashGlyph(IBrush brush) => new()
+    {
+        Width = 15,
+        Height = 15,
+        Child = new Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse(ChatPane.TrashIcon),
+            Stroke = brush,
+            StrokeThickness = 1.7,
+            StrokeLineCap = PenLineCap.Round,
+            StrokeJoin = PenLineJoin.Round,
+            Width = 24,
+            Height = 24,
+        },
+    };
 
     // ── Barra y riel ────────────────────────────────────────────────────────────────────────
 

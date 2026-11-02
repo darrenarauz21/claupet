@@ -27,11 +27,12 @@ sealed class ChatPane : Grid
     const string CloudIcon = "M7,18 H17 A4,4 0 0 0 17.6,10.04 A6,6 0 0 0 6.1,9.2 A4.5,4.5 0 0 0 7,18 Z";
     const string ChevronIcon = "M6,9 L12,15 L18,9";
     const string SpeakerIcon = "M4,9 V15 H8 L13,19 V5 L8,9 H4 Z M16.5,8.5 A5,5 0 0 1 16.5,15.5";
-    const string MoreIcon = "M3.4,12 A1.6,1.6 0 1 0 6.6,12 A1.6,1.6 0 1 0 3.4,12 Z M10.4,12 A1.6,1.6 0 1 0 13.6,12 A1.6,1.6 0 1 0 10.4,12 Z "
-        + "M17.4,12 A1.6,1.6 0 1 0 20.6,12 A1.6,1.6 0 1 0 17.4,12 Z";
     const string AttachIcon = "M20,11.5 L12.5,19 A5,5 0 0 1 5.5,12 L13,4.5 A3.5,3.5 0 0 1 18,9.5 L10.5,17 A2,2 0 0 1 7.5,14 L14.5,7";
     const string MicIcon = "M9,6 A3,3 0 0 1 15,6 V11 A3,3 0 0 1 9,11 Z M5,11 A7,7 0 0 0 19,11 M12,18 V21";
     const string SendIcon = "M12,19 V5 M6,11 L12,5 L18,11";
+    const string CopyIcon = "M9,9 H18 A1,1 0 0 1 19,10 V19 A1,1 0 0 1 18,20 H9 A1,1 0 0 1 8,19 V10 A1,1 0 0 1 9,9 Z M5,15 V5 A1,1 0 0 1 6,4 H15";
+    const string CheckIcon = "M5,12.5 L10,17.5 L19,7";
+    public const string TrashIcon = "M4.5,7 H19.5 M9.5,7 V5 A1,1 0 0 1 10.5,4 H13.5 A1,1 0 0 1 14.5,5 V7 M6.5,7 L7.5,19 A1,1 0 0 0 8.5,20 H15.5 A1,1 0 0 0 16.5,19 L17.5,7 M10.5,11 V16 M13.5,11 V16";
     const string StopIcon = "M8.5,7 H15.5 A1.5,1.5 0 0 1 17,8.5 V15.5 A1.5,1.5 0 0 1 15.5,17 H8.5 A1.5,1.5 0 0 1 7,15.5 V8.5 A1.5,1.5 0 0 1 8.5,7 Z";
 
     readonly List<(ChatTurn Turn, Control View)> _turns = [];
@@ -50,6 +51,7 @@ sealed class ChatPane : Grid
     /// <summary>Los botones de la cabecera y, en su lugar mientras se pregunta, «¿Borrar esta conversación?».</summary>
     StackPanel _tools = new();
     StackPanel _confirm = new();
+    TextBlock _question = new();
     /// <summary>Al enviar se baja hasta el final aunque se estuviera leyendo más arriba.</summary>
     bool _toEnd;
 
@@ -189,24 +191,24 @@ sealed class ChatPane : Grid
 
         _readAloud = Round(SpeakerIcon, L.T("Leer en voz alta las respuestas"), () => Act("readaloud"));
         tools.Children.Add(_readAloud);
-        Border? more = null;
-        more = Round(MoreIcon, L.T("Más opciones"), () => ShowMore(more!), fill: true);
-        tools.Children.Add(more);
+        // Borrar (o vaciar, la rápida) con la papelera; pregunta antes, aquí mismo.
+        tools.Children.Add(Round(TrashIcon, L.T("Borrar la conversación"), () => AskDelete(true)));
         Grid.SetColumn(tools, 1);
         bar.Children.Add(tools);
 
         // Borrar no se puede deshacer: se pregunta aquí mismo, en lugar de los botones.
         _confirm = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center, IsVisible = false };
-        var question = Ui.Text(L.T("¿Borrar esta conversación? No se puede deshacer."), 13, _ink.Secondary);
-        question.Margin = new Thickness(0, 0, 4, 0);
-        _confirm.Children.Add(question);
+        _question = Ui.Text(L.T("¿Borrar esta conversación? No se puede deshacer."), 13, _ink.Secondary);
+        _question.Margin = new Thickness(0, 0, 4, 0);
+        _confirm.Children.Add(_question);
         _confirm.Children.Add(Pill(L.T("Cancelar"), _ink.Pill, _ink.Text, () => AskDelete(false)));
         // En oscuro el rojo es claro: la letra va oscura, como en los botones de acento.
         IBrush onDanger = _ink.Dark ? new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)) : Brushes.White;
         _confirm.Children.Add(Pill(L.T("Borrar"), _ink.Danger, onDanger, () =>
         {
             AskDelete(false);
-            Ask(ConsoleLink.ChatDelete);
+            // La rápida no se borra (siempre está): se vacía.
+            Ask(_chat?.Id == ConsoleLink.QuickChat ? ConsoleLink.ChatClear : ConsoleLink.ChatDelete);
         }));
         Grid.SetColumn(_confirm, 1);
         bar.Children.Add(_confirm);
@@ -215,6 +217,10 @@ sealed class ChatPane : Grid
 
     void AskDelete(bool asking)
     {
+        if (asking && _chat is null) return;
+        _question.Text = _chat?.Id == ConsoleLink.QuickChat
+            ? L.T("¿Vaciar la conversación rápida? No se puede deshacer.")
+            : L.T("¿Borrar esta conversación? No se puede deshacer.");
         _confirm.IsVisible = asking;
         _tools.IsVisible = !asking;
     }
@@ -225,19 +231,6 @@ sealed class ChatPane : Grid
         _readAloud.Background = on ? _ink.Pill : Brushes.Transparent;
         if (_readAloud.Child is Viewbox { Child: Avalonia.Controls.Shapes.Path path }) path.Stroke = on ? _ink.Accent : _ink.Secondary;
         ToolTip.SetTip(_readAloud, on ? L.T("Leer en voz alta las respuestas: encendido") : L.T("Leer en voz alta las respuestas"));
-    }
-
-    void ShowMore(Control anchor)
-    {
-        if (_chat is not { } chat) return;
-        DropList.Entry entry = chat.Id == ConsoleLink.QuickChat
-            ? new("clear", L.T("Vaciar la conversación"))
-            : new("delete", L.T("Borrar la conversación…"), Danger: true);
-        DropList.Show(anchor, _ink, [entry], picked =>
-        {
-            if (picked == "clear") Ask(ConsoleLink.ChatClear);
-            else if (picked == "delete") AskDelete(true);
-        });
     }
 
     // ── Mensajes ────────────────────────────────────────────────────────────────────────────
@@ -310,15 +303,22 @@ sealed class ChatPane : Grid
     {
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Height = 38, Margin = new Thickness(16, 0, 6, 0) };
         header.Children.Add(Ui.Text(LanguageName(segment.Language), 12.5, _ink.Tertiary));
-        var label = Ui.Text(L.T("Copiar"), 12.5, _ink.Secondary);
-        var copy = Ui.Press(label, () =>
+        // Copiar con su ícono; al tocarlo, un visto un momento (y «Copiado» en la descripción).
+        Border? copy = null;
+        copy = Ui.Press(Icon(CopyIcon, _ink.Secondary, 15, 1.8), () =>
         {
             _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(segment.Text);
-            label.Text = L.T("Copiado");
-            DispatcherTimer.RunOnce(() => label.Text = L.T("Copiar"), TimeSpan.FromMilliseconds(1500));
+            copy!.Child = Icon(CheckIcon, _ink.Accent, 15, 2.2);
+            ToolTip.SetTip(copy, L.T("Copiado"));
+            DispatcherTimer.RunOnce(() =>
+            {
+                copy.Child = Icon(CopyIcon, _ink.Secondary, 15, 1.8);
+                ToolTip.SetTip(copy, L.T("Copiar"));
+            }, TimeSpan.FromMilliseconds(1500));
         }, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Copiar"));
+        ToolTip.SetTip(copy, L.T("Copiar"));
+        copy.Width = 28;
         copy.Height = 28;
-        copy.Padding = new Thickness(10, 0);
         copy.CornerRadius = new CornerRadius(999);
         copy.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(copy, 1);
