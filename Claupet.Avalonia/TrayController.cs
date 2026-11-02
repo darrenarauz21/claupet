@@ -280,6 +280,10 @@ sealed partial class TrayController
                 BroadcastSessions(sessions);
                 IslandSessions(sessions);
             }
+            // Lo que se respondió en otra parte (la terminal de la persona, la isla, Claupet Terminal) deja de esperar: la
+            // tarjeta de la isla y los avisos «Necesita su permiso» y «Le está preguntando» se van.
+            _pendingApprovals?.Sessions(sessions);
+            _toasts.Sessions(sessions);
             if (_settings.Notifications)
             {
                 _detector.Sessions(sessions).ForEach(ShowNotice);
@@ -1021,6 +1025,7 @@ sealed partial class TrayController
         _quickAsking?.Cancel();
         _analyzing?.Cancel();
         _approvals?.Dispose();
+        _pendingApprovals?.Clear();
         _island?.DropApproval();
         _island?.Close();
         StopKeys();

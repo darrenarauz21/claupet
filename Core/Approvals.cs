@@ -15,6 +15,12 @@ sealed record AskedQuestion(string Question, IReadOnlyList<(string Label, string
 sealed record ApprovalRequest(string SessionId, string Cwd, string Tool, string Target, string InputJson, IReadOnlyList<AskedQuestion>? Questions)
 {
     public bool IsQuestion => Questions is { Count: > 0 };
+
+    /// <summary>
+    /// Lo pide Claupet Terminal, no el hook: espera sin límite de tiempo (su bloque también espera) y, si cierra el pipe,
+    /// es porque se respondió en el bloque.
+    /// </summary>
+    public bool FromTerminal { get; init; }
 }
 
 /// <summary>
@@ -64,8 +70,9 @@ static class Approvals
     /// <summary>
     /// Le pasa el pedido (el evento del hook, en una línea) a la app y espera su respuesta: null si la app no está, no
     /// tiene la isla, no contesta a tiempo o se canceló. Al cancelar se cierra el pipe y la isla quita la tarjeta.
+    /// wait: cuánto espera (DecisionSeconds si no se dice; Timeout.InfiniteTimeSpan, sin límite).
     /// </summary>
-    public static async Task<string?> AskAppAsync(string line, CancellationToken cancel, string? pipeName = null)
+    public static async Task<string?> AskAppAsync(string line, CancellationToken cancel, string? pipeName = null, TimeSpan? wait = null)
     {
         try
         {
@@ -74,9 +81,9 @@ static class Approvals
             await pipe.WriteAsync(Encoding.UTF8.GetBytes(line + "\n"), cancel);
             await pipe.FlushAsync(cancel);
             using var reader = new StreamReader(pipe, Encoding.UTF8);
-            using var wait = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-            wait.CancelAfter(TimeSpan.FromSeconds(DecisionSeconds));
-            var reply = await reader.ReadLineAsync(wait.Token);
+            using var waiting = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+            waiting.CancelAfter(wait ?? TimeSpan.FromSeconds(DecisionSeconds));
+            var reply = await reader.ReadLineAsync(waiting.Token);
             if (string.IsNullOrWhiteSpace(reply)) return null;
             using var check = JsonDocument.Parse(reply); // solo JSON válido llega a Claude Code
             return reply;
@@ -98,7 +105,23 @@ static class Approvals
         var input = r.TryGetProperty("tool_input", out var i) && i.ValueKind == JsonValueKind.Object ? i : default;
         var inputJson = input.ValueKind == JsonValueKind.Object ? input.GetRawText() : "{}";
         return new ApprovalRequest(Json.Str(r, "session_id") ?? "", Json.Str(r, "cwd") ?? "", tool, TargetOf(tool, input), inputJson,
-            tool == "AskUserQuestion" ? QuestionsOf(input) : null);
+            tool == "AskUserQuestion" ? QuestionsOf(input) : null)
+        {
+            FromTerminal = r.TryGetProperty(TerminalField, out var terminal) && terminal.ValueKind == JsonValueKind.True,
+        };
+    }
+
+    /// <summary>El campo con que Claupet Terminal marca sus pedidos (el hook de Claude Code no lo trae).</summary>
+    public const string TerminalField = "claupet_terminal";
+
+    /// <summary>
+    /// El pedido de una herramienta resumido en un número, igual venga del hook o del registro de la sesión (cada uno
+    /// escapa el JSON a su manera: se compara ya leído). 0 si no se puede leer.
+    /// </summary>
+    public static int InputKey(string json)
+    {
+        try { return JsonNode.Parse(json)?.ToJsonString().GetHashCode() ?? 0; }
+        catch (JsonException) { return 0; }
     }
 
     /// <summary>Sobre qué pide permiso: el comando, el archivo, la dirección o lo que traiga.</summary>
@@ -246,7 +269,8 @@ sealed class ApprovalServer : IDisposable
                     try { answered.TrySetResult(await _ask(request, gone.Token)); }
                     catch (Exception) { answered.TrySetResult(null); }
                 }, null);
-                var reply = await answered.Task.WaitAsync(TimeSpan.FromSeconds(Approvals.DecisionSeconds - 3), gone.Token);
+                // La Terminal espera sin límite (cierra el pipe si se responde en su bloque); el hook, lo que le da Claude Code.
+                var reply = await answered.Task.WaitAsync(request.FromTerminal ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(Approvals.DecisionSeconds - 3), gone.Token);
                 if (reply is null) return;
                 var bytes = Encoding.UTF8.GetBytes(reply + "\n");
                 await pipe.WriteAsync(bytes, _stop.Token);

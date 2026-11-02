@@ -96,6 +96,9 @@ sealed class ToastWindow : Window
     public event Action<ToastWindow>? Dismissed;
     public Notice Notice { get; }
 
+    /// <summary>Un permiso o una pregunta: se va solo cuando se respondió, donde sea (lo mira ToastStack.Sessions).</summary>
+    public AnswerWatch? Watch { get; }
+
     readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(33) };
     readonly ToastView _view;
     long _last = Environment.TickCount64;
@@ -106,6 +109,8 @@ sealed class ToastWindow : Window
     public ToastWindow(Notice notice, Theme theme)
     {
         Notice = notice;
+        if (notice is { Kind: NoticeKind.Permission or NoticeKind.Question, SessionId: { } session })
+            Watch = new AnswerWatch(session, notice.Kind == NoticeKind.Question ? "AskUserQuestion" : null);
         Title = "Claupet";
         SystemDecorations = SystemDecorations.None;
         CanResize = false;
@@ -322,6 +327,12 @@ sealed class ToastStack
         toast.Present(ToastWindow.Slot(toast, 0, toast.PixelHeight));
         Layout();
         Shown?.Invoke();
+    }
+
+    /// <summary>Con cada lectura de las sesiones: se van los avisos de permisos y preguntas que ya se respondieron.</summary>
+    public void Sessions(IReadOnlyList<SessionInfo> sessions)
+    {
+        foreach (var toast in _toasts.Where(t => t.Watch?.Answered(sessions) == true).ToList()) toast.Dismiss();
     }
 
     public void CloseAll()

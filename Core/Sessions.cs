@@ -17,6 +17,9 @@ sealed record FlowStep(string Id, ToolKind Kind, string Verb, string? Detail, Da
     public string? AgentType { get; init; }
     /// <summary>Herramientas que usó el subagente, cuando ya volvió.</summary>
     public int? AgentSteps { get; init; }
+    /// <summary>La herramienta tal cual (Bash, AskUserQuestion…) y su pedido resumido (Approvals.InputKey), para saber qué permiso es.</summary>
+    public string? Tool { get; init; }
+    public int InputKey { get; init; }
 }
 
 /// <summary>
@@ -473,6 +476,8 @@ sealed class SessionMonitor
                 {
                     AgentType = KindOf(name) == ToolKind.Agent && input.ValueKind == JsonValueKind.Object
                         ? Json.Str(input, "subagent_type") ?? "general-purpose" : null,
+                    Tool = name,
+                    InputKey = input.ValueKind == JsonValueKind.Object ? Approvals.InputKey(input.GetRawText()) : 0,
                 });
 
                 if (EditOf(Json.Str(item, "id") ?? "", name, input, Json.Date(r, "timestamp")) is { } edit)

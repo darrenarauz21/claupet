@@ -596,6 +596,7 @@ static class AgentProtocol
         ["cwd"] = cwd,
         ["tool_name"] = permission.Tool,
         ["tool_input"] = permission.Input?.DeepClone() ?? new JsonObject(),
+        [Approvals.TerminalField] = true,
     });
 
     /// <summary>
@@ -784,7 +785,8 @@ sealed class TerminalAgent : IDisposable
     {
         var cancel = _island[permission] = new CancellationTokenSource();
         var request = AgentProtocol.IslandRequest(permission, Transcript.SessionId, Transcript.Cwd ?? _options.Folder);
-        var reply = await Task.Run(() => Approvals.AskAppAsync(request, cancel.Token));
+        // Sin límite de tiempo: el bloque sigue esperando, y la tarjeta de la isla con él hasta que se responda en uno de los dos.
+        var reply = await Task.Run(() => Approvals.AskAppAsync(request, cancel.Token, wait: Timeout.InfiniteTimeSpan));
         _post(() =>
         {
             if (cancel.IsCancellationRequested || reply is null || permission.Answer is not null || !Running) return;

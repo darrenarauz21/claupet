@@ -603,6 +603,13 @@ La respuesta es la documentada: `hookSpecificOutput.decision.behavior` `allow` o
 responde a tiempo, el hook no escribe nada y Claude Code pregunta en la terminal como siempre
 (`Core/Approvals.cs`).
 
+Los pedidos esperan en fila (`Core/PendingApprovals.cs`), aparte de la ventana: plegar, esconder o
+cerrar la isla no quita ninguno. Cada uno se va solo cuando se respondió: en la isla, en el bloque de
+Claupet Terminal (que cierra el pipe) o en la terminal de la persona, que se sabe por el registro de la
+sesión: el paso que pidió el permiso ya tiene su resultado, el turno terminó o la sesión se cerró. Si el
+hook deja de esperar, la tarjeta sigue, pero ya solo se responde en la terminal. Los avisos «Necesita su
+permiso» y «Le está preguntando» se van igual, al responderse donde sea.
+
 **Un archivo soltado** sobre la mascota: lo atrapa en una caja, camina hacia la isla según dónde
 esté, la lanza (`BoxFlight.cs`) y la isla muestra cómo lo abre, lo lee y lo resume, con «Preguntar
 algo más», «Copiar» y «Seguir en una sesión». La mascota cuenta lo esencial en su nubecita y vuelve
