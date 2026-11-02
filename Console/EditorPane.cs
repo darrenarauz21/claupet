@@ -23,6 +23,8 @@ sealed class EditorDoc
     public bool Code { get; set; }
     public int Caret { get; set; }
     public double Scroll { get; set; }
+    /// <summary>La codificación en que vino el archivo (se guarda igual si se puede: TextFiles.ForSaving); null, uno nuevo.</summary>
+    public Encoding? Encoding { get; set; }
     public string Title => Path is null ? L.T("Sin título") : System.IO.Path.GetFileName(Path);
     public bool Dirty => !Document.UndoStack.IsOriginalFile;
 
@@ -165,7 +167,8 @@ sealed class EditorPane : Grid
                 Notice(L.T("«{0}» es demasiado grande para el editor (más de 20 MB).", System.IO.Path.GetFileName(path)));
                 return;
             }
-            var doc = new EditorDoc { Path = path, Document = new TextDocument(File.ReadAllText(path)), Code = EditorDoc.IsCode(path) };
+            var (text, encoding) = TextFiles.Read(path);
+            var doc = new EditorDoc { Path = path, Document = new TextDocument(text), Code = EditorDoc.IsCode(path), Encoding = encoding };
             doc.Document.UndoStack.MarkAsOriginalFile();
             _recents = EditorRecents.Add(path);
             Add(doc);
@@ -197,7 +200,9 @@ sealed class EditorPane : Grid
         {
             // Primero a un archivo de al lado y después se cambia: un corte a mitad no deja el archivo a medias.
             var temp = path + ".claupet-tmp";
-            File.WriteAllText(temp, doc.Document.Text, new UTF8Encoding(false));
+            var encoding = TextFiles.ForSaving(doc.Document.Text, doc.Encoding);
+            File.WriteAllText(temp, doc.Document.Text, encoding);
+            doc.Encoding = encoding;
             File.Move(temp, path, overwrite: true);
             doc.Path = path;
             doc.Document.UndoStack.MarkAsOriginalFile();
@@ -327,7 +332,7 @@ sealed class EditorPane : Grid
         {
             _editor.ShowLineNumbers = true;
             _editor.WordWrap = false;
-            _editor.FontFamily = Ink.Mono;
+            _editor.FontFamily = WithSymbols(Ink.Mono);
             _editor.FontSize = CodeSize;
             _editor.TextArea.SelectionBrush = _colors.SelectionCode;
             // Los números con aire a los lados, como en el diseño, y sin la línea punteada que los separa.
@@ -343,7 +348,7 @@ sealed class EditorPane : Grid
         {
             _editor.ShowLineNumbers = false;
             _editor.WordWrap = true;
-            _editor.FontFamily = Ink.Sans;
+            _editor.FontFamily = WithSymbols(Ink.Sans);
             _editor.FontSize = DocumentSize;
             _editor.TextArea.SelectionBrush = _colors.SelectionDoc;
             view.LineTransformers.Add(new MarkdownLook(_editor.TextArea, _ink, _colors, DocumentSize));
@@ -356,6 +361,13 @@ sealed class EditorPane : Grid
         Dispatcher.UIThread.Post(() => _editor.ScrollToVerticalOffset(scroll), DispatcherPriority.Background);
         view.Redraw();
     }
+
+    /// <summary>
+    /// La letra con las de emojis y símbolos detrás: lo pegado de otro lado (✓, →, ★, un emoji) se dibuja con ellas
+    /// en vez de salir como un cuadro, si la letra del texto no lo tiene.
+    /// </summary>
+    static FontFamily WithSymbols(FontFamily family) =>
+        new(string.Join(", ", family.FamilyNames) + ", Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji, Apple Color Emoji, Noto Sans Symbols, Noto Sans Symbols 2");
 
     void Pad()
     {
