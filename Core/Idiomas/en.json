@@ -1687,7 +1687,6 @@
   "máximo": "max",
   "Con la cuenta": "With the account",
   "Modelo y esfuerzo": "Model and effort",
-  "Carpeta de la pestaña": "The tab's folder",
   "Claupet Terminal": "Claupet Terminal",
   "Abra una pestaña: Claude Code u otro agente, en bloques, o una terminal.": "Open a tab: Claude Code or another agent, in blocks, or a terminal.",
   "Nueva pestaña": "New tab",
@@ -1725,5 +1724,16 @@
   "¿Vaciar la conversación rápida? No se puede deshacer.": "Clear the quick conversation? This can’t be undone.",
   "¿Vaciarla?": "Clear it?",
   "¿Borrarla?": "Delete it?",
-  "Vaciar": "Clear"
+  "Vaciar": "Clear",
+  "Proyecto": "Project",
+  "Cambiar": "Change",
+  "Cambiar de proyecto": "Change project",
+  "Abrir con": "Open with",
+  "Elegir proyecto": "Choose a project",
+  "Volver": "Back",
+  "Todavía no hay proyectos recientes.": "No recent projects yet.",
+  "Buscar una carpeta…": "Browse for a folder…",
+  "Buscar un archivo del proyecto…": "Browse for a file in the project…",
+  "Elija un archivo del proyecto": "Choose a file in the project",
+  "Elija la carpeta del proyecto": "Choose the project folder"
 }
