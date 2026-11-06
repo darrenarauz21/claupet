@@ -73,7 +73,9 @@ sealed class EditorPane : Grid
     /// <summary>Cambió algo de la lista: se abrió, cerró, guardó o eligió un archivo.</summary>
     public event Action? DocsChanged;
 
-    const string PanelIcon = "M6.5,4.5 H17.5 A3,3 0 0 1 20.5,7.5 V16.5 A3,3 0 0 1 17.5,19.5 H6.5 A3,3 0 0 1 3.5,16.5 V7.5 A3,3 0 0 1 6.5,4.5 Z M9,4.5 V19.5";
+    const string NewFileIcon = "M7,3 H14 L19,8 V20 A1,1 0 0 1 18,21 H7 A1,1 0 0 1 6,20 V4 A1,1 0 0 1 7,3 Z M14,3 V8 H19 M12.5,11.5 V17.5 M9.5,14.5 H15.5";
+    const string OpenFolderIcon = "M3.5,7 A2,2 0 0 1 5.5,5 H9.5 L11.5,7 H18.5 A2,2 0 0 1 20.5,9 V17 A2,2 0 0 1 18.5,19 H5.5 A2,2 0 0 1 3.5,17 Z";
+    const string PanelIcon ="M6.5,4.5 H17.5 A3,3 0 0 1 20.5,7.5 V16.5 A3,3 0 0 1 17.5,19.5 H6.5 A3,3 0 0 1 3.5,16.5 V7.5 A3,3 0 0 1 6.5,4.5 Z M9,4.5 V19.5";
     const string MoreIcon = "M3.4,12 A1.6,1.6 0 1 0 6.6,12 A1.6,1.6 0 1 0 3.4,12 Z M10.4,12 A1.6,1.6 0 1 0 13.6,12 A1.6,1.6 0 1 0 10.4,12 Z "
         + "M17.4,12 A1.6,1.6 0 1 0 20.6,12 A1.6,1.6 0 1 0 17.4,12 Z";
     const double DocumentSize = 16.5, CodeSize = 13.5, Column = 640;
@@ -545,8 +547,8 @@ sealed class EditorPane : Grid
             HorizontalAlignment = HorizontalAlignment.Center,
         });
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 10) };
-        buttons.Children.Add(Pill(L.T("Texto nuevo"), _ink.Accent, new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)), New));
-        buttons.Children.Add(Pill(L.T("Abrir…"), _ink.Pill, _ink.Text, () => _ = OpenAsync()));
+        buttons.Children.Add(StartButton(NewFileIcon, L.T("Texto nuevo"), _ink.Accent, new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)), New));
+        buttons.Children.Add(StartButton(OpenFolderIcon, L.T("Abrir…"), _ink.Pill, _ink.Text, () => _ = OpenAsync()));
         panel.Children.Add(buttons);
         var recents = _recents.Where(File.Exists).Take(6).ToList();
         if (recents.Count > 0)
@@ -612,6 +614,33 @@ sealed class EditorPane : Grid
         var button = Ui.Press(icon, onClick, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name);
         button.Width = 34;
         button.Height = 34;
+        button.CornerRadius = new CornerRadius(999);
+        ToolTip.SetTip(button, name);
+        return button;
+    }
+
+    /// <summary>Un botón redondo de la pantalla de inicio: el ícono, y lo que hace al pasar el puntero.</summary>
+    static Border StartButton(string path, string name, IBrush background, IBrush foreground, Action onClick)
+    {
+        var icon = new Viewbox
+        {
+            Width = 20,
+            Height = 20,
+            Child = new Avalonia.Controls.Shapes.Path
+            {
+                Data = Geometry.Parse(path),
+                Stroke = foreground,
+                StrokeThickness = 1.8,
+                StrokeLineCap = PenLineCap.Round,
+                StrokeJoin = PenLineJoin.Round,
+                Width = 24,
+                Height = 24,
+            },
+        };
+        var button = Ui.Press(icon, onClick, (b, on) => b.Opacity = on ? 0.86 : 1, name);
+        button.Background = background;
+        button.Width = 44;
+        button.Height = 44;
         button.CornerRadius = new CornerRadius(999);
         ToolTip.SetTip(button, name);
         return button;

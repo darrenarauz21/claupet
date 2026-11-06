@@ -26,4 +26,17 @@ public sealed class IconosTests
         Assert.StartsWith(L.T("Borrar todo el historial"), (string)Avalonia.Controls.ToolTip.GetTip(clear)!);
         tab.Agent.Dispose();
     });
+
+    [Fact]
+    public void LaPantallaDeInicioDelEditorUsaIconos() => Headless.Run(() =>
+    {
+        var editor = new EditorPane();
+        editor.SetInk(Ink.For(true));
+        var start = (ScrollViewer)typeof(EditorPane).GetMethod("Start", Private)!.Invoke(editor, [])!;
+        var buttons = ((StackPanel)start.Content!).Children.OfType<StackPanel>().First().Children.Cast<Border>().ToList();
+
+        Assert.Equal([L.T("Texto nuevo"), L.T("Abrir…")], buttons.Select(AutomationProperties.GetName));
+        Assert.All(buttons, b => Assert.IsType<Viewbox>(b.Child));
+        Assert.All(buttons, b => Assert.Equal(AutomationProperties.GetName(b), Avalonia.Controls.ToolTip.GetTip(b)));
+    });
 }
