@@ -86,7 +86,7 @@ sealed class WindowsDesktop(DesktopUi ui) : IDesktop
         finally { Marshal.ReleaseComObject(enumerator); }
     }
 
-    /// <summary>Con las teclas multimedia: lo que suene en Windows (Spotify, YouTube en el navegador…).</summary>
+    /// <summary>Con las teclas multimedia: lo que suene en Windows (Spotify, YouTube en el navegador…). Lo que ellas no tienen, con WinMedia.</summary>
     public async Task<string?> MediaAsync(MediaCommand command)
     {
         const byte Next = 0xB0, Previous = 0xB1, PlayPause = 0xB3;
@@ -94,6 +94,22 @@ sealed class WindowsDesktop(DesktopUi ui) : IDesktop
         {
             case MediaCommand.Next: Tap(Next); break;
             case MediaCommand.Previous: Tap(Previous); break;
+            case MediaCommand.Restart:
+                switch (await WinMedia.RunAsync("inicio"))
+                {
+                    case WinMedia.Outcome.Done: return null;
+                    case WinMedia.Outcome.Nothing: return L.T("No hay nada sonando que pueda controlar.");
+                    // La tecla de anterior: en casi todos los reproductores, pasados unos segundos vuelve al inicio.
+                    default: Tap(Previous); return null;
+                }
+            case MediaCommand.RepeatOn or MediaCommand.RepeatOff:
+                return await WinMedia.RunAsync(command == MediaCommand.RepeatOn ? "repetir" : "sin-repetir") switch
+                {
+                    WinMedia.Outcome.Done => null,
+                    WinMedia.Outcome.Nothing => L.T("No hay nada sonando que pueda controlar."),
+                    WinMedia.Outcome.Refused => L.T("Este reproductor no deja cambiar la repetición desde fuera: hay que hacerlo en él. Sí puedo volver a empezar la canción."),
+                    _ => L.T("No pude hablar con el reproductor."),
+                };
             default:
                 // La tecla solo alterna: se mira antes si algo suena, para no reanudar al pedir una pausa.
                 var playing = await Task.Run(Music.PlayingNow);

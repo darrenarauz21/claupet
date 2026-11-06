@@ -297,7 +297,7 @@ public sealed class CustomThemesTests
             models.Add(request.Model);
             return Task.FromResult(request.Model == "fable"
                 ? new AssistantResult("", null, null, null, "There's an issue with the selected model (fable). It may not exist or you may not have access to it.")
-                : new AssistantResult(Beach, null, request.Model, null, null));
+                : new AssistantResult(Beach.Replace("\"speed\": 1.2 }", "\"speed\": 1.2, \"sprites\": [{ \"rows\": [\"111\", \"111\"] }] }"), null, request.Model, null, null));
         };
         try
         {

@@ -304,7 +304,7 @@ sealed class TerminalScreen : Control
         {
             text = await clipboard.TryGetTextAsync();
             if (string.IsNullOrEmpty(text) && await clipboard.TryGetFilesAsync() is { } files)
-                text = string.Join(" ", files.Select(f => f.TryGetLocalPath()).OfType<string>().Select(QuotePath));
+                text = ClipboardPaste.Join(files.Select(f => f.TryGetLocalPath()).OfType<string>());
             if (string.IsNullOrEmpty(text))
             {
                 if (await clipboard.TryGetBitmapAsync() is { } bitmap)
@@ -323,7 +323,7 @@ sealed class TerminalScreen : Control
         // la de un archivo. Para otro programa (o si no se pudo bajar), la URL tal cual.
         if (RunsClaude() && PastedImages.Reference(text, null) is { Url: true } reference
             && await PastedImages.LoadAsync(reference) is { } image)
-            text = QuotePath(image.SaveTemp());
+            text = ClipboardPaste.Quote(image.SaveTemp());
         text = text.ReplaceLineEndings("\r");
         _shell.Input(_shell.Screen.BracketedPasteMode ? "\x1b[200~" + text + "\x1b[201~" : text);
     }
@@ -332,11 +332,6 @@ sealed class TerminalScreen : Control
     bool RunsClaude() =>
         _shell.Transcript.Blocks.LastOrDefault(b => b.Running)?.Command.TrimStart() is { } command
         && Path.GetFileNameWithoutExtension(command.Split(' ', 2)[0].Trim('"', '\'')).Equals("claude", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>Una ruta para pegarla: entre comillas si tiene espacios.</summary>
-    static string QuotePath(string path) =>
-        !path.Any(char.IsWhiteSpace) ? path
-        : OperatingSystem.IsWindows() ? $"\"{path}\"" : "'" + path.Replace("'", "'\\''") + "'";
 
     /// <summary>Copia lo sombreado (sin los espacios del final de cada fila) y lo quita.</summary>
     async Task CopySelectionAsync()

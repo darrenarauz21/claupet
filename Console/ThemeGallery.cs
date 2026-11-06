@@ -16,23 +16,41 @@ using Avalonia.Threading;
 /// y su escena animada, en el modo claro u oscuro de la Console), su nombre y, en los propios, el menú para exportar y
 /// eliminar (con confirmación en la misma tarjeta). La elegida lleva el borde del acento y su marca; tocar otra la elige.
 /// La que se está creando brilla y titila hasta que llega el tema, y se puede cancelar. Las acciones van a la bandeja.
+/// De seis en seis: con más, abajo van las flechas, y las páginas miden lo mismo para que no se muevan bajo el cursor.
 /// </summary>
-sealed class ThemeGallery : UniformGrid
+sealed class ThemeGallery : StackPanel
 {
     const double Gap = 6, PreviewHeight = 116;
+    const int PerPage = 6;
     readonly Action<string, string?> _act;
-    string _shape = "";
+    readonly UniformGrid _grid = new() { Columns = 3 };
+    readonly Decorator _pagerBox = new() { IsVisible = false };
+    IReadOnlyList<ThemeCard> _cards = [];
+    string _shape = "", _focus = "";
     Ink? _ink;
 
     public ThemeGallery(Action<string, string?> act)
     {
         _act = act;
-        Columns = 3;
         // Las tarjetas llevan su margen: el borde de afuera queda alineado con el resto de la página, y abajo quedan 12
         // hasta la tarjeta del cuadro para crear.
         Margin = new Thickness(-Gap, -Gap, -Gap, 12 - Gap);
-        SizeChanged += (_, e) => Columns = e.NewSize.Width < 520 ? 2 : 3;
+        Children.Add(_grid);
+        Children.Add(_pagerBox);
+        SizeChanged += (_, e) =>
+        {
+            _grid.Columns = e.NewSize.Width < 520 ? 2 : 3;
+            KeepHeight();
+        };
     }
+
+    /// <summary>La página que se ve, desde 0.</summary>
+    internal int Page { get; private set; }
+
+    internal int Pages => Math.Max(1, (int)Math.Ceiling(_cards.Count / (double)PerPage));
+
+    /// <summary>Las tarjetas de la página que se ve.</summary>
+    internal int Shown => _grid.Children.Count;
 
     /// <summary>Las tarjetas; si no cambió nada (otro aviso de la bandeja), se quedan como están y no se cortan las animaciones.</summary>
     public void Show(IReadOnlyList<ThemeCard> cards, Ink ink)
@@ -41,8 +59,86 @@ sealed class ThemeGallery : UniformGrid
         if (shape == _shape && ReferenceEquals(ink, _ink)) return;
         _shape = shape;
         _ink = ink;
-        Children.Clear();
-        foreach (var card in cards) Children.Add(card.Creating ? Creating(card, ink) : Card(card, ink));
+        _cards = cards;
+        // Se abre donde está lo importante: la que se está creando o la elegida, y vuelve allí solo si cambia.
+        var focus = cards.Select((c, i) => (c, i)).FirstOrDefault(x => x.c.Creating);
+        if (focus.c is null) focus = cards.Select((c, i) => (c, i)).FirstOrDefault(x => x.c.Selected);
+        var key = focus.c is null ? "" : focus.c.Creating ? "\0creando" : focus.c.Id;
+        if (key != _focus)
+        {
+            _focus = key;
+            if (focus.c is not null) Page = focus.i / PerPage;
+        }
+        Fill();
+    }
+
+    /// <summary>Avanza o retrocede, sin salirse.</summary>
+    internal void Go(int delta)
+    {
+        var page = Math.Clamp(Page + delta, 0, Pages - 1);
+        if (page == Page) return;
+        Page = page;
+        Fill();
+    }
+
+    void Fill()
+    {
+        if (_ink is not { } ink) return;
+        Page = Math.Clamp(Page, 0, Pages - 1);
+        _grid.Children.Clear();
+        foreach (var card in _cards.Skip(Page * PerPage).Take(PerPage))
+            _grid.Children.Add(card.Creating ? Creating(card, ink) : Card(card, ink));
+        KeepHeight();
+        _pagerBox.IsVisible = Pages > 1;
+        _pagerBox.Child = Pages > 1 ? Pager(ink) : null;
+    }
+
+    /// <summary>Con varias páginas, siempre el alto de una llena: la última, aunque tenga menos, no sube lo que hay debajo.</summary>
+    void KeepHeight() => _grid.Rows = Pages > 1 ? (int)Math.Ceiling(PerPage / (double)_grid.Columns) : 0;
+
+    /// <summary>Las flechas con la página en medio; en la primera y en la última, la flecha que no lleva a nada se apaga.</summary>
+    Control Pager(Ink ink)
+    {
+        Border Arrow(string icon, int delta, string name)
+        {
+            var enabled = Page + delta >= 0 && Page + delta < Pages;
+            var arrow = Ui.Press(new Avalonia.Controls.Shapes.Path
+            {
+                Data = Geometry.Parse(icon),
+                Stroke = enabled ? ink.Secondary : ink.Tertiary,
+                StrokeThickness = 1.8,
+                StrokeLineCap = PenLineCap.Round,
+                StrokeJoin = PenLineJoin.Round,
+                Width = 16,
+                Height = 16,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            }, () => Go(delta), (b, on) => b.Background = on && enabled ? ink.Pill : Brushes.Transparent, name);
+            arrow.Width = 30;
+            arrow.Height = 30;
+            arrow.CornerRadius = new CornerRadius(999);
+            arrow.Opacity = enabled ? 1 : 0.4;
+            if (!enabled) arrow.Cursor = null;
+            ToolTip.SetTip(arrow, name);
+            return arrow;
+        }
+        var count = Ui.Text($"{Page + 1} / {Pages}", 12, ink.Secondary);
+        count.VerticalAlignment = VerticalAlignment.Center;
+        count.MinWidth = 36;
+        count.TextAlignment = TextAlignment.Center;
+        return new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 2,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 2, 0, 0),
+            Children =
+            {
+                Arrow("M10,3.5 L5.5,8 L10,12.5", -1, L.T("Temas anteriores")),
+                count,
+                Arrow("M6,3.5 L10.5,8 L6,12.5", 1, L.T("Más temas")),
+            },
+        };
     }
 
     /// <summary>La tarjeta de un tema: la vista previa, el nombre con lo que trae y, si es propio, el menú.</summary>
@@ -126,7 +222,7 @@ sealed class ThemeGallery : UniformGrid
         var grid = new Grid { Background = ink.Surface };
         if (theme?.Scene is { } scene)
         {
-            var layer = new SceneLayer(pixel: 2, alpha: 0.6);
+            var layer = new SceneLayer(pixel: 2, alpha: 0.6, sample: true);
             layer.Show(scene);
             grid.Children.Add(layer);
         }

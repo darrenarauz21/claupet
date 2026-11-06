@@ -2,10 +2,10 @@
 
 **English** · [Español](../es/console.md)
 
-Claupet's big window: the chat, the Terminal, the editor, Canvas and every setting, all in one place.
+Claupet's big window: the chat, the Terminal, the editor, Canvas, Projects and every setting, all in one place.
 
 **On this page:** [How to open it](#how-to-open-it) · [The rail](#the-rail) · [Chat](#chat) ·
-[Editor](#editor) · [Canvas](#canvas) · [Settings](#settings) · [Shortcuts](#shortcuts)
+[Editor](#editor) · [Canvas](#canvas) · [Projects](#projects) · [Settings](#settings) · [Shortcuts](#shortcuts)
 
 ## How to open it
 
@@ -25,7 +25,7 @@ picked.
 
 ## The rail
 
-On the left, a rail with five buttons:
+On the left, a rail with six buttons:
 
 | Button | What for |
 |---|---|
@@ -33,6 +33,7 @@ On the left, a rail with five buttons:
 | ⌨️ **Terminal** | Agent sessions and shells in blocks. It has its own page: [Claupet Terminal](terminal.md). |
 | 📝 **Editor** | Open and write documents and code. |
 | 🎨 **Canvas** | Live documents you and any AI edit together. |
+| 📊 **Projects** | Your projects' plans: board, timeline, diagram and metrics. |
 | ⚙️ **Settings** | All of Claupet's options, by section. |
 
 ## Chat
@@ -110,6 +111,10 @@ back to an earlier one (the current one is kept).
 or closing the window; **Esc discards what you typed**. Ctrl+K searches and inserts, Ctrl+N creates a canvas and Ctrl+J
 asks the AI for a change.
 
+**Link to a plan.** The link button in the bar links the canvas to a plan. Its progress shows in the bar and, when you
+touch it, its details open in [Projects](#projects). A canvas links to one plan; a plan can have several canvases. An
+agent can link them too.
+
 **Export.** PDF, Word, Markdown, an HTML page that opens on its own in any browser, or JSON. Also **View in the browser**.
 PDF needs Microsoft Edge, Google Chrome or Chromium. In Word, diagrams and HTML go in as text.
 
@@ -118,6 +123,34 @@ VS Code or any app with MCP: their models will see and edit the same canvases. B
 `Claupet --canvas-mcp`.
 
 They're kept in Claupet's data folder, under `Canvas` (on Windows, `%APPDATA%\Claupet\Canvas`).
+
+## Projects
+
+The plans (`*.plan.json`) in the folders linked in the Terminal, each with its progress and delays. AIs write them (with the
+`plan_*` tools) or you do: the file stays in the project's folder, and whatever changes there shows up on its own. The **+**
+creates a plan or opens one from another folder.
+
+| View | What it shows |
+|---|---|
+| **Summary** | Progress, what's overdue and blocked, what can be done now, and each stage. |
+| **Board** | Tasks by status. Drag a card to another column to change its status. |
+| **Timeline** | Bars by day, dependencies, milestones and today's line. |
+| **Diagram** | What depends on what. Hovering highlights a task's chain; Ctrl+wheel zooms. |
+| **Metrics** | Actual progress against ideal, and actual hours against estimated. |
+| **Activity** | Who did what and when, since Claupet has been watching the plan. |
+
+**Search.** Above the list you search by project or task; the magnifier in the bar dims what doesn't match inside the plan,
+and **Ctrl+K** searches all of them. The funnel filters by overdue, blocked, ready or in progress. Keys 1 to 6 switch views.
+
+**A task.** Tapping it opens its details: its status (saved to the file), hours, what it needs and what's waiting on it.
+**Work on this** opens a Claude Code session in the project's folder with the task already typed, for you to send. The bar at
+the bottom asks a session in that same folder for a change.
+
+**The plan's canvases.** The canvas button in the bar opens the ones linked to this plan or creates a new one, already linked.
+
+**Export to PDF.** The button in the bar saves the current view or the whole plan as a report: white letter pages, with the
+same content in tables and charts made for reading or printing, whatever your theme. What doesn't fit continues on the
+next page.
 
 ## Settings
 

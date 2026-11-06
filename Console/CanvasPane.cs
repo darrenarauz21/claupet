@@ -29,6 +29,10 @@ sealed partial class CanvasPane : Grid
     public event Action? OpenRequested;
     /// <summary>Se pidió mostrar u ocultar la lista de canvas.</summary>
     public event Action? ListToggled;
+    /// <summary>Se pidió ver en Proyectos el plan ligado.</summary>
+    public event Action<string>? PlanOpened;
+    /// <summary>Los planes que se pueden ligar. Sin esto (las pruebas), solo se ofrece abrir un archivo.</summary>
+    public Func<Task<IReadOnlyList<PlanEntry>>>? FindPlans { get; set; }
 
     readonly CanvasStore _store;
     readonly CanvasWatcher? _watcher;
@@ -90,6 +94,9 @@ sealed partial class CanvasPane : Grid
         _busyTimer.Tick += (_, _) => Rest();
         _bumpTimer.Tick += (_, _) => { _bumpTimer.Stop(); if (_versionPill is not null) _versionPill.RenderTransform = TransformOperations.Parse("scale(1)"); };
         _search.TextChanged += (_, _) => RenderList();
+        // Al volver a Canvas, el avance del plan ligado puede ser otro.
+        AttachedToVisualTree += (_, _) => _bar.Child = Bar();
+        _bar.SizeChanged += (_, _) => FitPlanChip();
         try
         {
             _watcher = new CanvasWatcher(_store);
@@ -118,6 +125,14 @@ sealed partial class CanvasPane : Grid
         Reload();
         Select(id);
         OpenRequested?.Invoke();
+    }
+
+    /// <summary>Muestra un canvas que puede ser nuevo (lo creó Proyectos): primero vuelve a leer la lista.</summary>
+    public void Show(string id)
+    {
+        Reload();
+        Select(id);
+        ListChanged?.Invoke();
     }
 
     public void Select(string id)
@@ -458,8 +473,14 @@ sealed partial class CanvasPane : Grid
         bar.Children.Add(left);
 
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        if (PlanChip(doc) is { } chip) right.Children.Add(chip);
         right.Children.Add(Faces(doc));
-        Border? ask = null, export = null, more = null;
+        Border? ask = null, export = null, more = null, link = null;
+        if (_past is null)
+        {
+            link = IconButton(CanvasIcons.Link, doc.Plan is null ? L.T("Ligar a un plan") : L.T("Cambiar el plan ligado"), () => _ = LinkMenuAsync(link!), on: doc.Plan is not null);
+            right.Children.Add(link);
+        }
         ask = IconButton(CanvasIcons.Spark, L.T("Pedir a la IA") + " · Ctrl+J", () => AskPopup(ask!, null));
         right.Children.Add(ask);
         right.Children.Add(IconButton(CanvasIcons.History, L.T("Versiones"), ToggleHistory, on: _history));

@@ -36,6 +36,10 @@ static class Answers
         var intent = AnswerRules.Match(request.Prompt);
         var local = Assistant.Local?.Invoke();
         var understood = false;
+        // El clima es de la API: si esto le va a llegar al modelo local, que no dependa de que lo entienda. La nube no hace
+        // falta: entiende cualquier frase y lo consulta por su cuenta.
+        if (intent is null && (onlyLocal || UsesLocal(settings)))
+            intent = AnswerRules.WeatherAsked(request.Prompt) ?? AnswerRules.WeatherFollowUp(request.Prompt, request.History);
         // Entender la pregunta arranca llama-server (de 1 a 3,5 GB por unos minutos): solo si el modelo local se usa,
         // no para una pregunta que de todos modos responde la nube.
         if (intent is null && local is IStructuredBrain structured && (onlyLocal || UsesLocal(settings)))
@@ -54,6 +58,8 @@ static class Answers
         for (var engine = first; engine <= last && result is null; engine++)
         {
             if (cancel.IsCancellationRequested) return new AssistantResult("", null, null, null, "Cancelado.");
+            // La app ya preguntó a la API y no respondió: el modelo local haría la misma consulta.
+            if (engine == Engine.Local && first == Engine.None && Unreachable(intent) is not null) continue;
             if (engine == Engine.Local && local is null) { localMissing = true; continue; }
             result = engine switch
             {
@@ -64,6 +70,8 @@ static class Answers
             // Si el modelo local falla (no arrancó), pasa al siguiente; si no hay siguiente, se dice qué pasó.
             if (engine == Engine.Local && result is { Failed: true }) (failed, result) = (result, null);
         }
+        if (result is null && !localMissing && Unreachable(intent) is { } apology)
+            return new AssistantResult(apology, null, null, null, null, Spoken: apology, By: new AnswerSource(Engine.None, "Open-Meteo"));
         if (result is null)
             return failed ?? (localMissing
                 ? new AssistantResult("", null, null, null, L.T("El modelo local no está descargado: descárguelo en Claupet Console › Respuestas."))
@@ -75,6 +83,18 @@ static class Answers
         if (!result.Failed && result.By is { } by) AnswerStats.Add(by.Engine);
         return result;
     }
+
+    /// <summary>
+    /// Lo que se dice si la API no respondió y nadie más puede consultarla, para que no parezca que no se entendió; null si
+    /// la pregunta no dependía de ella.
+    /// </summary>
+    static string? Unreachable(Intent? intent) => intent switch
+    {
+        { Topic: AnswerTopics.Weather, Place: { } place } => L.T("No pude consultar el clima de {0}: revisa el nombre o la conexión. (・_・;)", place),
+        { Topic: AnswerTopics.Weather } => L.T("No pude consultar el clima ahora: revisa la conexión o inténtalo en un momento. (・_・;)"),
+        { Topic: AnswerTopics.Time, Date: false, Place: { } place } => L.T("No pude consultar la hora de {0}: revisa el nombre o la conexión. (・_・;)", place),
+        _ => null,
+    };
 
     /// <summary>El reparto manda algún tipo de pregunta al modelo local (primero o si los anteriores no entienden).</summary>
     static bool UsesLocal(AppSettings settings) =>
@@ -124,6 +144,9 @@ static class Answers
         return text is null ? null : new AssistantResult(text, null, null, null, null, Spoken: text, By: new AnswerSource(Engine.None, source));
     }
 
+    /// <summary>De dónde sale el clima. Las pruebas la cambian.</summary>
+    internal static Func<AppSettings, string?, int, bool, CancellationToken, Task<string?>> Forecast { get; set; } = WeatherService.DescribeAsync;
+
     /// <summary>La respuesta de la app para los tipos que solo necesitan datos (hora, clima, uso, cuentas, saludo) y de dónde salió.</summary>
     static async Task<(string? Text, string Source)> DataAsync(AppSettings settings, Intent intent, CancellationToken cancel)
     {
@@ -136,7 +159,7 @@ static class Answers
             case AnswerTopics.Time:
                 return (Assistant.TimeText(), L.T(Instant));
             case AnswerTopics.Weather:
-                return (await WeatherService.DescribeAsync(settings, intent.Place, intent.Day, intent.Rain, cancel), "Open-Meteo");
+                return (await Forecast(settings, intent.Place, intent.Day, intent.Rain, cancel), "Open-Meteo");
             case AnswerTopics.Usage:
                 return (Usage?.Invoke(), L.T(Instant));
             case AnswerTopics.Math or AnswerTopics.Chat:
@@ -176,7 +199,8 @@ static class Answers
             case AnswerTopics.Math when intent?.Reply is not null:
             {
                 var (data, _) = await DataAsync(settings, intent!, cancel);
-                if (data is null) return onlyLocal ? await ChatAsync() : null;
+                // Sin datos del clima, él no tiene de dónde sacarlos: solo diría que no puede, o los inventaría.
+                if (data is null) return onlyLocal && Unreachable(intent) is null ? await ChatAsync() : null;
                 var reply = await Assistant.AskBrainAsync(local, request with { Data = data, Engine = Engine.Local }, onText, onStage, cancel);
                 return reply with { By = by };
             }
@@ -239,7 +263,7 @@ static class Answers
         accion y valor, según el tema (si no aplica: accion "ninguna" y valor ""):
         - estado: accion "estado", valor "bateria", "disco", "memoria" o "todo".
         - volumen (qué tan alto suena todo, también «bájale a la música»): "subir", "bajar", "silenciar", "activar" o un número de 0 a 100.
-        - musica: "reproducir", "pausar", "siguiente" o "anterior".
+        - musica: "reproducir", "pausar", "siguiente" (también cambiar de canción), "anterior", "repetir" (la que suena, desde el inicio), "bucle" (que se repita siempre) o "sin-bucle".
         - brillo (solo la luz de la pantalla): "subir", "bajar" o un número de 0 a 100.
         - tema: "claro" u "oscuro".
         - ventana: "escritorio".
@@ -254,6 +278,8 @@ static class Answers
         «la pantalla está muy oscura» → {"tema":"acciones","accion":"brillo","valor":"subir","lugar":"","dia":"hoy"}
         «¿necesito paraguas mañana?» → {"tema":"clima","accion":"ninguna","valor":"","lugar":"","dia":"manana"}
         «¿qué tal el tiempo en Madrid?» → {"tema":"clima","accion":"ninguna","valor":"","lugar":"Madrid","dia":"hoy"}
+        «cambia esta rola» → {"tema":"acciones","accion":"musica","valor":"siguiente","lugar":"","dia":"hoy"}
+        «otra vez esa canción» → {"tema":"acciones","accion":"musica","valor":"repetir","lugar":"","dia":"hoy"}
         «ponme algo de Bad Bunny» → {"tema":"internet","accion":"ninguna","valor":"","lugar":"","dia":"hoy"}
         «¿cuál es el río más largo?» → {"tema":"generales","accion":"ninguna","valor":"","lugar":"","dia":"hoy"}
         """;

@@ -11,7 +11,9 @@ using Avalonia.Threading;
 /// a 12 cuadros por segundo y con poca opacidad, detrás del contenido de la Console (las tarjetas siguen opacas). Las
 /// partículas van en dos planos: las lejanas, más chicas, lentas y tenues, dan profundidad. Con un píxel más chico y más
 /// opacidad es la vista previa de una tarjeta de tema. Se pausa con la ventana minimizada u oculta (Paused) y fuera del
-/// árbol visual.
+/// árbol visual. Encima van los motivos del tema (ThemeSprite) y, si trae, otra escena (ThemeScene.Over), que es otra capa
+/// igual como hija de esta. En una vista previa (sample) no cabe todo: sin la otra escena y solo dos motivos, uno de cada
+/// uno y en la columna libre de la derecha.
 /// </summary>
 sealed class SceneLayer : Control
 {
@@ -19,6 +21,7 @@ sealed class SceneLayer : Control
     readonly double _alpha;
     /// <summary>Cuánto se mueve todo respecto del tamaño de siempre (4 px por píxel): la vista previa va a escala.</summary>
     readonly double _scale;
+    readonly bool _sample;
 
     sealed class Particle
     {
@@ -31,20 +34,30 @@ sealed class SceneLayer : Control
     /// <summary>Un edificio de la ciudad: dónde empieza, su ancho y su alto en píxeles, y sus ventanas.</summary>
     sealed record Building(int Left, int Width, int Height, double[] Windows);
 
+    /// <summary>Un tramo horizontal de un motivo, de un solo color: dibujar fila por fila sale más barato que píxel por píxel.</summary>
+    readonly record struct Run(int Col, int Row, int Across, int Color);
+
+    /// <summary>Un motivo listo para dibujar.</summary>
+    sealed record Motif(ThemeSprite Sprite, Run[] Runs, int Across, int Down);
+
     readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(1000 / 12.0) };
     readonly Random _random = new(7);
     readonly List<Particle> _particles = [];
     readonly List<Building> _city = [];
     ThemeScene? _scene;
+    Motif[] _motifs = [];
+    SceneLayer? _over;
     IBrush[] _near = [], _far = [];
     double _time, _cityWidth;
     bool _paused;
 
     /// <param name="pixel">El lado de un píxel del pixel art.</param>
     /// <param name="alpha">La opacidad del plano de adelante (el lejano, la mitad).</param>
-    public SceneLayer(int pixel = 4, double alpha = 0.16)
+    /// <param name="sample">Es la vista previa de una tarjeta.</param>
+    public SceneLayer(int pixel = 4, double alpha = 0.16, bool sample = false)
     {
         _pixel = pixel;
+        _sample = sample;
         _alpha = alpha;
         _scale = pixel / 4.0;
         IsHitTestVisible = false;
@@ -57,20 +70,52 @@ sealed class SceneLayer : Control
     public bool Paused
     {
         get => _paused;
-        set { _paused = value; Update(); }
+        set
+        {
+            _paused = value;
+            if (_over is not null) _over.Paused = value;
+            Update();
+        }
     }
 
     /// <summary>La escena del tema elegido (null: ninguna, y no se dibuja nada).</summary>
     public void Show(ThemeScene? scene)
     {
+        if (_sample && scene is not null) scene = scene with { Over = null, Sprites = scene.Sprites?.Take(SampleMotifs).ToArray() };
         _scene = scene;
         IBrush Brush(System.Drawing.Color c, double alpha) => new ImmutableSolidColorBrush(Color.FromRgb(c.R, c.G, c.B), alpha);
         _near = scene?.Colors.Select(c => Brush(c, _alpha)).ToArray() ?? [];
         _far = scene?.Colors.Select(c => Brush(c, _alpha * 0.5)).ToArray() ?? [];
         _particles.Clear();
         _city.Clear();
+        _motifs = scene?.Sprites?.Select(Prepare).ToArray() ?? [];
+        if (_over is not null) VisualChildren.Remove(_over);
+        _over = null;
+        if (scene?.Over is { } over)
+        {
+            _over = new SceneLayer(_pixel, _alpha) { Paused = _paused };
+            _over.Show(over);
+            VisualChildren.Add(_over);
+            InvalidateMeasure();
+        }
         Update();
         InvalidateVisual();
+    }
+
+    static Motif Prepare(ThemeSprite sprite)
+    {
+        var runs = new List<Run>();
+        for (var row = 0; row < sprite.Rows.Length; row++)
+        {
+            var line = sprite.Rows[row];
+            for (var col = 0; col < line.Length;)
+            {
+                var start = col;
+                while (col < line.Length && line[col] == line[start]) col++;
+                if (line[start] != '.') runs.Add(new Run(start, row, col - start, line[start] - '1'));
+            }
+        }
+        return new Motif(sprite, runs.ToArray(), sprite.Rows[0].Length, sprite.Rows.Length);
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -142,6 +187,93 @@ sealed class SceneLayer : Control
         if (_scene is not { } scene || _near.Length == 0) return;
         double w = Bounds.Width, h = Bounds.Height;
         if (w < 1 || h < 1) return;
+        Scenery(context, scene, w, h);
+        for (var i = 0; i < _motifs.Length; i++) Draw(context, _motifs[i], i, scene, w, h);
+    }
+
+    /// <summary>Dónde apoyan los motivos «suelo»: en la arena o el horizonte de la escena; en las demás, abajo del todo.</summary>
+    static double Ground(string kind, double h) => kind switch
+    {
+        "playa" => h * 0.9,
+        "atardecer" => h * 0.62,
+        _ => h,
+    };
+
+    const int SampleMotifs = 2;
+
+    /// <summary>En la vista previa, un solo motivo por rincón a la derecha: lo que va en el suelo, abajo, y lo demás, arriba.</summary>
+    void DrawSample(DrawingContext context, Motif motif, int index, double w, double h)
+    {
+        var low = motif.Sprite.Motion == "suelo";
+        if (index == 1 && (_motifs[0].Sprite.Motion == "suelo") == low) low = !low;
+        var margin = _pixel * 4;
+        var bob = low ? 0 : Math.Sin(_time * 1.2) * _pixel;
+        Stamp(context, motif, w - motif.Across * _pixel - margin, low ? h - motif.Down * _pixel - margin : margin + bob);
+    }
+
+    /// <summary>Un motivo en ese lugar, en la grilla de píxeles para que no se deforme.</summary>
+    void Stamp(DrawingContext context, Motif motif, double x, double y)
+    {
+        var px = _pixel;
+        x = Math.Floor(x / px) * px;
+        y = Math.Floor(y / px) * px;
+        foreach (var run in motif.Runs)
+            context.FillRectangle(_near[run.Color % _near.Length], new Rect(x + run.Col * px, y + run.Row * px, run.Across * px, px));
+    }
+
+    /// <summary>
+    /// Cada copia de un motivo: su lugar sale de la proporción áurea (se reparten sin amontonarse y sin azar, así que no
+    /// saltan al redibujar) y el movimiento, del tiempo.
+    /// </summary>
+    void Draw(DrawingContext context, Motif motif, int index, ThemeScene scene, double w, double h)
+    {
+        if (_sample)
+        {
+            DrawSample(context, motif, index, w, h);
+            return;
+        }
+        var px = _pixel;
+        double across = motif.Across * px, down = motif.Down * px;
+        double wide = w + across, tall = h + down;
+        for (var copy = 0; copy < motif.Sprite.Count; copy++)
+        {
+            double a = (0.13 + index * 0.31 + copy * 0.618034) % 1, b = (0.41 + index * 0.57 + copy * 0.754878) % 1;
+            var phase = a * Math.PI * 2;
+            double x, y;
+            switch (motif.Sprite.Motion)
+            {
+                case "suelo":
+                    x = (w - across) * ((index * 0.27 + (copy + 0.5) / motif.Sprite.Count) % 1);
+                    y = Ground(scene.Kind, h) - down;
+                    break;
+                case "cielo":
+                    x = (w - across) * a;
+                    y = h * (0.05 + b * 0.25) + Math.Sin(_time * 0.5 + phase) * 3 * _scale;
+                    break;
+                case "cruza":
+                    x = (_time * 14 * _scale * (0.8 + a * 0.5) + a * wide) % wide - across;
+                    y = h * (0.08 + b * 0.5) + Math.Sin(_time * 1.5 + phase) * 4 * _scale;
+                    break;
+                case "cae":
+                    y = (_time * 10 * _scale * (0.8 + a * 0.5) + b * tall) % tall - down;
+                    x = w * a + Math.Sin(_time * 1.2 + phase) * 10 * _scale - across / 2;
+                    break;
+                case "sube":
+                    y = h - (_time * 8 * _scale * (0.8 + a * 0.5) + b * tall) % tall;
+                    x = w * a + Math.Sin(_time * 0.9 + phase) * 8 * _scale - across / 2;
+                    break;
+                default:
+                    x = (w - across) * a + Math.Sin(_time * 0.3 + phase) * 28 * _scale;
+                    y = (h - down) * b + Math.Cos(_time * 0.4 + phase) * 18 * _scale;
+                    break;
+            }
+            Stamp(context, motif, x, y);
+        }
+    }
+
+    /// <summary>La escena del catálogo.</summary>
+    void Scenery(DrawingContext context, ThemeScene scene, double w, double h)
+    {
         var px = _pixel;
         // El color i en el plano de adelante (Front) o en el lejano (Back).
         IBrush Front(int i) => _near[i % _near.Length];

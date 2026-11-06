@@ -87,6 +87,17 @@ sealed class LinuxDesktop : UnixDesktop
     /// <summary>Lo que suene en un reproductor con MPRIS (Spotify, los navegadores, Rhythmbox…).</summary>
     public override Task<string?> MediaAsync(MediaCommand command)
     {
+        // Volver al inicio y repetir piden más que un método sin datos: solo con playerctl.
+        string[]? exact = command switch
+        {
+            MediaCommand.Restart => ["position", "0"],
+            MediaCommand.RepeatOn => ["loop", "Track"],
+            MediaCommand.RepeatOff => ["loop", "None"],
+            _ => null,
+        };
+        if (exact is not null)
+            return Task.FromResult(!Has("playerctl") ? Missing(L.T("controlar la música"), "playerctl")
+                : Run("playerctl", exact).Code == 0 ? null : L.T("No hay nada sonando que pueda controlar."));
         var verb = command switch { MediaCommand.Play => "Play", MediaCommand.Pause => "Pause", MediaCommand.Next => "Next", _ => "Previous" };
         if (Has("playerctl"))
         {

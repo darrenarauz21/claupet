@@ -138,6 +138,7 @@ sealed class ConsoleApplication : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        ClipboardPaste.Install();
         // Un error al dibujar una sección queda en el registro de errores y no cierra la ventana.
         Dispatcher.UIThread.UnhandledException += (_, e) =>
         {

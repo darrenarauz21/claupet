@@ -167,8 +167,11 @@ static class AnswerRules
         (Rule(@"(?:pon |set )?(?:el |the )?(?:volumen|volume)(?: (?:al|en|a|to))? (?<n>\d{1,3})(?: %| por ciento| percent)?"), "volumen", m => Percent(m)),
         (Rule(@"(?:pausa|pausar|deten|para|pause|stop)(?: la| the)? (?:musica|music|cancion|song)|pausa"), "musica", _ => "pausar"),
         (Rule(@"(?:reanuda|reproduce|continua|resume|play)(?: la| the)? (?:musica|music)|play"), "musica", _ => "reproducir"),
-        (Rule(@"(?:pon |pasa a )?(?:la )?(?:siguiente cancion|cancion siguiente)|siguiente|next(?: song| track)?|skip(?: this song)?|salta(?: la)? cancion"), "musica", _ => "siguiente"),
+        (Rule(@"(?:pon |pasa a )?(?:la )?(?:siguiente cancion|cancion siguiente)|siguiente|next(?: song| track| one)?|skip(?: this song)?|salta(?: la| esta)? cancion|cambia(?:r|le)?(?: de| la| esta)? (?:cancion|musica)|(?:pon )?otra cancion|pon otra|pasa(?:le)?(?: de| la| esta)? cancion|change(?: the)? song|another song"), "musica", _ => "siguiente"),
         (Rule(@"(?:pon |vuelve a )?(?:la )?(?:cancion anterior|anterior cancion)|anterior|previous(?: song| track)?"), "musica", _ => "anterior"),
+        (Rule(@"(?:repite|repetir|pon|ponla|deja|dejala)(?: la| esta)?(?: cancion)? (?:en bucle|en repeticion|en repetir|en loop|siempre)|(?:activa|enciende|pon)(?: el)?(?: modo)? (?:repetir|bucle|loop)|loop(?: this| the)?(?: song)?|repeat on"), "musica", _ => "bucle"),
+        (Rule(@"(?:quita|desactiva|apaga)(?: el)?(?: modo)? (?:repetir|bucle|loop)|(?:deja de|no) repetir(?: la| esta)?(?: cancion)?|no la repitas|repeat off|stop (?:repeating|looping)"), "musica", _ => "sin-bucle"),
+        (Rule(@"(?:repite|repetir|reinicia|reiniciar|vuelve a poner|pon de nuevo|pon otra vez|empieza de nuevo)(?: la| esta)? (?:cancion|musica)(?: otra vez| de nuevo| desde el (?:principio|inicio))?|(?:ponla|repitela|reiniciala)(?: otra vez| de nuevo| desde el (?:principio|inicio))?|(?:la )?cancion (?:otra vez|de nuevo|desde el (?:principio|inicio))|(?:repeat|restart|replay)(?: this| the)? song|play (?:it|this song) again"), "musica", _ => "repetir"),
         (Rule(@"(?:sube|subele|aumenta|turn up)(?: el| the)? (?:brillo|brightness)|brightness up"), "brillo", _ => "subir"),
         (Rule(@"(?:baja|bajale|disminuye|turn down)(?: el| the)? (?:brillo|brightness)|brightness down"), "brillo", _ => "bajar"),
         (Rule(@"(?:pon |set )?(?:el |the )?(?:brillo|brightness)(?: (?:al|en|a|to))? (?<n>\d{1,3})(?: %| por ciento| percent)?"), "brillo", m => Percent(m)),
@@ -240,6 +243,42 @@ static class AnswerRules
         if (Greeting.Match(text) is { Success: true } greeting && GreetingReply(greeting) is { } hello)
             return new Intent(AnswerTopics.Chat, Reply: hello);
         return null;
+    }
+
+    static readonly Regex WeatherWord = new(@" (?:clima|temperatura|pronostico|llover|lloviendo|llovera|llueve|lluvia|paraguas|weather|forecast|temperature|rain|raining|umbrella|(?:hace|hara|esta haciendo|hay) (?:calor|frio|sol)|(?:calor|frio) hace|(?<!cuanto )tiempo (?:hace|hara|hoy|manana|en|esta|va a)) ", Options);
+
+    /// <summary>Lo que habla del clima sin preguntar cómo está: una definición, algo por escribir, una época del año.</summary>
+    static readonly Regex NotForecast = new(@" (?:que es|que son|que significa|significa|por que|porque|como se|explica|explicame|define|definicion|historia|escribe|escribeme|poema|cuento|cancion|lluvia de|tropical|ebullicion|temperatura del?(?! hoy| manana)|cambio|promedio|ano|anos|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|invierno|primavera|verano|otono|why|what is|what does|explain|write|average) ", Options);
+
+    static readonly Regex WeatherPlace = new(@" (?:en|in) (?<lugar>(?!mi |casa |aqui |aca |la |el |este |esta |los |las |my |the |here )\p{L}+(?: \p{L}+){0,3}?) (?:hoy |manana |pasado manana |ahora mismo |ahora |ahorita |today |tomorrow |right now |now |por favor |porfa |please )*$", Options);
+
+    static readonly Regex WeatherAgain = new(@"^ (?:y )?(?:(?:para |for )?(?<dia>hoy|manana|pasado manana|today|tomorrow) )?(?:(?:en|in) (?<lugar>(?!mi |casa |aqui |aca |la |el |este |esta |los |las |my |the |here )\p{L}+(?: \p{L}+){0,3}?) )?(?:(?:para |for )?(?<dia2>hoy|manana|pasado manana|today|tomorrow) )?$", Options);
+
+    static int WeatherDay(string text) =>
+        text.Contains(" pasado manana ", StringComparison.Ordinal) ? 2
+        : Regex.IsMatch(text, @"(?<! esta) (?:manana|tomorrow) ", Options) ? 1 : 0;
+
+    /// <summary>
+    /// Una frase cualquiera que pregunta por el clima («me dices cómo está el clima en Madrid»). No es tan estricta como las
+    /// reglas: sirve antes de que le llegue al modelo local, que sin datos solo puede decir que no sabe; null si no es eso.
+    /// </summary>
+    public static Intent? WeatherAsked(string prompt)
+    {
+        if (prompt.Length > 300) return null;
+        var text = Assistant.Simple(prompt);
+        if (!WeatherWord.IsMatch(text) || NotForecast.IsMatch(text)) return null;
+        return new Intent(AnswerTopics.Weather, Place: Group(WeatherPlace.Match(text), "lugar"), Day: WeatherDay(text),
+            Rain: Regex.IsMatch(text, " (?:llov|lluvi|paraguas|rain|umbrella)", Options));
+    }
+
+    /// <summary>«¿y mañana?» o «¿y en Madrid?» justo después de preguntar por el clima; null si no es eso.</summary>
+    public static Intent? WeatherFollowUp(string prompt, IEnumerable<ChatTurn> history)
+    {
+        var text = Assistant.Simple(prompt);
+        if (WeatherAgain.Match(text) is not { Success: true } again || text.Trim().Length == 0 || text.Trim() == "y") return null;
+        if (history.LastOrDefault(t => t.FromPerson)?.Text is not { } before) return null;
+        if ((Match(before) ?? WeatherAsked(before)) is not { Topic: AnswerTopics.Weather } last) return null;
+        return last with { Place = Group(again, "lugar") ?? last.Place, Day = (Group(again, "dia") ?? Group(again, "dia2")) is null ? last.Day : WeatherDay(text) };
     }
 
     static string? Group(Match m, string name) => m.Groups[name].Success && m.Groups[name].Value.Trim() is { Length: > 0 } v ? v : null;
@@ -485,6 +524,18 @@ static class WeatherService
 
     static HttpClient Client() => SystemProxy.Client(TimeSpan.FromSeconds(10));
 
+    /// <summary>La página, con un segundo intento: un corte de un momento no debe dejar sin clima.</summary>
+    static async Task<string> GetAsync(string url, CancellationToken cancel)
+    {
+        using var http = Client();
+        try { return await http.GetStringAsync(url, cancel); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancel.IsCancellationRequested)
+        {
+            await Task.Delay(400, cancel);
+            return await http.GetStringAsync(url, cancel);
+        }
+    }
+
     /// <summary>El clima de hoy (ahora), mañana o pasado mañana, en una o dos frases; null si no se pudo.</summary>
     public static async Task<string?> DescribeAsync(AppSettings settings, string? placeName, int day, bool rain, CancellationToken cancel)
     {
@@ -547,6 +598,8 @@ static class WeatherService
         }
         place ??= await ByIpAsync(cancel);
         if (place is not null) _here = (key, DateTime.UtcNow, place);
+        // Sin ubicación ahora, la última que se supo: la persona no se movió de ciudad en este rato.
+        else if (_here is { } old && old.Key == key) place = old.Place;
         return place;
     }
 
@@ -554,9 +607,8 @@ static class WeatherService
     {
         try
         {
-            using var http = Client();
             var lang = L.IsSpanish ? "es" : "en";
-            var json = await http.GetStringAsync($"https://ipwho.is/?fields=success,city,latitude,longitude,timezone&lang={lang}", cancel);
+            var json = await GetAsync($"https://ipwho.is/?fields=success,city,latitude,longitude,timezone&lang={lang}", cancel);
             using var doc = JsonDocument.Parse(json);
             var r = doc.RootElement;
             if (!r.TryGetProperty("success", out var ok) || ok.ValueKind != JsonValueKind.True) return null;
@@ -577,9 +629,8 @@ static class WeatherService
         if (Geocoded.TryGetValue(name, out var known)) return known;
         try
         {
-            using var http = Client();
             var lang = L.IsSpanish ? "es" : "en";
-            var json = await http.GetStringAsync(
+            var json = await GetAsync(
                 $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(name)}&count=1&language={lang}&format=json", cancel);
             using var doc = JsonDocument.Parse(json);
             Place? place = null;
@@ -603,10 +654,9 @@ static class WeatherService
         if (Forecasts.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.At < TimeSpan.FromMinutes(15)) return cached.Json;
         try
         {
-            using var http = Client();
             var url = string.Create(CultureInfo.InvariantCulture,
                 $"https://api.open-meteo.com/v1/forecast?latitude={place.Latitude:0.####}&longitude={place.Longitude:0.####}&current=temperature_2m,apparent_temperature,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=3");
-            var json = await http.GetStringAsync(url, cancel);
+            var json = await GetAsync(url, cancel);
             Forecasts[key] = (DateTime.UtcNow, json);
             return json;
         }

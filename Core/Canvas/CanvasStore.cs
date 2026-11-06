@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace Claupet;
 
 /// <summary>Lo que se muestra de un canvas en la lista, sin cargar su contenido.</summary>
-sealed record CanvasSummary(string Id, string Title, DateTimeOffset Updated, int Version, int Sections, string? LastAuthor);
+sealed record CanvasSummary(string Id, string Title, DateTimeOffset Updated, int Version, int Sections, string? LastAuthor, string? Plan = null);
 
 /// <summary>
 /// Los canvas en disco: «Canvas\&lt;id&gt;.json» en la carpeta de datos de Claupet, y en «Canvas\historial\&lt;id&gt;\» una copia
@@ -37,7 +37,7 @@ sealed class CanvasStore(string root)
         var list = new List<CanvasSummary>();
         foreach (var file in Directory.EnumerateFiles(Root, "*" + Extension))
             if (Read(file) is { } doc)
-                list.Add(new(doc.Id, doc.Title, doc.Updated, doc.Version, doc.Sections.Count, doc.Changes.LastOrDefault()?.Author));
+                list.Add(new(doc.Id, doc.Title, doc.Updated, doc.Version, doc.Sections.Count, doc.Changes.LastOrDefault()?.Author, doc.Plan));
         return [.. list.OrderByDescending(s => s.Updated)];
     }
 

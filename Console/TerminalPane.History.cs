@@ -144,7 +144,8 @@ sealed partial class TerminalPane
 
     /// <summary>
     /// Ctrl+V en la caja de un agente: una imagen copiada, o la ruta o la URL de una imagen, se suma al pedido como
-    /// «[Imagen #N]» (como en Rider o en otras consolas); cualquier otro texto se pega como siempre.
+    /// «[Imagen #N]» (como en Rider o en otras consolas), y los demás archivos copiados entran con su ruta; cualquier otro
+    /// texto se pega como siempre.
     /// </summary>
     async Task PasteIntoComposerAsync(Tab tab)
     {
@@ -152,22 +153,54 @@ sealed partial class TerminalPane
         string? text = null;
         try { text = await clipboard.TryGetTextAsync(); }
         catch (Exception) { }
-        var image = string.IsNullOrEmpty(text) ? await ClipboardImageAsync(clipboard)
-            : PastedImages.Reference(text, tab.Agent.Options.Folder) is { } reference ? await PastedImages.LoadAsync(reference) : null;
-        if (image is null)
+        string? added = null;
+        if (string.IsNullOrEmpty(text))
+        {
+            if (await ClipboardImageAsync(clipboard) is { } copied) added = Attach(tab, copied);
+            else if (await ClipboardPaste.PathsAsync(clipboard) is { Count: > 0 } paths) added = await FilesForComposerAsync(paths, image => Attach(tab, image));
+        }
+        else if (PastedImages.Reference(text, tab.Agent.Options.Folder) is { } reference && await PastedImages.LoadAsync(reference) is { } image)
+            added = Attach(tab, image);
+        if (added is null)
         {
             _input.Paste();
             return;
         }
-        tab.Images.Add(image);
-        var token = $"[Imagen #{tab.Images.Count}] ";
         var at = Math.Clamp(_input.CaretIndex, 0, _input.Text?.Length ?? 0);
-        _input.Text = (_input.Text ?? "").Insert(at, token);
-        _input.CaretIndex = at + token.Length;
+        _input.Text = (_input.Text ?? "").Insert(at, added);
+        _input.CaretIndex = at + added.Length;
         _input.Focus();
     }
 
-    /// <summary>La imagen del portapapeles (una captura, «Copiar imagen») o un archivo de imagen copiado; null si no hay.</summary>
+    /// <summary>La imagen va con el pedido; devuelve su marca para la caja.</summary>
+    static string Attach(Tab tab, AgentImage image)
+    {
+        tab.Images.Add(image);
+        return $"[Imagen #{tab.Images.Count}] ";
+    }
+
+    /// <summary>Lo que entra a la caja por unos archivos copiados: las imágenes, con su marca (attach); lo demás, con su ruta.</summary>
+    internal static async Task<string> FilesForComposerAsync(IEnumerable<string> paths, Func<AgentImage, string> attach)
+    {
+        var text = "";
+        foreach (var path in paths)
+            text += await ImageFileAsync(path) is { } image ? attach(image) : ClipboardPaste.Quote(path) + " ";
+        return text;
+    }
+
+    /// <summary>El archivo, si es una imagen que se pueda mandar; null si no.</summary>
+    static async Task<AgentImage?> ImageFileAsync(string path)
+    {
+        try
+        {
+            return ImageType(path) is { } type && new FileInfo(path) is { Exists: true, Length: < 20_000_000 }
+                ? new AgentImage(type, Convert.ToBase64String(await File.ReadAllBytesAsync(path)))
+                : null;
+        }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>La imagen del portapapeles (una captura, «Copiar imagen»); null si no hay.</summary>
     static async Task<AgentImage?> ClipboardImageAsync(IClipboard clipboard)
     {
         try
@@ -179,10 +212,6 @@ sealed partial class TerminalPane
                 bitmap.Dispose();
                 return new AgentImage("image/png", Convert.ToBase64String(png.ToArray()));
             }
-            if (await clipboard.TryGetFilesAsync() is { } files)
-                foreach (var file in files)
-                    if (file.TryGetLocalPath() is { } path && ImageType(path) is { } type && new FileInfo(path) is { Exists: true, Length: < 20_000_000 })
-                        return new AgentImage(type, Convert.ToBase64String(await File.ReadAllBytesAsync(path)));
         }
         catch (Exception) { }
         return null;

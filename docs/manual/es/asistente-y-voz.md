@@ -114,7 +114,7 @@ frase mal entendida no pueda hacer otra cosa:
 | Qué | Por ejemplo |
 |---|---|
 | Fondo, modo claro u oscuro, color de la app | «pon modo oscuro» |
-| Volumen y música | «sube el volumen», «pausa la música» |
+| Volumen y música | «sube el volumen», «pausa la música», «cambia la canción», «repite la canción», «ponla en repetir» |
 | Abrir apps, sitios y ajustes | «abre Spotify» |
 | Capturas de pantalla o un recorte (y mirarlas) | «captura la pantalla y dime qué dice el error» |
 | Agendar en su calendario | «agenda una reunión mañana a las 10» |

@@ -3,7 +3,8 @@ namespace Claupet;
 /// <summary>Cambiar el volumen: un porcentaje, de a pasos (Step: +10 o -10) o silenciar/activar (Mute).</summary>
 sealed record VolumeChange(int? Percent, int Step, bool? Mute);
 
-enum MediaCommand { Play, Pause, Next, Previous }
+/// <summary>Restart: la canción que suena, desde el inicio. RepeatOn y RepeatOff: repetirla al terminar, o dejar de hacerlo.</summary>
+enum MediaCommand { Play, Pause, Next, Previous, Restart, RepeatOn, RepeatOff }
 
 enum WindowVerb { Close, Minimize, Maximize, Focus }
 

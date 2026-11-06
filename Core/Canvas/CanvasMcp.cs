@@ -125,6 +125,7 @@ static class CanvasMcp
                     ["title"] = Str("Canvas title."),
                     ["sections"] = new JsonObject { ["type"] = "array", ["description"] = "Initial sections, in order.", ["items"] = SectionSchema() },
                     ["open"] = new JsonObject { ["type"] = "boolean", ["description"] = "Show it in Claupet Console (default true)." },
+                    ["plan"] = Str("Path of a *.plan.json this canvas is about: links them, so the user can jump to the plan's details (optional)."),
                 }, ["title"]),
             Tool("canvas_read",
                 "Read a canvas: every section wrapped in <section id kind language title> tags with its exact content, plus open comments. " +
@@ -135,7 +136,8 @@ static class CanvasMcp
                 "insert {kind, language?, title?, content, after?: section id | 'start'} · " +
                 "edit {id, find, replace, all?} (find must be the exact current text and unique unless all) · " +
                 "replace {id, content?, title?, language?, kind?} · append {id, content} · delete {id} · move {id, after} · " +
-                "title {title} · comment {section, text, quote?, parent?} · resolve {id: comment id}. " +
+                "title {title} · comment {section, text, quote?, parent?} · resolve {id: comment id} · " +
+                "plan {content: path of the *.plan.json this canvas is about, shown in Claupet's Projects; empty to unlink}. " +
                 "Kinds: markdown, code (language), html (full page/app, runs sandboxed), diagram (language: mermaid), svg, data (language: json|csv), image (https URL, file path or data URI), plan (a plan JSON: same format as plan_create; drawn as summary, board and timeline).",
                 new JsonObject
                 {
@@ -190,7 +192,7 @@ static class CanvasMcp
                 ["kind"] = KindSchema(),
                 ["language"] = Str("Language for code, diagram or data."),
                 ["title"] = Str("Section title, or canvas title for op 'title'."),
-                ["content"] = Str("Content for insert, replace, append."),
+                ["content"] = Str("Content for insert, replace, append; the plan path for op 'plan'."),
                 ["find"] = Str("Exact text to find (op edit)."),
                 ["replace"] = Str("Replacement text (op edit)."),
                 ["all"] = new JsonObject { ["type"] = "boolean", ["description"] = "Replace every occurrence (op edit)." },
@@ -227,6 +229,7 @@ static class CanvasMcp
                     var sections = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("sections", out var s) && s.ValueKind == JsonValueKind.Array
                         ? CanvasOp.ParseAll(s).Select(op => op with { Op = "insert" }).ToList() : null;
                     var doc = store.Create(Arg(args, "title"), _author, sections, folder);
+                    if (Arg(args, "plan") is { } plan) doc = store.Apply(doc.Id, [new CanvasOp("plan", Content: plan)], _author).Doc;
                     if (!(args.ValueKind == JsonValueKind.Object && args.TryGetProperty("open", out var open) && open.ValueKind == JsonValueKind.False))
                         store.RequestOpen(doc.Id);
                     return $"Created canvas {doc.Id} (shown to the user in Claupet Console).\n\n" + CanvasExport.ForAgent(doc);

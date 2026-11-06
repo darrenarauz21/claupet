@@ -45,6 +45,7 @@ static class CanvasIcons
     public const string PlanSummary = "M5,20 V12 M12,20 V5 M19,20 V15";
     public const string PlanBoard = "M4,5 H8 V19 H4 Z M10,5 H14 V14 H10 Z M16,5 H20 V10 H16 Z";
     public const string PlanTimeline = "M4,7 H11 M8,12 H16 M13,17 H20";
+    public const string PlanGraph = PlanPanel.GraphIcon;
     public const string Eye = "M2.5,12 C5,7 8.5,5 12,5 C15.5,5 19,7 21.5,12 C19,17 15.5,19 12,19 C8.5,19 5,17 2.5,12 Z M15,12 A3,3 0 1 1 9,12 A3,3 0 1 1 15,12 Z";
     public const string Undo = "M9,14 L4,9 L9,4 M4,9 H14 A6,6 0 0 1 14,21 H11";
     public const string Close = "M6,6 L18,18 M18,6 L6,18";
@@ -271,7 +272,7 @@ sealed partial class CanvasPane
     }
 
     /// <summary>
-    /// Un plan dibujado (resumen, tablero o cronograma) por PlanPanel, el mismo de la tarjeta de la Terminal; null si el
+    /// Un plan dibujado (resumen, tablero, cronograma o diagrama) por PlanPanel, el mismo de la tarjeta de la Terminal; null si el
     /// JSON no se lee (entonces se ve como código).
     /// </summary>
     Control? PlanSection(string json, string view)
@@ -286,7 +287,7 @@ sealed partial class CanvasPane
             CornerRadius = new CornerRadius(12),
             ClipToBounds = true,
             MaxHeight = 560,
-            Child = view switch { "board" => panel.Board(plan), "timeline" => panel.Timeline(plan), _ => panel.Summary(plan) },
+            Child = view switch { "board" => panel.Board(plan), "timeline" => panel.Timeline(plan), "graph" => panel.Graph(plan), _ => panel.Summary(plan) },
         };
     }
 
@@ -295,7 +296,7 @@ sealed partial class CanvasPane
     {
         CanvasKinds.Html or CanvasKinds.Svg => ["stage", "code"],
         CanvasKinds.Diagram => ["render", "code"],
-        CanvasKinds.Plan => ["summary", "board", "timeline", "code"],
+        CanvasKinds.Plan => ["summary", "board", "timeline", "graph", "code"],
         CanvasKinds.Data when (s.Language ?? "").Equals("csv", StringComparison.OrdinalIgnoreCase) => ["table", "chart", "code"],
         _ => [],
     };
@@ -308,6 +309,7 @@ sealed partial class CanvasPane
         "summary" => CanvasIcons.PlanSummary,
         "board" => CanvasIcons.PlanBoard,
         "timeline" => CanvasIcons.PlanTimeline,
+        "graph" => CanvasIcons.PlanGraph,
         _ => CanvasIcons.Code,
     };
 
@@ -319,6 +321,7 @@ sealed partial class CanvasPane
         "summary" => L.T("Resumen"),
         "board" => L.T("Tablero"),
         "timeline" => L.T("Cronograma"),
+        "graph" => L.T("Diagrama"),
         _ => L.T("Código"),
     };
 
