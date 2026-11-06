@@ -167,19 +167,30 @@ sealed partial class TerminalPane
         modelText = model.Child is StackPanel { Children: [.., TextBlock label] } ? label : null;
         ToolTip.SetTip(model, L.T("El modelo y el esfuerzo de esta pestaña: valen desde el turno siguiente."));
         chips.Children.Add(model);
-        var mode = agent.Transcript.PermissionMode ?? agent.Options.PermissionMode ?? "default";
+        _modeText = null;
         if (agent.Driver.Modes.Count > 0)
         {
             TextBlock? modeText = null;
             Border? modeChip = null;
-            modeChip = Pick(ModeLabel(mode), () => DropList.Show(modeChip!, _ink,
-                agent.Driver.Modes.Select(m => new DropList.Entry(m, ModeLabel(m), m == (agent.Transcript.PermissionMode ?? mode))).ToList(), picked =>
-                {
-                    if (picked is null) return;
-                    agent.SetPermissionMode(picked);
-                    modeText!.Text = ModeLabel(picked);
-                }));
+            var followable = agent.Options.Kind == AgentKinds.Claude;
+            modeChip = Pick(ModeText(tab), () =>
+            {
+                var current = agent.Transcript.PermissionMode ?? agent.Options.PermissionMode ?? "default";
+                var modes = agent.Driver.Modes.Select(m => new DropList.Entry(m, ModeLabel(m), !tab.FollowsSession && m == current));
+                DropList.Show(modeChip!, _ink,
+                    (followable ? modes.Prepend(new DropList.Entry(SessionModeChoice, L.T("el de la sesión"), tab.FollowsSession)) : modes).ToList(), picked =>
+                    {
+                        if (picked is null) return;
+                        tab.FollowsSession = picked == SessionModeChoice;
+                        // Volver a la sesión es volver al modo con el que abrió; si aún no abrió, ya es ese.
+                        var send = tab.FollowsSession ? agent.Transcript.SessionMode : picked;
+                        if (send is not null) agent.SetPermissionMode(send);
+                        modeText!.Text = tab.FollowsSession && send is not null ? $"{L.T("de la sesión")} · {ModeLabel(send)}"
+                            : tab.FollowsSession ? L.T("el de la sesión") : ModeLabel(picked);
+                    });
+            });
             modeText = modeChip.Child is StackPanel { Children: [.., TextBlock text] } ? text : null;
+            _modeText = modeText;
             ToolTip.SetTip(modeChip, L.T("Los permisos de esta pestaña"));
             chips.Children.Add(modeChip);
         }

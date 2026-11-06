@@ -41,14 +41,15 @@ coding agents and shells in tabs and shows each thing in its own block:
 
 3. Press **Open** (or **Enter**). Tapping the item that's already selected also opens it.
 
-Claupet remembers what you opened last, with its account, model and effort. Permissions start as they were
-last time and can be changed in the session.
+Claupet remembers what you opened last, with its account, model and effort. Permissions start on **the
+session's**, whatever you have set in Claude Code, and can be changed in the session.
 
 Claude Code's **Permissions** modes:
 
 | Mode | What it does |
 |---|---|
-| **asks first** | Asks for permission for whatever needs it (the usual one). |
+| **the session's** | Uses whatever you have set in Claude Code (the default). |
+| **asks first** | Asks for permission for whatever needs it. |
 | **accepts edits** | Edits files without asking; for anything else, it asks. |
 | **plans only** | Thinks and proposes a plan, without changing anything. |
 | **automatic** | Decides on its own when to ask. |
