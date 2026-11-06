@@ -2,10 +2,10 @@
 
 **Español** · [English](../en/console.md)
 
-La ventana grande de Claupet: el chat, la Terminal, el editor, Canvas y todos los ajustes, en un solo lugar.
+La ventana grande de Claupet: el chat, la Terminal, el editor, Canvas, Proyectos y todos los ajustes, en un solo lugar.
 
 **En esta página:** [Cómo abrirla](#cómo-abrirla) · [El riel](#el-riel) · [Chat](#chat) ·
-[Editor](#editor) · [Canvas](#canvas) · [Ajustes](#ajustes) · [Accesos directos](#accesos-directos)
+[Editor](#editor) · [Canvas](#canvas) · [Proyectos](#proyectos) · [Ajustes](#ajustes) · [Accesos directos](#accesos-directos)
 
 ## Cómo abrirla
 
@@ -24,7 +24,7 @@ Hay una sola Console a la vez. Sigue el modo claro u oscuro del sistema y el col
 
 ## El riel
 
-A la izquierda, un riel con cinco botones:
+A la izquierda, un riel con seis botones:
 
 | Botón | Para qué |
 |---|---|
@@ -32,6 +32,7 @@ A la izquierda, un riel con cinco botones:
 | ⌨️ **Terminal** | Sesiones de agentes y shells en bloques. Tiene su propia página: [Claupet Terminal](terminal.md). |
 | 📝 **Editor** | Abrir y escribir documentos y código. |
 | 🎨 **Canvas** | Documentos vivos que usted y cualquier IA editan a la vez. |
+| 📊 **Proyectos** | Los planes de sus proyectos: tablero, cronograma, diagrama y métricas. |
 | ⚙️ **Ajustes** | Todas las opciones de Claupet, por secciones. |
 
 ## Chat
@@ -110,6 +111,10 @@ volver a una anterior (la de ahora queda guardada).
 canvas o cerrar la ventana; **Esc descarta lo escrito**. Ctrl+K busca e inserta, Ctrl+N crea un canvas y Ctrl+J le pide un
 cambio a la IA.
 
+**Ligar a un plan.** El botón de enlace de la barra liga el canvas a un plan. Se ve su avance en la barra y, al tocarlo,
+sus detalles en [Proyectos](#proyectos). Un canvas se liga a un solo plan; un plan puede tener varios canvas. Un agente
+también puede ligarlos.
+
 **Exportar.** PDF, Word, Markdown, una página HTML que se abre sola en cualquier navegador, o JSON. También **Ver en el
 navegador**. El PDF necesita Microsoft Edge, Google Chrome o Chromium. En Word, los diagramas y el HTML van como texto.
 
@@ -118,6 +123,34 @@ VS Code o cualquier app con MCP: sus modelos verán y editarán los mismos canva
 `Claupet --canvas-mcp`.
 
 Se guardan en la carpeta de datos de Claupet, en `Canvas` (en Windows, `%APPDATA%\Claupet\Canvas`).
+
+## Proyectos
+
+Los planes (`*.plan.json`) de las carpetas vinculadas en la Terminal, cada uno con su avance y sus atrasos. Los escriben las
+IAs (con las herramientas `plan_*`) o usted: el archivo sigue en la carpeta del proyecto, y lo que cambia ahí se ve solo. El
+**+** crea un plan o abre uno de otra carpeta.
+
+| Vista | Qué muestra |
+|---|---|
+| **Resumen** | El avance, lo atrasado y bloqueado, lo que se puede hacer ahora y cada etapa. |
+| **Tablero** | Las tareas por estado. Arrastre una tarjeta a otra columna para cambiar su estado. |
+| **Cronograma** | Las barras por día, las dependencias, los hitos y la línea de hoy. |
+| **Diagrama** | Qué depende de qué. Al pasar el mouse se resalta la cadena de una tarea; Ctrl+rueda acerca o aleja. |
+| **Métricas** | El avance real contra el ideal y las horas reales contra las estimadas. |
+| **Actividad** | Quién hizo qué y cuándo, desde que Claupet ve el plan. |
+
+**Buscar.** Arriba de la lista se busca por proyecto o por tarea; la lupa de la barra atenúa lo que no coincide dentro del
+plan, y **Ctrl+K** busca en todos. El embudo filtra por atrasadas, bloqueadas, listas o en curso. Las teclas 1 a 6 cambian de vista.
+
+**Una tarea.** Al tocarla se abre su detalle: su estado (se guarda en el archivo), sus horas, lo que necesita y lo que la
+espera. **Trabajar en esto** abre una sesión de Claude Code en la carpeta del proyecto con la tarea ya escrita, para que usted la
+envíe. La barra de abajo le pide un cambio a una sesión de esa misma carpeta.
+
+**Canvas del plan.** El botón de canvas de la barra abre los que están ligados a este plan o crea uno nuevo, ya ligado.
+
+**Exportar a PDF.** El botón de la barra guarda la vista que se ve o todo el plan como un informe: hojas carta en blanco,
+con el mismo contenido en tablas y gráficos pensados para leer o imprimir, sea cual sea el tema. Lo que no cabe sigue en
+la hoja siguiente.
 
 ## Ajustes
 

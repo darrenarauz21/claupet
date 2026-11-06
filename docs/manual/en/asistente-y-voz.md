@@ -119,7 +119,7 @@ misunderstood phrase can't do something else:
 | What | For example |
 |---|---|
 | Wallpaper, light or dark mode, app color | "turn on dark mode" |
-| Volume and music | "turn up the volume", "pause the music" |
+| Volume and music | "turn up the volume", "pause the music", "change the song", "repeat this song", "loop this song" |
 | Open apps, sites and settings | "open Spotify" |
 | Screenshots or a snip (and looking at them) | "take a screenshot and tell me what the error says" |
 | Add to your calendar | "schedule a meeting tomorrow at 10" |

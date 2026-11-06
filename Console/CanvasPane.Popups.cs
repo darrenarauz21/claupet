@@ -12,6 +12,105 @@ using Avalonia.Threading;
 
 sealed partial class CanvasPane
 {
+    // ── El plan ligado ──────────────────────────────────────────────────────────────────────
+
+    (string Path, DateTime Modified, PlanEntry Entry)? _linked;
+    TextBlock? _chipName;
+
+    /// <summary>El plan ligado, leído solo si su archivo cambió. Null si ya no está.</summary>
+    PlanEntry? LinkedEntry(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var modified = File.GetLastWriteTimeUtc(path);
+            if (_linked is { } known && known.Path == path && known.Modified == modified) return known.Entry;
+            var entry = PlanIndex.Read(path, System.IO.Path.GetDirectoryName(path)!);
+            _linked = (path, modified, entry);
+            return entry;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>En la barra: el avance y el nombre del plan ligado, que lleva a sus detalles en Proyectos. Si ya no se puede leer, el aviso y el menú para cambiarlo.</summary>
+    Control? PlanChip(CanvasDoc doc)
+    {
+        _chipName = null;
+        if (doc.Plan is not { } path) return null;
+        var entry = LinkedEntry(path);
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
+        Border chip;
+        if (entry?.Plan is { } plan)
+        {
+            var progress = Plan.Progress(plan.Tasks);
+            row.Children.Add(new PlanRing(progress, _ink.Accent, _ink.Track, 3) { Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center });
+            _chipName = Ui.Text(entry.Name, 12.5, _ink.Secondary, FontWeight.Medium);
+            row.Children.Add(_chipName);
+            chip = Ui.Press(row, () => PlanOpened?.Invoke(path), (b, on) => b.Background = on ? _ink.Track : _ink.Pill, L.T("Ver en Proyectos"));
+            ToolTip.SetTip(chip, L.T("Ver en Proyectos") + $" · {progress:P0}");
+        }
+        else
+        {
+            row.Children.Add(Glyph(CanvasIcons.Warn, _ink.Warn, 15));
+            _chipName = Ui.Text(System.IO.Path.GetFileName(path), 12.5, _ink.Tertiary);
+            row.Children.Add(_chipName);
+            Border? self = null;
+            self = chip = Ui.Press(row, () => _ = LinkMenuAsync(self!), (b, on) => b.Background = on ? _ink.Track : _ink.Pill, L.T("Cambiar el plan ligado"));
+            ToolTip.SetTip(chip, L.T("El plan ya no está: {0}", path));
+        }
+        _chipName.TextTrimming = TextTrimming.CharacterEllipsis;
+        _chipName.MaxWidth = 150;
+        chip.Background = _ink.Pill;
+        chip.CornerRadius = new CornerRadius(999);
+        chip.Padding = new Thickness(8, 5, 11, 5);
+        chip.Margin = new Thickness(0, 0, 8, 0);
+        chip.VerticalAlignment = VerticalAlignment.Center;
+        FitPlanChip();
+        return chip;
+    }
+
+    /// <summary>Sin lugar en la barra, el plan se queda solo con su avance.</summary>
+    void FitPlanChip()
+    {
+        if (_chipName is not null && _bar.Bounds.Width > 0) _chipName.IsVisible = _bar.Bounds.Width >= 760;
+    }
+
+    /// <summary>Elegir el plan: primero los de la carpeta del canvas; también abrir uno de otro lado o quitarlo.</summary>
+    async Task LinkMenuAsync(Control anchor)
+    {
+        if (_doc is not { } doc) return;
+        var found = FindPlans is { } find ? await find() : [];
+        var plans = found.Where(e => e.Plan is not null)
+            .OrderByDescending(e => doc.Folder is { } folder && e.Path.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        // Dos planes con el mismo nombre se distinguen por su carpeta.
+        var repeated = plans.GroupBy(e => e.Name).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+        var entries = plans.Select(e => new DropList.Entry(e.Path,
+            repeated.Contains(e.Name) ? $"{e.Name} · {System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(e.Path))}" : e.Name,
+            Selected: string.Equals(e.Path, doc.Plan, StringComparison.OrdinalIgnoreCase))).ToList();
+        entries.Add(new DropList.Entry("\0open", L.T("Abrir un plan…"), Action: true));
+        if (doc.Plan is not null) entries.Add(new DropList.Entry("\0none", L.T("Quitar el plan"), Action: true, Danger: true));
+        DropList.Show(anchor, _ink, entries, id =>
+        {
+            if (id == "\0open") _ = PickPlanAsync();
+            else if (id == "\0none") LinkPlan(null);
+            else if (id is not null) LinkPlan(id);
+        });
+    }
+
+    async Task PickPlanAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+        var files = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions { Title = L.T("Abrir un plan"), FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType(L.T("Planes")) { Patterns = ["*" + Plan.Extension] }] });
+        if (files.Count > 0 && Avalonia.Platform.Storage.StorageProviderExtensions.TryGetLocalPath(files[0]) is { } path) LinkPlan(path);
+    }
+
+    /// <summary>Liga el canvas a ese plan (null: lo desliga). Es un cambio más: queda en las versiones.</summary>
+    internal void LinkPlan(string? path)
+    {
+        if (_doc is { } doc && !string.Equals(doc.Plan, path, StringComparison.OrdinalIgnoreCase) && Apply(new CanvasOp("plan", Content: path))) Render(keepScroll: true);
+    }
+
     Popup? _popup;
 
     /// <summary>Una ventana emergente bajo anchor (o encima, si no cabe), que entra con una transición y se cierra al hacer clic afuera.</summary>

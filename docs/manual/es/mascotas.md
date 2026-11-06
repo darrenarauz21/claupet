@@ -135,11 +135,12 @@ Bosque, Lavanda, Rosa o Grafito. Cambia el acento de barras, interruptores, enla
 Clásica. El modo claro u oscuro sigue al de su sistema.
 
 **Temas propios.** En Claupet Console, **Ajustes › Apariencia › Temas** muestra una tarjeta por tema, con su
-vista previa. Para crear uno:
+vista previa, de seis en seis; con más, las flechas de abajo pasan de página. Para crear uno:
 
 1. En **Tema nuevo**, describa lo que quiere: «un tema de playa con el fondo animado», «algo otoñal con una
    letra más redonda».
-2. Elija la **Calidad**: Rápida (Sonnet), Media (Opus) o Alta (Fable).
+2. Elija la **Calidad**: Rápida (Sonnet) da colores, letra y fondo animado; Media (Opus) suma motivos dibujados para ese
+   tema; Alta (Fable), más motivos y con más detalle, y un segundo fondo encima.
 3. Pulse **Crear** (o Intro). Mientras Claude lo diseña, su tarjeta brilla y se puede cancelar.
 4. Al terminar, el tema queda elegido.
 

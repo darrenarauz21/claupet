@@ -29,7 +29,6 @@ static class PlanTools
         "'dias' is its length in days (default 1). A milestone without 'fecha' falls on the day its dependencies end. " +
         "Use short stable ids (e1, t1, h1).";
 
-    static readonly string[] Skip = [".git", "node_modules", "bin", "obj", ".vs", ".idea", "dist", "target"];
     static readonly string[] TaskKeys = ["titulo", "etapa", "estado", "inicio", "dias", "depende", "horas", "horasReales", "responsable", "notas"];
     static readonly string[] StageKeys = ["nombre", "color"];
     static readonly string[] MilestoneKeys = ["titulo", "fecha", "depende"];
@@ -100,30 +99,17 @@ static class PlanTools
     static string List(string folder)
     {
         var lines = new List<string>();
-        Walk(folder, 0);
-        return lines.Count == 0 ? "No plans yet. Create one with plan_create." : string.Join('\n', lines);
-
-        void Walk(string dir, int depth)
+        foreach (var file in PlanIndex.Find(folder))
         {
-            if (lines.Count >= 40) return;
+            var relative = Path.GetRelativePath(folder, file);
             try
             {
-                foreach (var file in Directory.EnumerateFiles(dir, "*" + Plan.Extension).Order())
-                {
-                    var relative = Path.GetRelativePath(folder, file);
-                    try
-                    {
-                        var plan = Plan.Parse(File.ReadAllText(file));
-                        lines.Add($"{relative}  \"{plan.Title}\"  {Plan.Progress(plan.Tasks):P0}  {plan.Tasks.Count} tasks");
-                    }
-                    catch (Exception ex) when (ex is FormatException or IOException) { lines.Add($"{relative}  (unreadable: {ex.Message})"); }
-                }
-                if (depth >= 4) return;
-                foreach (var sub in Directory.EnumerateDirectories(dir).Order())
-                    if (!Skip.Contains(Path.GetFileName(sub), StringComparer.OrdinalIgnoreCase)) Walk(sub, depth + 1);
+                var plan = Plan.Parse(File.ReadAllText(file));
+                lines.Add($"{relative}  \"{plan.Title}\"  {Plan.Progress(plan.Tasks):P0}  {plan.Tasks.Count} tasks");
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            catch (Exception ex) when (ex is FormatException or IOException) { lines.Add($"{relative}  (unreadable: {ex.Message})"); }
         }
+        return lines.Count == 0 ? "No plans yet. Create one with plan_create." : string.Join('\n', lines);
     }
 
     // ── plan_read ───────────────────────────────────────────────────────────────────────────
@@ -286,6 +272,24 @@ static class PlanTools
     static string Id(JsonObject op) => op["id"]?.GetValue<string>() is { Length: > 0 } id ? id : throw new CanvasException("Missing id.");
 
     static bool Same(JsonObject item, string id) => item["id"]?.GetValue<string>() == id;
+
+    // ── Desde Claupet ───────────────────────────────────────────────────────────────────────
+
+    /// <summary>Cambia el estado de una tarea desde la sección Proyectos: el mismo camino atómico que usan las IAs.</summary>
+    internal static void SetState(string path, string taskId, PlanState state)
+    {
+        var args = new JsonObject
+        {
+            ["path"] = path,
+            ["ops"] = new JsonArray(new JsonObject { ["op"] = "task", ["id"] = taskId, ["estado"] = StateName(state) }),
+        };
+        using var doc = JsonDocument.Parse(args.ToJsonString());
+        Update(doc.RootElement, Path.GetDirectoryName(path)!, null);
+    }
+
+    /// <summary>Crea un plan vacío con ese título (un plan nuevo de la sección Proyectos).</summary>
+    internal static void CreateEmpty(string path, string title) =>
+        Write(path, new JsonObject { ["claupet"] = Plan.Format, ["titulo"] = title, ["inicio"] = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) });
 
     // ── Archivos ────────────────────────────────────────────────────────────────────────────
 

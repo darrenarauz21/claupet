@@ -373,18 +373,55 @@ al momento.
 - **Lo que se está escribiendo:** se guarda al hacer clic afuera, al cambiar de canvas, al ver una versión, al exportar, al
   pedirle algo a la IA y al cerrar la ventana. Solo Esc lo descarta.
 
+## Claupet Proyectos
+
+La sección de los planes (`Console/ProjectsPane.cs`, y las vistas en `Console/PlanPanel*.cs`). El plan sigue en la carpeta del
+proyecto; la carpeta de datos solo guarda dónde están los que se agregaron a mano y lo último que se miró (`proyectos.json`,
+`PlanIndex`) y la actividad (`planes-actividad/`, `PlanActivity`).
+
+- **De dónde salen:** los `*.plan.json` de las carpetas vinculadas de la Terminal (hasta 40 por carpeta y 4 niveles, sin
+  `node_modules`, `bin` y demás, lo mismo que `plan_list`). El archivo que se ve se mira cada segundo; la lista, cada ocho.
+- **Actividad:** el formato solo dice cómo está cada tarea ahora, así que se compara cada lectura con la anterior. La primera
+  vez que se ve un plan no se inventa historia. Quién fue: lo que dice la tarea (`por`) o «Usted», si se cambió desde aquí.
+- **Avance:** una tarea cuenta el día en que Claupet la vio terminar; si no lo vio, el día en que debía terminar, nunca
+  después de hoy (`PlanBurn`). Todavía no hay costo ni commits por tarea: hace falta enlazar sesiones con tareas.
+- **Cambiar un estado:** pasa por `PlanTools.SetState`, el mismo camino atómico que `plan_update`.
+- **Pedidos a una IA:** siempre a una sesión de la carpeta del plan (`TerminalPane.AskInFolder`). Si no hay, y en «Trabajar en
+  esto», se abre una con el texto ya escrito: no se gasta nada hasta que la persona lo envía.
+- **Canvas ligado:** `CanvasDoc.Plan` guarda la ruta del plan y cambia con la operación `plan` (`canvas_edit`, o `plan` en
+  `canvas_create`), así que queda en las versiones y un agente también puede hacerlo. Un canvas, un plan. El vínculo vive en
+  el canvas: el archivo del plan no cambia, porque es de su repositorio. Proyectos lo encuentra leyendo la lista de canvas.
+- **PDF (`PlanPdf`, `PlanReport`):** un informe, no la pantalla impresa: hojas carta en vertical, siempre blancas y sin
+  logo, con piezas propias (cifras, tablas, cronograma, dependencias de arriba hacia abajo). `PlanReport.Flow` reparte:
+  lo que cabe en una hoja no se parte, y una tabla más larga sigue en la siguiente con su encabezado. Si el diagrama no
+  saldría legible, va como tabla. Se dibuja sobre `SKDocument`, sin navegador: vectorial y con la letra incrustada. La escala va en la `RenderTransform` de la página porque
+  `DrawingContextHelper` reemplaza la matriz del lienzo. Lo que se mide al dibujarse no sirve aquí (nunca está en pantalla).
+
+## Pegar archivos
+
+Copiar archivos o carpetas (del Explorador, por ejemplo) y pegarlos en cualquier caja de texto de la app deja sus rutas,
+separadas por espacios y entre comillas si tienen espacios (`Console/ClipboardPaste.cs`, sobre
+`TextBox.PastingFromClipboardEvent`, para Ctrl+V y el menú). Si el portapapeles trae texto, manda el texto. En la caja de un
+agente, las imágenes copiadas van con el pedido como `[Imagen #N]` y el resto, con su ruta. La pantalla de la Terminal ya
+pegaba rutas y usa la misma forma.
+
 ## Temas propios
 
 Los temas van aparte de las seis paletas, en Ajustes › Apariencia › **Temas** de la Console: una tarjeta por tema, con
 bordes redondeados y la vista previa de ese tema en el modo de la Console (sus colores, «Aa» en su letra y su escena
 animada), y la tarjeta **Claupet**, que es no usar ninguno. Tocar una tarjeta la elige y la elegida lleva el borde del
 acento y su marca; el menú «⋯» de cada tema propio lo exporta a un `.json` o lo elimina, con confirmación en la misma
-tarjeta (`Console/ThemeGallery.cs`). Elegir una paleta en **Color** quita el tema; el tema sigue guardado en su tarjeta.
+tarjeta (`Console/ThemeGallery.cs`). Se ven seis por página, con flechas debajo si hay más; se abre en la página de la
+elegida o de la que se está creando, y todas las páginas miden lo mismo. Elegir una paleta en **Color** quita el tema; el tema sigue guardado en su tarjeta.
 
 En **Tema nuevo** se escribe un prompt («un tema de playa con el fondo animado», «algo otoñal con una letra más
 redonda») y **Crear** (o Intro) se lo pide a Claude con la cuenta del asistente. Mientras tanto aparece su tarjeta, con
 un brillo que la cruza y chispas en pixel art, y se puede cancelar; al terminar, el tema queda elegido. **Calidad**
-elige el modelo: rápida, Sonnet; media, Opus, y alta, Fable. Si la cuenta no tiene permiso para ese modelo, se prueba
+elige el modelo (rápida, Sonnet; media, Opus, y alta, Fable) y cuánto detalle se pide: rápida, colores, letra y escena;
+media, además una paleta más matizada y 1 o 2 motivos dibujados para ese tema; alta, de 2 a 4 motivos más grandes, con luz
+y sombra, y una segunda escena encima. Si en media o alta la respuesta no trae motivos que se puedan dibujar, se pide una
+vez más al mismo modelo; si tampoco llegan, el tema queda sin ellos, se avisa y las dos respuestas quedan en
+`temas\ultima-respuesta-sin-motivos.txt`. Si la cuenta no tiene permiso para ese modelo, se prueba
 con el siguiente y se avisa con cuál se hizo; con el asistente de una extensión, va con el modelo de ese proveedor.
 **Importar un tema** trae un `.json` exportado (o escrito a mano), que pasa por la misma lectura y las mismas
 correcciones que uno creado con Claude y se guarda con un id libre.
@@ -413,7 +450,11 @@ pinta cada color y un ejemplo completo. Igual, el diseño se respeta por código
 El fondo animado sale de un catálogo cerrado de escenas en pixel art (`playa`, `atardecer`, `lluvia`, `nieve`,
 `estrellas`, `hojas`, `sakura`, `burbujas`, `luciernagas`, `aurora`, `ciudad` y `brasas`); el modelo elige la escena,
 sus colores, la densidad (0,1–1) y la velocidad (0,25–2). Las partículas van en dos planos (las lejanas, más chicas,
-lentas y tenues). Se dibuja solo en la Console, detrás del contenido y con poca opacidad, a 12 cuadros por segundo, y se
+lentas y tenues). `sprites` (hasta 4) son motivos en pixel art que dibuja el modelo: filas de hasta 16 de lado, con `.`
+transparente y `1`–`6` el color de la escena, `count` (1–6) y `motion` (`suelo`, `cielo`, `cruza`, `cae`, `sube`,
+`flota`); solo son datos, y el que se pasa de tamaño o queda casi vacío se descarta. `over` es otra escena encima, sin
+paisaje (`OverScenes`), que se dibuja como una capa hija. Un tema sin ellos se ve igual que siempre. La vista previa de
+la tarjeta no lleva `over` y solo dos motivos, uno de cada uno y quietos en la columna libre de la derecha. Se dibuja solo en la Console, detrás del contenido y con poca opacidad, a 12 cuadros por segundo, y se
 pausa con la ventana minimizada u oculta (`Console/SceneLayer.cs`); las vistas previas usan la misma escena con un
 píxel más chico. La isla, las burbujas y la mascota solo toman los colores.
 
@@ -531,7 +572,7 @@ prompt y las reglas sin IA solo ofrecen las acciones que el sistema sabe hacer (
 | `tema` | `claro` u `oscuro` | `AppsUseLightTheme` y `SystemUsesLightTheme` del registro, y aviso a las ventanas |
 | `color` | una paleta de la app | como elegirla en **Ajustes** |
 | `volumen` | 0 a 100, `subir`, `bajar` (de a 10), `silenciar` o `activar` | Core Audio, en la salida predeterminada |
-| `musica` | `reproducir`, `pausar`, `siguiente` o `anterior` | teclas multimedia; antes de reproducir o pausar mira si algo suena (`Music.PlayingNow`) |
+| `musica` | `reproducir`, `pausar`, `siguiente`, `anterior`, `repetir` (desde el inicio), `bucle` o `sin-bucle` | teclas multimedia; antes de reproducir o pausar mira si algo suena (`Music.PlayingNow`). Volver al inicio y repetir no tienen tecla: van por el control multimedia de Windows con PowerShell (`WinMedia`) y dependen del reproductor; si no deja volver al inicio, se usa la tecla de anterior, y si no deja repetir, se avisa |
 | `abrir` | URL `https`, `http`, `spotify:` o `ms-settings:`, o el nombre de una app del menú Inicio | se abre con el programa de Windows; las apps, por su acceso directo |
 | `captura` | `pantalla` o `recorte`; con `"pregunta"`, Claude la mira | ver **Captura** abajo |
 | `agendar` | `{"titulo","inicio","fin","lugar","nota"}` (`inicio` sin hora: todo el día) | un `.ics` que se abre con la app de calendario de Windows de la persona, que lo muestra para guardarlo; avisa 15 min antes |
@@ -720,6 +761,12 @@ Los de «sin IA» por defecto son los acordados (hora, fecha, estado del equipo 
 que ya no gasta tokens con Open-Meteo. Con **«Local» como modelo de la mascota o la isla**, la nube no se usa:
 lo que no responde la app, lo responde el modelo local. Un archivo soltado va siempre al asistente.
 
+El clima es de la API, no del modelo. Si la pregunta le puede llegar al modelo local, antes de preguntarle se reconoce por
+sus palabras (`AnswerRules.WeatherAsked`, no tan estricta como las reglas, y que deja pasar definiciones, poemas o épocas
+del año) y también el seguimiento («¿y mañana?», `WeatherFollowUp`). Cada consulta se reintenta una vez y, sin ubicación, se
+usa la última conocida. Si la API no responde, pasa a la nube si está permitida; si no, la app dice que no pudo consultar:
+el modelo local no entra, porque solo diría que no puede o inventaría. La nube entiende cualquier frase y sigue usando `wttr.in`.
+
 | Detalle | Cómo |
 |---|---|
 | Quién respondió | `AssistantResult.By`: debajo de la respuesta en la nubecita y en la isla («Sin IA · Open-Meteo», «Modelo local · Qwen3.5 2B», «Nube · Haiku 4.5»), si «Mostrar quién respondió» está encendido |
@@ -806,7 +853,7 @@ permiso que pregunta el sistema no la congela. Si falta un programa, la respuest
 |---|---|---|
 | fondo, tema | AppleScript a System Events | `gsettings` (GNOME, Cinnamon, MATE) o las herramientas de Plasma |
 | volumen | AppleScript (`set volume`) | `wpctl` (PipeWire) o `pactl` |
-| musica | Spotify o Música, el que esté abierto | MPRIS: `playerctl` o `dbus-send` (Spotify, navegadores…) |
+| musica | Spotify o Música, el que esté abierto | MPRIS: `playerctl` o `dbus-send` (Spotify, navegadores…); volver al inicio y repetir, solo con `playerctl` |
 | abrir | `open`; las apps, de `/Applications` y las del sistema | `xdg-open`; las apps, de sus `.desktop` (con `gio` o `gtk-launch`) |
 | captura | `screencapture` (la pantalla principal, o el recorte con la herramienta de macOS) | `spectacle`, `gnome-screenshot`, `grim` y `slurp`, `maim`, `scrot` o `import`; al portapapeles con `wl-copy` o `xclip` |
 | agendar | el `.ics` se abre en Calendario | el `.ics` se abre con `xdg-open` |

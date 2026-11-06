@@ -15,13 +15,14 @@ namespace Claupet;
 /// - title: cambia el título del canvas.
 /// - comment: un comentario (Text) sobre Section (Quote, si es sobre un pedazo; Parent, si responde a otro).
 /// - resolve: marca el comentario Id como resuelto.
+/// - plan: liga el canvas a un plan (Content: la ruta de un *.plan.json; relativa, a la carpeta del canvas). Vacío: lo desliga.
 /// </summary>
 sealed record CanvasOp(
     string Op, string? Id = null, string? After = null, string? Kind = null, string? Language = null, string? Title = null,
     string? Content = null, string? Find = null, string? Replace = null, bool All = false, string? Section = null,
     string? Quote = null, string? Text = null, string? Parent = null)
 {
-    public static readonly string[] Names = ["insert", "replace", "edit", "append", "delete", "move", "title", "comment", "resolve"];
+    public static readonly string[] Names = ["insert", "replace", "edit", "append", "delete", "move", "title", "comment", "resolve", "plan"];
 
     /// <summary>Lee una operación del JSON de un modelo (los nombres en snake_case o camelCase dan igual).</summary>
     public static CanvasOp Parse(JsonElement e)
@@ -199,6 +200,24 @@ static class CanvasEngine
                 foreach (var reply in doc.Comments.Where(c => c.ParentId == comment.Id)) reply.Resolved = true;
                 touched.Add(comment.SectionId);
                 return L.T("resolvió {0}", comment.Id);
+            }
+            case "plan":
+            {
+                if (string.IsNullOrWhiteSpace(op.Content))
+                {
+                    doc.Plan = null;
+                    return L.T("quitó el plan");
+                }
+                var path = op.Content.Trim();
+                if (!System.IO.Path.IsPathFullyQualified(path))
+                {
+                    if (doc.Folder is null) throw new CanvasException(L.T("plan necesita la ruta completa del archivo."));
+                    path = System.IO.Path.GetFullPath(path, doc.Folder);
+                }
+                if (!Plan.IsPlanFile(path)) throw new CanvasException(L.T("Un plan es un archivo {0}.", Plan.Extension));
+                if (!File.Exists(path)) throw new CanvasException(L.T("No está el plan {0}.", path));
+                doc.Plan = path;
+                return L.T("ligó el plan {0}", System.IO.Path.GetFileName(path));
             }
             default:
                 throw new CanvasException(L.T("Operación «{0}» desconocida; puede ser: {1}.", op.Op, string.Join(", ", CanvasOp.Names)));

@@ -757,7 +757,7 @@ static class Assistant
         else if (r.File is null)
         {
             prompt.AppendLine();
-            if (!tools) prompt.AppendLine(L.T("No tienes acceso a internet: si para responder hace falta (el clima, noticias, precios), dilo en una frase; no inventes."));
+            if (!tools) prompt.AppendLine(L.T("No tienes acceso a internet: si para responder hace falta (noticias, precios), dilo en una frase; no inventes."));
             else prompt.AppendLine(L.T("Internet: puedes buscar con WebSearch y leer páginas con WebFetch. No anuncies que vas a buscar: busca y responde, sin enlaces ni lista de fuentes. Para el clima, usa WebFetch con https://wttr.in/<ciudad>?format=j1&lang=es (sin ciudad, https://wttr.in/?format=j1&lang=es, que usa la ubicación del equipo)."));
             prompt.AppendLine();
             if (!actions)
@@ -779,8 +779,8 @@ static class Assistant
                 Offer("tema", windows ? L.T("- tema: «claro» u «oscuro» (el modo de Windows).") : L.T("- tema: «claro» u «oscuro» (el modo del sistema)."));
                 Offer("color", L.T("- color: el color de esta app: {0}.", string.Join(", ", Theme.Choices().Select(p => p.Label))));
                 Offer("volumen", L.T("- volumen: un número de 0 a 100, «subir», «bajar», «silenciar» o «activar»."));
-                Offer("musica", windows ? L.T("- musica: «reproducir», «pausar», «siguiente» o «anterior» (lo que suene en Windows).")
-                    : L.T("- musica: «reproducir», «pausar», «siguiente» o «anterior» (lo que suene en el equipo)."));
+                Offer("musica", windows ? L.T("- musica: «reproducir», «pausar», «siguiente» (también para cambiar de canción), «anterior», «repetir» (la que suena, desde el inicio), «bucle» (que se repita siempre) o «sin-bucle» (lo que suene en Windows).")
+                    : L.T("- musica: «reproducir», «pausar», «siguiente» (también para cambiar de canción), «anterior», «repetir» (la que suena, desde el inicio), «bucle» (que se repita siempre) o «sin-bucle» (lo que suene en el equipo)."));
                 Offer("abrir", (tools, windows) switch
                 {
                     (true, true) => L.T("- abrir: una URL (https, spotify: o ms-settings:) o el nombre de una app del menú Inicio. Para poner una canción o un artista, busca el video con WebSearch y abre su URL de YouTube; si piden Spotify, abre spotify:search:<lo que pidan>."),

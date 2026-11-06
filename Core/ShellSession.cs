@@ -149,7 +149,9 @@ static class Shells
     /// PowerShell (5.1 y 7): el prompt de siempre entre A y B, con D;código y la carpeta (OSC 7) antes. El código es 0 si
     /// lo último salió bien; si no, $LASTEXITCODE (un programa) o 1 (un cmdlet). C sale al aceptarse la línea, después del
     /// eco, y solo si trae un comando (con Ctrl+C, PSReadLine devuelve la línea vacía y no hay salida que empiece). Sin
-    /// predicciones de PSReadLine: el comando llega entero desde la caja de la Terminal.
+    /// predicciones de PSReadLine: el comando llega entero desde la caja de la Terminal. D y A salen antes de llamar al
+    /// prompt de la persona: el de conda escribe «(base)» por su cuenta con Write-Host, y después de D ya es prompt y no
+    /// salida del comando anterior.
     /// </summary>
     const string PowerShellScript = """
         $global:__ClaupetPrompt = $function:prompt
@@ -161,9 +163,10 @@ static class Shells
             $here = $ExecutionContext.SessionState.Path.CurrentLocation
             $marks = "$e]133;D;$code$b"
             if ($here.Provider.Name -eq 'FileSystem') { $marks += "$e]7;file://localhost/" + [uri]::EscapeDataString($here.ProviderPath) + $b }
+            [Console]::Write("$marks$e]133;A$b")
             $text = if ($global:__ClaupetPrompt) { & $global:__ClaupetPrompt } else { "PS $here> " }
             $global:LASTEXITCODE = $last
-            "$marks$e]133;A$b$text$e]133;B$b"
+            "$text$e]133;B$b"
         }
         if (Get-Command PSConsoleHostReadLine -ErrorAction SilentlyContinue) {
             $global:__ClaupetReadLine = $function:PSConsoleHostReadLine

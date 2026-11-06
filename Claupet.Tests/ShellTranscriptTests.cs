@@ -326,6 +326,29 @@ public sealed class ShellTranscriptTests
         }
     }
 
+    /// <summary>Un prompt que escribe por su cuenta, como el de conda con «(base)»: eso no es salida del comando.</summary>
+    [Fact]
+    public async Task LoQueEscribeElPromptNoEsSalidaDelComando()
+    {
+        if (!PseudoConsole.IsSupported || Shells.Available().FirstOrDefault(s => s.Kind == ShellKind.PowerShell) is not { } shell) return;
+        var gate = new object();
+        using var session = new ShellSession(shell, Path.GetTempPath(), action => { lock (gate) action(); });
+        session.Start();
+        await Until(() => session.Transcript.Ready, gate);
+
+        lock (gate) session.Send("$global:__ClaupetPrompt = { Write-Host -NoNewline '(entorno) '; 'PS> ' }");
+        await Until(() => !session.Transcript.Busy, gate);
+        lock (gate) session.Send("echo hola");
+        await Until(() => !session.Transcript.Busy, gate);
+
+        lock (gate)
+        {
+            var block = session.Transcript.Blocks.Last(b => b.Kind == ShellBlockKind.Command);
+            Assert.Equal("echo hola", block.Command);
+            Assert.Equal(["hola"], block.Lines);
+        }
+    }
+
     /// <summary>De verdad en Linux o macOS: bash en una pty (Porta.Pty), con la integración de la app.</summary>
     [Fact]
     public async Task BashDeVerdadEnLinuxOMacDaBloquesConSuCodigo()

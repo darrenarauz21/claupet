@@ -67,7 +67,17 @@ sealed class MacDesktop(Func<IClipboard?>? clipboard, Func<Func<Task>, Task> hid
     /// <summary>Spotify o Música, el que esté abierto (los navegadores no responden a AppleScript).</summary>
     public override Task<string?> MediaAsync(MediaCommand command)
     {
-        var verb = command switch { MediaCommand.Play => "play", MediaCommand.Pause => "pause", MediaCommand.Next => "next track", _ => "previous track" };
+        // Cada app llama distinto a repetir.
+        string Verb(string app) => command switch
+        {
+            MediaCommand.Play => "play",
+            MediaCommand.Pause => "pause",
+            MediaCommand.Next => "next track",
+            MediaCommand.Restart => "set player position to 0",
+            MediaCommand.RepeatOn => app == "Spotify" ? "set repeating to true" : "set song repeat to one",
+            MediaCommand.RepeatOff => app == "Spotify" ? "set repeating to false" : "set song repeat to off",
+            _ => "previous track",
+        };
         foreach (var app in new[] { "Spotify", "Music" })
         {
             var (code, output) = Script("""
@@ -77,7 +87,7 @@ sealed class MacDesktop(Func<IClipboard?>? clipboard, Func<Func<Task>, Task> hid
                 end run
                 """, app);
             if (code != 0 || output != "abierta") continue;
-            return Task.FromResult(Done(Script($"tell application \"{app}\" to {verb}")));
+            return Task.FromResult(Done(Script($"tell application \"{app}\" to {Verb(app)}")));
         }
         return Task.FromResult<string?>(L.T("No hay nada abierto en Música ni en Spotify."));
     }

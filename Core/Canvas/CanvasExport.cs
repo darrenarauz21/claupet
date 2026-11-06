@@ -46,7 +46,9 @@ static class CanvasExport
     public static string ForAgent(CanvasDoc doc)
     {
         var sb = new StringBuilder();
-        sb.Append($"<canvas id=\"{doc.Id}\" version=\"{doc.Version}\" title=\"{Attr(doc.Title)}\" updated=\"{doc.Updated:O}\">\n");
+        sb.Append($"<canvas id=\"{doc.Id}\" version=\"{doc.Version}\" title=\"{Attr(doc.Title)}\" updated=\"{doc.Updated:O}\"");
+        if (doc.Plan is { } plan) sb.Append($" plan=\"{Attr(plan)}\"");
+        sb.Append(">\n");
         if (doc.Sections.Count == 0) sb.Append("(empty: add sections with canvas_edit op \"insert\")\n");
         foreach (var s in doc.Sections)
         {

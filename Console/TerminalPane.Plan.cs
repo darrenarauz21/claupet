@@ -13,8 +13,8 @@ using Avalonia.Threading;
 using Path = System.IO.Path;
 
 /// <summary>
-/// Un plan de proyecto (*.plan.json, Core/Plan.cs) en la tarjeta de archivos: en vez del JSON, su Resumen, su Tablero y su
-/// Cronograma (los dibuja PlanPanel, el mismo de Canvas), con las vistas como íconos. «Ver JSON» muestra el texto. Si una
+/// Un plan de proyecto (*.plan.json, Core/Plan.cs) en la tarjeta de archivos: en vez del JSON, su Resumen, su Tablero, su
+/// Cronograma y su Diagrama (los dibuja PlanPanel, el mismo de Canvas), con las vistas como íconos. «Ver JSON» muestra el texto. Si una
 /// IA cambia el archivo mientras se ve, se vuelve a dibujar solo y lo que cambió lleva un halo.
 /// </summary>
 sealed partial class TerminalPane
@@ -103,6 +103,7 @@ sealed partial class TerminalPane
         var views = new (string Id, string Icon, string Name)[]
         {
             ("resumen", PlanSummaryIcon, L.T("Resumen")), ("tablero", PlanBoardIcon, L.T("Tablero")), ("cronograma", PlanTimelineIcon, L.T("Cronograma")),
+            ("diagrama", PlanPanel.GraphIcon, L.T("Diagrama")),
         };
         var selected = _planViews.TryGetValue(path, out var saved) ? saved : "resumen";
         var root = new Grid { RowDefinitions = new RowDefinitions("Auto,*") };
@@ -187,6 +188,7 @@ sealed partial class TerminalPane
             {
                 "tablero" => panel.Board(plan),
                 "cronograma" => panel.Timeline(plan),
+                "diagrama" => panel.Graph(plan),
                 "json" => TextView(path, json, null),
                 _ => panel.Summary(plan),
             };

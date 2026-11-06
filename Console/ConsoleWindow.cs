@@ -18,7 +18,7 @@ using Avalonia.Styling;
 /// </summary>
 sealed class ConsoleWindow : Window
 {
-    enum Mode { Chat, Terminal, Editor, Canvas, Settings }
+    enum Mode { Chat, Terminal, Editor, Canvas, Projects, Settings }
 
     readonly ConsoleClient _client = new();
     readonly Grid _root = new() { RowDefinitions = new RowDefinitions("48,*") };
@@ -44,6 +44,10 @@ sealed class ConsoleWindow : Window
     /// <summary>Claupet Canvas: dibuja el Markdown de sus secciones con el de la Terminal.</summary>
     readonly CanvasPane _canvas;
     readonly StackPanel _canvasList = new() { Spacing = 2 };
+    /// <summary>Claupet Proyectos: los planes de las carpetas vinculadas, con sus vistas.</summary>
+    readonly ProjectsPane _projects;
+    /// <summary>La lista de planes, a la izquierda (se oculta con el botón de su barra).</summary>
+    bool _projectsList = true;
     /// <summary>La lista de canvas, a la izquierda (se oculta con el botón de la barra de Canvas).</summary>
     bool _canvasFiles = true;
     readonly StackPanel _fileList = new() { Spacing = 2 };
@@ -108,6 +112,26 @@ sealed class ConsoleWindow : Window
             if (!sent) SetMode(Mode.Terminal);
             return sent;
         });
+        _projects = new ProjectsPane(_terminal.ProjectFolders, _terminal.WorkingIn,
+            ask: (text, folder) => { if (!_terminal.AskInFolder(text, folder)) SetMode(Mode.Terminal); },
+            work: (text, folder) => { _terminal.WorkOn(text, folder); SetMode(Mode.Terminal); });
+        // Un canvas y su plan se llevan el uno al otro.
+        _canvas.FindPlans = _projects.FindPlansAsync;
+        _canvas.PlanOpened += path =>
+        {
+            _projects.ShowPlan(path);
+            SetMode(Mode.Projects);
+        };
+        _projects.CanvasOpened += id =>
+        {
+            _canvas.Show(id);
+            SetMode(Mode.Canvas);
+        };
+        _projects.ListToggled += () =>
+        {
+            _projectsList = !_projectsList;
+            Render(rebuild: true);
+        };
         _canvas.ListToggled += () =>
         {
             _canvasFiles = !_canvasFiles;
@@ -130,6 +154,7 @@ sealed class ConsoleWindow : Window
         {
             if (_mode == Mode.Editor) _editor.HandleKey(e);
             else if (_mode == Mode.Canvas) _canvas.HandleKey(e);
+            else if (_mode == Mode.Projects) _projects.HandleKey(e);
         };
         Closing += (_, e) =>
         {
@@ -322,20 +347,22 @@ sealed class ConsoleWindow : Window
             _editor.SetInk(_ink);
             _terminal.SetInk(_ink);
             _canvas.SetInk(_ink);
+            _projects.SetInk(_ink);
             _body.ColumnDefinitions[1].Width = new GridLength(_mode switch
             {
                 Mode.Chat => 250,
                 Mode.Terminal => _terminal.ListWidth,
                 Mode.Editor => _editorFiles ? 250 : 0,
                 Mode.Canvas => _canvasFiles ? 260 : 0,
+                Mode.Projects => _projectsList ? 264 : 0,
                 _ => 210,
             });
             // Sin columna (el editor con los archivos ocultos), nada de ella asoma.
             _aside.IsVisible = _body.ColumnDefinitions[1].Width.Value > 0;
             _grip.IsVisible = _mode == Mode.Terminal && _terminal.ListWidth > TerminalProjects.MinWidth - 1;
             ((Border)_grip.Child!).Background = _ink.Accent;
-            _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Terminal => _terminal.Header(), Mode.Editor => FilesHeader(), Mode.Canvas => CanvasHeader(), _ => _heading };
-            _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Terminal => _terminal.List, Mode.Editor => _fileList, Mode.Canvas => _canvasList, _ => _sections };
+            _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Terminal => _terminal.Header(), Mode.Editor => FilesHeader(), Mode.Canvas => CanvasHeader(), Mode.Projects => ProjectsHeader(), _ => _heading };
+            _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Terminal => _terminal.List, Mode.Editor => _fileList, Mode.Canvas => _canvasList, Mode.Projects => _projects.List, _ => _sections };
         }
         _heading.Text = L.T("Ajustes");
         _heading.Foreground = _ink.Text;
@@ -357,6 +384,11 @@ sealed class ConsoleWindow : Window
         {
             RenderCanvasList();
             if (_main.Child != _canvas) _main.Child = _canvas;
+            return;
+        }
+        if (_mode == Mode.Projects)
+        {
+            if (_main.Child != _projects) _main.Child = _projects;
             return;
         }
         if (!_connected || _pages.Count == 0)
@@ -489,6 +521,9 @@ sealed class ConsoleWindow : Window
 
     /// <summary>«Canvas» y el botón de uno nuevo.</summary>
     Control CanvasHeader() => ListHeader("Canvas", _canvas.New, L.T("Canvas nuevo"));
+
+    /// <summary>«Proyectos», el botón de uno nuevo y, debajo, su buscador y sus filtros.</summary>
+    Control ProjectsHeader() => new StackPanel { Children = { ListHeader(L.T("Proyectos"), _projects.New, L.T("Proyecto nuevo")), _projects.ListTools() } };
 
     /// <summary>Los canvas, del más reciente al más viejo.</summary>
     void RenderCanvasList()
@@ -784,10 +819,11 @@ sealed class ConsoleWindow : Window
     const string TerminalIcon = "M4,5 H20 A1,1 0 0 1 21,6 V18 A1,1 0 0 1 20,19 H4 A1,1 0 0 1 3,18 V6 A1,1 0 0 1 4,5 Z M7,10 L10,12.5 L7,15 M12.5,15 H16.5";
     const string EditorIcon = "M14,3 H7 A1,1 0 0 0 6,4 V20 A1,1 0 0 0 7,21 H17 A1,1 0 0 0 18,20 V7 L14,3 Z M14,3 V7 H18 M9.5,12 H14.5 M9.5,16 H12.5";
     const string CanvasIcon = "M4,4 H20 A1,1 0 0 1 21,5 V19 A1,1 0 0 1 20,20 H4 A1,1 0 0 1 3,19 V5 A1,1 0 0 1 4,4 Z M3,9 H21 M10,9 V20 M13,13 H18 M13,16.5 H16.5";
+    const string ProjectsIcon = "M4,6 H10 L12,8 H20 V19 H4 Z M8,15.5 V13 M12,15.5 V11 M16,15.5 V12.5";
     const string SettingsIcon = "M15,12 A3,3 0 1 1 9,12 A3,3 0 1 1 15,12 Z M12,2.5 V5 M12,19 V21.5 M5.3,5.3 L7.1,7.1 M16.9,16.9 L18.7,18.7 M2.5,12 H5 "
         + "M19,12 H21.5 M5.3,18.7 L7.1,16.9 M16.9,7.1 L18.7,5.3";
 
-    /// <summary>El riel de la izquierda: Chat, Terminal, Editor, Canvas y Ajustes.</summary>
+    /// <summary>El riel de la izquierda: Chat, Terminal, Editor, Canvas, Proyectos y Ajustes.</summary>
     Control Rail()
     {
         var rail = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
@@ -795,6 +831,7 @@ sealed class ConsoleWindow : Window
         rail.Children.Add(RailButton(TerminalIcon, L.T("Terminal"), _mode == Mode.Terminal, () => SetMode(Mode.Terminal)));
         rail.Children.Add(RailButton(EditorIcon, L.T("Editor"), _mode == Mode.Editor, () => SetMode(Mode.Editor)));
         rail.Children.Add(RailButton(CanvasIcon, "Canvas", _mode == Mode.Canvas, () => SetMode(Mode.Canvas)));
+        rail.Children.Add(RailButton(ProjectsIcon, L.T("Proyectos"), _mode == Mode.Projects, () => SetMode(Mode.Projects)));
         rail.Children.Add(RailButton(SettingsIcon, L.T("Ajustes"), _mode == Mode.Settings, () => SetMode(Mode.Settings)));
         return rail;
     }

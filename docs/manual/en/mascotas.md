@@ -135,11 +135,12 @@ Lavender, Rose or Graphite. It changes the accent of bars, switches, links, the 
 Light or dark mode follows your system.
 
 **Your own themes.** In Claupet Console, **Settings › Appearance › Themes** shows a card per theme, with its
-preview. To create one:
+preview, six at a time; with more, the arrows below change the page. To create one:
 
 1. In **New theme**, describe what you want: "a beach theme with an animated background", "something
    autumnal with a rounder font".
-2. Choose the **Quality**: Fast (Sonnet), Medium (Opus) or High (Fable).
+2. Choose the **Quality**: Fast (Sonnet) gives colors, a font and an animated background; Medium (Opus) adds motifs drawn
+   for that theme; High (Fable), more motifs with more detail, and a second background on top.
 3. Press **Create** (or Enter). While Claude designs it, its card glows and you can cancel.
 4. When it's done, the theme is selected.
 

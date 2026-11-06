@@ -96,6 +96,8 @@ sealed class CanvasDoc
     public string Title { get; set; } = "";
     /// <summary>La carpeta del proyecto con el que se hizo, si se hizo desde uno.</summary>
     public string? Folder { get; set; }
+    /// <summary>El plan al que está ligado (la ruta de un *.plan.json), si lo está: Proyectos muestra sus detalles.</summary>
+    public string? Plan { get; set; }
     public DateTimeOffset Created { get; set; }
     public DateTimeOffset Updated { get; set; }
     public int Version { get; set; }

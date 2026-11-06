@@ -59,6 +59,10 @@ public sealed class AnswerRulesTests
     [InlineData("sube el volumen y abre spotify")]
     [InlineData("abre el archivo de ventas")]
     [InlineData("2024")]
+    [InlineData("repite")]
+    [InlineData("repite lo que dijiste")]
+    [InlineData("cambia la canción a Despacito")]
+    [InlineData("pon otra vez la película")]
     [InlineData("¿Quién escribió Cien años de soledad?")]
     public void NoAdivina(string prompt) => Assert.Null(AnswerRules.Match(prompt));
 
@@ -80,6 +84,21 @@ public sealed class AnswerRulesTests
     [InlineData("modo oscuro", "tema", "oscuro")]
     [InlineData("siguiente canción", "musica", "siguiente")]
     [InlineData("pausa la música", "musica", "pausar")]
+    [InlineData("cambia la canción", "musica", "siguiente")]
+    [InlineData("cambia de canción", "musica", "siguiente")]
+    [InlineData("pon otra canción", "musica", "siguiente")]
+    [InlineData("pon otra", "musica", "siguiente")]
+    [InlineData("change the song", "musica", "siguiente")]
+    [InlineData("repite la canción", "musica", "repetir")]
+    [InlineData("repite esta canción", "musica", "repetir")]
+    [InlineData("ponla otra vez", "musica", "repetir")]
+    [InlineData("la canción desde el principio", "musica", "repetir")]
+    [InlineData("repeat this song", "musica", "repetir")]
+    [InlineData("repite la canción en bucle", "musica", "bucle")]
+    [InlineData("ponla en repetir", "musica", "bucle")]
+    [InlineData("activa repetir", "musica", "bucle")]
+    [InlineData("deja de repetir la canción", "musica", "sin-bucle")]
+    [InlineData("quita el bucle", "musica", "sin-bucle")]
     [InlineData("muestra el escritorio", "ventana", "escritorio")]
     public void LasAcciones(string prompt, string kind, string value)
     {

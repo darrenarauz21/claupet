@@ -250,10 +250,13 @@ static class SystemActions
     /// <summary>Lo que suene en el equipo (Spotify, YouTube en el navegador…).</summary>
     static async Task<string?> MediaAsync(IDesktop desktop, string value)
     {
-        MediaCommand? command = Is(value, "siguiente", "next") ? MediaCommand.Next
+        MediaCommand? command = Is(value, "siguiente", "next", "cambiar", "saltar", "otra", "skip", "change") ? MediaCommand.Next
             : Is(value, "anterior", "previous") ? MediaCommand.Previous
             : Is(value, "reproducir", "play") ? MediaCommand.Play
             : Is(value, "pausar", "pause") ? MediaCommand.Pause
+            : Is(value, "repetir", "reiniciar", "repeat", "restart") ? MediaCommand.Restart
+            : Is(value, "bucle", "loop") ? MediaCommand.RepeatOn
+            : Is(value, "sin-bucle", "sin bucle", "no-loop", "no loop") ? MediaCommand.RepeatOff
             : null;
         return command is { } c ? await desktop.MediaAsync(c) : L.T("No entendí qué hacer con la música.");
     }

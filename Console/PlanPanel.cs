@@ -15,19 +15,47 @@ using Path = System.IO.Path;
 /// <summary>
 /// El dibujo de un plan (Core/Plan.cs) para quien lo muestre: la tarjeta de archivos de la Terminal y las secciones
 /// «plan» de Canvas. Resumen (avance y fichas), Tablero (tareas por estado), Cronograma (barras por día con dependencias,
-/// hitos y la línea de hoy) y los avatares de las IAs que lo editaron. Usa los colores del tema (Ink); lo recién cambiado
-/// (Fresh) lleva un halo hasta que se llama a Settle.
+/// hitos y la línea de hoy), Diagrama (PlanPanel.Graph.cs) y los avatares de las IAs que lo editaron. Usa los colores del tema (Ink); lo recién cambiado
+/// (Fresh) lleva un halo hasta que se llama a Settle. La sección Proyectos (ProjectsPane) y el PDF (PlanPdf) lo usan con
+/// más aire (Spacious), con lo que no coincide atenuado (Match) y con clic y arrastre.
 /// </summary>
-sealed class PlanPanel(Ink ink)
+sealed partial class PlanPanel(Ink ink)
 {
     readonly Ink _ink = ink;
 
-    const string PlanFlagIcon = "M5,21 V4 M5,5 H17 L14,8.5 L17,12 H5";
-    const string PlanAlertIcon = "M12,4 L21,19 H3 Z M12,10 V13.5 M12,16.5 V16.6";
-    const string PlanPlayIcon = "M8,5.5 L18.5,12 L8,18.5 Z";
-    const string PlanClockIcon = "M12,3 A9,9 0 1 0 12.01,3 Z M12,7 V12 L15,14";
-    const string PlanCalendarIcon = "M5,6 H19 V20 H5 Z M5,10.5 H19 M9,4 V8 M15,4 V8";
-    const double PlanRow = 30, PlanDay = 24, PlanLabels = 168, PlanHeader = 34;
+    /// <summary>Para una vista grande (la sección Proyectos) en vez de una tarjeta.</summary>
+    public bool Spacious { get; init; }
+    /// <summary>Para el PDF: todo a su tamaño entero, sin barras de desplazamiento ni animaciones.</summary>
+    /// <summary>Lo que se busca: lo que no coincide queda atenuado.</summary>
+    public Func<PlanTask, bool>? Match { get; init; }
+    /// <summary>Se tocó una tarea.</summary>
+    public Action<PlanTask>? TaskClicked { get; init; }
+    /// <summary>Se arrastró una tarea a otra columna del tablero.</summary>
+    public Action<PlanTask, PlanState>? TaskMoved { get; init; }
+
+    bool Moving => TerminalPane.Animate;
+    double Shade(PlanTask task) => Match is null || Match(task) ? 1 : 0.22;
+
+    /// <summary>Lo que se toca abre esa tarea (si alguien escucha).</summary>
+    void Clickable(Control control, PlanTask task)
+    {
+        if (TaskClicked is not { } clicked) return;
+        control.Cursor = Ui.Hand;
+        control.Tapped += (_, e) =>
+        {
+            e.Handled = true;
+            clicked(task);
+        };
+    }
+
+
+    internal const string PlanFlagIcon = "M5,21 V4 M5,5 H17 L14,8.5 L17,12 H5";
+    internal const string PlanAlertIcon = "M12,4 L21,19 H3 Z M12,10 V13.5 M12,16.5 V16.6";
+    internal const string PlanPlayIcon = "M8,5.5 L18.5,12 L8,18.5 Z";
+    internal const string PlanClockIcon = "M12,3 A9,9 0 1 0 12.01,3 Z M12,7 V12 L15,14";
+    internal const string PlanCalendarIcon = "M5,6 H19 V20 H5 Z M5,10.5 H19 M9,4 V8 M15,4 V8";
+    const double PlanRow = 30, PlanDay = 24, PlanHeader = 34;
+    double PlanLabels => Spacious ? 236 : 168;
 
     // ── Resumen ─────────────────────────────────────────────────────────────────────────────
 
@@ -191,16 +219,20 @@ sealed class PlanPanel(Ink ink)
     /// <summary>Una barra de avance redondeada, de 0 a 1.</summary>
     Control Meter(double value, IBrush brush, double height)
     {
-        var fill = new Border { Background = brush, CornerRadius = new CornerRadius(999), HorizontalAlignment = HorizontalAlignment.Left };
-        var track = new Border { Height = height, CornerRadius = new CornerRadius(999), Background = _ink.Track, Child = fill, ClipToBounds = true };
-        track.SizeChanged += (_, e) => fill.Width = Math.Max(value > 0 ? height : 0, e.NewSize.Width * Math.Clamp(value, 0, 1));
-        return track;
+        // Con proporciones y no midiendo al dibujarse: también sale bien en el PDF, que nunca está en pantalla.
+        var part = Math.Clamp(value, 0, 1);
+        var fill = new Border { Background = brush, CornerRadius = new CornerRadius(999), MinWidth = part > 0 ? height : 0 };
+        var parts = new Grid { Children = { fill } };
+        parts.ColumnDefinitions.Add(new ColumnDefinition(part, GridUnitType.Star));
+        parts.ColumnDefinitions.Add(new ColumnDefinition(1 - part, GridUnitType.Star));
+        return new Border { Height = height, CornerRadius = new CornerRadius(999), Background = _ink.Track, Child = parts, ClipToBounds = true };
     }
 
     // ── Tablero ─────────────────────────────────────────────────────────────────────────────
 
     internal Control Board(Plan plan)
     {
+        if (Spacious) return WideBoard(plan);
         var today = DateOnly.FromDateTime(DateTime.Today);
         var columns = new List<(PlanState State, string Name)>
         {
@@ -290,7 +322,8 @@ sealed class PlanPanel(Ink ink)
         var (from, to) = plan.Span();
         // Un poco de aire a los lados, y desde el lunes de esa semana.
         from = from.AddDays(-(((int)from.DayOfWeek + 6) % 7));
-        to = to.AddDays(2);
+        // Grande, también con lugar para la fecha del último hito (en el PDF no se puede deslizar para verla).
+        to = to.AddDays(Spacious ? 5 : 2);
         var days = to.DayNumber - from.DayNumber;
         double X(DateOnly d) => (d.DayNumber - from.DayNumber) * PlanDay;
 
@@ -354,6 +387,17 @@ sealed class PlanPanel(Ink ink)
             if (task is not null)
             {
                 ToolTip.SetTip(name, TaskTip(plan, task));
+                name.Opacity = Shade(task);
+                Clickable(name, task);
+                // En grande, también de un vistazo cómo está cada una.
+                if (Spacious)
+                {
+                    var (stateIcon, stateTint, stateName) = StateLook(plan, task);
+                    var mark = Icon(stateIcon, stateTint, 14, 2);
+                    mark.Opacity = name.Opacity;
+                    ToolTip.SetTip(mark, stateName);
+                    Place(labels, mark, 12, y + PlanRow / 2 - 7);
+                }
                 if (task.Editor is { } editor) Place(labels, AgentFace(editor, 16), PlanLabels - 26, y + PlanRow / 2 - 8);
                 var start = X(task.Start);
                 var width = Math.Max(PlanDay - 4, task.Days * PlanDay - 4);
@@ -374,6 +418,8 @@ sealed class PlanPanel(Ink ink)
                     Child = fill,
                 };
                 ToolTip.SetTip(bar, TaskTip(plan, task));
+                bar.Opacity = Shade(task);
+                Clickable(bar, task);
                 if (Fresh.Contains(task.Id))
                 {
                     var halo = Halo(AgentTint(task.Editor), 9);
@@ -419,7 +465,7 @@ sealed class PlanPanel(Ink ink)
                 Opacity = 0.75,
             };
             // Las líneas «corren» hacia la tarea que espera (como las del diagrama de Canvas).
-            if (TerminalPane.Animate)
+            if (Moving)
                 Loop(line, new Animation
                 {
                     Duration = TimeSpan.FromMilliseconds(1200),
@@ -456,15 +502,17 @@ sealed class PlanPanel(Ink ink)
             Place(canvas, mark, x - 14, PlanHeader - 19);
         }
 
-        var days_ = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = canvas };
-        // Empieza mostrando hoy (o el principio, si hoy queda afuera).
-        if (today >= from && today < to)
-            days_.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() => days_.Offset = new Vector(Math.Max(0, X(today) - PlanDay * 7), 0), DispatcherPriority.Background);
         // Arriba (si sobra alto, no se centra).
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions($"{PlanLabels},*"), VerticalAlignment = VerticalAlignment.Top };
         grid.Children.Add(new Border { Child = labels, BorderBrush = _ink.Hairline, BorderThickness = new Thickness(0, 0, 1, 0) });
-        Grid.SetColumn(days_, 1);
-        grid.Children.Add(days_);
+        var dayColumn = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = canvas };
+        // Empieza mostrando hoy (o el principio, si hoy queda afuera).
+        if (today >= from && today < to)
+            dayColumn.AttachedToVisualTree += (_, _) => Dispatcher.UIThread.Post(() => dayColumn.Offset = new Vector(Math.Max(0, X(today) - PlanDay * 7), 0), DispatcherPriority.Background);
+        Grid.SetColumn(dayColumn, 1);
+        grid.Children.Add(dayColumn);
+        // Lo que flota abajo en la sección Proyectos no tapa la última fila.
+        if (Spacious) grid.Margin = new Thickness(0, 0, 0, 72);
         return new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = grid };
     }
 
@@ -501,7 +549,7 @@ sealed class PlanPanel(Ink ink)
     };
 
     /// <summary>Un avatar redondo con la inicial y el color de quien editó.</summary>
-    Border AgentFace(string who, double size)
+    internal Border AgentFace(string who, double size)
     {
         var face = new Border
         {
@@ -535,7 +583,7 @@ sealed class PlanPanel(Ink ink)
             Background = Translucent(tint, 0.12),
             IsHitTestVisible = false,
         };
-        if (TerminalPane.Animate) ring.Transitions = [new DoubleTransition { Property = Visual.OpacityProperty, Duration = TimeSpan.FromMilliseconds(700) }];
+        if (Moving) ring.Transitions = [new DoubleTransition { Property = Visual.OpacityProperty, Duration = TimeSpan.FromMilliseconds(700) }];
         _fading.Add(ring);
         return ring;
     }
@@ -555,7 +603,7 @@ sealed class PlanPanel(Ink ink)
         return string.Join("\n", lines);
     }
 
-    static string StateName(PlanState state) => state switch
+    internal static string StateName(PlanState state) => state switch
     {
         PlanState.Doing => L.T("En curso"),
         PlanState.Review => L.T("Revisión"),
@@ -565,10 +613,10 @@ sealed class PlanPanel(Ink ink)
     };
 
     /// <summary>Un día corto: «vie 21 nov».</summary>
-    static string Day(DateOnly day) => day.ToString(day.Year == DateTime.Today.Year ? "ddd d MMM" : "d MMM yyyy", CultureInfo.CurrentCulture);
+    internal static string Day(DateOnly day) => day.ToString(day.Year == DateTime.Today.Year ? "ddd d MMM" : "d MMM yyyy", CultureInfo.CurrentCulture);
 
     /// <summary>Cuánto falta (o cuánto pasó) hasta ese día: «hoy», «mañana», «en 12 días», «hace 2 días».</summary>
-    static string Until(DateOnly day, DateOnly today)
+    internal static string Until(DateOnly day, DateOnly today)
     {
         var n = day.DayNumber - today.DayNumber;
         return n switch
@@ -588,7 +636,7 @@ sealed class PlanPanel(Ink ink)
     /// El color de una etapa: el que el plan escribió (un nombre como «azul» o «#5B8DEF», aclarado en el tema oscuro) o,
     /// si no dice ninguno, el acento.
     /// </summary>
-    IBrush StageBrush(Plan plan, string? stageId)
+    internal IBrush StageBrush(Plan plan, string? stageId)
     {
         var index = plan.Stages.ToList().FindIndex(s => s.Id == stageId);
         if (index < 0) return _ink.Tertiary;
@@ -652,15 +700,15 @@ sealed class PlanPanel(Ink ink)
 
     // ── Piezas comunes ──────────────────────────────────────────────────────────────────────
 
-    const string CheckIcon = "M5,12.5 L10,17.5 L19,7";
-    const string BlockedIcon = "M12,3 A9,9 0 1 0 12.01,3 Z M5.6,5.6 L18.4,18.4";
+    internal const string CheckIcon = "M5,12.5 L10,17.5 L19,7";
+    internal const string BlockedIcon = "M12,3 A9,9 0 1 0 12.01,3 Z M5.6,5.6 L18.4,18.4";
 
-    IBrush Added => _ink.Dark ? new SolidColorBrush(Color.FromRgb(0xA8, 0xC7, 0xA0)) : new SolidColorBrush(Color.FromRgb(0x3F, 0x6B, 0x3A));
+    internal IBrush Added => _ink.Dark ? new SolidColorBrush(Color.FromRgb(0xA8, 0xC7, 0xA0)) : new SolidColorBrush(Color.FromRgb(0x3F, 0x6B, 0x3A));
 
-    static IBrush Translucent(IBrush brush, double opacity) =>
+    internal static IBrush Translucent(IBrush brush, double opacity) =>
         brush is ISolidColorBrush solid ? new SolidColorBrush(solid.Color, opacity) : brush;
 
-    static Viewbox Icon(string path, IBrush brush, double size, double thickness) => new()
+    internal static Viewbox Icon(string path, IBrush brush, double size, double thickness) => new()
     {
         Width = size,
         Height = size,

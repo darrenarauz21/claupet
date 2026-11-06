@@ -99,12 +99,14 @@ static class Repo
 
     /// <summary>
     /// Compila docs/extensiones/ejemplos/c/eco.c con Zig (pip install ziglang, en el Python que diga
-    /// CLAUPET_ZIG_PYTHON o en el entorno conda claupet-tools). Sin Zig, la prueba falla diciendo cómo instalarlo.
+    /// CLAUPET_ZIG_PYTHON o en el entorno conda claupet-tools, de Miniconda o de Anaconda). Sin Zig, la prueba falla diciendo
+    /// cómo instalarlo.
     /// </summary>
     static byte[] CompileEco(string target)
     {
-        var python = Environment.GetEnvironmentVariable("CLAUPET_ZIG_PYTHON")
-            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "miniconda3", "envs", "claupet-tools", "python.exe");
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var conda = new[] { "miniconda3", "anaconda3" }.Select(root => Path.Combine(home, root, "envs", "claupet-tools", "python.exe")).ToArray();
+        var python = Environment.GetEnvironmentVariable("CLAUPET_ZIG_PYTHON") ?? conda.FirstOrDefault(System.IO.File.Exists) ?? conda[0];
         Assert.True(System.IO.File.Exists(python), $"Hace falta Zig para compilar la DLL de prueba: pip install ziglang y CLAUPET_ZIG_PYTHON=<python> (no está {python}).");
         var output = Path.Combine(Path.GetTempPath(), "claupet-pruebas", $"eco-{target}-{Guid.NewGuid():N}.dll");
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);

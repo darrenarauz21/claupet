@@ -134,6 +134,7 @@ sealed class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        ClipboardPaste.Install();
         // Un error en la interfaz queda en el registro de errores y la app sigue, como en Claupet Console.
         Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) =>
         {
