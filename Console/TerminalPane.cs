@@ -43,6 +43,8 @@ sealed partial class TerminalPane : Grid
         public string? Branch { get; set; } = GitBranch.Of(agent.Options.Folder);
         public string Project => Path.GetFileName(Agent.Options.Folder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : Agent.Options.Folder;
         public string Draft { get; set; } = "";
+        /// <summary>Ya se pidió retomarla: un segundo Intro no abre otra.</summary>
+        public bool Reopening { get; set; }
         /// <summary>Las imágenes pegadas en la caja («[Imagen #1]»…): van con el pedido si su marca sigue en el texto.</summary>
         public List<AgentImage> Images { get; } = [];
         /// <summary>El archivo que se ve en la tarjeta flotante (y su línea), si hay uno abierto (TerminalPane.Viewer.cs).</summary>
@@ -78,6 +80,8 @@ sealed partial class TerminalPane : Grid
     TerminalLook _look = TerminalLook.Load();
     /// <summary>Los colores del tema, antes de aplicarles el fondo y el color del texto de la Terminal.</summary>
     Ink? _theme;
+    /// <summary>La franja de «esta sesión terminó» de la pestaña que se ve.</summary>
+    Grid _ended = new();
     readonly ScrollViewer _scroll = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     readonly TextBox _input = new();
     readonly StackPanel _list = new() { Spacing = 1 };
@@ -299,6 +303,37 @@ sealed partial class TerminalPane : Grid
         _input.Focus();
     }
 
+    /// <summary>¿Hay algo que se perdería? Un agente con un turno en curso, esperando un permiso o con tareas en segundo plano; un comando corriendo.</summary>
+    internal static bool IsWorking(Tab tab) => tab.Shell is { } shell
+        ? shell.Running && shell.Transcript.Busy
+        : tab.Agent.Running && (tab.Agent.Transcript.Busy || Waiting(tab.Agent.Transcript) || tab.Agent.Transcript.BackgroundTasks > 0);
+
+    /// <summary>Cuántas pestañas se detendrían al cerrar la ventana.</summary>
+    public int WorkingCount => _tabs.Count(IsWorking);
+
+    /// <summary>El botón de cerrar: si la pestaña está trabajando, pregunta antes de detenerla.</summary>
+    internal async void RequestClose(Tab tab)
+    {
+        if (IsWorking(tab))
+        {
+            var (who, what) = tab.Shell is { } shell
+                ? (shell.Shell.Label, L.T("Sigue corriendo un comando en «{0}». Si cierra la pestaña, se detiene.", tab.Project))
+                : (AgentKinds.Label(tab.Agent.Options.Kind), WorkingText(tab));
+            if (!await ConfirmCard.Ask(this, _ink, L.T("¿Detener {0} y cerrar?", who), what, L.T("Detener y cerrar"), L.T("Seguir trabajando"))) return;
+        }
+        if (_tabs.Contains(tab)) CloseTab(tab);
+    }
+
+    /// <summary>Qué se cortaría al cerrar: el turno ya pudo terminar y dejar algo corriendo aparte, y eso no se ve en la pantalla.</summary>
+    static string WorkingText(Tab tab)
+    {
+        var t = tab.Agent.Transcript;
+        if (t.Busy || Waiting(t)) return L.T("Sigue trabajando en «{0}». Si cierra la pestaña, se detiene y lo que estaba haciendo queda a medias.", tab.Project);
+        return t.BackgroundTasks == 1
+            ? L.T("Dejó una tarea corriendo en segundo plano en «{0}». Si cierra la pestaña, se corta.", tab.Project)
+            : L.T("Dejó {0} tareas corriendo en segundo plano en «{1}». Si cierra la pestaña, se cortan.", t.BackgroundTasks, tab.Project);
+    }
+
     void CloseTab(Tab tab)
     {
         tab.Agent.Dispose();
@@ -474,6 +509,12 @@ sealed partial class TerminalPane : Grid
         }
         if (_current is not { } tab) return;
         var text = _input.Text?.Trim() ?? "";
+        if (tab.Agent.Ended && !text.StartsWith('/'))
+        {
+            // No se manda a ningún lado: se retoma y lo escrito sigue en la caja, para enviarlo con otro Intro.
+            Reopen(tab);
+            return;
+        }
         if (text.Length == 0) return;
         // Los comandos de la Terminal: /resume abre el historial, /clear y /new una pestaña nueva como esta.
         if (Command(tab, text))

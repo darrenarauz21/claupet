@@ -311,6 +311,9 @@ sealed class ShellSession : IDisposable
     public ShellTranscript Transcript { get; } = new(Cols, Rows);
     public bool Running { get; private set; }
 
+    /// <summary>Se cerró o no pudo abrir: no va a ejecutar nada más (distinto de «todavía no arrancó»).</summary>
+    public bool Ended { get; internal set; }
+
     /// <summary>
     /// La pantalla tal como la pinta el shell, con colores (XTerm.NET). Los bloques salen de Transcript; esta se muestra
     /// cuando un programa usa la pantalla completa (la alterna: vim, less, claude, htop).
@@ -334,6 +337,7 @@ sealed class ShellSession : IDisposable
     {
         if (!Pty.IsSupported)
         {
+            Ended = true;
             Notice(L.T("La terminal de comandos todavía no está disponible en este sistema. Por ahora, solo en Windows 10 (1809) o más nuevo."));
             return;
         }
@@ -343,6 +347,7 @@ sealed class ShellSession : IDisposable
         }
         catch (Exception ex)
         {
+            Ended = true;
             Notice(L.T("No se pudo abrir {0}: {1}", Shell.Label, ex.Message));
             return;
         }
@@ -450,6 +455,7 @@ sealed class ShellSession : IDisposable
             if (!ReferenceEquals(_console, console)) return;
             Flush();
             Running = false;
+            Ended = true;
             var changed = new List<ShellBlock>();
             if (Transcript.Stop() is { } stopped) changed.Add(stopped);
             changed.Add(Transcript.Notice(code == 0 ? L.T("El shell se cerró.") : L.T("El shell se cerró (código {0}).", code)));

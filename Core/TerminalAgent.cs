@@ -80,6 +80,8 @@ sealed partial class AgentTranscript
     public string? PermissionMode { get; private set; }
     /// <summary>Hay un turno en curso: desde que se envía un pedido hasta su resultado.</summary>
     public bool Busy { get; private set; }
+    /// <summary>Lo que el agente dejó corriendo aparte (comandos, subagentes): sigue vivo aunque el turno haya terminado.</summary>
+    public int BackgroundTasks { get; private set; }
     /// <summary>El uso de la cuenta (0–100), si llegó: la sesión de 5 horas y la semana.</summary>
     public double? FiveHour { get; private set; }
     public double? SevenDay { get; private set; }
@@ -189,6 +191,9 @@ sealed partial class AgentTranscript
                 break;
             case "status":
                 PermissionMode = Json.Str(r, "permissionMode") ?? PermissionMode;
+                break;
+            case "background_tasks_changed" when r.TryGetProperty("tasks", out var tasks) && tasks.ValueKind == JsonValueKind.Array:
+                BackgroundTasks = tasks.GetArrayLength();
                 break;
             case "permission_denied" when Step(Json.Str(r, "tool_use_id")) is { } step:
                 step.State = StepState.Denied;
@@ -667,6 +672,9 @@ sealed class TerminalAgent : IDisposable
     public AgentTranscript Transcript { get; } = new();
     public bool Running => _process is { HasExited: false };
 
+    /// <summary>Terminó o no pudo abrir: no va a responder más (distinto de «todavía no arrancó»).</summary>
+    public bool Ended { get; internal set; }
+
     /// <summary>El proceso de la sesión (para el panel de procesos), mientras corre.</summary>
     public int? ProcessId => _process is { HasExited: false } process ? process.Id : null;
 
@@ -693,6 +701,7 @@ sealed class TerminalAgent : IDisposable
     {
         if (_driver.Start(_options) is not { } start)
         {
+            Ended = true;
             Notice(L.T("No encontré {0}. ¿Está instalado y en el PATH?", _driver.Name));
             return;
         }
@@ -701,6 +710,7 @@ sealed class TerminalAgent : IDisposable
         try { process.Start(); }
         catch (Exception ex)
         {
+            Ended = true;
             Notice(L.T("No se pudo abrir {0}: {1}", _driver.Name, ex.Message));
             return;
         }
@@ -825,6 +835,7 @@ sealed class TerminalAgent : IDisposable
             if (!ReferenceEquals(_process, process)) return;
             foreach (var permission in _island.Keys.ToList()) StopIsland(permission);
             var reason = code == 0 || problem.Length == 0 ? L.T("La sesión terminó.") : problem.Split('\n')[0].Trim();
+            Ended = true;
             Notice(reason);
         });
     }

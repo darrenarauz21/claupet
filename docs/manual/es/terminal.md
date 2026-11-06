@@ -258,7 +258,8 @@ arriba, vuelve a los valores de entrada.
 
 ## Límites
 
-- **Cerrar Claupet Console cierra todas las sesiones** de la Terminal: ningún agente queda corriendo.
+- **Cerrar Claupet Console cierra todas las sesiones** de la Terminal: ningún agente queda corriendo. Si alguna pestaña sigue trabajando (también con tareas en segundo plano), primero pregunta; lo mismo al cerrar esa pestaña o desvincular su proyecto.
+- **Si una sesión termina**, una franja sobre la caja lo dice y ofrece retomarla (o abrirla de nuevo). Lo que haya escrito se conserva y no se envía solo.
 - Los otros agentes tienen que estar instalados y con la sesión iniciada.
 
 ---

@@ -1,7 +1,16 @@
 namespace Claupet;
 
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
+
+/// <summary>Cómo estaba un archivo la última vez que se leyó o se guardó: para saber si alguien más lo cambió.</summary>
+sealed record DiskState(long Length, DateTime Written, string Sha256);
+
+enum DiskChange { Same, Changed, Missing, Unreadable }
+
+/// <summary>Lo que se encontró en el disco. Changed trae el texto nuevo; State, cómo quedó si se pudo leer.</summary>
+sealed record DiskCheck(DiskChange Change, DiskState? State = null, string? Text = null, Encoding? Encoding = null);
 
 /// <summary>
 /// Leer y guardar un archivo de texto con su codificación. File.ReadAllText supone UTF-8 y un archivo en ANSI (lo de
@@ -47,6 +56,41 @@ static class TextFiles
     }
 
     public static (string Text, Encoding Encoding) Read(string path) => Decode(File.ReadAllBytes(path));
+
+    /// <summary>Lo más grande que abre el editor.</summary>
+    public const long MaxEditable = 20 * 1024 * 1024;
+
+    static DiskState StateOf(FileInfo info, byte[] bytes) =>
+        new(bytes.Length, info.LastWriteTimeUtc, Convert.ToHexString(SHA256.HashData(bytes)));
+
+    /// <summary>Cómo está ahora el archivo (después de guardarlo).</summary>
+    public static DiskState StateOf(string path)
+    {
+        var info = new FileInfo(path);
+        return StateOf(info, File.ReadAllBytes(path));
+    }
+
+    /// <summary>
+    /// ¿Cambió el archivo desde known? Mira primero el tamaño y la fecha, que no cuestan nada; si cambiaron, compara el
+    /// contenido: abrirlo y guardarlo igual, o un «git checkout» que lo deja igual, no es un cambio. Sin known, cualquier
+    /// archivo que aparezca es un cambio. Unreadable: no se pudo leer ahora (otro programa escribiéndolo): se mira después.
+    /// </summary>
+    public static DiskCheck Compare(string path, DiskState? known)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) return new(known is null ? DiskChange.Same : DiskChange.Missing);
+            if (known is not null && info.Length == known.Length && info.LastWriteTimeUtc == known.Written) return new(DiskChange.Same, known);
+            if (info.Length > MaxEditable) return new(DiskChange.Unreadable);
+            var bytes = File.ReadAllBytes(path);
+            var state = StateOf(info, bytes);
+            if (known is not null && state.Sha256 == known.Sha256) return new(DiskChange.Same, state);
+            var (text, encoding) = Decode(bytes);
+            return new(DiskChange.Changed, state, text, encoding);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return new(DiskChange.Unreadable); }
+    }
 
     /// <summary>
     /// La codificación con que se guarda ese texto: la del archivo si puede escribirlo entero; si no (un emoji o una

@@ -103,14 +103,10 @@ sealed class ConsoleWindow : Window
         KeyDown += (_, e) => { if (_mode == Mode.Editor) _editor.HandleKey(e); };
         Closing += (_, e) =>
         {
-            if (_closing || !_editor.HasUnsaved) return;
+            if (_closing || e.CloseReason == WindowCloseReason.OSShutdown) return;
+            if (_terminal.WorkingCount == 0 && !_editor.HasUnsaved) return;
             e.Cancel = true;
-            SetMode(Mode.Editor);
-            _editor.AskBeforeExit(() =>
-            {
-                _closing = true;
-                Close();
-            });
+            _ = ConfirmExitAsync();
         };
         _client.ConnectedChanged += connected =>
         {
@@ -161,6 +157,33 @@ sealed class ConsoleWindow : Window
             _terminal.CloseAll();
             _client.Dispose();
         };
+    }
+
+    /// <summary>
+    /// Antes de cerrar: lo que está trabajando en la Terminal (se detendría sin aviso) y lo que falta guardar en el editor.
+    /// </summary>
+    async Task ConfirmExitAsync()
+    {
+        if (_terminal.WorkingCount is var working and > 0)
+        {
+            SetMode(Mode.Terminal);
+            var (title, text) = working == 1
+                ? (L.T("Una pestaña sigue trabajando"), L.T("Si cierra Claupet Console, se detiene y lo que estaba haciendo queda a medias."))
+                : (L.T("{0} pestañas siguen trabajando", working), L.T("Si cierra Claupet Console, se detienen y lo que estaban haciendo queda a medias."));
+            if (!await ConfirmCard.Ask(_terminal, _ink, title, text, L.T("Detener y salir"), L.T("Seguir trabajando"))) return;
+        }
+        void Exit()
+        {
+            _closing = true;
+            Close();
+        }
+        if (!_editor.HasUnsaved)
+        {
+            Exit();
+            return;
+        }
+        SetMode(Mode.Editor);
+        _editor.AskBeforeExit(Exit);
     }
 
     bool IsDark() => (Application.Current?.ActualThemeVariant ?? ThemeVariant.Light) == ThemeVariant.Dark;
