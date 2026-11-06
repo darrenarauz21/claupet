@@ -303,6 +303,39 @@ public sealed class NoPerderTrabajoTests
         }
     });
 
+    [Fact]
+    public void LaPestanaRetomadaQuedaEnElLugarDeLaAnterior() => Headless.Run(() =>
+    {
+        using var dir = new TempDir();
+        var (pane, window, ended) = AgentTab(dir.Path, ended: true);
+        try
+        {
+            var other = new TerminalPane.Tab(new TerminalAgent(new AgentOptions(dir.Path), _ => { }), "otra");
+            pane.Add(other);
+            var opened = new TerminalPane.Tab(new TerminalAgent(new AgentOptions(dir.Path), _ => { }), "retomada");
+            pane.Add(opened);
+            pane.ReplaceEnded(ended, opened, "");
+            Settle(window);
+            Assert.Equal([opened, other], Tabs(pane));
+        }
+        finally
+        {
+            pane.CloseAll();
+            window.Close();
+        }
+    });
+
+    [Fact]
+    public void UnComandoLocalNoCambiaElModeloQueSeMuestra()
+    {
+        var transcript = new AgentTranscript();
+        transcript.Apply("""{"type":"system","subtype":"init","model":"claude-opus-5-5"}""");
+        transcript.Apply("""{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"Adiós"}]}}""");
+        Assert.Equal("claude-opus-5-5", transcript.Model);
+        transcript.Apply("""{"type":"assistant","message":{"model":"claude-sonnet-5-5","content":[]}}""");
+        Assert.Equal("claude-sonnet-5-5", transcript.Model);
+    }
+
     // ── Editor ──────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Abre un archivo con «antes» en el editor; lo demás pasa en la prueba.</summary>

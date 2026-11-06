@@ -135,6 +135,8 @@ sealed partial class TerminalPane
     internal void ReplaceEnded(Tab ended, Tab? opened, string draft)
     {
         opened?.Images.AddRange(ended.Images);
+        // Queda en el lugar de la que reemplaza, no al final de la lista.
+        if (opened is not null && opened != ended && _tabs.Remove(opened)) _tabs.Insert(_tabs.IndexOf(ended), opened);
         CloseTab(ended);
         _input.Text = draft;
         _input.CaretIndex = draft.Length;

@@ -148,8 +148,9 @@ sealed partial class AgentTranscript
                 Stream(e, changed);
                 break;
             case "assistant" when r.TryGetProperty("message", out var m):
-                // El modelo que respondió de verdad (en modo plan, Claude Code puede usar otro que el de init).
-                Model = Json.Str(m, "model") ?? Model;
+                // El modelo que respondió de verdad (en modo plan, Claude Code puede usar otro que el de init). Los mensajes
+                // locales, como el de /exit, vienen con «<synthetic>»: no los respondió ningún modelo.
+                if (Json.Str(m, "model") is { } used && !used.StartsWith('<')) Model = used;
                 Assistant(m, changed);
                 break;
             // Los «isReplay» son ecos de lo que hizo el anfitrión (cambiar el modelo): no son pedidos de la persona.
