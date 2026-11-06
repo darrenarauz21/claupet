@@ -208,7 +208,7 @@ static class CanvasExport
         pre.mermaid{background:none;text-align:center}blockquote{margin:0 0 1em;padding:2px 0 2px 14px;border-left:3px solid #D97757;color:var(--muted)}.missing{color:var(--muted)}
         @page{size:A4;margin:18mm 16mm}
         @media print{:root{--bg:#fff;--fg:#1F1E1D;--muted:#6B6963;--code:#F1EEE6}body{max-width:none;padding:0;font-size:11.5pt}
-        section{break-inside:avoid-page}section:last-child{margin-bottom:0}pre{white-space:pre-wrap;overflow:visible}h1{font-size:22pt}}
+        section{break-inside:avoid-page}section:last-of-type{margin-bottom:0}iframe{margin-bottom:-4px}pre{white-space:pre-wrap;overflow:visible}h1{font-size:22pt}}
         </style>
         """;
 

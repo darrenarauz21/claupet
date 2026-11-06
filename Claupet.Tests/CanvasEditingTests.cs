@@ -136,13 +136,27 @@ public sealed class CanvasEditingTests
         Assert.Equal(Avalonia.Media.Brushes.Transparent, box.Resources["TextControlBackgroundFocused"]);
     });
 
+    /// <summary>
+    /// Un marco HTML al borde de la página empujaba una hoja en blanco al final. Con el PDF de verdad: mide lo que sale de
+    /// Edge o Chrome, y sin navegador no hay nada que medir.
+    /// </summary>
     [Fact]
-    public void ElPdfNoDejaEspacioQueEmpujeUnaPaginaEnBlanco()
+    public void ElPdfNoTerminaEnUnaHojaEnBlanco()
     {
+        if (CanvasPdf.FindBrowser() is null) return;
         using var dir = new TempDir();
         var store = new CanvasStore(dir.Path);
-        var html = CanvasExport.Html(store.Create("Uno", CanvasJson.User, [Text("hola")]));
-        Assert.Contains("section:last-child{margin-bottom:0}", html);
-        Assert.Contains("iframe{display:block;box-sizing:border-box", html);
+        var doc = store.Create("Completo", CanvasJson.User,
+        [
+            Text("Texto de prueba.\n\n| A | B | C |\n|---|---|---|\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |\n| 7 | 8 | 9 |\n"),
+            new("insert", Kind: "code", Content: "def saludar(nombre):\n    return nombre\n\nprint(saludar('x'))\n", Language: "python", Title: "Codigo"),
+            new("insert", Kind: "diagram", Content: "graph LR\n  A[Inicio] --> B[Proceso]\n  B --> C[Fin]\n", Language: "mermaid", Title: "Diagrama"),
+            new("insert", Kind: "data", Content: "id,nombre,valor\n1,alfa,10\n2,beta,20\n3,gamma,30\n", Language: "csv", Title: "Datos"),
+            new("insert", Kind: "html", Content: "<div style=\"font-family:sans-serif;padding:12px\"><p>Pulsa.</p><button>Pulsar</button></div>", Title: "HTML"),
+        ]);
+        var path = dir["canvas.pdf"];
+        CanvasPdf.Write(doc, path);
+        var pages = System.Text.RegularExpressions.Regex.Count(System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(path)), @"/Type\s*/Page[^s]");
+        Assert.Equal(1, pages);
     }
 }
