@@ -21,6 +21,9 @@ sealed class ChatPane : Grid
     /// <summary>Un mensaje para la bandeja: los del chat (con la conversación en Key) o «accion» (el modelo, leer en voz alta).</summary>
     public event Action<ConsoleMessage>? Request;
 
+    /// <summary>Tocaron un archivo que nombra una respuesta: lo abre quien tiene el editor.</summary>
+    public event Action<string>? FileLinkOpened;
+
     const double Column = 720;
 
     // Los íconos, en un cuadro de 24 (los del diseño).
@@ -250,7 +253,7 @@ sealed class ChatPane : Grid
     {
         var column = new StackPanel { Spacing = 10, Margin = new Thickness(12, 0, 0, 0) };
         foreach (var segment in Conversations.Split(text))
-            column.Children.Add(segment.Code ? CodeBlock(segment) : Paragraph(segment.Text));
+            column.Children.Add(segment.Code ? CodeBlock(segment) : Paragraph(segment.Text, links: !writing));
         if (writing && text.Trim().Length == 0)
             column.Children.Add(Ui.Text(L.T("Pensando…"), 14.5, _ink.Tertiary));
         if (who is { Length: > 0 })
@@ -280,22 +283,53 @@ sealed class ChatPane : Grid
         SelectionBrush = Translucent(_ink.Accent, 0.35),
     };
 
-    /// <summary>Texto corrido con el `código` en línea en letra fija y con fondo.</summary>
-    SelectableTextBlock Paragraph(string text)
+    /// <summary>
+    /// Texto corrido con el `código` en línea en letra fija y con fondo, y sus URL y rutas en azul. El chat no tiene carpeta:
+    /// solo las rutas absolutas (o con «~»). Mientras se escribe (links: false) no se mira el disco en cada pedazo.
+    /// </summary>
+    SelectableTextBlock Paragraph(string text, bool links)
     {
         var inlines = new InlineCollection();
+        var found = new List<(int Start, int End, TextLink Link)>();
+        var at = 0;
         var lines = text.Replace("\r\n", "\n").Split('\n');
         for (var i = 0; i < lines.Length; i++)
         {
-            if (i > 0) inlines.Add(new LineBreak());
-            foreach (var span in Conversations.Spans(lines[i]))
-                inlines.Add(span.Code
-                    ? new Run(span.Text) { FontFamily = Ink.Mono, FontSize = 13, Background = _ink.Pill }
-                    : new Run(span.Text));
+            // Los saltos van dentro del texto (y no como LineBreak): así cada carácter tiene su posición y el clic se ubica.
+            if (i > 0) Add("\n", false, null);
+            foreach (var (piece, code, link) in LinkClicks.Pieces(lines[i], links ? TextLinks.Find(lines[i], null) : []))
+                Add(piece, code, link);
         }
         var block = Selectable();
         block.Inlines = inlines;
+        if (found.Count > 0) LinkClicks.Attach(block, found, OpenLink);
         return block;
+
+        void Add(string piece, bool code, TextLink? link)
+        {
+            var run = new Run(piece);
+            if (code)
+            {
+                run.FontFamily = Ink.Mono;
+                run.FontSize = 13;
+                run.Background = _ink.Pill;
+            }
+            if (link is not null)
+            {
+                run.Foreground = LinkClicks.Brush(_ink.Dark);
+                run.TextDecorations = TextDecorations.Underline;
+                found.Add((at, at + piece.Length, link));
+            }
+            inlines.Add(run);
+            at += piece.Length;
+        }
+    }
+
+    /// <summary>Una URL o una carpeta, con el sistema; un archivo nunca se ejecuta: lo decide quien tiene el editor.</summary>
+    void OpenLink(TextLink link)
+    {
+        if (link.Kind is LinkKind.Url or LinkKind.Folder) TerminalPane.OpenUrl(link.Target);
+        else FileLinkOpened?.Invoke(link.Target);
     }
 
     /// <summary>Un bloque de código: el lenguaje y «Copiar» arriba; el código en letra fija, con los colores del tema.</summary>

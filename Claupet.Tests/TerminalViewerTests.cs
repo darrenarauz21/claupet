@@ -5,6 +5,8 @@ using Avalonia.Headless;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 // El proyecto de pruebas también trae WinForms (nombres iguales a los de Avalonia).
+using Brushes = Avalonia.Media.Brushes;
+using Point = Avalonia.Point;
 using TextBlock = Avalonia.Controls.TextBlock;
 using Window = Avalonia.Controls.Window;
 
@@ -93,6 +95,144 @@ public sealed class TerminalViewerTests
             TerminalPane.OpenUrl = before;
             Close(pane, window);
         }
+    });
+
+    [Fact]
+    public void UnEnlaceAbreEnCualquierRenglonDelParrafoYFueraDeElNo() => Headless.Run(() =>
+    {
+        using var dir = new TempDir();
+        var (pane, window) = Open(dir.Path);
+        var opened = new List<string>();
+        var before = TerminalPane.OpenUrl;
+        TerminalPane.OpenUrl = opened.Add;
+        try
+        {
+            const string url = "https://claupet.dev/docs/una/direccion/bastante/larga/que/ocupa/varios/renglones/de/este/parrafo";
+            var text = "Primera línea\n" + url + "\nfin";
+            var block = pane.Paragraph(text);
+            var host = new Window { Width = 220, Height = 400, Content = block };
+            host.Show();
+            Headless.Frame(host);
+
+            void Click(Point at)
+            {
+                var point = block.TranslatePoint(at, host)!.Value;
+                host.MouseDown(point, Avalonia.Input.MouseButton.Left);
+                host.MouseUp(point, Avalonia.Input.MouseButton.Left);
+                Headless.Frame(host);
+            }
+
+            var start = text.IndexOf(url, StringComparison.Ordinal);
+            var first = block.TextLayout.HitTestTextPosition(start + 2);
+            var last = block.TextLayout.HitTestTextPosition(start + url.Length - 2);
+            Assert.True(first.Y > 0, "el enlace debe empezar después del primer renglón");
+            Assert.True(last.Y > first.Y, "el enlace debe partirse en varios renglones");
+
+            Click(first.Center);
+            Assert.Equal([url], opened);
+            Click(last.Center);
+            Assert.Equal([url, url], opened);
+
+            // Al lado del final del enlace, en el mismo renglón, y en el texto que sigue: nada.
+            Click(new Point(last.Right + 30, last.Center.Y));
+            Click(block.TextLayout.HitTestTextPosition(text.Length - 2).Center);
+            Assert.Equal(2, opened.Count);
+            host.Close();
+        }
+        finally
+        {
+            TerminalPane.OpenUrl = before;
+            Close(pane, window);
+        }
+    });
+
+    [Fact]
+    public void LaSalidaDeUnComandoTraeSusRutasComoEnlaces() => Headless.Run(() =>
+    {
+        using var dir = new TempDir();
+        var plan = dir.Write("docs/plan.md", "# Plan");
+        var folder = dir["docs"];
+        var (pane, window) = Open(dir.Path);
+        var opened = new List<string>();
+        var before = TerminalPane.OpenUrl;
+        TerminalPane.OpenUrl = opened.Add;
+        try
+        {
+            string[] lines = ["Directorio: " + folder, "sin enlaces", "docs/plan.md listo"];
+            var block = pane.OutputText(lines, dir.Path, Brushes.White);
+            var runs = block.Inlines!.OfType<Run>().ToList();
+            Assert.Equal(string.Join("\n", lines), string.Concat(runs.Select(r => r.Text)));
+            Assert.Equal([folder, "docs/plan.md"], runs.Where(r => r.TextDecorations == TextDecorations.Underline).Select(r => r.Text));
+
+            var host = new Window { Width = 900, Height = 300, Content = block };
+            host.Show();
+            Headless.Frame(host);
+            var point = block.TranslatePoint(block.TextLayout.HitTestTextPosition("Directorio: ".Length + 3).Center, host)!.Value;
+            host.MouseDown(point, Avalonia.Input.MouseButton.Left);
+            host.MouseUp(point, Avalonia.Input.MouseButton.Left);
+            Headless.Frame(host);
+            Assert.Equal([folder], opened);
+            host.Close();
+
+            // Sin enlaces, sigue siendo texto simple.
+            Assert.Equal("nada\naquí", pane.OutputText(["nada", "aquí"], dir.Path, Brushes.White).Text);
+        }
+        finally
+        {
+            TerminalPane.OpenUrl = before;
+            Close(pane, window);
+        }
+    });
+
+    [Fact]
+    public void ElChatTraeEnlacesAlTerminarDeEscribirYUnArchivoNoSeEjecuta() => Headless.Run(() =>
+    {
+        using var dir = new TempDir();
+        var exe = dir.Write("mal.exe", "MZ");
+        var note = dir.Write("con espacio/nota.txt", "hola");
+        var opened = new List<string>();
+        var files = new List<string>();
+        var before = TerminalPane.OpenUrl;
+        TerminalPane.OpenUrl = opened.Add;
+        try
+        {
+            var pane = new ChatPane();
+            pane.FileLinkOpened += files.Add;
+            var host = new Window { Width = 800, Height = 500, Content = pane };
+            host.Show();
+            var answer = "Mire\n" + note + " y " + exe + "\ny " + dir.Path + " o https://claupet.dev/docs fin";
+
+            // Mientras escribe no hay enlaces; al terminar, sí, sin cambiar el texto.
+            pane.Show(new ChatView("c", "Chat", [], answer, false, "Claude", false));
+            Headless.Frame(host);
+            Assert.Empty(Underlined(host));
+            pane.Show(new ChatView("c", "Chat", [new ChatTurn(false, answer)], null, false, "Claude", false));
+            Headless.Frame(host);
+            Assert.Equal([note, exe, dir.Path, "https://claupet.dev/docs"], Underlined(host));
+
+            var block = host.GetVisualDescendants().OfType<SelectableTextBlock>().Single(b => b.Inlines?.OfType<Run>().Any(r => r.Text == note) == true);
+            var text = string.Concat(block.Inlines!.OfType<Run>().Select(r => r.Text));
+            Assert.Equal(answer, text);
+            void Click(string link)
+            {
+                var point = block.TranslatePoint(block.TextLayout.HitTestTextPosition(text.IndexOf(link, StringComparison.Ordinal) + 1).Center, host)!.Value;
+                host.MouseDown(point, Avalonia.Input.MouseButton.Left);
+                host.MouseUp(point, Avalonia.Input.MouseButton.Left);
+                Headless.Frame(host);
+            }
+            Click(note);
+            Click(exe);
+            Assert.Equal([note, exe], files); // van a quien tiene el editor, sin abrirse con el sistema
+            Assert.Empty(opened);
+            Click(dir.Path + " o");
+            Click("https://claupet.dev/docs");
+            Assert.Equal([dir.Path, "https://claupet.dev/docs"], opened);
+            host.Close();
+        }
+        finally { TerminalPane.OpenUrl = before; }
+
+        static List<string> Underlined(Window window) => window.GetVisualDescendants().OfType<SelectableTextBlock>()
+            .SelectMany(b => b.Inlines?.OfType<Run>() ?? []).Where(r => r.TextDecorations == TextDecorations.Underline).Select(r => r.Text ?? "").ToList();
     });
 
     [Fact]

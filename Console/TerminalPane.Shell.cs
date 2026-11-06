@@ -552,7 +552,10 @@ sealed partial class TerminalPane
             }
             else panel.Children.Add(label);
         }
-        panel.Children.Add(Selectable(string.Join("\n", shown), Mono, 12.5, brush));
+        // Mientras corre no se mira el disco (esto se rehace con cada pedazo): al terminar, el bloque se dibuja de nuevo.
+        panel.Children.Add(block.Running
+            ? Selectable(string.Join("\n", shown), Mono, 12.5, brush)
+            : OutputText(shown, block.Cwd ?? _current?.Shell?.Folder, brush));
     }
 
     Control ShellNotice(ShellBlock block)

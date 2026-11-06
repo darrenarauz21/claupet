@@ -4,9 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Media;
-using Avalonia.Media.Immutable;
 
 /// <summary>
 /// Los enlaces de Claupet Terminal: las URL y los archivos que nombra un agente se pintan en azul y subrayados; con un
@@ -15,14 +13,10 @@ using Avalonia.Media.Immutable;
 /// </summary>
 sealed partial class TerminalPane
 {
-    static readonly IBrush LinkOnDark = new ImmutableSolidColorBrush(Color.FromRgb(0x7A, 0xB7, 0xFF));
-    static readonly IBrush LinkOnLight = new ImmutableSolidColorBrush(Color.FromRgb(0x1F, 0x6F, 0xEB));
-    static Cursor? _handCursor;
-
     /// <summary>El azul de los enlaces, legible sobre el fondo de la Terminal (claro u oscuro).</summary>
-    IBrush LinkBrush => _ink.Dark ? LinkOnDark : LinkOnLight;
+    IBrush LinkBrush => LinkClicks.Brush(_ink.Dark);
 
-    static Cursor HandCursor => _handCursor ??= new Cursor(StandardCursorType.Hand);
+    static Cursor HandCursor => LinkClicks.Hand;
 
     /// <summary>Un párrafo de una respuesta: su `código` con fondo y sus enlaces (URL y archivos que existen) en azul.</summary>
     internal SelectableTextBlock Paragraph(string text)
@@ -36,32 +30,11 @@ sealed partial class TerminalPane
         {
             // Los saltos van dentro del texto (y no como LineBreak): así cada carácter tiene su posición y el clic se ubica.
             if (i > 0) Add("\n", false, null);
-            var line = lines[i];
-            var found = TextLinks.Find(line, folder);
-            var offset = 0;
-            foreach (var span in Conversations.Spans(line))
-            {
-                // Spans le quita las comillas invertidas al código: dónde empieza cada pedazo se busca en la línea.
-                var start = line.IndexOf(span.Text, offset, StringComparison.Ordinal);
-                if (start < 0) start = offset;
-                var end = start + span.Text.Length;
-                var cut = start;
-                foreach (var link in found.Where(l => l.Start < end && l.Start + l.Length > start))
-                {
-                    var from = Math.Max(link.Start, cut);
-                    var to = Math.Min(link.Start + link.Length, end);
-                    if (to <= from) continue;
-                    Add(line[cut..from], span.Code, null);
-                    Add(line[from..to], span.Code, link);
-                    cut = to;
-                }
-                Add(line[cut..end], span.Code, null);
-                offset = end;
-            }
+            foreach (var (piece, code, link) in LinkClicks.Pieces(lines[i], TextLinks.Find(lines[i], folder))) Add(piece, code, link);
         }
         var block = Selectable(null, Ink.Sans, 13.5, _ink.Text);
         block.Inlines = inlines;
-        if (links.Count > 0) Clickable(block, links);
+        if (links.Count > 0) LinkClicks.Attach(block, links, OpenLink);
         return block;
 
         void Add(string piece, bool code, TextLink? link)
@@ -85,39 +58,34 @@ sealed partial class TerminalPane
         }
     }
 
-    /// <summary>Los enlaces de un texto responden al mouse: la mano encima (con su destino al costado) y, con un clic sin arrastrar, se abren.</summary>
-    void Clickable(SelectableTextBlock block, IReadOnlyList<(int Start, int End, TextLink Link)> links)
+    /// <summary>La salida de un comando, en letra fija: sus URL, archivos y carpetas en azul, relativos a donde corrió.</summary>
+    internal SelectableTextBlock OutputText(IReadOnlyList<string> lines, string? folder, IBrush brush)
     {
-        TextLink? shown = null;
-        TextLink? At(PointerEventArgs e)
+        var text = string.Join("\n", lines);
+        var output = Selectable(text, Mono, 12.5, brush);
+        var links = new List<(int Start, int End, TextLink Link)>();
+        var at = 0;
+        foreach (var line in lines)
         {
-            var hit = block.TextLayout.HitTestPoint(e.GetPosition(block) - new Point(block.Padding.Left, block.Padding.Top));
-            if (!hit.IsInside) return null;
-            foreach (var (start, end, link) in links)
-                if (hit.TextPosition >= start && hit.TextPosition < end) return link;
-            return null;
+            foreach (var link in TextLinks.Find(line, folder))
+                links.Add((at + link.Start, at + link.Start + link.Length, link));
+            at += line.Length + 1;
         }
-        block.PointerMoved += (_, e) =>
+        if (links.Count == 0) return output;
+
+        var inlines = new InlineCollection();
+        var cut = 0;
+        foreach (var (start, end, _) in links)
         {
-            var link = At(e);
-            if (ReferenceEquals(link, shown)) return;
-            shown = link;
-            if (link is null) block.ClearValue(CursorProperty);
-            else block.Cursor = HandCursor;
-            ToolTip.SetTip(block, link is null ? null : link.Kind == LinkKind.Url ? link.Target : L.T("Ver {0}", link.Target));
-        };
-        block.PointerExited += (_, _) =>
-        {
-            shown = null;
-            block.ClearValue(CursorProperty);
-            ToolTip.SetTip(block, null);
-        };
-        block.AddHandler(PointerReleasedEvent, (_, e) =>
-        {
-            // Un clic, no el final de una selección: si se arrastró, se está copiando.
-            if (e.InitialPressMouseButton != MouseButton.Left || block.SelectionStart != block.SelectionEnd) return;
-            if (At(e) is { } link) OpenLink(link);
-        }, RoutingStrategies.Bubble, handledEventsToo: true);
+            if (start > cut) inlines.Add(new Run(text[cut..start]));
+            inlines.Add(new Run(text[start..end]) { Foreground = LinkBrush, TextDecorations = TextDecorations.Underline });
+            cut = end;
+        }
+        if (cut < text.Length) inlines.Add(new Run(text[cut..]));
+        output.Text = null;
+        output.Inlines = inlines;
+        LinkClicks.Attach(output, links, OpenLink);
+        return output;
     }
 
     static readonly string[] FileTools = ["Read", "Edit", "MultiEdit", "Write", "NotebookEdit", "NotebookRead"];
@@ -187,13 +155,13 @@ sealed partial class TerminalPane
         return open;
     }
 
-    /// <summary>Cómo se abre una URL: en el navegador del sistema (las pruebas lo cambian para no abrirlo).</summary>
+    /// <summary>Cómo se abre una URL o una carpeta: con el sistema (las pruebas lo cambian para no abrirlo).</summary>
     internal static Action<string> OpenUrl { get; set; } = Shell.Open;
 
-    /// <summary>Una URL, en el navegador; un archivo, en su vista.</summary>
+    /// <summary>Una URL, en el navegador; una carpeta, en el explorador del sistema; un archivo, en su vista.</summary>
     void OpenLink(TextLink link)
     {
-        if (link.Kind == LinkKind.Url) OpenUrl(link.Target);
+        if (link.Kind is LinkKind.Url or LinkKind.Folder) OpenUrl(link.Target);
         else OpenFile(link.Target, link.Line);
     }
 }

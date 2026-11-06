@@ -189,7 +189,7 @@ sealed partial class TerminalPane
         var at = 0;
         Walk(inline, default);
         block.Inlines = inlines;
-        if (links.Count > 0) Clickable(block, links);
+        if (links.Count > 0) LinkClicks.Attach(block, links, OpenLink);
         return block;
 
         void Walk(MdInline? node, MdStyle style)
@@ -281,7 +281,8 @@ sealed partial class TerminalPane
             var path = Uri.UnescapeDataString(url.Split('#')[0]);
             if (path.Length == 0) return null;
             var full = Path.GetFullPath(Path.IsPathFullyQualified(path) ? path : Path.Combine(folder, path));
-            return File.Exists(full) ? new TextLink(0, 0, LinkKind.File, full) : null;
+            if (File.Exists(full)) return new TextLink(0, 0, LinkKind.File, full);
+            return Directory.Exists(full) ? new TextLink(0, 0, LinkKind.Folder, full) : null;
         }
         catch (Exception) { return null; }
     }
