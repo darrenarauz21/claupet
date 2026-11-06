@@ -260,10 +260,12 @@ sealed partial class TerminalPane
         return new Border { Background = _ink.Pill, CornerRadius = new CornerRadius(999), Padding = new Thickness(9, 2), Child = label };
     }
 
-    /// <summary>«opus · alto»: el modelo que contestó (o el elegido) y el esfuerzo.</summary>
+    /// <summary>«Opus 5.5 · alto»: el modelo que contestó (o el elegido) y el esfuerzo.</summary>
     static string ModelAndEffort(Tab tab)
     {
-        var model = tab.Agent.Transcript.Model?.Replace("claude-", "") ?? tab.Agent.Options.Model ?? L.T("modelo por defecto");
+        var model = tab.Agent.Transcript.Model is { } used ? Format.ModelChoice(used)
+            : tab.Agent.Options.Model is { } chosen ? Format.ModelChoice(chosen)
+            : L.T("modelo por defecto");
         return tab.Agent.Effort is { } effort ? $"{model} · {EffortLabel(effort)}" : model;
     }
 
@@ -323,7 +325,7 @@ sealed partial class TerminalPane
             foreach (var m in driver.Models.Prepend(""))
             {
                 var value = m.Length == 0 ? null : m;
-                var chip = ChoiceChip(value ?? L.T("por defecto"), () =>
+                var chip = ChoiceChip(value is null ? L.T("por defecto") : Format.ModelChoice(value), () =>
                 {
                     model = value;
                     agent.SetModel(value);
@@ -968,17 +970,49 @@ sealed partial class TerminalPane
 
     IBrush Added => _ink.Dark ? new SolidColorBrush(Color.FromRgb(0xA8, 0xC7, 0xA0)) : new SolidColorBrush(Color.FromRgb(0x3F, 0x6B, 0x3A));
 
+    /// <summary>Un bloque de código, con su Copiar arriba a la derecha al pasar el mouse (copia solo ese bloque).</summary>
     Control Code(string code)
     {
-        var text = Selectable(code.TrimEnd('\n'), Mono, 12.5, _ink.Text);
+        code = code.TrimEnd('\n');
+        var text = Selectable(code, Mono, 12.5, _ink.Text);
         text.TextWrapping = TextWrapping.NoWrap;
-        return new Border
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        grid.Children.Add(new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalAlignment = VerticalAlignment.Center,
+            Content = text,
+        });
+        // Al tocarlo, un visto un momento (y «Copiado» en la descripción), como en el chat.
+        Border? copy = null;
+        copy = Tool(CopyIcon, L.T("Copiar el código"), () =>
+        {
+            CopyToClipboard(code);
+            copy!.Child = Icon(CheckIcon, Added, 13, 2.2);
+            ToolTip.SetTip(copy, L.T("Copiado"));
+            DispatcherTimer.RunOnce(() =>
+            {
+                copy.Child = Icon(CopyIcon, _ink.Secondary, 13, 1.8);
+                ToolTip.SetTip(copy, L.T("Copiar el código"));
+            }, TimeSpan.FromMilliseconds(1500));
+        });
+        copy.Opacity = 0;
+        copy.VerticalAlignment = VerticalAlignment.Top;
+        copy.Margin = new Thickness(8, -3, -6, -3);
+        Grid.SetColumn(copy, 1);
+        grid.Children.Add(copy);
+        var box = new Border
         {
             Background = _ink.Window,
             CornerRadius = new CornerRadius(9),
             Padding = new Thickness(12, 8),
-            Child = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = text },
+            Child = grid,
         };
+        // En todo el cuadro, también en su margen.
+        box.PointerEntered += (_, _) => copy.Opacity = 1;
+        box.PointerExited += (_, _) => copy.Opacity = 0;
+        return box;
     }
 
     /// <summary>Texto que se puede seleccionar y copiar: con el mouse y Ctrl+C, o con el clic derecho (Copiar, Seleccionar todo).</summary>

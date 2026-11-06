@@ -33,10 +33,20 @@ sealed partial class TerminalPane
     /// <summary>El documento entero, con su desplazamiento. folder: la carpeta del .md (sus enlaces relativos se buscan ahí).</summary>
     internal Control MarkdownView(string text, string folder)
     {
-        var page = new StackPanel { Spacing = 10, Margin = new Thickness(22, 16, 22, 26), MaxWidth = 800, HorizontalAlignment = HorizontalAlignment.Left };
+        var page = MarkdownPage(text, folder);
+        page.Margin = new Thickness(22, 16, 22, 26);
+        page.MaxWidth = 800;
+        page.HorizontalAlignment = HorizontalAlignment.Left;
+        return new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = page };
+    }
+
+    /// <summary>Solo los bloques, sin desplazamiento ni márgenes (las secciones de Claupet Canvas).</summary>
+    internal StackPanel MarkdownPage(string text, string folder)
+    {
+        var page = new StackPanel { Spacing = 10 };
         foreach (var block in Markdown.Parse(text, MarkdownPipeline))
             if (MdBlock(block, folder, 0) is { } control) page.Children.Add(control);
-        return new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = page };
+        return page;
     }
 
     Control? MdBlock(Block block, string folder, int depth) => block switch

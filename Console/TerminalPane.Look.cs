@@ -15,7 +15,8 @@ using Avalonia.Media;
 sealed partial class TerminalPane
 {
     const string ListIcon = "M9,6 H20 M9,12 H20 M9,18 H20 M4.5,6 H5 M4.5,12 H5 M4.5,18 H5";
-    const string GridIcon = "M4,4 H10 V10 H4 Z M14,4 H20 V10 H14 Z M4,14 H10 V20 H4 Z M14,14 H20 V20 H14 Z";
+    const string UnlinkIcon = "M15,7 H17 A5,5 0 0 1 17,17 H15 M9,17 H7 A5,5 0 0 1 7,7 H9";
+    const string GridIcon ="M4,4 H10 V10 H4 Z M14,4 H20 V10 H14 Z M4,14 H10 V20 H4 Z M14,14 H20 V20 H14 Z";
 
     /// <summary>La página de Ajustes › Terminal que se muestra ahora (al cambiar algo, se rehace en su lugar).</summary>
     Border? _settingsPage;
@@ -154,8 +155,8 @@ sealed partial class TerminalPane
             var name = System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(folder)) is { Length: > 0 } n ? n : folder;
             var count = TabsOf(folder).Count;
             var detail = $"{ShortPath(folder)} · {(count == 0 ? L.T("sin pestañas") : count == 1 ? L.T("1 pestaña") : L.T("{0} pestañas", count))}";
-            var unlink = TextButton(L.T("Desvincular"), () => Unlink(folder));
-            if (count > 0) ToolTip.SetTip(unlink, L.T("Cierra sus {0} pestañas", count));
+            var unlink = Tool(UnlinkIcon, L.T("Desvincular"), () => Unlink(folder));
+            if (count > 0) ToolTip.SetTip(unlink, L.T("Desvincular (cierra sus {0} pestañas)", count));
             linked.Add(SettingRow(name, detail, unlink, labelFamily: Mono));
         }
         if (linked.Count == 0)

@@ -23,6 +23,9 @@ static class Program
                 text => NativeMessage(text, MbYesNo | MbIconQuestion | MbDefButton2) == IdYes,
                 text => NativeMessage(text, MbOk | MbIconInformation));
 
+        // --canvas-mcp: Claupet Canvas como servidor MCP por stdio, para los agentes (sin ventanas ni bandeja).
+        if (args.Contains(CanvasMcp.Flag)) return CanvasMcp.Run();
+
         // Las extensiones: el anfitrión de una DLL y las herramientas para autores (ExtensionCli).
         if (ExtensionCli.TryRun(args) is { } extensionCode) return extensionCode;
         // Mismos modos de línea de comandos que la app de Windows.
