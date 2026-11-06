@@ -154,7 +154,7 @@ sealed partial class TerminalPane
         _shellInterrupt = Round(StopIcon, L.T("Interrumpir (Ctrl+C)"), shell.Interrupt);
         Grid.SetColumn(_shellInterrupt, 2);
         bar.Children.Add(_shellInterrupt);
-        var close = Round(CloseIcon, L.T("Cerrar la sesión"), () => CloseTab(tab));
+        var close = Round(CloseIcon, L.T("Cerrar la sesión"), () => RequestClose(tab));
         close.Margin = new Thickness(2, 0, 0, 0);
         Grid.SetColumn(close, 3);
         bar.Children.Add(close);
@@ -206,6 +206,7 @@ sealed partial class TerminalPane
     /// </summary>
     void PaintShellStatus(ShellSession shell)
     {
+        _ended.IsVisible = shell.Ended;
         var t = shell.Transcript;
         _shellStatus.Text = !shell.Running ? L.T("{0} se cerró", shell.Shell.Label)
             : !t.Ready ? L.T("Abriendo {0}…", shell.Shell.Label)
@@ -257,7 +258,12 @@ sealed partial class TerminalPane
         var card = new StackPanel();
         card.Children.Add(line);
         card.Children.Add(chips);
-        return new Border
+        var ownTab = _tabs.FirstOrDefault(t => t.Shell == shell);
+        _ended = EndedBar(L.T("{0} se cerró: lo que escriba no se ejecuta hasta abrirla de nuevo.", shell.Shell.Label), L.T("Abrir de nuevo"), () => { if (ownTab is not null) Reopen(ownTab); });
+        _ended.IsVisible = shell.Ended;
+        var holder = new StackPanel();
+        holder.Children.Add(_ended);
+        holder.Children.Add(new Border
         {
             Margin = new Thickness(16, 4, 16, 14),
             CornerRadius = new CornerRadius(14),
@@ -266,7 +272,8 @@ sealed partial class TerminalPane
             BorderThickness = new Thickness(1),
             Padding = new Thickness(14, 10, 8, 8),
             Child = card,
-        };
+        });
+        return holder;
     }
 
     /// <summary>Lo que dice la caja mientras corre un comando.</summary>
@@ -346,6 +353,11 @@ sealed partial class TerminalPane
 
     void SubmitShell(ShellSession shell)
     {
+        if (shell.Ended)
+        {
+            if (_tabs.FirstOrDefault(t => t.Shell == shell) is { } tab) Reopen(tab);
+            return;
+        }
         if (!shell.Running) return;
         var text = _input.Text ?? "";
         // Con un comando corriendo, un Intro vacío también sirve (un «presione Intro para seguir»).

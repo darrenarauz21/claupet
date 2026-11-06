@@ -190,7 +190,17 @@ sealed partial class TerminalPane
     }
 
     /// <summary>Lo quita de la lista (y cierra sus sesiones). La carpeta no se toca.</summary>
-    void Unlink(string folder)
+    /// <summary>Quita el proyecto de la lista; si alguna de sus pestañas está trabajando, pregunta antes de detenerla.</summary>
+    async void Unlink(string folder)
+    {
+        var working = TabsOf(folder).Count(IsWorking);
+        if (working > 0 && !await ConfirmCard.Ask(this, _ink, L.T("¿Detener lo que está corriendo?"),
+            working == 1 ? L.T("Una pestaña de este proyecto sigue trabajando. Si lo desvincula, se detiene.") : L.T("{0} pestañas de este proyecto siguen trabajando. Si lo desvincula, se detienen.", working),
+            L.T("Detener y desvincular"), L.T("Seguir trabajando"))) return;
+        UnlinkNow(folder);
+    }
+
+    void UnlinkNow(string folder)
     {
         foreach (var tab in TabsOf(folder))
         {
