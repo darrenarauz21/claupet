@@ -411,17 +411,18 @@ sealed partial class TerminalPane
             _sideBody.Children.Add(confirm);
             return;
         }
-        var clear = Ui.Press(Ui.Text(L.T("Borrar todo el historial"), 12, _ink.Danger), () =>
+        var clear = Ui.Press(Icon(ChatPane.TrashIcon, _ink.Danger, 13, 1.8), () =>
         {
             _confirmClearHistory = true;
             _deletingSession = null;
             ShowHistory(tab, sessions);
         }, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Borrar todo el historial"));
-        clear.Padding = new Thickness(8, 6);
-        clear.CornerRadius = new CornerRadius(8);
-        clear.Margin = new Thickness(0, 12, 0, 0);
+        clear.Width = 26;
+        clear.Height = 26;
+        clear.CornerRadius = new CornerRadius(999);
+        clear.Margin = new Thickness(4, 12, 0, 0);
         clear.HorizontalAlignment = HorizontalAlignment.Left;
-        ToolTip.SetTip(clear, L.T("Las sesiones abiertas en una pestaña se quedan."));
+        ToolTip.SetTip(clear, L.T("Borrar todo el historial") + ". " + L.T("Las sesiones abiertas en una pestaña se quedan."));
         _sideBody.Children.Add(clear);
     }
 

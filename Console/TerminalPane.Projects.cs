@@ -77,10 +77,14 @@ sealed partial class TerminalPane
             if (tabs.Count == 0)
             {
                 Border? open = null;
-                open = Ui.Press(Ui.Text(L.T("Nueva pestaña aquí"), 12.5, _ink.Tertiary), () => ShowNew(folder, open),
+                open = Ui.Press(Icon(PlusIcon, _ink.Tertiary, 13, 1.8), () => ShowNew(folder, open),
                     (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Nueva pestaña aquí"));
-                open.Padding = new Thickness(30, 5, 10, 5);
-                open.CornerRadius = new CornerRadius(8);
+                open.Width = 26;
+                open.Height = 26;
+                open.CornerRadius = new CornerRadius(999);
+                open.Margin = new Thickness(24, 2, 0, 2);
+                open.HorizontalAlignment = HorizontalAlignment.Left;
+                ToolTip.SetTip(open, L.T("Nueva pestaña aquí"));
                 _list.Children.Add(open);
             }
         }
