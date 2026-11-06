@@ -1298,6 +1298,8 @@
   "Por ejemplo, «Mi script»": "For example, “My script”",
   "Escriba para qué programa es.": "Type which program it's for.",
   "Lo que puede pedir": "What it can ask for",
+  "el de la sesión": "the session's",
+  "de la sesión": "from the session",
   "Para que otro programa de este equipo le pida cosas a Claupet.": "So another program on this computer can ask Claupet for things.",
   "Corre un programa en este equipo, con sus permisos. Claupet controla lo que le pide a la app, no lo que el programa haga por su cuenta.": "It runs a program on this computer, with your permissions. Claupet controls what it asks the app for, not what the program does on its own.",
   "Oficial de Claupet": "Official Claupet extension",

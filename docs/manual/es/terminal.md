@@ -41,14 +41,15 @@ agentes de código y shells en pestañas y muestra cada cosa en su bloque:
 
 3. Pulse **Abrir** (o **Intro**). Tocar de nuevo lo que ya está elegido también lo abre.
 
-Claupet recuerda lo último que abrió, con su cuenta, su modelo y su esfuerzo. Los permisos empiezan como la
-última vez y se cambian en la sesión.
+Claupet recuerda lo último que abrió, con su cuenta, su modelo y su esfuerzo. Los permisos empiezan en **el de
+la sesión**, lo que tenga configurado en Claude Code, y se cambian en la sesión.
 
 Los modos de **Permisos** de Claude Code:
 
 | Modo | Qué hace |
 |---|---|
-| **pregunta antes** | Pide permiso para lo que lo necesita (el de siempre). |
+| **el de la sesión** | Usa lo que tenga configurado en Claude Code (por defecto). |
+| **pregunta antes** | Pide permiso para lo que lo necesita. |
 | **acepta ediciones** | Edita archivos sin preguntar; lo demás, pregunta. |
 | **solo planifica** | Piensa y propone un plan, sin cambiar nada. |
 | **automático** | Decide solo cuándo preguntar. |
