@@ -426,15 +426,17 @@ sealed partial class TerminalPane
         return item;
     }
 
+    /// <summary>Una sesión nueva de Claude Code: sin modo de permisos, usa el que tenga configurado (el de la sesión).</summary>
+    internal static AgentOptions NewClaudeOptions(string folder, string? configDir, string? model, string? effort) =>
+        new(folder, configDir, model, effort);
+
     /// <summary>Abre un agente en bloques (Claude Code con su cuenta, su modelo y su esfuerzo; los otros, con lo suyo).</summary>
     void OpenAgent(string kind, string folder, Account? account, string? model, string? effort)
     {
         if (!Directory.Exists(folder)) return;
         var claude = kind == AgentKinds.Claude;
         var last = TerminalRecents.Load();
-        var options = claude
-            ? new AgentOptions(folder, account?.ConfigDir, model, effort, last.Mode ?? "default")
-            : new AgentOptions(folder, Kind: kind);
+        var options = claude ? NewClaudeOptions(folder, account?.ConfigDir, model, effort) : new AgentOptions(folder, Kind: kind);
         // Se recuerda lo elegido para la próxima; con otro agente, la cuenta y el modelo de Claude Code quedan como estaban.
         TerminalRecents.Remember(claude ? options : new AgentOptions(folder, last.Account, last.Model, last.Effort, last.Mode), "agente:" + kind);
         LinkProject(folder);

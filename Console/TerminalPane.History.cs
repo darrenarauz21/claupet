@@ -57,12 +57,12 @@ sealed partial class TerminalPane
         AgentOptions options;
         if (from.Shell is null)
             options = new AgentOptions(o.Folder, o.ConfigDir, o.Model, from.Agent.Effort ?? o.Effort,
-                from.Agent.Transcript.PermissionMode ?? o.PermissionMode, AgentKinds.Claude, past.Id);
+                from.FollowsSession ? null : from.Agent.Transcript.PermissionMode ?? o.PermissionMode, AgentKinds.Claude, past.Id);
         else
         {
             // Desde una pestaña de shell (su historial es el de la cuenta de siempre): el modelo y el modo recordados.
             var last = TerminalRecents.Load();
-            options = new AgentOptions(o.Folder, account?.ConfigDir, last.Model, last.Effort, last.Mode ?? "default", AgentKinds.Claude, past.Id);
+            options = new AgentOptions(o.Folder, account?.ConfigDir, last.Model, last.Effort, null, AgentKinds.Claude, past.Id);
         }
         var label = account?.Label ?? L.T("cuenta por defecto");
         var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview") };

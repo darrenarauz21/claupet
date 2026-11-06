@@ -78,6 +78,8 @@ sealed partial class AgentTranscript
     public string? Model { get; private set; }
     public string? Cwd { get; private set; }
     public string? PermissionMode { get; private set; }
+    /// <summary>El modo con el que abrió la sesión: el configurado en Claude Code si Claupet no le pidió otro.</summary>
+    public string? SessionMode { get; private set; }
     /// <summary>Hay un turno en curso: desde que se envía un pedido hasta su resultado.</summary>
     public bool Busy { get; private set; }
     /// <summary>Lo que el agente dejó corriendo aparte (comandos, subagentes): sigue vivo aunque el turno haya terminado.</summary>
@@ -183,6 +185,7 @@ sealed partial class AgentTranscript
                 Model = Json.Str(r, "model") ?? Model;
                 Cwd = Json.Str(r, "cwd") ?? Cwd;
                 PermissionMode = Json.Str(r, "permissionMode") ?? PermissionMode;
+                SessionMode ??= PermissionMode;
                 break;
             case "thinking_tokens":
                 // Antes del bloque de lo que pensó (o sin mensajes parciales) llega solo la cuenta de tokens.

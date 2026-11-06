@@ -51,6 +51,8 @@ sealed partial class TerminalPane : Grid
         public (string Path, int? Line)? Preview { get; set; }
         /// <summary>Los archivos fijados en el panel de la derecha, con su ícono junto a Ramas, Cambios y Procesos.</summary>
         public List<string> Docked { get; } = [];
+        /// <summary>Los permisos siguen a la sesión (lo configurado en Claude Code) hasta que se elija otro modo aquí.</summary>
+        public bool FollowsSession { get; set; } = agent.Options.Kind == AgentKinds.Claude && agent.Options.PermissionMode is null;
         /// <summary>El archivo fijado que se mira en el panel (en vez de la vista de PanelTab); null, ninguno.</summary>
         public string? SideFile { get; set; }
         /// <summary>Una terminal de comandos (TerminalPane.Shell.cs). Entonces Agent no se abre: solo lleva la carpeta.</summary>
@@ -531,6 +533,9 @@ sealed partial class TerminalPane : Grid
     }
 
     /// <summary>Llegaron eventos de una sesión: se cambian solo sus bloques (y la lista, si cambió su estado).</summary>
+    /// <summary>La etiqueta de permisos de la pestaña que se ve.</summary>
+    TextBlock? _modeText;
+
     void OnChanged(Tab tab, IReadOnlyList<AgentBlock> changed)
     {
         // Al terminar un turno pudo cambiar el repositorio (archivos editados, un commit).
@@ -541,6 +546,7 @@ sealed partial class TerminalPane : Grid
         }
         // La lista se rehace solo si cambió lo que muestra de la pestaña: con cada pedazo de texto la rehacía entera.
         var listChanged = ListStateChanged(tab);
+        if (tab == _current && !_creating && _modeText is { } modeText) modeText.Text = ModeText(tab);
         if (tab != _current || _creating)
         {
             if (listChanged) RenderList();
@@ -684,6 +690,17 @@ sealed partial class TerminalPane : Grid
         }
         control.AttachedToVisualTree += (_, _) => Start();
         control.DetachedFromVisualTree += (_, _) => stop?.Cancel();
+    }
+
+    /// <summary>En la lista de permisos, la opción de seguir a la sesión (no es un modo de Claude Code).</summary>
+    const string SessionModeChoice = "sesion";
+
+    /// <summary>Lo que dice la etiqueta de permisos; siguiendo a la sesión, también el modo real en cuanto se conoce.</summary>
+    static string ModeText(Tab tab)
+    {
+        var agent = tab.Agent;
+        if (!tab.FollowsSession) return ModeLabel(agent.Transcript.PermissionMode ?? agent.Options.PermissionMode ?? "default");
+        return agent.Transcript.PermissionMode is { } mode ? $"{L.T("de la sesión")} · {ModeLabel(mode)}" : L.T("el de la sesión");
     }
 
     static string ModeLabel(string mode) => mode switch
