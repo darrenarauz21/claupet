@@ -57,6 +57,32 @@ static class Format
         return oneMillion ? label + " (1M)" : label;
     }
 
+    /// <summary>
+    /// A qué modelo apunta hoy cada alias de Claude Code. Al salir una versión nueva, se cambia solo aquí.
+    /// </summary>
+    static readonly Dictionary<string, string> Aliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["opus"] = "claude-opus-5-5",
+        ["sonnet"] = "claude-sonnet-5-5",
+        ["haiku"] = "claude-haiku-5-5",
+        ["fable"] = "claude-fable-5-1",
+    };
+
+    /// <summary>
+    /// Lo que se elige (alias o ID) con su nombre de verdad: «opus» → «Opus 5.5», «sonnet[1m]» → «Sonnet 5.5 (1M)»,
+    /// «opusplan» → «Opus 5.5 + Sonnet 5.5 (plan)», «claude-opus-5-5» → «Opus 5.5». Lo que no se reconoce queda igual.
+    /// </summary>
+    public static string ModelChoice(string choice)
+    {
+        if (choice.Equals("opusplan", StringComparison.OrdinalIgnoreCase))
+            return $"{Model(Aliases["opus"])} + {Model(Aliases["sonnet"])} (plan)";
+        var oneMillion = choice.EndsWith("[1m]", StringComparison.OrdinalIgnoreCase);
+        var bare = oneMillion ? choice[..^4] : choice;
+        if (Aliases.TryGetValue(bare, out var id)) return Model(oneMillion ? id + "[1m]" : id);
+        // Los de otros agentes (Codex, ACP) se muestran tal cual.
+        return choice.StartsWith("claude-", StringComparison.OrdinalIgnoreCase) ? Model(choice) : choice;
+    }
+
     /// <summary>«Opus 5.5 · esfuerzo xhigh · asesor Opus 5.5», o vacío si la sesión aún no respondió.</summary>
     public static string ModelLine(SessionInfo s)
     {

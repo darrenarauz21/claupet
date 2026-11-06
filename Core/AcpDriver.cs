@@ -428,7 +428,7 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
     string NewSession()
     {
         _creating = true;
-        return Request("session/new", new JsonObject { ["cwd"] = _options?.Folder ?? Environment.CurrentDirectory, ["mcpServers"] = new JsonArray() });
+        return Request("session/new", new JsonObject { ["cwd"] = _options?.Folder ?? Environment.CurrentDirectory, ["mcpServers"] = CanvasMcp.AcpServers(Name, _options?.Folder) });
     }
 
     /// <summary>Sin modelo, vuelve al automático del agente (el «auto» de Gemini CLI) si lo tiene.</summary>

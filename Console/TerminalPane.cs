@@ -292,7 +292,7 @@ sealed partial class TerminalPane : Grid
     static string Describe(Tab tab) => tab.Shell is { } shell ? ShellDescribe(shell) :
         string.Join(" · ", new[] { tab.Account, ModelLabel(tab.Agent.Options.Model), tab.Agent.Options.Effort }.Where(s => !string.IsNullOrEmpty(s)));
 
-    static string ModelLabel(string? model) => model ?? L.T("modelo por defecto");
+    static string ModelLabel(string? model) => model is null ? L.T("modelo por defecto") : Format.ModelChoice(model);
 
     internal void Select(Tab tab)
     {
@@ -463,7 +463,7 @@ sealed partial class TerminalPane : Grid
     bool ListStateChanged(Tab tab)
     {
         var t = tab.Agent.Transcript;
-        var state = (t.Busy, Waiting(t), tab.Agent.Running, Title(tab));
+        var state = (t.Busy, Waiting(t), tab.Agent.Running, Title(tab) + " · " + Describe(tab));
         if (_tabState.TryGetValue(tab, out var before) && before == state) return false;
         _tabState[tab] = state;
         return true;
@@ -582,7 +582,9 @@ sealed partial class TerminalPane : Grid
         }
         if (atEnd) TrimBlocks(blocks);
         PaintStatus();
-        if (listChanged || changed.Count == 0 || changed.Any(b => b.Kind is AgentBlockKind.Ask or AgentBlockKind.Done or AgentBlockKind.Permission or AgentBlockKind.Notice))
+        // Sin bloques (llegó el uso o el contexto) no se rehace: con cada línea del stream la rehacía y el botón bajo el
+        // puntero se destruía (parpadeaba y se perdía el clic). Si cambió el modelo, lo nota ListStateChanged.
+        if (listChanged || changed.Any(b => b.Kind is AgentBlockKind.Ask or AgentBlockKind.Done or AgentBlockKind.Permission or AgentBlockKind.Notice))
             RenderList();
         if (atEnd) Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }

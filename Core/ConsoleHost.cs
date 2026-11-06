@@ -55,6 +55,8 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
     int _token;
     /// <summary>La conversación que muestra la Console (null: está en otra parte o cerrada).</summary>
     string? _chatId;
+    /// <summary>La rápida se borró de la lista (su papelera): no se muestra mientras siga vacía.</summary>
+    bool _quickHidden;
     ExtensionsPanel? _extensions;
 
     public bool IsConnected => _server.IsConnected;
@@ -122,7 +124,13 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
                 if (id == ConsoleLink.QuickChat) app.StopQuick();
                 else if (_asking.Remove(id, out var asking)) asking.Cancel();
                 break;
-            case ConsoleLink.ChatDelete when message.Key is { Length: > 0 } id && id != ConsoleLink.QuickChat:
+            case ConsoleLink.ChatDelete when message.Key == ConsoleLink.QuickChat:
+                // La rápida no se borra del disco (siempre existe): se vacía y sale de la lista hasta que se vuelva a usar.
+                _quickHidden = true;
+                app.ClearQuick();
+                PushChats();
+                break;
+            case ConsoleLink.ChatDelete when message.Key is { Length: > 0 } id:
                 if (_asking.Remove(id, out var running)) running.Cancel();
                 _chats.Remove(id);
                 _conversations.Delete(id);
@@ -217,11 +225,12 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
     {
         if (!_server.IsConnected) return;
         var quick = app.QuickChat.Log.Turns;
-        var chats = new List<ChatSummary>
-        {
-            new(ConsoleLink.QuickChat, L.T("Conversación rápida"), quick.Count > 0 ? Conversations.PreviewOf(quick) : app.QuickHint,
-                DateTimeOffset.Now, Quick: true),
-        };
+        // Borrada de la lista: vuelve en cuanto tenga mensajes (la isla o la nubecita respondieron, o se escribió en ella).
+        if (quick.Count > 0) _quickHidden = false;
+        var chats = new List<ChatSummary>();
+        if (!_quickHidden)
+            chats.Add(new(ConsoleLink.QuickChat, L.T("Conversación rápida"), quick.Count > 0 ? Conversations.PreviewOf(quick) : app.QuickHint,
+                DateTimeOffset.Now, Quick: true));
         var saved = _conversations.List();
         // Una nueva sin mensajes todavía no está en disco: se muestra igual mientras está abierta.
         foreach (var open in _chats.Values.Select(c => ((SavedChat)c.Log).Conversation))

@@ -10,7 +10,8 @@ sealed record PastSession(string Id, string Title, DateTime LastUsed, string Pat
 /// <summary>
 /// El historial de Claude Code de una carpeta, para retomarlo desde Claupet Terminal: cada sesión es un .jsonl en
 /// &lt;cuenta&gt;/projects/&lt;carpeta con lo que no es letra o número cambiado por «-»&gt;/. Sus líneas tienen la misma forma que
-/// la salida stream-json, así que la conversación se vuelve a armar con AgentTranscript. Solo lectura.
+/// la salida stream-json, así que la conversación se vuelve a armar con AgentTranscript. Solo se escribe para borrar
+/// sesiones (Delete, DeleteAll), cuando se pide desde el Historial.
 /// </summary>
 static partial class ClaudeHistory
 {
@@ -36,6 +37,50 @@ static partial class ClaudeHistory
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         return list;
+    }
+
+    /// <summary>
+    /// Borra una sesión del historial: su .jsonl, la carpeta con su mismo id al lado (subagentes, resultados largos) y
+    /// sus copias de archivos (file-history). false si no se pudo borrar el .jsonl.
+    /// </summary>
+    public static bool Delete(string configDir, string path)
+    {
+        var id = System.IO.Path.GetFileNameWithoutExtension(path);
+        // Solo un .jsonl de sesión (su nombre es un id): nunca otra cosa.
+        if (!Guid.TryParse(id, out _) || !path.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)) return false;
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+        foreach (var dir in new[] { System.IO.Path.Combine(System.IO.Path.GetDirectoryName(path)!, id), System.IO.Path.Combine(configDir, "file-history", id) })
+            try
+            {
+                if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return true;
+    }
+
+    /// <summary>Borra todas las sesiones de esa carpeta menos las de keep (las abiertas en pestañas). Cuántas borró.</summary>
+    public static int DeleteAll(string configDir, string folder, IReadOnlySet<string> keep)
+    {
+        var dir = ProjectDir(configDir, folder);
+        var deleted = 0;
+        try
+        {
+            if (!Directory.Exists(dir)) return 0;
+            foreach (var file in Directory.GetFiles(dir, "*.jsonl"))
+            {
+                var id = System.IO.Path.GetFileNameWithoutExtension(file);
+                if (Guid.TryParse(id, out _) && !keep.Contains(id) && Delete(configDir, file)) deleted++;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return deleted;
     }
 
     /// <summary>De qué trató: el resumen que guardó Claude Code o lo primero que se pidió; null si no hay ningún pedido.</summary>

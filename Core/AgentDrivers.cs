@@ -138,7 +138,8 @@ sealed class ClaudeDriver(AgentTranscript transcript) : IAgentDriver
     public ProcessStartInfo? Start(AgentOptions options)
     {
         if (Assistant.FindClaude() is not { } claude) return null;
-        var start = Assistant.ClaudeStart(claude, options.ConfigDir, TerminalAgent.Arguments(options));
+        // Con Claupet Canvas (MCP): la sesión puede crear y editar canvas que se ven en vivo en la Console.
+        var start = Assistant.ClaudeStart(claude, options.ConfigDir, [.. TerminalAgent.Arguments(options), .. CanvasMcp.ClaudeArguments(options.Folder)]);
         // El hook de permisos de Claupet se aparta: la sesión pregunta en su bloque (y en la isla).
         start.Environment[Approvals.TerminalVariable] = "1";
         return start;
