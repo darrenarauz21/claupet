@@ -58,6 +58,66 @@ public sealed class TextLinksTests
         Assert.Null(links[1].Line);
     }
 
+    static readonly HashSet<string> Folders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        @"C:\proyecto\docs",
+        @"C:\Program Files\GitHub CLI",
+        @"C:\paquetes\2.6.0",
+    };
+
+    static readonly HashSet<string> Absolutes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        @"C:\Program Files\GitHub CLI\gh.exe",
+        @"C:\otra\Qué es Claupet (1).pdf",
+        @"C:\otra\Program.cs",
+    };
+
+    static IReadOnlyList<TextLink> FindAll(string text) => TextLinks.Find(text, Folder, Absolutes.Contains, Folders.Contains);
+
+    [Theory]
+    [InlineData(@"Está en C:\proyecto\docs y nada más.", @"C:\proyecto\docs", @"C:\proyecto\docs")]
+    [InlineData(@"Está en C:\paquetes\2.6.0\", @"C:\paquetes\2.6.0", @"C:\paquetes\2.6.0\")]
+    [InlineData(@"Abra C:/proyecto/docs.", @"C:\proyecto\docs", @"C:/proyecto/docs")]
+    [InlineData(@"Abra C://proyecto//docs ahora", @"C:\proyecto\docs", @"C://proyecto//docs")]
+    [InlineData(@"Con espacios: C:\Program Files\GitHub CLI, y sigue", @"C:\Program Files\GitHub CLI", @"C:\Program Files\GitHub CLI")]
+    public void UnaCarpetaAbsolutaEsEnlace(string text, string target, string shown)
+    {
+        var link = Assert.Single(FindAll(text));
+        Assert.Equal(LinkKind.Folder, link.Kind);
+        Assert.Equal(target, link.Target, ignoreCase: true);
+        Assert.Equal(shown, Cut(text, link));
+    }
+
+    [Theory]
+    [InlineData(@"Instalado en C:\Program Files\GitHub CLI\gh.exe.", @"C:\Program Files\GitHub CLI\gh.exe", @"C:\Program Files\GitHub CLI\gh.exe")]
+    [InlineData(@"Vea C:/otra/Qué es Claupet (1).pdf ya", @"C:\otra\Qué es Claupet (1).pdf", @"C:/otra/Qué es Claupet (1).pdf")]
+    [InlineData(@"Vea C://otra//Program.cs por favor", @"C:\otra\Program.cs", @"C://otra//Program.cs")]
+    [InlineData(@"Vea file:///C:/otra/Program.cs por favor", @"C:\otra\Program.cs", @"file:///C:/otra/Program.cs")]
+    [InlineData(@"Vea file:///C:/otra/Qu%C3%A9%20es%20Claupet%20(1).pdf ya", @"C:\otra\Qué es Claupet (1).pdf", @"file:///C:/otra/Qu%C3%A9%20es%20Claupet%20(1).pdf")]
+    [InlineData(@"(C:\otra\Program.cs)", @"C:\otra\Program.cs", @"C:\otra\Program.cs")]
+    public void UnArchivoAbsolutoEsEnlaceSeaCualSeaSuForma(string text, string target, string shown)
+    {
+        var link = Assert.Single(FindAll(text));
+        Assert.Equal(LinkKind.File, link.Kind);
+        Assert.Equal(target, link.Target, ignoreCase: true);
+        Assert.Equal(shown, Cut(text, link));
+    }
+
+    [Fact]
+    public void DosRutasEnUnaLineaSonDosEnlaces()
+    {
+        const string text = @"De C:\otra\Program.cs:7 a C:\Program Files\GitHub CLI\gh.exe";
+        var links = FindAll(text);
+        Assert.Equal([@"C:\otra\Program.cs", @"C:\Program Files\GitHub CLI\gh.exe"], links.Select(l => l.Target));
+        Assert.Equal(7, links[0].Line);
+    }
+
+    [Fact]
+    public void UnaRutaAbsolutaQueNoExisteNoEsEnlaceNiSuPadre()
+    {
+        Assert.Empty(FindAll(@"Vea C:\proyecto\docs\no-existe.txt y Z:\nada\aqui."));
+    }
+
     [Fact]
     public void UnaRutaDentroDeUnaUrlEsParteDeLaUrl()
     {

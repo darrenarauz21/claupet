@@ -117,6 +117,7 @@ sealed class ConsoleWindow : Window
         // Un agente creó o pidió mostrar un canvas: se ve en seguida.
         _canvas.OpenRequested += () => SetMode(Mode.Canvas);
         _chat.Request += OnChatRequest;
+        _chat.FileLinkOpened += OpenChatFile;
         _editor.FilesToggled += () =>
         {
             _editorFiles = !_editorFiles;
@@ -226,6 +227,13 @@ sealed class ConsoleWindow : Window
         if (files.Count == 0) return;
         SetMode(Mode.Editor);
         foreach (var file in files) _editor.Open(file);
+    }
+
+    /// <summary>Un archivo que nombró el chat: el de texto, en el editor; otro, en su carpeta (ahí no se ejecuta nada por un clic).</summary>
+    void OpenChatFile(string path)
+    {
+        if (TextFiles.LooksBinary(path)) Shell.Open(Path.GetDirectoryName(path) ?? path);
+        else OpenFiles([path]);
     }
 
     void OnMessage(ConsoleMessage message)

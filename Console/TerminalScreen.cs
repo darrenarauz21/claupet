@@ -424,6 +424,8 @@ sealed class TerminalScreen : Control
                 return new TextLink(0, 0, LinkKind.Url, hyperlink.Url);
             if (Uri.TryCreate(hyperlink.Url, UriKind.Absolute, out var uri) && uri.IsFile && File.Exists(uri.LocalPath))
                 return new TextLink(0, 0, LinkKind.File, uri.LocalPath);
+            if (uri is { IsFile: true } && Directory.Exists(uri.LocalPath))
+                return new TextLink(0, 0, LinkKind.Folder, uri.LocalPath);
         }
         // La fila con las que la continúan o a las que continúa (IsWrapped: sigue a la de arriba).
         var first = index;

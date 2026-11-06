@@ -1742,6 +1742,7 @@
   "La pantalla, los bloques y la caja de las terminales dejan ver el fondo del tema": "The terminal screen, blocks and input box let the theme background show through",
   "{0} %": "{0}%",
   "Ver {0}": "View {0}",
+  "Abrir la carpeta {0}": "Open the folder {0}",
   "Ver el plan": "View the plan",
   "Abrir con el programa del sistema": "Open with the system app",
   "Cerrar (Esc)": "Close (Esc)",

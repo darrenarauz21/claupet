@@ -57,6 +57,18 @@ static class TextFiles
 
     public static (string Text, Encoding Encoding) Read(string path) => Decode(File.ReadAllBytes(path));
 
+    /// <summary>Si no es de texto: tiene un byte en cero al principio. Si no se puede leer, se deja que lo diga quien lo abra.</summary>
+    public static bool LooksBinary(string path)
+    {
+        try
+        {
+            using var file = File.OpenRead(path);
+            var head = new byte[8000];
+            return Array.IndexOf(head, (byte)0, 0, file.Read(head)) >= 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return false; }
+    }
+
     /// <summary>Lo más grande que abre el editor.</summary>
     public const long MaxEditable = 20 * 1024 * 1024;
 
