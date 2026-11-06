@@ -4,6 +4,25 @@ using System.Text;
 
 namespace Claupet.Tests;
 
+/// <summary>Antes de cualquier prueba: los datos de Claupet van a una carpeta temporal, nunca a los de verdad del usuario.</summary>
+static class DatosDePrueba
+{
+#pragma warning disable CA2255 // en las pruebas es justo lo que hace falta
+    [System.Runtime.CompilerServices.ModuleInitializer]
+#pragma warning restore CA2255
+    internal static void Separar()
+    {
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "claupet-pruebas", "datos-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        DataFolder.RootForTests = root;
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            try { Directory.Delete(root, recursive: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        };
+    }
+}
+
 /// <summary>Una carpeta temporal que se borra al terminar la prueba.</summary>
 sealed class TempDir : IDisposable
 {

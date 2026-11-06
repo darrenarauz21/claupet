@@ -198,7 +198,10 @@ static class DataFolder
     static string Current => Path.Combine(AppData, "Claupet");
     static string Before => Path.Combine(AppData, "ClaudeUsageTray");
 
-    public static string Root => Directory.Exists(Current) || !Directory.Exists(Before) ? Current : Before;
+    /// <summary>En las pruebas, otra carpeta: así nunca tocan los proyectos, los ajustes ni las conversaciones de verdad.</summary>
+    internal static string? RootForTests { get; set; }
+
+    public static string Root => RootForTests ?? (Directory.Exists(Current) || !Directory.Exists(Before) ? Current : Before);
 
     public static string In(params string[] parts) => Path.Combine([Root, .. parts]);
 
@@ -209,7 +212,7 @@ static class DataFolder
     /// </summary>
     public static void Migrate()
     {
-        if (Directory.Exists(Current) || !Directory.Exists(Before)) return;
+        if (RootForTests is not null || Directory.Exists(Current) || !Directory.Exists(Before)) return;
         try { Directory.Move(Before, Current); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
