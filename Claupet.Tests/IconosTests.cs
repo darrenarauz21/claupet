@@ -1,30 +1,75 @@
 using System.Reflection;
 using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.LogicalTree;
+using Border = Avalonia.Controls.Border;
+using Control = Avalonia.Controls.Control;
+using ScrollViewer = Avalonia.Controls.ScrollViewer;
+using StackPanel = Avalonia.Controls.StackPanel;
+using TextBlock = Avalonia.Controls.TextBlock;
+using Viewbox = Avalonia.Controls.Viewbox;
 
 namespace Claupet.Tests;
 
-/// <summary>Las acciones que se entienden con un ícono no ocupan lugar con texto: la descripción sale al pasar el puntero.</summary>
+/// <summary>Las acciones se encuentran donde se las busca, con ícono y su descripción al pasar el puntero.</summary>
 public sealed class IconosTests
 {
     const BindingFlags Private = BindingFlags.NonPublic | BindingFlags.Instance;
 
+    static StackPanel History(TerminalPane pane, TerminalPane.Tab tab, string file)
+    {
+        IReadOnlyList<PastSession> sessions = [new("otra", "Una sesión anterior", DateTime.Now, file)];
+        typeof(TerminalPane).GetMethod("ShowHistory", Private)!.Invoke(pane, [tab, sessions]);
+        return (StackPanel)typeof(TerminalPane).GetField("_sideBody", Private)!.GetValue(pane)!;
+    }
+
     [Fact]
-    public void BorrarTodoElHistorialEsUnIconoConSuDescripcion() => Headless.Run(() =>
+    public void BorrarTodoElHistorialSePideDesdeElTituloYPreguntaArriba() => Headless.Run(() =>
     {
         using var dir = new TempDir();
         var pane = new TerminalPane();
         pane.SetInk(Ink.For(true));
         var tab = new TerminalPane.Tab(new TerminalAgent(new AgentOptions(dir.Path), _ => { }), "cuenta");
-        IReadOnlyList<PastSession> sessions = [new("otra", "Una sesión anterior", DateTime.Now, dir["otra.jsonl"])];
-        typeof(TerminalPane).GetMethod("ShowHistory", Private)!.Invoke(pane, [tab, sessions]);
-        var body = (StackPanel)typeof(TerminalPane).GetField("_sideBody", Private)!.GetValue(pane)!;
 
-        var clear = Assert.IsType<Border>(body.Children[^1]);
-        Assert.Equal(L.T("Borrar todo el historial"), AutomationProperties.GetName(clear));
-        Assert.IsType<Viewbox>(clear.Child);
-        Assert.StartsWith(L.T("Borrar todo el historial"), (string)Avalonia.Controls.ToolTip.GetTip(clear)!);
+        var body = History(pane, tab, dir["otra.jsonl"]);
+        Assert.DoesNotContain(body.GetLogicalDescendants().OfType<Control>(), c => AutomationProperties.GetName(c) == L.T("Borrar todo el historial"));
+
+        typeof(TerminalPane).GetField("_confirmClearHistory", Private)!.SetValue(pane, true);
+        body = History(pane, tab, dir["otra.jsonl"]);
+        var question = L.T("¿Borrar todo el historial de esta carpeta? No se puede deshacer.");
+        Assert.Contains(body.Children[0].GetLogicalDescendants().OfType<TextBlock>(), t => t.Text == question);
+
+        var title = (Border)typeof(TerminalPane).GetMethod("HistoryTitle", Private)!.Invoke(pane, [tab])!;
+        Assert.Equal(L.T("Opciones del historial"), AutomationProperties.GetName(title));
         tab.Agent.Dispose();
+    });
+
+    static Control Head(TerminalPane pane, string folder) =>
+        (Control)typeof(TerminalPane).GetMethod("ProjectHead", Private)!.Invoke(pane, [folder, Array.Empty<TerminalPane.Tab>(), false])!;
+
+    [Fact]
+    public void UnProyectoSinPestanasTieneElMasEnSuFila() => Headless.Run(() =>
+    {
+        using var dir = new TempDir();
+        var pane = new TerminalPane();
+        pane.SetInk(Ink.For(true));
+        var add = Head(pane, dir.Path).GetLogicalDescendants().OfType<Border>().First(b => AutomationProperties.GetName(b) == L.T("Nueva pestaña aquí"));
+        Assert.IsType<Viewbox>(add.Child);
+        Assert.Equal(1, add.Opacity);
+    });
+
+    [Fact]
+    public void TocarLaRamaAbreUnaPestanaYDiceQueEs() => Headless.Run(() =>
+    {
+        using var dir = new TempDir();
+        Directory.CreateDirectory(dir[".git"]);
+        File.WriteAllText(Path.Combine(dir[".git"], "HEAD"), "ref: refs/heads/mi-rama\n");
+        var pane = new TerminalPane();
+        pane.SetInk(Ink.For(true));
+        var head = Assert.IsType<StackPanel>(Head(pane, dir.Path));
+        var branch = Assert.IsType<Border>(head.Children[1]);
+        Assert.Equal(L.T("Nueva pestaña aquí"), AutomationProperties.GetName(branch));
+        Assert.Contains("git", (string)Avalonia.Controls.ToolTip.GetTip(branch)!);
     });
 
     [Fact]

@@ -74,19 +74,6 @@ sealed partial class TerminalPane
             _list.Children.Add(ProjectHead(folder, tabs, folded));
             if (folded) continue;
             foreach (var tab in tabs) _list.Children.Add(TabItem(tab));
-            if (tabs.Count == 0)
-            {
-                Border? open = null;
-                open = Ui.Press(Icon(PlusIcon, _ink.Tertiary, 13, 1.8), () => ShowNew(folder, open),
-                    (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Nueva pestaña aquí"));
-                open.Width = 26;
-                open.Height = 26;
-                open.CornerRadius = new CornerRadius(999);
-                open.Margin = new Thickness(24, 2, 0, 2);
-                open.HorizontalAlignment = HorizontalAlignment.Left;
-                ToolTip.SetTip(open, L.T("Nueva pestaña aquí"));
-                _list.Children.Add(open);
-            }
         }
         if (projects.Count == 0 && !_look.IconsOnly)
         {
@@ -133,6 +120,16 @@ sealed partial class TerminalPane
                 right.Children.Add(dot);
             }
         }
+        // El + a la vista si el proyecto no tiene pestañas; si tiene, al pasar el cursor, como el «⋯».
+        Border? add = null;
+        add = Ui.Press(Icon(PlusIcon, _ink.Secondary, 13, 1.8), () => ShowNew(folder, add!),
+            (b, on) => b.Background = on ? _ink.Track : Brushes.Transparent, L.T("Nueva pestaña aquí"));
+        add.Width = 24;
+        add.Height = 24;
+        add.CornerRadius = new CornerRadius(999);
+        add.Opacity = tabs.Count == 0 ? 1 : 0;
+        ToolTip.SetTip(add, L.T("Nueva pestaña aquí"));
+        right.Children.Add(add);
         Border? more = null;
         more = Ui.Press(Icon(DotsIcon, _ink.Secondary, 14, 3), () => ProjectMenu(more!, folder, tabs.Count),
             (b, on) => b.Background = on ? _ink.Track : Brushes.Transparent, L.T("Más opciones de {0}", name));
@@ -154,6 +151,7 @@ sealed partial class TerminalPane
         {
             b.Background = on ? _ink.Pill : Brushes.Transparent;
             more.Opacity = on ? 1 : 0;
+            add.Opacity = on || tabs.Count == 0 ? 1 : 0;
         }, folded ? L.T("Desplegar {0}", name) : L.T("Plegar {0}", name));
         head.Padding = new Thickness(6, 0, 2, 0);
         head.Margin = new Thickness(2, 6, 2, 0);
@@ -166,7 +164,6 @@ sealed partial class TerminalPane
             FontSize = 11.5,
             Foreground = _ink.Tertiary,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            Margin = new Thickness(25, 0, 8, 4),
         };
         if (branch is not null) info.Inlines!.Add(new Avalonia.Controls.Documents.Run(branch) { FontFamily = Mono });
         if (status is not null)
@@ -174,8 +171,14 @@ sealed partial class TerminalPane
             {
                 Foreground = status.Changed > 0 || status.Ahead > 0 ? _ink.Secondary : _ink.Tertiary,
             });
-        ToolTip.SetTip(info, branch);
-        return new StackPanel { Children = { head, info } };
+        // Parece una sesión y se intenta abrir: al tocarla, la pestaña nueva en este proyecto.
+        Border? open = null;
+        open = Ui.Press(info, () => ShowNew(folder, open!), (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Nueva pestaña aquí"));
+        open.Padding = new Thickness(25, 2, 8, 2);
+        open.Margin = new Thickness(2, 0, 2, 4);
+        open.CornerRadius = new CornerRadius(7);
+        ToolTip.SetTip(open, L.T("La rama de git de este proyecto; ↑ son commits sin subir. Toque para abrir una pestaña aquí."));
+        return new StackPanel { Children = { head, open } };
     }
 
     void ProjectMenu(Control anchor, string folder, int sessions)

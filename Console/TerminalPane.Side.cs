@@ -105,6 +105,7 @@ sealed partial class TerminalPane
             text.HorizontalAlignment = HorizontalAlignment.Right;
             text.VerticalAlignment = VerticalAlignment.Center;
             title = text;
+            if (_projects.PanelTab == "historial") title = HistoryTitle(tab);
         }
         Grid.SetColumn(title, 1);
         bar.Children.Add(title);
@@ -340,6 +341,25 @@ sealed partial class TerminalPane
         var here = tab.Agent.Transcript.SessionId ?? tab.Agent.Options.Resume;
         var open = OpenSessions();
         var configDir = tab.Agent.Options.ConfigDir ?? global::Claupet.Account.DefaultDir;
+        _historySessions = sessions;
+        _historyClearable = !sessions.All(s => open.Contains(s.Id));
+        // Borrar todo el historial de esta carpeta (se pide desde el título): pregunta aquí arriba, a la vista.
+        if (_confirmClearHistory && _historyClearable)
+        {
+            var confirm = ConfirmRow(L.T("¿Borrar todo el historial de esta carpeta? No se puede deshacer."), () =>
+            {
+                _confirmClearHistory = false;
+                ShowHistory(tab, sessions);
+            }, () =>
+            {
+                _confirmClearHistory = false;
+                var folder = tab.Agent.Options.Folder;
+                DeleteHistory(tab, () => ClaudeHistory.DeleteAll(configDir, folder, open) > 0);
+            });
+            _sideBody.Children.Add(confirm);
+            _sideBody.Children.Add(Hint(L.T("Las sesiones abiertas en una pestaña se quedan.")));
+            Dispatcher.UIThread.Post(() => confirm.BringIntoView());
+        }
         foreach (var past in sessions)
         {
             if (_deletingSession == past.Id)
@@ -392,38 +412,36 @@ sealed partial class TerminalPane
             _sideBody.Children.Add(row);
         }
         _sideBody.Children.Add(Hint(L.T("Toque una para retomarla en una pestaña nueva, con lo de antes a la vista (también con /resume).")));
+    }
 
-        // Borrar todo el historial de esta carpeta (menos lo abierto en pestañas), preguntando antes ahí mismo.
-        if (sessions.All(s => open.Contains(s.Id))) return;
-        if (_confirmClearHistory)
-        {
-            var confirm = ConfirmRow(L.T("¿Borrar todo el historial de esta carpeta? No se puede deshacer."), () =>
+    /// <summary>Lo último que mostró el historial, para volver a mostrarlo desde el título.</summary>
+    IReadOnlyList<PastSession> _historySessions = [];
+    /// <summary>Hay alguna sesión que no esté abierta en una pestaña: se puede borrar.</summary>
+    bool _historyClearable;
+
+    /// <summary>El título «Historial»: al tocarlo, sus opciones.</summary>
+    Border HistoryTitle(Tab tab)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(Ui.Text(L.T("Historial"), 12.5, _ink.Secondary));
+        row.Children.Add(Icon(ChevronDownIcon, _ink.Tertiary, 9, 2));
+        Border? title = null;
+        title = Ui.Press(row, () => DropList.Show(title!, _ink,
+            [_historyClearable
+                ? new DropList.Entry("borrar", L.T("Borrar todo el historial"), Danger: true)
+                : new DropList.Entry("nada", L.T("No hay sesiones que se puedan borrar"), Action: true)], picked =>
             {
-                _confirmClearHistory = false;
-                ShowHistory(tab, sessions);
-            }, () =>
-            {
-                _confirmClearHistory = false;
-                var folder = tab.Agent.Options.Folder;
-                DeleteHistory(tab, () => ClaudeHistory.DeleteAll(configDir, folder, open) > 0);
-            });
-            confirm.Margin = new Thickness(0, 12, 0, 0);
-            _sideBody.Children.Add(confirm);
-            return;
-        }
-        var clear = Ui.Press(Icon(ChatPane.TrashIcon, _ink.Danger, 13, 1.8), () =>
-        {
-            _confirmClearHistory = true;
-            _deletingSession = null;
-            ShowHistory(tab, sessions);
-        }, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Borrar todo el historial"));
-        clear.Width = 26;
-        clear.Height = 26;
-        clear.CornerRadius = new CornerRadius(999);
-        clear.Margin = new Thickness(4, 12, 0, 0);
-        clear.HorizontalAlignment = HorizontalAlignment.Left;
-        ToolTip.SetTip(clear, L.T("Borrar todo el historial") + ". " + L.T("Las sesiones abiertas en una pestaña se quedan."));
-        _sideBody.Children.Add(clear);
+                if (picked != "borrar") return;
+                _confirmClearHistory = true;
+                _deletingSession = null;
+                ShowHistory(tab, _historySessions);
+            }), (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Opciones del historial"));
+        title.Padding = new Thickness(8, 4);
+        title.CornerRadius = new CornerRadius(7);
+        title.HorizontalAlignment = HorizontalAlignment.Right;
+        title.VerticalAlignment = VerticalAlignment.Center;
+        ToolTip.SetTip(title, L.T("Opciones del historial"));
+        return title;
     }
 
     /// <summary>La sesión del historial que pregunta «¿Borrarla?» en su fila (null: ninguna).</summary>
