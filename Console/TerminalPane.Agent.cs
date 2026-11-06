@@ -88,7 +88,7 @@ sealed partial class TerminalPane
         var panel = Small(Round(PanelIcon, L.T("Ramas, cambios y procesos"), ToggleSide));
         Grid.SetColumn(panel, 3);
         bar.Children.Add(panel);
-        var close = Small(Round(CloseIcon, L.T("Cerrar la pestaña"), () => CloseTab(tab)));
+        var close = Small(Round(CloseIcon, L.T("Cerrar la pestaña"), () => RequestClose(tab)));
         Grid.SetColumn(close, 4);
         bar.Children.Add(close);
         return bar;
@@ -110,6 +110,7 @@ sealed partial class TerminalPane
         }
         _interrupt.IsVisible = t.Busy && tab.Agent.Running;
         _send.Opacity = tab.Agent.Running ? 1 : 0.45;
+        _ended.IsVisible = tab.Shell?.Ended ?? tab.Agent.Ended;
     }
 
     // ── Abajo ───────────────────────────────────────────────────────────────────────────────
@@ -229,8 +230,14 @@ sealed partial class TerminalPane
             Child = line,
         };
         card.SizeChanged += (_, e) => Arrange(e.NewSize.Width);
+        var resumable = agent.Transcript.SessionId is not null || agent.Options.Resume is not null;
+        _ended = EndedBar(L.T("Esta sesión terminó: lo que escriba no llega hasta retomarla."), claude && resumable ? L.T("Retomar la sesión") : L.T("Abrir de nuevo"), () => Reopen(tab));
+        _ended.IsVisible = agent.Ended;
         Arrange(Bounds.Width > 0 ? Bounds.Width - (_projects.PanelOpen ? _projects.PanelWidth : 0) - 24 : 800);
-        return card;
+        var holder = new StackPanel();
+        holder.Children.Add(_ended);
+        holder.Children.Add(card);
+        return holder;
     }
 
     /// <summary>Una etiqueta fija (la terminal de la caja de un shell).</summary>

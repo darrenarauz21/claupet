@@ -68,6 +68,7 @@ Un editor sencillo para documentos y código.
 | **Documento** | El Markdown se ve sin sus marcas (títulos, negritas, enlaces, viñetas), salvo en la línea del cursor. |
 | **Código** | Números de línea y colores para C#, JavaScript, Python, PowerShell, SQL, HTML, CSS, JSON, XML y otros. |
 | **Archivos** | **Mostrar los archivos** lista los abiertos y los recientes. Las pestañas llevan un punto si hay cambios sin guardar. |
+| **Cambios de afuera** | Si un agente u otro programa cambia un archivo abierto, se recarga solo (Ctrl+Z lo devuelve). Si usted tiene cambios sin guardar, pregunta qué conservar; guardar tampoco pisa nada sin preguntar. |
 
 | Tecla | Qué hace |
 |---|---|

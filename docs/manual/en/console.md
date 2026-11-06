@@ -69,6 +69,7 @@ A simple editor for documents and code.
 | **Document** | Markdown shows without its marks (headings, bold, links, bullets), except on the cursor's line. |
 | **Code** | Line numbers and colors for C#, JavaScript, Python, PowerShell, SQL, HTML, CSS, JSON, XML and more. |
 | **Files** | **Show files** lists the open and recent ones. Tabs get a dot when there are unsaved changes. |
+| **Outside changes** | If an agent or another program changes an open file, it reloads on its own (Ctrl+Z brings it back). If you have unsaved changes, it asks what to keep; saving doesn't overwrite anything without asking either. |
 
 | Key | What it does |
 |---|---|

@@ -1,7 +1,9 @@
 namespace Claupet;
 
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
@@ -40,11 +42,13 @@ sealed partial class TerminalPane
     /// después se abre Claude Code con --resume, con la cuenta, el modelo y el esfuerzo de la pestaña desde la que se pidió.
     /// Si ya está abierta en otra pestaña, se va a esa.
     /// </summary>
-    void Resume(Tab from, PastSession past)
+    void Resume(Tab from, PastSession past, bool replace = false, string draft = "")
     {
-        if (_tabs.FirstOrDefault(t => t.Shell is null && (t.Agent.Transcript.SessionId == past.Id || t.Agent.Options.Resume == past.Id)) is { } open)
+        if (_tabs.FirstOrDefault(t => (!replace || t != from) && t.Shell is null && (t.Agent.Transcript.SessionId == past.Id || t.Agent.Options.Resume == past.Id)) is { } open)
         {
             Select(open);
+            // La conversación ya estaba abierta en otra pestaña: sigue ahí, con lo escrito si se escribió algo.
+            if (replace) ReplaceEnded(from, open, draft.Length > 0 ? draft : _input.Text ?? "");
             return;
         }
         var o = from.Agent.Options;
@@ -72,9 +76,70 @@ sealed partial class TerminalPane
                 agent.Changed += changed => OnChanged(tab, changed);
                 Add(tab);
                 agent.Start();
+                if (replace) ReplaceEnded(from, tab, draft);
                 _input.Focus();
             });
         });
+    }
+
+    // ── Una sesión que terminó ──────────────────────────────────────────────────────────────
+
+    /// <summary>La franja sobre la caja de una sesión que terminó: qué pasó y cómo seguir (antes, Intro no hacía nada).</summary>
+    Grid EndedBar(string text, string action, Action reopen)
+    {
+        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(16, 0, 14, 8) };
+        var message = Ui.Text(text, 12.5, _ink.Secondary);
+        message.TextWrapping = TextWrapping.Wrap;
+        message.Margin = new Thickness(0, 0, 10, 0);
+        bar.Children.Add(message);
+        var button = Pill(action, _ink.Accent, Ink.On(_ink.Accent), reopen);
+        Grid.SetColumn(button, 1);
+        bar.Children.Add(button);
+        return bar;
+    }
+
+    /// <summary>
+    /// Sigue en una pestaña nueva lo que terminó, en la misma carpeta y con lo escrito en la caja (no se envía solo): Claude
+    /// Code retoma su conversación si la tiene guardada; lo demás abre de nuevo.
+    /// </summary>
+    internal void Reopen(Tab tab)
+    {
+        if (tab.Reopening) return;
+        var o = tab.Agent.Options;
+        if (!Directory.Exists(o.Folder))
+        {
+            if (_ended.Children.OfType<TextBlock>().FirstOrDefault() is { } message)
+                message.Text = L.T("La carpeta «{0}» ya no existe: no se puede abrir de nuevo aquí.", o.Folder);
+            return;
+        }
+        tab.Reopening = true;
+        var draft = _input.Text ?? "";
+        if (tab.Shell is { } shell)
+        {
+            OpenShell(shell.Shell, o.Folder);
+            ReplaceEnded(tab, _current, draft);
+            return;
+        }
+        var configDir = o.ConfigDir ?? global::Claupet.Account.DefaultDir;
+        if (o.Kind == AgentKinds.Claude && (tab.Agent.Transcript.SessionId ?? o.Resume) is { } id
+            && ClaudeHistory.List(configDir, o.Folder).FirstOrDefault(p => p.Id == id) is { } past)
+        {
+            Resume(tab, past, replace: true, draft);
+            return;
+        }
+        var account = Accounts().FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, configDir));
+        OpenAgent(o.Kind, o.Folder, account, o.Model, tab.Agent.Effort ?? o.Effort);
+        ReplaceEnded(tab, _current, draft);
+    }
+
+    internal void ReplaceEnded(Tab ended, Tab? opened, string draft)
+    {
+        opened?.Images.AddRange(ended.Images);
+        // Queda en el lugar de la que reemplaza, no al final de la lista.
+        if (opened is not null && opened != ended && _tabs.Remove(opened)) _tabs.Insert(_tabs.IndexOf(ended), opened);
+        CloseTab(ended);
+        _input.Text = draft;
+        _input.CaretIndex = draft.Length;
     }
 
     /// <summary>

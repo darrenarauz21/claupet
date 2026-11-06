@@ -23,6 +23,10 @@ sealed class EditorDoc
     public bool Code { get; set; }
     public int Caret { get; set; }
     public double Scroll { get; set; }
+    /// <summary>Cómo estaba en el disco la última vez que se leyó, se guardó o se decidió conservar lo de aquí.</summary>
+    public DiskState? Disk { get; set; }
+    /// <summary>Cuántas veces seguidas no se encontró: reemplazar un archivo lo hace desaparecer un momento.</summary>
+    public int MissingChecks { get; set; }
     /// <summary>La codificación en que vino el archivo (se guarda igual si se puede: TextFiles.ForSaving); null, uno nuevo.</summary>
     public Encoding? Encoding { get; set; }
     public string Title => Path is null ? L.T("Sin título") : System.IO.Path.GetFileName(Path);
@@ -37,7 +41,10 @@ sealed class EditorDoc
 /// <summary>Los archivos abiertos hace poco en el editor, en editor-recientes.json junto a los ajustes (no es un ajuste: lo guarda la Console).</summary>
 static class EditorRecents
 {
-    static string FilePath => DataFolder.In("editor-recientes.json");
+    /// <summary>Otro archivo en vez del de la persona: las pruebas no tocan su lista.</summary>
+    internal static string? FileForTests { get; set; }
+
+    static string FilePath => FileForTests ?? DataFolder.In("editor-recientes.json");
 
     public static List<string> Load()
     {
@@ -91,6 +98,10 @@ sealed class EditorPane : Grid
     Border _documentTab = new(), _codeTab = new();
     /// <summary>Lo que corre al contestar «¿Guardar los cambios?» (para cerrar un archivo o la ventana).</summary>
     Action? _afterConfirm;
+    /// <summary>El archivo por el que se está preguntando si cambió afuera.</summary>
+    EditorDoc? _asking;
+    /// <summary>Cada poco se mira si los abiertos cambiaron: un agente los edita sin que la ventana pierda el foco.</summary>
+    readonly DispatcherTimer _diskTimer = new() { Interval = TimeSpan.FromSeconds(1.5) };
 
     public EditorPane()
     {
@@ -114,6 +125,9 @@ sealed class EditorPane : Grid
             lastLine = _editor.TextArea.Caret.Line;
         };
         Grid.SetRow(_body, 1);
+        _diskTimer.Tick += (_, _) => { if (IsEffectivelyVisible) CheckDisk(); };
+        AttachedToVisualTree += (_, _) => _diskTimer.Start();
+        DetachedFromVisualTree += (_, _) => _diskTimer.Stop();
         Build();
     }
 
@@ -162,13 +176,13 @@ sealed class EditorPane : Grid
         }
         try
         {
-            if (new FileInfo(path).Length > 20 * 1024 * 1024)
+            if (new FileInfo(path).Length > TextFiles.MaxEditable)
             {
                 Notice(L.T("«{0}» es demasiado grande para el editor (más de 20 MB).", System.IO.Path.GetFileName(path)));
                 return;
             }
             var (text, encoding) = TextFiles.Read(path);
-            var doc = new EditorDoc { Path = path, Document = new TextDocument(text), Code = EditorDoc.IsCode(path), Encoding = encoding };
+            var doc = new EditorDoc { Path = path, Document = new TextDocument(text), Code = EditorDoc.IsCode(path), Encoding = encoding, Disk = TextFiles.StateOf(path) };
             doc.Document.UndoStack.MarkAsOriginalFile();
             _recents = EditorRecents.Add(path);
             Add(doc);
@@ -180,9 +194,15 @@ sealed class EditorPane : Grid
     }
 
     /// <summary>Guarda el archivo (si no tiene lugar todavía, pregunta dónde). true si quedó guardado.</summary>
-    public async Task<bool> SaveAsync(EditorDoc doc, bool asNew = false)
+    public async Task<bool> SaveAsync(EditorDoc doc, bool asNew = false, Action? saved = null)
     {
         var path = doc.Path;
+        // Alguien más lo cambió (un agente, git): guardar ahora borraría eso sin que se note, así que se pregunta.
+        if (path is not null && !asNew && TextFiles.Compare(path, doc.Disk) is { Change: DiskChange.Changed } outside)
+        {
+            AskChanged(doc, outside, saving: true, saved);
+            return false;
+        }
         if (path is null || asNew)
         {
             if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return false;
@@ -205,6 +225,8 @@ sealed class EditorPane : Grid
             doc.Encoding = encoding;
             File.Move(temp, path, overwrite: true);
             doc.Path = path;
+            doc.Disk = TextFiles.StateOf(path);
+            doc.MissingChecks = 0;
             doc.Document.UndoStack.MarkAsOriginalFile();
             _recents = EditorRecents.Add(path);
             Refresh();
@@ -255,6 +277,7 @@ sealed class EditorPane : Grid
         _current = doc;
         Show(doc);
         Refresh();
+        CheckDisk(doc);
     }
 
     void Add(EditorDoc doc)
@@ -270,6 +293,7 @@ sealed class EditorPane : Grid
 
     void Remove(EditorDoc doc, bool select = true)
     {
+        if (_asking == doc) EndConfirm(run: false);
         var at = _docs.IndexOf(doc);
         _docs.Remove(doc);
         if (_current == doc)
@@ -484,6 +508,105 @@ sealed class EditorPane : Grid
     }
 
     /// <summary>«¿Guardar los cambios de x?» en la cabecera, en lugar de los botones; then corre si se guardó o se descartó.</summary>
+    // ── Cambios de afuera ───────────────────────────────────────────────────────────────────
+
+    /// <summary>Mira todos los abiertos (cada poco, mientras se ve el editor).</summary>
+    internal void CheckDisk()
+    {
+        foreach (var doc in _docs.ToList()) CheckDisk(doc);
+    }
+
+    /// <summary>
+    /// Si el archivo cambió afuera y aquí no hay nada sin guardar, se recarga solo; si hay, se pregunta (solo por el que se
+    /// ve: los demás, al elegirlos). Mientras se pregunta otra cosa, se espera.
+    /// </summary>
+    void CheckDisk(EditorDoc doc)
+    {
+        if (doc.Path is not { } path) return;
+        var check = TextFiles.Compare(path, doc.Disk);
+        switch (check.Change)
+        {
+            case DiskChange.Same:
+                doc.MissingChecks = 0;
+                if (check.State is { } state) doc.Disk = state;
+                break;
+            case DiskChange.Changed:
+                doc.MissingChecks = 0;
+                if (!doc.Dirty) Reload(doc, check);
+                else if (doc == _current && _afterConfirm is null) AskChanged(doc, check, saving: false, null);
+                break;
+            case DiskChange.Missing:
+                if (++doc.MissingChecks >= 2 && doc == _current && _afterConfirm is null) AskMissing(doc);
+                break;
+        }
+    }
+
+    /// <summary>Pone lo que hay en el disco, donde estaba el cursor. Con Ctrl+Z vuelve lo de antes.</summary>
+    void Reload(EditorDoc doc, DiskCheck check)
+    {
+        var showing = doc == _current;
+        var (caret, scroll) = showing ? (_editor.CaretOffset, _editor.VerticalOffset) : (doc.Caret, doc.Scroll);
+        doc.Document.Replace(0, doc.Document.TextLength, check.Text ?? "");
+        doc.Document.UndoStack.MarkAsOriginalFile();
+        doc.Encoding = check.Encoding;
+        doc.Disk = check.State;
+        doc.Caret = Math.Min(caret, doc.Document.TextLength);
+        if (showing)
+        {
+            _editor.CaretOffset = doc.Caret;
+            Dispatcher.UIThread.Post(() => _editor.ScrollToVerticalOffset(scroll), DispatcherPriority.Background);
+        }
+        Refresh();
+    }
+
+    /// <summary>El archivo cambió afuera y aquí hay algo distinto: se elige qué queda; nada se pierde sin decidirlo.</summary>
+    void AskChanged(EditorDoc doc, DiskCheck check, bool saving, Action? saved)
+    {
+        AskAbout(doc, L.T("«{0}» cambió fuera del editor.", doc.Title));
+        _confirm.Children.Add(Pill(L.T("Recargar"), _ink.Pill, _ink.Text, () =>
+        {
+            EndConfirm(run: false);
+            Reload(doc, check);
+        }));
+        _confirm.Children.Add(Pill(saving ? L.T("Sobrescribir") : L.T("Conservar lo mío"), _ink.Accent, new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)), async () =>
+        {
+            EndConfirm(run: false);
+            doc.Disk = check.State;
+            if (saving && await SaveAsync(doc, saved: saved)) saved?.Invoke();
+        }));
+    }
+
+    /// <summary>El archivo ya no está (se borró o se movió). Lo de aquí puede ser la única copia: no se cierra solo.</summary>
+    void AskMissing(EditorDoc doc)
+    {
+        AskAbout(doc, L.T("«{0}» ya no está en el disco.", doc.Title));
+        _confirm.Children.Add(Pill(doc.Dirty ? L.T("Cerrar sin guardar") : L.T("Cerrar"), _ink.Pill, _ink.Text, () =>
+        {
+            EndConfirm(run: false);
+            Remove(doc);
+        }));
+        _confirm.Children.Add(Pill(L.T("Conservar"), _ink.Accent, new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)), () =>
+        {
+            EndConfirm(run: false);
+            doc.Disk = null;
+            doc.MissingChecks = 0;
+        }));
+    }
+
+    void AskAbout(EditorDoc doc, string text)
+    {
+        _asking = doc;
+        _afterConfirm = () => { };
+        _confirm.Children.Clear();
+        var question = Ui.Text(text, 13, _ink.Secondary);
+        question.Margin = new Thickness(0, 0, 4, 0);
+        question.MaxWidth = 340;
+        ToolTip.SetTip(question, text);
+        _confirm.Children.Add(question);
+        _confirm.IsVisible = true;
+        _tools.IsVisible = false;
+    }
+
     void AskSave(EditorDoc doc, Action then)
     {
         _afterConfirm = then;
@@ -497,7 +620,7 @@ sealed class EditorPane : Grid
         _confirm.Children.Add(Pill(L.T("No guardar"), _ink.Pill, _ink.Text, () => EndConfirm(run: true)));
         _confirm.Children.Add(Pill(L.T("Guardar"), _ink.Accent, new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x13)), async () =>
         {
-            if (await SaveAsync(doc)) EndConfirm(run: true);
+            if (await SaveAsync(doc, saved: then)) EndConfirm(run: true);
         }));
         _confirm.IsVisible = true;
         _tools.IsVisible = false;
@@ -505,6 +628,7 @@ sealed class EditorPane : Grid
 
     void EndConfirm(bool run)
     {
+        _asking = null;
         _confirm.IsVisible = false;
         var then = _afterConfirm;
         _afterConfirm = null;

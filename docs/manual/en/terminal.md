@@ -259,7 +259,8 @@ back to the original values.
 
 ## Limits
 
-- **Closing Claupet Console closes every Terminal session**: no agent is left running.
+- **Closing Claupet Console closes every Terminal session**: no agent is left running. If a tab is still working (background tasks included), it asks first; the same goes for closing that tab or unlinking its project.
+- **If a session ends**, a strip above the box says so and offers to resume it (or open it again). What you typed is kept and isn't sent on its own.
 - The other agents need to be installed and signed in.
 
 ---
