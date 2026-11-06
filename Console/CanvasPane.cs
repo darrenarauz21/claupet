@@ -123,7 +123,7 @@ sealed partial class CanvasPane : Grid
     public void Select(string id)
     {
         if (_doc?.Id == id) return;
-        CancelEditing();
+        SaveEditing(); // lo que se estaba escribiendo se guarda: el clic en la lista no pasa por el documento
         LeavePast();
         _doc = _store.Load(id);
         _seen.Clear();
@@ -234,6 +234,7 @@ sealed partial class CanvasPane : Grid
     /// <summary>Al cerrar la ventana: deja de mirar la carpeta y apaga los temporizadores.</summary>
     public void Close()
     {
+        SaveEditing();
         _watcher?.Dispose();
         _glowTimer.Stop();
         _busyTimer.Stop();
@@ -289,6 +290,7 @@ sealed partial class CanvasPane : Grid
                 _ => "",
             },
         };
+        Plain(_editor);
         ScrollViewer.SetHorizontalScrollBarVisibility(_editor, ScrollBarVisibility.Auto);
         _editor.AddHandler(KeyDownEvent, (_, e) =>
         {
@@ -307,6 +309,20 @@ sealed partial class CanvasPane : Grid
         CancelEditing();
         if (changed) Apply(new CanvasOp("replace", Id: id, Content: text));
         Render(keepScroll: true);
+    }
+
+    /// <summary>Sin los fondos ni el marco de Fluent, que al enfocar la caja la pintan de negro y azul en cualquier tema.</summary>
+    void Plain(TextBox box, IBrush? background = null)
+    {
+        foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused" })
+            box.Resources[key] = background ?? Brushes.Transparent;
+        foreach (var key in new[] { "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused" })
+            box.Resources[key] = Brushes.Transparent;
+        box.Resources["TextControlBorderThemeThickness"] = new Thickness(0);
+        box.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
+        foreach (var key in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused" })
+            box.Resources[key] = _ink.Text;
+        box.SelectionBrush = WithAlpha(_ink.Accent, 0x59);
     }
 
     void CancelEditing()
@@ -358,6 +374,7 @@ sealed partial class CanvasPane : Grid
     /// <summary>Le pide a un agente de la Terminal un cambio en este canvas (o en una sección).</summary>
     void Ask(CanvasSection? section, string request)
     {
+        SaveEditing(); // el agente lee el canvas: tiene que estar lo que se acaba de escribir
         if (_doc is not { } doc || string.IsNullOrWhiteSpace(request)) return;
         var where = section is null ? "" : L.T(", sección {0}", section.Id);
         var text = L.T("En el canvas «{0}» (id {1}){2}: {3}. Usa canvas_read y canvas_edit de claupet-canvas.", doc.Title, doc.Id, where, request.Trim());
@@ -400,6 +417,7 @@ sealed partial class CanvasPane : Grid
                 Text = doc.Title, FontFamily = Ink.Display, FontSize = 16, FontWeight = FontWeight.SemiBold,
                 MinWidth = 220, MaxWidth = 460, Padding = new Thickness(8, 4), BorderThickness = new Thickness(0), Background = _ink.Pill,
             };
+            Plain(box, _ink.Pill);
             void Commit()
             {
                 if (!_renamingTitle) return;
@@ -554,7 +572,7 @@ sealed partial class CanvasPane : Grid
             {
                 e.Handled = true;
                 if (version == doc.Version) { LeavePast(); Render(keepScroll: true); }
-                else if (available.Contains(version) && _store.LoadVersion(doc.Id, version) is { } past) { CancelEditing(); _past = past; Render(keepScroll: true); }
+                else if (available.Contains(version) && _store.LoadVersion(doc.Id, version) is { } past) { SaveEditing(); _past = past; Render(keepScroll: true); }
             };
             dots.Children.Add(dot);
         }
@@ -613,6 +631,7 @@ sealed partial class CanvasPane : Grid
     {
         _listView.Children.Clear();
         _search.Watermark = L.T("Buscar");
+        Plain(_search);
         _search.Background = _ink.Pill;
         _search.BorderThickness = new Thickness(0);
         _search.CornerRadius = new CornerRadius(10);
@@ -682,6 +701,9 @@ sealed partial class CanvasPane : Grid
     /// <summary>El canvas (o una sección) como página, en el navegador: el HTML corre ahí, aislado, y los diagramas se dibujan.</summary>
     void Preview(CanvasDoc doc, CanvasSection? section)
     {
+        SaveEditing();
+        doc = _doc ?? doc;
+        if (section is not null) section = doc.Section(section.Id) ?? section;
         try
         {
             var dir = Path.Combine(_store.Root, "vista");
@@ -695,6 +717,8 @@ sealed partial class CanvasPane : Grid
 
     async Task SaveAsAsync(CanvasDoc doc, string format)
     {
+        SaveEditing();
+        doc = _doc ?? doc;
         if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
         var name = string.Concat(doc.Title.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '-' : c)).Trim();
         var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions

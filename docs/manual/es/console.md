@@ -90,8 +90,9 @@ cada una con su tipo:
 | **Texto** | Markdown: títulos, listas, tablas, enlaces. |
 | **Código** | En cualquier lenguaje. |
 | **HTML** | Una página o una app entera (con su CSS y JavaScript). Se ve en el navegador, aislada. |
-| **Diagrama** | Mermaid. Se dibuja en el navegador. |
-| **SVG**, **Datos** (JSON o CSV, que se ve como tabla) e **Imagen** | Gráficos, tablas y resultados, imágenes. |
+| **Diagrama** | Mermaid. Se dibuja en la app; los que no sabe dibujar se ven como código, y dibujados en el navegador y el PDF. |
+| **SVG**, **Datos** (JSON o CSV, que se ve como tabla o gráfico) e **Imagen** | Gráficos, tablas y resultados, imágenes. |
+| **Plan** | Etapas y tareas con resumen, tablero y cronograma. |
 
 **Con los agentes.** Pídale a un agente de la [Terminal](terminal.md) «hazlo en un canvas»: Claude Code, Codex, Gemini
 CLI y Copilot reciben Claupet Canvas al abrirse (es un servidor MCP), con el modelo que usen. El canvas aparece en la
@@ -104,7 +105,12 @@ los responden y los marcan como resueltos.
 **Versiones.** Cada cambio, suyo o de un agente, es una versión nueva. **Versiones** muestra quién cambió qué y permite
 volver a una anterior (la de ahora queda guardada).
 
-**Exportar.** Markdown, una página HTML que se abre sola en cualquier navegador, o JSON. También **Ver en el navegador**.
+**Editar.** El lápiz de cada sección la abre para escribir. Ctrl+Intro o un clic afuera la guarda, y también cambiar de
+canvas o cerrar la ventana; **Esc descarta lo escrito**. Ctrl+K busca e inserta, Ctrl+N crea un canvas y Ctrl+J le pide un
+cambio a la IA.
+
+**Exportar.** PDF, Word, Markdown, una página HTML que se abre sola en cualquier navegador, o JSON. También **Ver en el
+navegador**. El PDF necesita Microsoft Edge, Google Chrome o Chromium. En Word, los diagramas y el HTML van como texto.
 
 **Desde otras apps.** **⋯ › Usar desde otras apps** copia la configuración MCP para pegarla en Claude Desktop, Cursor,
 VS Code o cualquier app con MCP: sus modelos verán y editarán los mismos canvas. A mano, el comando es

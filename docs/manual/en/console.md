@@ -90,8 +90,9 @@ Live documents you and any AI edit together, canvas style. A canvas is a list of
 | **Text** | Markdown: headings, lists, tables, links. |
 | **Code** | In any language. |
 | **HTML** | A whole page or app (with its CSS and JavaScript). It shows in the browser, sandboxed. |
-| **Diagram** | Mermaid. Drawn in the browser. |
-| **SVG**, **Data** (JSON or CSV, shown as a table) and **Image** | Graphics, tables and results, images. |
+| **Diagram** | Mermaid. Drawn in the app; those it can't draw show as code, and drawn in the browser and the PDF. |
+| **SVG**, **Data** (JSON or CSV, shown as a table or chart) and **Image** | Graphics, tables and results, images. |
+| **Plan** | Stages and tasks with a summary, a board and a timeline. |
 
 **With agents.** Ask an agent in the [Terminal](terminal.md) to "do it in a canvas": Claude Code, Codex, Gemini CLI and
 Copilot get Claupet Canvas when they start (it's an MCP server), whatever model they use. The canvas shows up in the
@@ -104,7 +105,12 @@ them resolved.
 **Versions.** Every change, yours or an agent's, is a new version. **Versions** shows who changed what and lets you go
 back to an earlier one (the current one is kept).
 
-**Export.** Markdown, an HTML page that opens on its own in any browser, or JSON. Also **View in the browser**.
+**Edit.** Each section's pencil opens it for typing. Ctrl+Enter or a click outside saves it, and so does switching canvas
+or closing the window; **Esc discards what you typed**. Ctrl+K searches and inserts, Ctrl+N creates a canvas and Ctrl+J
+asks the AI for a change.
+
+**Export.** PDF, Word, Markdown, an HTML page that opens on its own in any browser, or JSON. Also **View in the browser**.
+PDF needs Microsoft Edge, Google Chrome or Chromium. In Word, diagrams and HTML go in as text.
 
 **From other apps.** **⋯ › Use from other apps** copies the MCP configuration to paste into Claude Desktop, Cursor,
 VS Code or any app with MCP: their models will see and edit the same canvases. By hand, the command is

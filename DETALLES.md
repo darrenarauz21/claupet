@@ -357,6 +357,22 @@ encendidos si faltan o apuntan a otra carpeta (`Core/Shortcuts.cs`, que usan las
 (`--preview`) no los toca.
 Abrir `Claupet.exe` otra vez, sin argumentos, con Claupet ya abierto, también trae la Console.
 
+## Claupet Canvas
+
+Documentos de secciones tipadas que la persona y cualquier IA editan a la vez (`Core/Canvas/`, `Console/CanvasPane*.cs`).
+Cada canvas es un JSON en `Canvas/` de la carpeta de datos, con su historial en `Canvas/historial/`; el archivo se escribe
+con candado (`.candado`) y el panel sigue los cambios con un `FileSystemWatcher`, así que un agente en otro proceso se ve
+al momento.
+
+- **Servidor MCP:** `Claupet --canvas-mcp` (`CanvasMcp`), por stdio. Claude Code, Codex y los agentes ACP lo reciben al
+  abrirse en la Terminal; también expone las herramientas de Planes (`PlanTools`).
+- **Ediciones:** por operaciones (`CanvasOps`), no reescribiendo todo. `base_version` rechaza una edición hecha sobre una
+  versión vieja.
+- **Exportar:** Markdown, HTML, JSON, Word (`CanvasDocx`, Open XML directo) y PDF (`CanvasPdf`: la página HTML impresa por
+  Edge, Chrome o Chromium sin ventana). Si no hay navegador, el PDF lo dice y no se crea.
+- **Lo que se está escribiendo:** se guarda al hacer clic afuera, al cambiar de canvas, al ver una versión, al exportar, al
+  pedirle algo a la IA y al cerrar la ventana. Solo Esc lo descarta.
+
 ## Temas propios
 
 Los temas van aparte de las seis paletas, en Ajustes › Apariencia › **Temas** de la Console: una tarjeta por tema, con

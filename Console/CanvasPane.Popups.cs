@@ -27,6 +27,7 @@ sealed partial class CanvasPane
             Padding = padding ?? new Thickness(6),
             BoxShadow = BoxShadows.Parse(_ink.Dark ? "0 12 32 0 #59000000" : "0 12 32 0 #26000000"),
             Child = content,
+            Focusable = true, // para que Esc llegue aunque el menú no tenga una caja donde escribir
             Opacity = 0,
             RenderTransform = TransformOperations.Parse("translateY(-6px) scale(0.97)"),
             Transitions =
@@ -54,6 +55,7 @@ sealed partial class CanvasPane
         {
             card.Opacity = 1;
             card.RenderTransform = TransformOperations.Parse("translateY(0px) scale(1)");
+            card.Focus();
         }, DispatcherPriority.Background);
         return card;
     }
@@ -104,6 +106,7 @@ sealed partial class CanvasPane
             Watermark = section is null ? L.T("¿Qué hago en este canvas?") : L.T("¿Qué cambio?"),
             BorderThickness = new Thickness(0), Background = Brushes.Transparent, FontSize = 13.5, VerticalContentAlignment = VerticalAlignment.Center,
         };
+        Plain(box);
         var go = IconButton(CanvasIcons.Spark, L.T("Pedir"), () => { ClosePopover(); Ask(section, box.Text ?? ""); }, size: 30, glyph: 15);
         go.Background = _ink.Accent;
         go.Tag = "solid";
@@ -173,6 +176,7 @@ sealed partial class CanvasPane
         Draw();
         stack.Children.Add(messages);
         var box = new TextBox { Watermark = L.T("Comentar…"), BorderThickness = new Thickness(0), Background = Brushes.Transparent, FontSize = 13, VerticalContentAlignment = VerticalAlignment.Center };
+        Plain(box);
         void Send()
         {
             if (string.IsNullOrWhiteSpace(box.Text)) return;
@@ -258,23 +262,23 @@ sealed partial class CanvasPane
     void ExportPopup(Control anchor)
     {
         if (_doc is not { } doc) return;
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        foreach (var (icon, name, run) in new (string, string, Action)[]
-        {
-            (CanvasIcons.Pdf, "PDF", () => _ = SaveAsAsync(doc, "pdf")),
-            (CanvasIcons.Docx, "Word", () => _ = SaveAsAsync(doc, "docx")),
-            (CanvasIcons.Text, "Markdown", () => _ = SaveAsAsync(doc, "markdown")),
-            (CanvasIcons.Html, L.T("Página HTML"), () => _ = SaveAsAsync(doc, "html")),
-            (CanvasIcons.Json, "JSON", () => _ = SaveAsAsync(doc, "json")),
-            (CanvasIcons.Copy, L.T("Copiar como Markdown"), () => { _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(CanvasExport.Markdown(doc)); Toast(L.T("Copiado"), CanvasIcons.Copy); }),
-        })
-        {
-            var action = run;
-            var button = IconButton(icon, name, () => { ClosePopover(); action(); }, size: 44, glyph: 19);
-            button.CornerRadius = new CornerRadius(11);
-            row.Children.Add(button);
-        }
-        Popover(anchor, row, new Thickness(4));
+        // Con su nombre: seis íconos de documento parecidos no se distinguen sin pasar el mouse por cada uno.
+        Menu(anchor,
+        [
+            (CanvasIcons.Pdf, "PDF", () => _ = SaveAsAsync(doc, "pdf"), false),
+            (CanvasIcons.Docx, "Word", () => _ = SaveAsAsync(doc, "docx"), false),
+            (CanvasIcons.Text, "Markdown", () => _ = SaveAsAsync(doc, "markdown"), false),
+            (CanvasIcons.Html, L.T("Página HTML"), () => _ = SaveAsAsync(doc, "html"), false),
+            (CanvasIcons.Json, "JSON", () => _ = SaveAsAsync(doc, "json"), false),
+            (CanvasIcons.Copy, L.T("Copiar como Markdown"), () => CopyMarkdown(doc), false),
+        ]);
+    }
+
+    void CopyMarkdown(CanvasDoc doc)
+    {
+        SaveEditing();
+        _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(CanvasExport.Markdown(_doc ?? doc));
+        Toast(L.T("Copiado"), CanvasIcons.Copy);
     }
 
     void MoreMenu(Control anchor)
@@ -330,7 +334,7 @@ sealed partial class CanvasPane
             commands.Add((CanvasIcons.Play, L.T("Ver en el navegador"), null, () => Preview(doc, null)));
             commands.Add((CanvasIcons.Pdf, L.T("Exportar a PDF"), null, () => _ = SaveAsAsync(doc, "pdf")));
             commands.Add((CanvasIcons.Docx, L.T("Exportar a Word"), null, () => _ = SaveAsAsync(doc, "docx")));
-            commands.Add((CanvasIcons.Copy, L.T("Copiar como Markdown"), null, () => { _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(CanvasExport.Markdown(doc)); Toast(L.T("Copiado"), CanvasIcons.Copy); }));
+            commands.Add((CanvasIcons.Copy, L.T("Copiar como Markdown"), null, () => CopyMarkdown(doc)));
         }
         foreach (var summary in _list.Take(8))
         {
@@ -340,6 +344,7 @@ sealed partial class CanvasPane
 
         var stack = new StackPanel { Width = 480 };
         var query = new TextBox { Watermark = L.T("Buscar o insertar…"), BorderThickness = new Thickness(0), Background = Brushes.Transparent, FontSize = 15, VerticalContentAlignment = VerticalAlignment.Center };
+        Plain(query);
         var head = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), Margin = new Thickness(10, 6, 10, 8) };
         var lens = Glyph(CanvasIcons.Search, _ink.Tertiary, 17);
         lens.Margin = new Thickness(0, 0, 8, 0);

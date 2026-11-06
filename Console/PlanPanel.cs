@@ -112,7 +112,7 @@ sealed class PlanPanel(Ink ink)
         if ((plan.Milestones.FirstOrDefault(m => m.Date >= today) ?? plan.Milestones.LastOrDefault()) is { } next)
             Tile(PlanFlagIcon, next.Date < today ? _ink.Danger : _ink.Accent, Until(next.Date, today), next.Title, $"{next.Title} · {Day(next.Date)}");
         var late = plan.Tasks.Where(t => t.LateOn(today)).ToList();
-        if (late.Count == 0) Tile(CheckIcon, Added, "0", null, L.T("Atrasadas") + ": " + L.T("Ninguna"));
+        if (late.Count == 0) Tile(CheckIcon, Added, "0", L.T("Atrasadas"), L.T("Atrasadas") + ": " + L.T("Ninguna"));
         else Tile(PlanAlertIcon, _ink.Danger, late.Count.ToString(CultureInfo.CurrentCulture), late[0].Title,
             Listed(L.T("Atrasadas"), late.Select(t => L.T("{0} ({1})", t.Title, Until(t.End.AddDays(-1), today)))));
         var doing = plan.Tasks.Where(t => t.State == PlanState.Doing).ToList();
