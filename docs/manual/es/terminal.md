@@ -34,10 +34,10 @@ agentes de código y shells en pestañas y muestra cada cosa en su bloque:
 
    | Parte | Qué elige |
    |---|---|
-   | **Abrir** | Claude Code, otro agente instalado (Codex, Gemini CLI, Copilot CLI) o una de las terminales de su equipo. |
+   | **Proyecto** | Arriba: dónde se abre. Toque **Cambiar** para elegir otro: los proyectos vinculados, los recientes, **Buscar una carpeta…** o **Buscar un archivo del proyecto…** (se abre la raíz de su repositorio de git o, sin repositorio, su carpeta). |
+   | **Abrir con** | Claude Code, otro agente instalado (Codex, Gemini CLI, Copilot CLI) o una de las terminales de su equipo. |
    | **Con la cuenta** | *(Claude Code)* La cuenta de esta pestaña; el punto verde dice que tiene la sesión iniciada. |
    | **Modelo y esfuerzo** | *(Claude Code)* `haiku`, `sonnet`, `opus`, `fable` o «por defecto», y el esfuerzo: bajo, medio, alto, muy alto o máximo. Las variantes (`opus[1m]`, `sonnet[1m]`, `opusplan`) se eligen dentro de la sesión. |
-   | **La carpeta** | Abajo, a la izquierda: dónde se abre. Tóquela para elegir otra (los proyectos vinculados, las recientes o **Elegir otra carpeta…**). |
 
 3. Pulse **Abrir** (o **Intro**). Tocar de nuevo lo que ya está elegido también lo abre.
 

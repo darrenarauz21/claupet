@@ -34,10 +34,10 @@ coding agents and shells in tabs and shows each thing in its own block:
 
    | Part | What it sets |
    |---|---|
-   | **Open** | Claude Code, another installed agent (Codex, Gemini CLI, Copilot CLI) or one of your computer's terminals. |
+   | **Project** | At the top: where it opens. Tap **Change** to choose another: linked projects, recent ones, **Browse for a folder…** or **Browse for a file in the project…** (opens the root of its git repository or, without one, its folder). |
+   | **Open with** | Claude Code, another installed agent (Codex, Gemini CLI, Copilot CLI) or one of your computer's terminals. |
    | **With the account** | *(Claude Code)* This tab's account; the green dot means it's signed in. |
    | **Model and effort** | *(Claude Code)* `haiku`, `sonnet`, `opus`, `fable` or "default", and the effort: low, medium, high, very high or max. The variants (`opus[1m]`, `sonnet[1m]`, `opusplan`) are chosen inside the session. |
-   | **The folder** | Bottom left: where it opens. Tap it to choose another (linked projects, recent ones or **Choose another folder…**). |
 
 3. Press **Open** (or **Enter**). Tapping the item that's already selected also opens it.
 

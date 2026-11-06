@@ -11,9 +11,9 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
 /// <summary>
-/// La pestaña nueva, como en el diseño: el botón + abre un menú chico, no un formulario. Arriba, qué abrir (Claude Code,
+/// La pestaña nueva, como en el diseño: el botón + abre un menú chico, no un formulario. Arriba, el proyecto (se cambia tocándolo); después, qué abrir (Claude Code,
 /// los otros agentes instalados o una de las terminales del equipo); con Claude Code, la cuenta, el modelo y el esfuerzo
-/// en botones; abajo, la carpeta (se cambia tocándola) y «Abrir». Sin pestañas, la sesión muestra un vacío con el mismo
+/// en botones; abajo, «Abrir». Sin pestañas, la sesión muestra un vacío con el mismo
 /// botón. Ctrl+T lo abre desde cualquier lado de la Terminal.
 /// </summary>
 sealed partial class TerminalPane
@@ -85,13 +85,52 @@ sealed partial class TerminalPane
         };
         _newMenu = popup;
         var paints = new List<Action>();
+        var choosing = false;
+        Border card = null!; // se arma al final: lo usa la lista de proyectos, que se abre con el menú ya a la vista
+        // En una ventana baja el menú se desplaza: si no, «Abrir» quedaba fuera de la pantalla.
+        var scroller = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, MaxHeight = Math.Max(240, host.Bounds.Height - 32) };
         void Paint()
         {
             foreach (var paint in paints) paint();
         }
 
         var list = new StackPanel { Spacing = 1 };
-        list.Children.Add(MenuLabel(L.T("Abrir")));
+        // Primero, en qué proyecto: es lo que más cambia y lo primero que se busca.
+        list.Children.Add(MenuLabel(L.T("Proyecto")));
+        var placeName = Ui.Text("", 13, _ink.Text, FontWeight.SemiBold);
+        var placePath = Ui.Text("", 11.5, _ink.Tertiary, family: Mono);
+        placePath.TextTrimming = TextTrimming.PrefixCharacterEllipsis;
+        void PaintPlace()
+        {
+            var name = FolderName(where);
+            placeName.Text = GitBranch.Of(where) is { } branch ? $"{name} · {branch}" : name;
+            placePath.Text = where;
+            ToolTip.SetTip(placePath, where);
+        }
+        PaintPlace();
+        var placeRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
+        var placeIcon = Icon(FolderIcon, _ink.Accent, 16, 1.8);
+        placeIcon.Margin = new Thickness(0, 0, 10, 0);
+        placeRow.Children.Add(placeIcon);
+        var placeText = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+        placeText.Children.Add(placeName);
+        placeText.Children.Add(placePath);
+        Grid.SetColumn(placeText, 1);
+        placeRow.Children.Add(placeText);
+        var placeChange = Ui.Text(L.T("Cambiar"), 12, _ink.Accent);
+        placeChange.Margin = new Thickness(10, 0, 2, 0);
+        Grid.SetColumn(placeChange, 2);
+        placeRow.Children.Add(placeChange);
+        var placeButton = Ui.Press(placeRow, () => ShowProjects(), (b, on) => b.Background = on ? _ink.Track : _ink.Pill, L.T("Cambiar de proyecto"));
+        placeButton.Background = _ink.Pill;
+        placeButton.Padding = new Thickness(10, 7);
+        placeButton.Margin = new Thickness(4, 0, 4, 2);
+        placeButton.CornerRadius = new CornerRadius(9);
+        ToolTip.SetTip(placeButton, L.T("Cambiar de proyecto"));
+        list.Children.Add(placeButton);
+        list.Children.Add(MenuRule());
+
+        list.Children.Add(MenuLabel(L.T("Abrir con")));
         foreach (var kind in kinds)
         {
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("26,*,Auto") };
@@ -186,36 +225,14 @@ sealed partial class TerminalPane
         paints.Add(() => claudeOnly.IsVisible = choice == "agente:" + AgentKinds.Claude);
         list.Children.Add(claudeOnly);
 
-        // Abajo: dónde se abre (se toca para elegir otra carpeta) y «Abrir».
         var foot = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 6, 0, 0) };
-        var place = Ui.Text("", 12, _ink.Tertiary, family: Mono);
-        place.TextTrimming = TextTrimming.CharacterEllipsis;
-        place.VerticalAlignment = VerticalAlignment.Center;
-        void PaintPlace()
-        {
-            var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(where)) is { Length: > 0 } n ? n : where;
-            place.Text = GitBranch.Of(where) is { } branch ? $"{name} · {branch}" : name;
-            ToolTip.SetTip(place, where);
-        }
-        PaintPlace();
-        Border? placeButton = null;
-        placeButton = Ui.Press(place, () => PickFolder(placeButton!, where, picked =>
-        {
-            where = picked;
-            PaintPlace();
-        }), (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Carpeta"));
-        placeButton.Padding = new Thickness(8, 4);
-        placeButton.CornerRadius = new CornerRadius(7);
-        placeButton.HorizontalAlignment = HorizontalAlignment.Left;
-        foot.Children.Add(placeButton);
         var go = TextButton(L.T("Abrir"), OpenChosen, accent: true);
         Grid.SetColumn(go, 1);
         foot.Children.Add(go);
         list.Children.Add(foot);
 
-        var card = new Border
+        card = new Border
         {
-            Child = list,
             Background = _ink.Raised,
             BorderBrush = _ink.Hairline,
             BorderThickness = new Thickness(1),
@@ -229,6 +246,13 @@ sealed partial class TerminalPane
         };
         card.KeyDown += (_, e) =>
         {
+            if (choosing)
+            {
+                if (e.Key != Key.Escape) return;
+                ShowMain();
+                e.Handled = true;
+                return;
+            }
             var at = kinds.FindIndex(k => k.Id == choice);
             switch (e.Key)
             {
@@ -252,8 +276,67 @@ sealed partial class TerminalPane
             e.Handled = true;
         };
 
+        // Los proyectos van dentro de este mismo menú: una lista encima de él quedaba colgando de algo que se cierra solo.
+        void ShowMain()
+        {
+            choosing = false;
+            scroller.Content = list;
+            card.Focus();
+        }
+
+        void Chosen(string folder)
+        {
+            where = folder;
+            PaintPlace();
+            ShowMain();
+        }
+
+        void ShowProjects()
+        {
+            choosing = true;
+            var page = new StackPanel { Spacing = 1 };
+            var backRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            backRow.Children.Add(Icon("M15,6 L9,12 L15,18", _ink.Secondary, 13, 2));
+            backRow.Children.Add(Ui.Text(L.T("Elegir proyecto"), 13, _ink.Text, FontWeight.SemiBold));
+            var back = Ui.Press(backRow, ShowMain, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Volver"));
+            back.Padding = new Thickness(10, 7);
+            back.CornerRadius = new CornerRadius(8);
+            page.Children.Add(back);
+            var folders = RecentFolders();
+            if (folders.Count == 0)
+            {
+                var none = Ui.Text(L.T("Todavía no hay proyectos recientes."), 12.5, _ink.Tertiary);
+                none.Margin = new Thickness(10, 8);
+                page.Children.Add(none);
+            }
+            foreach (var folder in folders) page.Children.Add(ProjectRow(folder, string.Equals(folder, where, StringComparison.OrdinalIgnoreCase), () => Chosen(folder)));
+            page.Children.Add(MenuRule());
+            page.Children.Add(BrowseRow(FolderIcon, L.T("Buscar una carpeta…"), () => Browse(file: false)));
+            page.Children.Add(BrowseRow(FileIcon, L.T("Buscar un archivo del proyecto…"), () => Browse(file: true)));
+            scroller.Content = page;
+            back.Focus();
+        }
+
+        async void Browse(bool file)
+        {
+            if (TopLevel.GetTopLevel(card) is not { } top) return;
+            // El diálogo de Windows le quita el foco a la ventana y eso cerraba este menú: lo elegido no tenía dónde quedar.
+            popup.IsLightDismissEnabled = false;
+            try
+            {
+                if (await PickPath(top, where, file) is { } path) Chosen(file ? ProjectOfFile(path) : path);
+            }
+            finally { popup.IsLightDismissEnabled = true; }
+        }
+
         void OpenChosen()
         {
+            // La carpeta pudo desaparecer con el menú abierto: se pide otra en vez de no hacer nada.
+            if (!Directory.Exists(where))
+            {
+                ShowProjects();
+                return;
+            }
             popup.IsOpen = false;
             if (choice.StartsWith("agente:", StringComparison.Ordinal))
                 OpenAgent(choice["agente:".Length..], where, account, model, effort);
@@ -262,6 +345,8 @@ sealed partial class TerminalPane
         }
 
         Paint();
+        scroller.Content = list;
+        card.Child = scroller;
         popup.Child = card;
         popup.Closed += (_, _) =>
         {
@@ -274,26 +359,71 @@ sealed partial class TerminalPane
         Dispatcher.UIThread.Post(() => card.Focus(), DispatcherPriority.Loaded);
     }
 
-    /// <summary>Elegir la carpeta: los proyectos y las recientes, o «Elegir otra carpeta…».</summary>
-    void PickFolder(Control anchor, string current, Action<string> picked)
+    /// <summary>El diálogo del sistema para buscar una carpeta o un archivo (las pruebas ponen otro).</summary>
+    internal static Func<TopLevel, string, bool, Task<string?>> PickPath = PickPathNative;
+
+    static async Task<string?> PickPathNative(TopLevel top, string current, bool file)
     {
-        var recents = _projects.Folders.Concat(TerminalRecents.Load().Folders).Where(Directory.Exists)
-            .Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToList();
-        var entries = recents.Select(f => new DropList.Entry(f, ShortPath(f), Selected: string.Equals(f, current, StringComparison.OrdinalIgnoreCase)))
-            .Append(new DropList.Entry("…", L.T("Elegir otra carpeta…"), Action: true)).ToList();
-        DropList.Show(anchor, _ink, entries, async choice =>
+        var storage = top.StorageProvider;
+        var start = await storage.TryGetFolderFromPathAsync(Directory.Exists(current) ? current : global::Claupet.Account.Home);
+        if (file)
         {
-            if (choice is null) return;
-            if (choice == "…")
-            {
-                if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
-                var start = await storage.TryGetFolderFromPathAsync(Directory.Exists(current) ? current : global::Claupet.Account.Home);
-                var chosen = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = L.T("Carpeta de la pestaña"), SuggestedStartLocation = start });
-                if (chosen.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
-                choice = path;
-            }
-            picked(choice);
-        });
+            var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions { Title = L.T("Elija un archivo del proyecto"), SuggestedStartLocation = start });
+            return files.FirstOrDefault()?.TryGetLocalPath();
+        }
+        var folders = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = L.T("Elija la carpeta del proyecto"), SuggestedStartLocation = start });
+        return folders.FirstOrDefault()?.TryGetLocalPath();
+    }
+
+    /// <summary>El proyecto de un archivo: la raíz de su repositorio de git o, sin repositorio, la carpeta donde está.</summary>
+    internal static string ProjectOfFile(string file)
+    {
+        var folder = Path.GetDirectoryName(Path.GetFullPath(file)) ?? file;
+        for (var up = folder; up is not null; up = Path.GetDirectoryName(up))
+            if (Directory.Exists(Path.Combine(up, ".git")) || File.Exists(Path.Combine(up, ".git"))) return up;
+        return folder;
+    }
+
+    static string FolderName(string folder) => Path.GetFileName(Path.TrimEndingDirectorySeparator(folder)) is { Length: > 0 } name ? name : folder;
+
+    /// <summary>Los proyectos vinculados primero y después las carpetas recientes, las que todavía existen.</summary>
+    List<string> RecentFolders() => _projects.Folders.Concat(TerminalRecents.Load().Folders).Where(Directory.Exists)
+        .Distinct(StringComparer.OrdinalIgnoreCase).Take(10).ToList();
+
+    /// <summary>Un proyecto de la lista: su nombre y, debajo, dónde está; con un visto el que ya está elegido.</summary>
+    Border ProjectRow(string folder, bool selected, Action onClick)
+    {
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        var text = new StackPanel { Spacing = 1 };
+        text.Children.Add(Ui.Text(FolderName(folder), 13, _ink.Text, selected ? FontWeight.SemiBold : FontWeight.Normal));
+        var path = Ui.Text(folder, 11.5, _ink.Tertiary, family: Mono);
+        path.TextTrimming = TextTrimming.PrefixCharacterEllipsis;
+        text.Children.Add(path);
+        row.Children.Add(text);
+        if (selected)
+        {
+            var check = Icon(CheckIcon, _ink.Accent, 14, 2.2);
+            check.Margin = new Thickness(10, 0, 0, 0);
+            Grid.SetColumn(check, 1);
+            row.Children.Add(check);
+        }
+        var item = Ui.Press(row, onClick, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, FolderName(folder));
+        item.Padding = new Thickness(10, 6);
+        item.CornerRadius = new CornerRadius(8);
+        ToolTip.SetTip(item, folder);
+        return item;
+    }
+
+    Border BrowseRow(string icon, string text, Action onClick)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        row.Children.Add(Icon(icon, _ink.Secondary, 15, 1.8));
+        row.Children.Add(Ui.Text(text, 13, _ink.Text));
+        var item = Ui.Press(row, onClick, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, text);
+        item.Height = 34;
+        item.Padding = new Thickness(10, 0);
+        item.CornerRadius = new CornerRadius(8);
+        return item;
     }
 
     /// <summary>Abre un agente en bloques (Claude Code con su cuenta, su modelo y su esfuerzo; los otros, con lo suyo).</summary>
