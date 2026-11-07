@@ -369,7 +369,24 @@ al momento.
 - **Ediciones:** por operaciones (`CanvasOps`), no reescribiendo todo. `base_version` rechaza una edición hecha sobre una
   versión vieja.
 - **Exportar:** Markdown, HTML, JSON, Word (`CanvasDocx`, Open XML directo) y PDF (`CanvasPdf`: la página HTML impresa por
-  Edge, Chrome o Chromium sin ventana). Si no hay navegador, el PDF lo dice y no se crea.
+  Edge, Chrome o Chromium sin ventana). Si no hay navegador, el PDF lo dice y no se crea. El diálogo de guardar lleva el
+  tipo de cada formato (sin él, Windows ofrecía «Todos los archivos» y el nombre podía quedar sin extensión).
+- **PDF por partes:** cada sección HTML o SVG se imprime como su propia página (`CanvasExport.PrintPage`, en A4 y con sus
+  fondos) y lo seguido que no es HTML va junto, con el título del canvas solo en la primera parte (`CanvasPdf.Parts`); se
+  imprimen de a tres a la vez y `PdfJoin` las une en orden. En un iframe el HTML salía cortado o vacío: el navegador no
+  reparte un iframe en hojas y su alto dependía del momento en que imprimía. `PdfJoin` no usa bibliotecas (PDFsharp pasó a
+  AGPL desde la 6.5): solo une PDF de Skia (1.4, tabla clásica, sin objetos comprimidos ni cifrado), copia los flujos byte a
+  byte y deja afuera el catálogo y las etiquetas de accesibilidad de cada parte. Con otra forma lanza `PdfJoinException` y
+  el PDF se hace como antes, en una sola página con iframes. Al imprimir, las secciones ya no saltan enteras a la hoja
+  siguiente (dejaban la primera solo con el título), los títulos no quedan solos al pie y Mermaid va en tema claro.
+- **HTML y SVG vivos (Windows):** `CanvasLivePage`, un `NativeControlHost` con WebView2 (el motor de Edge, que trae Windows;
+  el perfil va en `WebView2/` de la carpeta de datos). Carga `CanvasExport.Live`: la sección en el mismo iframe aislado de
+  la exportación, que solo le pasa a Claupet su alto (60 a 2400) y la rueda que no usó, para que el canvas siga
+  desplazándose con el mouse encima. Los enlaces van al navegador; descargas y permisos se niegan. Avalonia no recorta las
+  ventanas nativas: la página se recorta sola con una región de Windows a lo visible del canvas y deja ver lo que flota
+  encima (el aviso, la línea de las versiones). Al redibujar, la página que no cambió se reusa (Avalonia destruye la ventana
+  nativa recién en el ciclo siguiente). Sin WebView2, en macOS y Linux, o si falla, va el botón «Ver en el navegador». Lo
+  que flota de la Console fuera del canvas (un diálogo encima) puede quedar tapado por la página.
 - **Lo que se está escribiendo:** se guarda al hacer clic afuera, al cambiar de canvas, al ver una versión, al exportar, al
   pedirle algo a la IA y al cerrar la ventana. Solo Esc lo descarta.
 

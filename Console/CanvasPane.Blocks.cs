@@ -1,5 +1,6 @@
 namespace Claupet;
 
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Avalonia;
@@ -255,7 +256,7 @@ sealed partial class CanvasPane
             (CanvasKinds.Markdown, _) => Markdown(doc, section.Content),
             (CanvasKinds.Plan, "code") => Code(section.Content, "json"),
             (_, "code") => Code(section.Content, section.Language ?? section.Kind),
-            (CanvasKinds.Html or CanvasKinds.Svg, _) => Stage(doc, section),
+            (CanvasKinds.Html or CanvasKinds.Svg, _) => Live(doc, section) ?? Stage(doc, section),
             (CanvasKinds.Diagram, _) => Diagram(section.Content, animate: !_seen.Contains(section.Id)) ?? Code(section.Content, "mermaid"),
             (CanvasKinds.Data, "chart") => Chart(section.Content, animate: !_seen.Contains(section.Id) || _flash.ContainsKey(section.Id)) ?? CsvGrid(section.Content),
             (CanvasKinds.Data, "table") => CsvGrid(section.Content),
@@ -405,6 +406,55 @@ sealed partial class CanvasPane
         }
         catch (JsonException) { return text; }
     }
+
+    /// <summary>
+    /// Una página (HTML o SVG) viva dentro del canvas, en Windows (CanvasLivePage). Si no cambió, es la misma de antes,
+    /// sin volver a cargarla. Null donde no se puede (otro sistema, sin WebView2 o si falló): ahí va el escenario.
+    /// </summary>
+    Control? Live(CanvasDoc doc, CanvasSection section)
+    {
+        if (_liveOff || !CanvasLivePage.Available) return null;
+        var html = CanvasExport.Live(section);
+        _live.TryGetValue(section.Id, out var before);
+        if (before?.Html == html)
+        {
+            _liveShown.Add(section.Id);
+            before.SetBackground(PageBackground()); // el tema pudo cambiar
+            return Detach(before);
+        }
+        string file;
+        try
+        {
+            var dir = System.IO.Path.Combine(_store.Root, "vista");
+            Directory.CreateDirectory(dir);
+            file = System.IO.Path.Combine(dir, $"{doc.Id}-{section.Id}-viva.html");
+            File.WriteAllText(file, html, new UTF8Encoding(false));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ErrorLog.Write(ex);
+            return null;
+        }
+        var page = new CanvasLivePage(file, html, before?.Height ?? 360, PageBackground(), () => _overlaysOn);
+        page.Wheel += dy =>
+        {
+            // Lo mismo que avanza la rueda en el canvas (unos 50 por paso; el navegador manda 100).
+            var max = Math.Max(0, _scroll.Extent.Height - _scroll.Viewport.Height);
+            _scroll.Offset = new Vector(_scroll.Offset.X, Math.Clamp(_scroll.Offset.Y + dy / 2, 0, max));
+        };
+        page.Failed += () =>
+        {
+            if (_liveOff) return;
+            _liveOff = true;
+            Render(keepScroll: true);
+        };
+        _live[section.Id] = page;
+        _liveShown.Add(section.Id);
+        return page;
+    }
+
+    /// <summary>El fondo del panel, detrás de la página viva.</summary>
+    Color PageBackground() => (_ink.Surface as ISolidColorBrush)?.Color ?? Avalonia.Media.Colors.Transparent;
 
     /// <summary>Una página (HTML o SVG): un escenario con su botón grande; se abre en el navegador, donde corre aislada.</summary>
     Control Stage(CanvasDoc doc, CanvasSection section)

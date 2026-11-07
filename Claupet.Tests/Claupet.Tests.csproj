@@ -25,4 +25,11 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- Como en la app: de WebView2 (que llega con la app) solo el núcleo, sin sus controles de WPF y WinForms. -->
+  <Target Name="WebView2SoloNucleo" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf' Or '%(Filename)' == 'Microsoft.Web.WebView2.WinForms'" />
+    </ItemGroup>
+  </Target>
+
 </Project>

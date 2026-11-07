@@ -121,9 +121,13 @@ static class CanvasExport
     /// página ni a los archivos), los diagramas Mermaid se dibujan con su script (necesita internet), y el Markdown no
     /// deja pasar HTML crudo.
     /// </summary>
-    public static string Html(CanvasDoc doc, string? only = null)
+    /// <param name="print">Para el PDF: los diagramas en claro, como el papel, aunque el sistema esté en oscuro.</param>
+    public static string Html(CanvasDoc doc, string? only = null, bool print = false) =>
+        Html(doc, only is null ? doc.Sections : doc.Sections.Where(s => s.Id == only).ToList(), print, withTitle: true);
+
+    /// <summary>La página de esas secciones; el título del canvas, solo si va (en el PDF, solo en la primera parte).</summary>
+    public static string Html(CanvasDoc doc, IReadOnlyList<CanvasSection> sections, bool print, bool withTitle)
     {
-        var sections = only is null ? doc.Sections : doc.Sections.Where(s => s.Id == only).ToList();
         var body = new StringBuilder();
         var mermaid = false;
         var frames = false;
@@ -138,8 +142,7 @@ static class CanvasExport
                     break;
                 case CanvasKinds.Html:
                 case CanvasKinds.Svg:
-                    var page = s.Kind == CanvasKinds.Svg ? $"<!doctype html><body style=\"margin:0\">{s.Content}</body>" : s.Content;
-                    body.Append($"<iframe sandbox=\"allow-scripts allow-forms allow-modals allow-popups\" srcdoc=\"{WebUtility.HtmlEncode(page + FrameHeight)}\"></iframe>");
+                    body.Append($"<iframe sandbox=\"{Sandbox}\" srcdoc=\"{WebUtility.HtmlEncode(FramePage(s) + FrameHeight)}\"></iframe>");
                     frames = true;
                     break;
                 case CanvasKinds.Diagram when (s.Language ?? "mermaid").Equals("mermaid", StringComparison.OrdinalIgnoreCase):
@@ -165,7 +168,7 @@ static class CanvasExport
         }
         var script = mermaid
             ? "<script type=\"module\">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';"
-              + "mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'});</script>"
+              + "mermaid.initialize({startOnLoad:true,theme:" + (print ? "'default'" : "matchMedia('(prefers-color-scheme: dark)').matches?'dark':'default'") + "});</script>"
             : "";
         if (frames) script += FrameListener;
         return $$"""
@@ -179,12 +182,69 @@ static class CanvasExport
             {{Style}}
             </head>
             <body>
-            <h1>{{E(doc.Title)}}</h1>
+            {{(withTitle ? $"<h1>{E(doc.Title)}</h1>" : "")}}
             {{body}}{{script}}
             </body>
             </html>
             """;
     }
+
+    /// <summary>Lo que puede el iframe de una sección: correr sus guiones, formularios, avisos y ventanas; nada de la página ni de los archivos.</summary>
+    const string Sandbox = "allow-scripts allow-forms allow-modals allow-popups";
+
+    /// <summary>El documento del iframe de una sección HTML o SVG (el SVG, en una página sin márgenes).</summary>
+    static string FramePage(CanvasSection s) => s.Kind == CanvasKinds.Svg ? $"<!doctype html><body style=\"margin:0\">{s.Content}</body>" : s.Content;
+
+    /// <summary>
+    /// Una sección HTML o SVG para el PDF: su propia página, como la imprime el navegador (se reparte en hojas, con sus
+    /// colores de fondo), en A4 como el resto del canvas.
+    /// </summary>
+    public static string PrintPage(CanvasSection s) => FramePage(s)
+        + "<style>@page{size:A4}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}h1,h2,h3,h4,h5,h6{break-after:avoid-page}"
+        + (s.Kind == CanvasKinds.Svg ? "svg{max-width:100%;height:auto}" : "") + "</style>";
+
+    /// <summary>
+    /// Una sección HTML o SVG viva dentro de Claupet Canvas (CanvasLivePage, en Windows): la sección en el mismo iframe
+    /// aislado de la exportación, que ocupa todo el alto, y un guion que le pasa a Claupet solo dos números: el alto del
+    /// contenido y la rueda que la sección no usó, para que el canvas se siga desplazando con el mouse encima.
+    /// </summary>
+    public static string Live(CanvasSection s) => $$"""
+        <!doctype html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <meta name="generator" content="Claupet Canvas">
+        <style>
+        html,body{margin:0;height:100%;overflow:hidden;background:transparent}
+        iframe{display:block;box-sizing:border-box;width:100%;height:100%;border:1px solid rgba(127,127,127,.25);border-radius:10px;background:#fff}
+        </style>
+        </head>
+        <body>
+        <iframe sandbox="{{Sandbox}}" srcdoc="{{WebUtility.HtmlEncode(FramePage(s) + FrameHeight + FrameWheel)}}"></iframe>
+        {{LiveRelay}}
+        </body>
+        </html>
+        """;
+
+    /// <summary>
+    /// Dentro del iframe de la sección viva: la rueda que no desplaza nada de la sección (ni un bloque con su barra ni la
+    /// página) se le avisa a la página de afuera, en píxeles. Ctrl+rueda y lo que la sección ya atendió no se avisan.
+    /// </summary>
+    const string FrameWheel = "<script>(function(){function can(n,dy){for(var e=n&&n.nodeType===1?n:n&&n.parentElement;e;e=e.parentElement){"
+        + "var o=getComputedStyle(e).overflowY,root=e===document.scrollingElement;"
+        + "if((root?o!=='hidden':o==='auto'||o==='scroll'||o==='overlay')&&e.scrollHeight>e.clientHeight+1"
+        + "&&(dy<0?e.scrollTop>0:Math.ceil(e.scrollTop+e.clientHeight)<e.scrollHeight))return true}return false}"
+        + "addEventListener('wheel',function(e){if(e.ctrlKey||e.defaultPrevented||!e.deltaY||can(e.target,e.deltaY))return;"
+        + "parent.postMessage({claupetWheel:e.deltaY*(e.deltaMode===1?40:e.deltaMode===2?800:1)},'*')},{passive:true})})()</script>";
+
+    /// <summary>
+    /// En la página de afuera de la sección viva: pasa a Claupet (chrome.webview) el alto y la rueda que manda su iframe,
+    /// y nada más; mensajes de otro lado o que no son números no pasan.
+    /// </summary>
+    const string LiveRelay = "<script>(function(){var f=document.querySelector('iframe'),w=window.chrome&&chrome.webview;if(!w)return;"
+        + "addEventListener('message',function(e){var d=e.data;if(e.source!==f.contentWindow||!d)return;"
+        + "if(typeof d.claupetHeight==='number'&&isFinite(d.claupetHeight))w.postMessage({h:d.claupetHeight});"
+        + "else if(typeof d.claupetWheel==='number'&&isFinite(d.claupetWheel))w.postMessage({w:d.claupetWheel})})})()</script>";
 
     /// <summary>
     /// Dentro de cada iframe: avisa a la página su alto (el del contenido), para que el marco mida eso y no deje un hueco
@@ -210,7 +270,8 @@ static class CanvasExport
         pre.mermaid{background:none;text-align:center}blockquote{margin:0 0 1em;padding:2px 0 2px 14px;border-left:3px solid #D97757;color:var(--muted)}.missing{color:var(--muted)}
         @page{size:A4;margin:18mm 16mm}
         @media print{:root{--bg:#fff;--fg:#1F1E1D;--muted:#6B6963;--code:#F1EEE6}body{max-width:none;padding:0;font-size:11.5pt}
-        section{break-inside:avoid-page}section:last-of-type{margin-bottom:0}iframe{margin-bottom:-4px}pre{white-space:pre-wrap;overflow:visible}h1{font-size:22pt}}
+        *{-webkit-print-color-adjust:exact;print-color-adjust:exact}section:last-of-type{margin-bottom:0}iframe{margin-bottom:-4px}
+        h1,h2,h3,h4,h5{break-after:avoid-page}tr,img,blockquote,pre.mermaid{break-inside:avoid}pre{white-space:pre-wrap;overflow:visible}h1{font-size:22pt}}
         </style>
         """;
 

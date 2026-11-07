@@ -138,7 +138,8 @@ public sealed class CanvasEditingTests
 
     /// <summary>
     /// Un marco HTML al borde de la página empujaba una hoja en blanco al final. Con el PDF de verdad: mide lo que sale de
-    /// Edge o Chrome, y sin navegador no hay nada que medir.
+    /// Edge o Chrome, y sin navegador no hay nada que medir. El HTML va en su propia hoja (CanvasPdf.Parts): el texto
+    /// entra en una y el HTML en otra, sin ninguna en blanco.
     /// </summary>
     [Fact]
     public void ElPdfNoTerminaEnUnaHojaEnBlanco()
@@ -157,6 +158,6 @@ public sealed class CanvasEditingTests
         var path = dir["canvas.pdf"];
         CanvasPdf.Write(doc, path);
         var pages = System.Text.RegularExpressions.Regex.Count(System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(path)), @"/Type\s*/Page[^s]");
-        Assert.Equal(1, pages);
+        Assert.Equal(2, pages);
     }
 }
