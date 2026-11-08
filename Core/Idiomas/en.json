@@ -1045,6 +1045,7 @@
   "Incluida": "Included",
   "Terracota": "Terracotta",
   "Pide permiso para usar Bash": "Asks for permission to use Bash",
+  "Pide permiso para usar {0}": "Asks for permission to use {0}",
   "Descarga {0} ({1} MB) y usa unos {2} de RAM al responder.": "Downloads {0} ({1} MB) and uses about {2} of RAM while answering.",
   "Descargando el modelo local… {0} %": "Downloading the local model… {0} %",
   "El modelo local no está descargado: descárguelo en Claupet Console › Respuestas.": "The local model isn't downloaded: download it in Claupet Console › Answers.",

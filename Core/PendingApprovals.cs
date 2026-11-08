@@ -6,7 +6,7 @@ namespace Claupet;
 /// Code lo corre por un shell y el .exe puede quedar vivo). Se respondió si el paso que lo pidió (el tool_use de esa
 /// herramienta, mejor si con el mismo pedido) ya tiene su resultado (también al negarlo o interrumpirlo, Claude Code
 /// escribe uno), si la sesión pasó de esperar a trabajar, si el turno terminó o empezó otro, o si la sesión se cerró.
-/// Sin herramienta (un aviso del hook Notification), mira el último paso que espera.
+/// Sin herramienta (un aviso del hook Notification), mira el último paso que espera; si no hay ninguno, ya se respondió.
 /// </summary>
 sealed class AnswerWatch(string sessionId, string? tool = null, string? inputJson = null)
 {
@@ -15,7 +15,7 @@ sealed class AnswerWatch(string sessionId, string? tool = null, string? inputJso
 
     readonly int _inputKey = inputJson is null ? 0 : Approvals.InputKey(inputJson);
     bool _started, _sawWaiting;
-    int _turns, _missing;
+    int _turns, _missing, _idle;
     DateTimeOffset? _turnEnded;
     HashSet<string> _doneBefore = [];
     string? _step;
@@ -50,6 +50,9 @@ sealed class AnswerWatch(string sessionId, string? tool = null, string? inputJso
             if (candidates.FirstOrDefault(f => !f.Done) is { } waiting) _step = waiting.Id;
             // Entre dos lecturas se pidió, se respondió y ya terminó: el paso aparece hecho de una vez.
             else if (tool is not null && candidates.Any(f => f.Done && !_doneBefore.Contains(f.Id))) return true;
+            // Sin herramienta (el hook Notification), el aviso llega cuando la terminal ya pregunta, a veces tarde: si
+            // en dos lecturas no hay ningún paso esperando, ya se respondió antes de que el aviso saliera.
+            else if (tool is null && ++_idle >= GoneAfter) return true;
             return false;
         }
         return s.Flow.FirstOrDefault(f => f.Id == _step) is not { Done: false };
