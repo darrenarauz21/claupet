@@ -188,6 +188,8 @@ Useful flags while developing: `--preview` opens a second window, `--mascota <ch
 shows that pet just for that run, `--dump` prints a full usage check and `--preguntar "<text>"` asks
 the pet from the console. The full technical notes (in Spanish) are in [DETALLES.md](DETALLES.md).
 
+If you like Claupet, consider giving it a ⭐ to help more people find it!
+
 ## License
 
 [MIT](LICENSE). Bundled libraries and downloaded voice models keep their own licenses: see
