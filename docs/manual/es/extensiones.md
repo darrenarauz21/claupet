@@ -21,6 +21,7 @@ Sume a Claupet voces, mascotas, sonidos, habilidades y asistentes de otros, en p
 | **Voz a texto** | Otro motor para el micrófono, en lugar de Whisper. |
 | **Texto a voz** | Otra voz para leer las respuestas, en lugar de la de Claupet. |
 | **Asistente** | Otro modelo para la mascota y la isla (DeepSeek, Ollama, LM Studio…), en lugar de Claude Code. |
+| **Herramientas MCP** | Servidores MCP que se suman a Claude Code, Codex y Gemini en la Console: el agente puede usar sus herramientas (con su permiso). |
 
 Voz a texto, texto a voz y asistente son **ranuras exclusivas**: solo una cosa a la vez ocupa cada una.
 Instalar una extensión no la pone en esas ranuras; se elige al instalarla y se cambia después.

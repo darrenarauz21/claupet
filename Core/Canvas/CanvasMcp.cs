@@ -329,22 +329,27 @@ static class CanvasMcp
     /// La configuración para Claude Code (--mcp-config), en un archivo junto a los canvas: un JSON en la línea de comandos
     /// no sobrevive a cmd.exe (claude.cmd). Null si no se pudo escribir.
     /// </summary>
-    public static string? ClaudeConfigFile(string author, string? folder)
+    public static string? ClaudeConfigFile(string author, string? folder) => ClaudeConfigFile(author, folder, ExtensionMcp.Servers());
+
+    /// <summary>extra: los servidores de las extensiones (la ranura «mcp»); sus claves quedan en este archivo, en la carpeta de datos de la persona.</summary>
+    internal static string? ClaudeConfigFile(string author, string? folder, IReadOnlyList<McpServer> extra)
     {
         if (Command is not { } command) return null;
-        var config = new JsonObject
+        var servers = new JsonObject
         {
-            ["mcpServers"] = new JsonObject
+            [Name] = new JsonObject
             {
-                [Name] = new JsonObject
-                {
-                    ["type"] = "stdio",
-                    ["command"] = command,
-                    ["args"] = new JsonArray(Flag),
-                    ["env"] = Env(author, folder),
-                },
+                ["type"] = "stdio",
+                ["command"] = command,
+                ["args"] = new JsonArray(Flag),
+                ["env"] = Env(author, folder),
             },
         };
+        foreach (var server in extra)
+            servers[server.Name] = server.Type == McpServerSpec.Http
+                ? new JsonObject { ["type"] = "http", ["url"] = server.Url, ["headers"] = Object(server.Headers) }
+                : new JsonObject { ["type"] = "stdio", ["command"] = server.Command, ["args"] = ListOf(server.Args), ["env"] = Object(server.Env) };
+        var config = new JsonObject { ["mcpServers"] = servers };
         try
         {
             var dir = DataFolder.In("Canvas", "mcp");
@@ -367,22 +372,60 @@ static class CanvasMcp
     /// Lo que va antes de «app-server» en Codex: «-c» con la tabla del servidor en TOML. Comillas simples (cadenas
     /// literales de TOML): la ruta de Windows no necesita escapes y no hay comillas dobles que cmd.exe rompa.
     /// </summary>
-    public static IEnumerable<string> CodexArguments(string? folder)
+    public static IEnumerable<string> CodexArguments(string? folder) => CodexArguments(folder, ExtensionMcp.Servers());
+
+    internal static IEnumerable<string> CodexArguments(string? folder, IReadOnlyList<McpServer> extra)
     {
         if (Command is not { } command || command.Contains('\'') || (folder?.Contains('\'') ?? false)) return [];
         var key = "mcp_servers.claupet_canvas";
         var env = $"{{{AuthorVariable}='Codex'" + (folder is null ? "" : $",{FolderVariable}='{folder}'") + "}";
-        return ["-c", $"{key}.command='{command}'", "-c", $"{key}.args=['{Flag}']", "-c", $"{key}.env={env}"];
+        List<string> args = ["-c", $"{key}.command='{command}'", "-c", $"{key}.args=['{Flag}']", "-c", $"{key}.env={env}"];
+        foreach (var server in extra) args.AddRange(CodexServer(server));
+        return args;
     }
 
-    /// <summary>El servidor para «session/new» de ACP (Gemini CLI, Copilot CLI…).</summary>
-    public static JsonArray AcpServers(string author, string? folder)
+    /// <summary>
+    /// Un servidor de una extensión para Codex, en TOML con cadenas literales. Un valor que no cabe en una cadena
+    /// literal o que cmd.exe rompería (comillas, saltos de línea, &amp;, %…) deja ese servidor fuera de Codex; los
+    /// demás agentes sí lo reciben.
+    /// </summary>
+    static IEnumerable<string> CodexServer(McpServer server)
+    {
+        var values = new[] { server.Command ?? "", server.Url ?? "" }.Concat(server.Args).Concat(server.Env.Values).Concat(server.Headers.Values);
+        if (values.Any(v => v.IndexOfAny(['\'', '"', '\r', '\n', '%', '^', '&', '|', '<', '>']) >= 0)) return [];
+        static string Table(IReadOnlyDictionary<string, string> map) => "{" + string.Join(",", map.Select(p => $"'{p.Key}'='{p.Value}'")) + "}";
+        var key = $"mcp_servers.{server.Name}";
+        if (server.Type == McpServerSpec.Http)
+            return server.Headers.Count == 0 ? ["-c", $"{key}.url='{server.Url}'"]
+                : ["-c", $"{key}.url='{server.Url}'", "-c", $"{key}.http_headers={Table(server.Headers)}"];
+        return ["-c", $"{key}.command='{server.Command}'", "-c", $"{key}.args=[{string.Join(",", server.Args.Select(a => $"'{a}'"))}]", "-c", $"{key}.env={Table(server.Env)}"];
+    }
+
+    /// <summary>
+    /// Los servidores para «session/new» de ACP (Gemini CLI, Copilot CLI…): el de Claupet y los de las extensiones.
+    /// http: el agente dijo que acepta servidores por HTTP (mcpCapabilities.http); si no, solo van los stdio.
+    /// </summary>
+    public static JsonArray AcpServers(string author, string? folder, bool http = false) => AcpServers(author, folder, http, ExtensionMcp.Servers());
+
+    internal static JsonArray AcpServers(string author, string? folder, bool http, IReadOnlyList<McpServer> extra)
     {
         if (Command is not { } command) return [];
         var env = new JsonArray(new JsonObject { ["name"] = AuthorVariable, ["value"] = author });
         if (folder is not null) env.Add(new JsonObject { ["name"] = FolderVariable, ["value"] = folder });
-        return [new JsonObject { ["name"] = Name, ["command"] = command, ["args"] = new JsonArray(Flag), ["env"] = env }];
+        var list = new JsonArray(new JsonObject { ["name"] = Name, ["command"] = command, ["args"] = new JsonArray(Flag), ["env"] = env });
+        foreach (var server in extra)
+            if (server.Type != McpServerSpec.Http)
+                list.Add(new JsonObject { ["name"] = server.Name, ["command"] = server.Command, ["args"] = ListOf(server.Args), ["env"] = Pairs(server.Env) });
+            else if (http)
+                list.Add(new JsonObject { ["type"] = "http", ["name"] = server.Name, ["url"] = server.Url, ["headers"] = Pairs(server.Headers) });
+        return list;
     }
+
+    static JsonArray ListOf(IEnumerable<string> items) => [.. items.Select(i => (JsonNode)i)];
+
+    static JsonObject Object(IReadOnlyDictionary<string, string> map) => new(map.Select(p => KeyValuePair.Create(p.Key, (JsonNode?)p.Value)));
+
+    static JsonArray Pairs(IReadOnlyDictionary<string, string> map) => [.. map.Select(p => (JsonNode)new JsonObject { ["name"] = p.Key, ["value"] = p.Value })];
 
     static JsonObject Env(string author, string? folder)
     {

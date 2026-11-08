@@ -33,6 +33,8 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
     long _requests;
     AgentOptions? _options;
     bool _initialized, _creating, _turn;
+    /// <summary>El agente acepta servidores MCP por HTTP (agentCapabilities.mcpCapabilities.http).</summary>
+    bool _mcpHttp;
     string? _session;
 
     // Lo que anunció la sesión: los modos (el id corto y el de ACP), los modelos y los esfuerzos, y si se cambian como
@@ -234,6 +236,9 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
         {
             case "initialize":
                 _initialized = true;
+                _mcpHttp = result.ValueKind == JsonValueKind.Object && result.TryGetProperty("agentCapabilities", out var caps)
+                    && caps.ValueKind == JsonValueKind.Object && caps.TryGetProperty("mcpCapabilities", out var mcp)
+                    && mcp.ValueKind == JsonValueKind.Object && mcp.TryGetProperty("http", out var http) && http.ValueKind == JsonValueKind.True;
                 replies.Add(NewSession());
                 break;
             case "session/new":
@@ -428,7 +433,7 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
     string NewSession()
     {
         _creating = true;
-        return Request("session/new", new JsonObject { ["cwd"] = _options?.Folder ?? Environment.CurrentDirectory, ["mcpServers"] = CanvasMcp.AcpServers(Name, _options?.Folder) });
+        return Request("session/new", new JsonObject { ["cwd"] = _options?.Folder ?? Environment.CurrentDirectory, ["mcpServers"] = CanvasMcp.AcpServers(Name, _options?.Folder, _mcpHttp) });
     }
 
     /// <summary>Sin modelo, vuelve al automático del agente (el «auto» de Gemini CLI) si lo tiene.</summary>

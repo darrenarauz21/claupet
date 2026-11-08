@@ -13,11 +13,11 @@ namespace Claupet;
 static class ExtensionSlots
 {
     public const string SpeechToText = "speech-to-text", TextToSpeech = "text-to-speech", Assistant = "assistant",
-        Skill = "skill", Pet = "pet", VoiceStyle = "voice-style", Sounds = "sounds";
+        Skill = "skill", Pet = "pet", VoiceStyle = "voice-style", Sounds = "sounds", Mcp = "mcp";
 
     public static readonly string[] Exclusive = [SpeechToText, TextToSpeech, Assistant];
 
-    public static readonly string[] All = [SpeechToText, TextToSpeech, Assistant, Skill, Pet, VoiceStyle, Sounds];
+    public static readonly string[] All = [SpeechToText, TextToSpeech, Assistant, Skill, Pet, VoiceStyle, Sounds, Mcp];
 
     public static bool IsExclusive(string slot) => Exclusive.Contains(slot);
 
@@ -33,6 +33,7 @@ static class ExtensionSlots
         Pet => L.T("Mascota"),
         VoiceStyle => L.T("Voces"),
         Sounds => L.T("Sonidos"),
+        Mcp => L.T("Herramientas MCP"),
         _ => slot,
     };
 
@@ -288,9 +289,11 @@ sealed record ExtensionManifest
     public IReadOnlyDictionary<string, string> Sounds { get; init; } = new Dictionary<string, string>();
     public IReadOnlyList<string> Permissions { get; init; } = [];
     public IReadOnlyList<SettingSpec> Settings { get; init; } = [];
+    /// <summary>Los servidores MCP que trae (la ranura «mcp»): se suman a los agentes.</summary>
+    public IReadOnlyList<McpServerSpec> Mcp { get; init; } = [];
 
     /// <summary>Corre código en el equipo (un programa o una DLL), no solo datos o un servidor.</summary>
-    public bool RunsCode => Runtime?.Type is RuntimeSpec.Process or RuntimeSpec.Native;
+    public bool RunsCode => Runtime?.Type is RuntimeSpec.Process or RuntimeSpec.Native || Mcp.Any(m => m.Type == McpServerSpec.Stdio);
 
     public static bool ValidId(string id) => IdPattern.IsMatch(id);
 
@@ -372,13 +375,16 @@ sealed record ExtensionManifest
             var sounds = SoundsOf(r, errors, files);
             if (provides.Contains(ExtensionSlots.Sounds) != (sounds.Count > 0))
                 errors.Add(L.T("«sounds» en «provides» va con sus sonidos."));
+            var mcp = ExtensionMcp.Parse(r, errors, files, settings, permissions);
+            if (provides.Contains(ExtensionSlots.Mcp) != (mcp.Count > 0))
+                errors.Add(L.T("«mcp» en «provides» va con al menos un servidor en «mcp»."));
 
             if (errors.Count > 0) return (null, errors);
             return (new ExtensionManifest
             {
                 Id = id, Version = version!.Value, Name = name, Description = description, Author = author, License = license,
                 Homepage = homepage, MinClaupet = min, Api = api, Provides = provides, Runtime = runtime, Commands = commands,
-                Events = events, Voices = voices, Pet = pet, Sounds = sounds, Permissions = permissions, Settings = settings,
+                Events = events, Voices = voices, Pet = pet, Sounds = sounds, Permissions = permissions, Settings = settings, Mcp = mcp,
             }, errors);
         }
     }

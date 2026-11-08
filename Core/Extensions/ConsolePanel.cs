@@ -166,6 +166,7 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
         rows.Add(SettingsPages.Info(L.T("Estado"), StatusOf(ext)));
         if (m.Commands.Count > 0) rows.Add(SettingsPages.Info(L.T("Comandos en el chat"), string.Join(", ", m.Commands.Select(c => "/" + c.Name))));
         if (m.Events.Count > 0) rows.Add(SettingsPages.Info(L.T("Se entera de"), string.Join(", ", m.Events.Select(EventLabel))));
+        if (m.Mcp.Count > 0) rows.Add(SettingsPages.Info(L.T("Herramientas para los agentes"), McpLabel(m)));
         if (m.License is { Length: > 0 } license) rows.Add(SettingsPages.Info(L.T("Licencia"), license));
         if (WebAddress(m.Homepage) is { } home)
         {
@@ -235,6 +236,7 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
         rows.Add(SettingsPages.Info(L.T("Qué trae"), Provides(m)));
         if (m.Commands.Count > 0) rows.Add(SettingsPages.Info(L.T("Comandos en el chat"), string.Join(", ", m.Commands.Select(c => "/" + c.Name))));
         if (m.Events.Count > 0) rows.Add(SettingsPages.Info(L.T("Se entera de"), string.Join(", ", m.Events.Select(EventLabel))));
+        if (m.Mcp.Count > 0) rows.Add(SettingsPages.Info(L.T("Herramientas para los agentes"), McpLabel(m)));
 
         rows.Add(SettingsPages.Caption(L.T("Firma")));
         rows.Add(SettingsPages.Note(review.TrustText, review.Trust switch
@@ -299,6 +301,10 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
     }
 
     // ── Textos ──────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Los servidores MCP: el nombre y, si es por internet, a dónde se conecta.</summary>
+    static string McpLabel(ExtensionManifest m) => string.Join(", ", m.Mcp.Select(s =>
+        s.Type == McpServerSpec.Http && Uri.TryCreate(s.Url, UriKind.Absolute, out var u) && !s.Url!.StartsWith('{') ? $"{s.Name} ({u.Host})" : s.Name));
 
     static string RunsCodeText => L.T("Corre un programa en este equipo, con sus permisos. Claupet controla lo que le pide a la app, no lo que el programa haga por su cuenta.");
 

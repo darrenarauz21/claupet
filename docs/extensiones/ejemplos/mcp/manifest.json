@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "ejemplo.notas-mcp",
+  "name": { "es": "Notas para los agentes (MCP)", "en": "Notes for the agents (MCP)" },
+  "description": {
+    "es": "Ejemplo: un servidor MCP que les da a Claude Code, Codex y Gemini las herramientas notas_guardar y notas_leer.",
+    "en": "Sample: an MCP server that gives Claude Code, Codex and Gemini the notas_guardar and notas_leer tools."
+  },
+  "version": "1.0.0",
+  "author": "Claupet",
+  "license": "MIT",
+  "claupet": ">=2.6.2",
+  "provides": ["mcp"],
+  "settings": [
+    { "key": "carpeta", "label": { "es": "Carpeta de las notas", "en": "Notes folder" } }
+  ],
+  "mcp": {
+    "notas": {
+      "type": "stdio",
+      "program": "node",
+      "args": ["{package}/server.js"],
+      "env": { "NOTAS_CARPETA": "{setting:carpeta}" }
+    }
+  }
+}

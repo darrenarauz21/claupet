@@ -2055,5 +2055,20 @@
   "Etapa 1": "Stage 1",
   "Plan": "Plan",
   "Primera tarea": "First task",
-  "Segunda tarea": "Second task"
+  "Segunda tarea": "Second task",
+  "«mcp» debe ser un objeto: un servidor por nombre.": "«mcp» must be an object: one server per name.",
+  "Servidor MCP con nombre inválido: «{0}».": "MCP server with an invalid name: «{0}».",
+  "El servidor MCP «{0}» debe ser un objeto.": "The MCP server «{0}» must be an object.",
+  "El servidor MCP «{0}» lleva «command» (del paquete) o «program» (del sistema), uno de los dos.": "The MCP server «{0}» takes «command» (from the package) or «program» (from the system), one of the two.",
+  "El servidor MCP «{0}» es «stdio»: no lleva «url» ni «headers».": "The MCP server «{0}» is «stdio»: it takes no «url» or «headers».",
+  "El servidor MCP «{0}» es «http»: no lleva «command», «program», «args» ni «env».": "The MCP server «{0}» is «http»: it takes no «command», «program», «args» or «env».",
+  "El servidor MCP «{0}»: «type» es «stdio» o «http».": "The MCP server «{0}»: «type» is «stdio» or «http».",
+  "«{0}» debe ser un objeto.": "«{0}» must be an object.",
+  "«{0}» trae un valor inválido: «{1}».": "«{0}» has an invalid value: «{1}».",
+  "El servidor MCP «{0}» nombra el ajuste «{1}», que no está en «settings».": "The MCP server «{0}» names the setting «{1}», which is not in «settings».",
+  "El servidor MCP «{0}»: la clave «{1}» va solo en «env» o «headers».": "The MCP server «{0}»: the key «{1}» goes only in «env» or «headers».",
+  "«{0}» quiere conectarse a {1}, que no declaró.": "«{0}» wants to connect to {1}, which it did not declare.",
+  "Herramientas MCP": "MCP tools",
+  "«mcp» en «provides» va con al menos un servidor en «mcp».": "«mcp» in «provides» goes with at least one server in «mcp».",
+  "Herramientas para los agentes": "Tools for the agents"
 }

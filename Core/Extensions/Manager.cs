@@ -346,6 +346,36 @@ sealed class ExtensionManager : IAsyncDisposable
         return ext.FileOf(packagePath);
     }
 
+    /// <summary>
+    /// Los servidores MCP de las extensiones encendidas, para sumarlos a los agentes al abrirlos. Cada paquete se
+    /// verifica la primera vez en la sesión (si alguien tocó sus archivos, se apaga). Un nombre repetido entre dos
+    /// extensiones queda con la primera; uno que no se puede armar (falta su programa) se salta y queda en el registro.
+    /// </summary>
+    public IReadOnlyList<McpServer> McpServers()
+    {
+        var list = new List<McpServer>();
+        foreach (var ext in DataPacks(ExtensionSlots.Mcp).ToList())
+        {
+            var key = PackKey(ext);
+            if (!_checkedPacks.ContainsKey(key))
+            {
+                if (_store.Verify(ext) is { } problem)
+                {
+                    _ = DisableAsync(ext, problem);
+                    continue;
+                }
+                _checkedPacks[key] = true;
+            }
+            foreach (var spec in ext.Manifest.Mcp)
+            {
+                if (list.Any(s => s.Name == spec.Name)) continue;
+                try { list.Add(ExtensionMcp.Resolve(ext, spec, k => ValueOf(ext, k), ProgramResolver.Find)); }
+                catch (ExtensionUnavailableException ex) { ErrorLog.Write(ex); }
+            }
+        }
+        return list;
+    }
+
     // ── Ajustes y claves ────────────────────────────────────────────────────────────────────
 
     public string? ValueOf(InstalledExtension ext, string key)

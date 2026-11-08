@@ -52,6 +52,8 @@ sealed partial class TrayController : IExtensionsHost
         ReadAloud.External = () => ExtensionProviders.TextToSpeech(extensions);
         ReadAloud.PackVoice = (voice, cancel) => extensions.VoiceFileAsync(voice, cancel);
         Sounds.PackFile = (pack, name) => extensions.SoundFile(pack, name);
+        // Los servidores MCP de las extensiones se suman al del canvas en cada agente que se abre.
+        ExtensionMcp.Source = extensions.McpServers;
         _quick.Added += turn => _ = BroadcastAsync("chat", new JsonObject { ["from"] = turn.FromPerson ? "person" : "claupet", ["text"] = turn.Text });
     }
 
