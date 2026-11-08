@@ -65,7 +65,7 @@ sealed partial class TerminalPane
             options = new AgentOptions(o.Folder, account?.ConfigDir, last.Model, last.Effort, null, AgentKinds.Claude, past.Id);
         }
         var label = account?.Label ?? L.T("cuenta por defecto");
-        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview") };
+        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview"), Coordinate = true };
         _ = Task.Run(() =>
         {
             ClaudeHistory.Replay(past.Path, agent.Transcript);

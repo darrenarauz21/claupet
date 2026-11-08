@@ -441,7 +441,7 @@ sealed partial class TerminalPane
         TerminalRecents.Remember(claude ? options : new AgentOptions(folder, last.Account, last.Model, last.Effort, last.Mode), "agente:" + kind);
         LinkProject(folder);
         // Una copia de prueba (--preview) no le pasa los permisos a la isla de la app de siempre.
-        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview") };
+        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview"), Coordinate = true };
         var tab = new Tab(agent, claude ? account?.Label ?? L.T("cuenta por defecto") : AgentKinds.Label(kind));
         agent.Changed += changed => OnChanged(tab, changed);
         Add(tab);

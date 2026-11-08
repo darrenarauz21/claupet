@@ -4,31 +4,231 @@
   "descripcion": "Correcciones de la Console y la Terminal, y la primera parte de la vista de proyectos.",
   "inicio": "2026-10-27",
   "etapas": [
-    { "id": "correcciones", "nombre": "Correcciones" },
-    { "id": "planes", "nombre": "Planes en la tarjeta" },
-    { "id": "ia", "nombre": "Que las IAs lo usen" },
-    { "id": "publicar", "nombre": "Publicación" }
+    {
+      "id": "correcciones",
+      "nombre": "Correcciones"
+    },
+    {
+      "id": "planes",
+      "nombre": "Planes en la tarjeta"
+    },
+    {
+      "id": "ia",
+      "nombre": "Que las IAs lo usen"
+    },
+    {
+      "id": "publicar",
+      "nombre": "Publicación"
+    },
+    {
+      "id": "coordinacion",
+      "nombre": "Sesiones que se coordinan"
+    }
   ],
   "tareas": [
-    { "id": "rapida", "etapa": "correcciones", "titulo": "Borrar la conversación rápida de la lista", "estado": "hecho", "inicio": "2026-10-28", "dias": 1, "horas": 1, "horasReales": 0.5 },
-    { "id": "copiar", "etapa": "correcciones", "titulo": "Copiar cada bloque de código", "estado": "hecho", "inicio": "2026-10-29", "dias": 1, "horas": 1, "horasReales": 0.5 },
-    { "id": "historial", "etapa": "correcciones", "titulo": "Borrar el historial (una o todo)", "estado": "revision", "inicio": "2026-10-29", "dias": 2, "horas": 3, "horasReales": 2.5 },
-
-    { "id": "formato", "etapa": "planes", "titulo": "Formato .plan.json y su lectura", "estado": "hecho", "depende": ["historial"], "dias": 1, "horas": 3, "horasReales": 3 },
-    { "id": "tarjeta", "etapa": "planes", "titulo": "Resumen, tablero y cronograma", "estado": "en-curso", "depende": ["formato"], "dias": 3, "horas": 8, "horasReales": 4,
-      "notas": "Probar con el tema claro y el oscuro." },
-    { "id": "diagrama", "etapa": "planes", "titulo": "Diagrama de dependencias", "depende": ["tarjeta"], "dias": 2, "horas": 5 },
-
-    { "id": "skill", "etapa": "ia", "titulo": "Skill claupet-plan para Claude Code", "depende": ["formato"], "dias": 2, "horas": 4 },
-    { "id": "sesiones", "etapa": "ia", "titulo": "Instrucción en las sesiones de la Terminal", "depende": ["skill"], "dias": 1, "horas": 2 },
-    { "id": "bloque", "etapa": "ia", "titulo": "Bloque claupet-plan en el chat y los .md", "estado": "bloqueado", "depende": ["tarjeta"], "dias": 2, "horas": 4,
-      "notas": "Espera a que la tarjeta quede lista." },
-
-    { "id": "pruebas", "etapa": "publicar", "titulo": "Pruebas en Windows, Linux y macOS", "depende": ["diagrama", "sesiones", "bloque"], "dias": 2, "horas": 4 },
-    { "id": "notas", "etapa": "publicar", "titulo": "Novedades y manual", "depende": ["pruebas"], "dias": 1, "horas": 2 }
+    {
+      "id": "rapida",
+      "etapa": "correcciones",
+      "titulo": "Borrar la conversación rápida de la lista",
+      "estado": "hecho",
+      "inicio": "2026-10-28",
+      "dias": 1,
+      "horas": 1,
+      "horasReales": 0.5
+    },
+    {
+      "id": "copiar",
+      "etapa": "correcciones",
+      "titulo": "Copiar cada bloque de código",
+      "estado": "hecho",
+      "inicio": "2026-10-29",
+      "dias": 1,
+      "horas": 1,
+      "horasReales": 0.5
+    },
+    {
+      "id": "historial",
+      "etapa": "correcciones",
+      "titulo": "Borrar el historial (una o todo)",
+      "estado": "revision",
+      "inicio": "2026-10-29",
+      "dias": 2,
+      "horas": 3,
+      "horasReales": 2.5
+    },
+    {
+      "id": "formato",
+      "etapa": "planes",
+      "titulo": "Formato .plan.json y su lectura",
+      "estado": "hecho",
+      "depende": [
+        "historial"
+      ],
+      "dias": 1,
+      "horas": 3,
+      "horasReales": 3
+    },
+    {
+      "id": "tarjeta",
+      "etapa": "planes",
+      "titulo": "Resumen, tablero y cronograma",
+      "estado": "por-hacer",
+      "depende": [
+        "formato"
+      ],
+      "dias": 3,
+      "horas": 8,
+      "horasReales": 4,
+      "notas": "Probar con el tema claro y el oscuro."
+    },
+    {
+      "id": "diagrama",
+      "etapa": "planes",
+      "titulo": "Diagrama de dependencias",
+      "depende": [
+        "tarjeta"
+      ],
+      "dias": 2,
+      "horas": 5
+    },
+    {
+      "id": "skill",
+      "etapa": "ia",
+      "titulo": "Skill claupet-plan para Claude Code",
+      "depende": [
+        "formato"
+      ],
+      "dias": 2,
+      "horas": 4,
+      "estado": "hecho",
+      "por": "Claude Code",
+      "notas": "SKILL.md en Core/Skills/claupet-plan (va dentro del ejecutable). Se instala desde Ajustes › Skills, donde también se agregan otras skills."
+    },
+    {
+      "id": "sesiones",
+      "etapa": "ia",
+      "titulo": "Instrucción en las sesiones de la Terminal",
+      "depende": [
+        "skill"
+      ],
+      "dias": 1,
+      "horas": 2
+    },
+    {
+      "id": "bloque",
+      "etapa": "ia",
+      "titulo": "Bloque claupet-plan en el chat y los .md",
+      "estado": "bloqueado",
+      "depende": [
+        "tarjeta"
+      ],
+      "dias": 2,
+      "horas": 4,
+      "notas": "Espera a que la tarjeta quede lista."
+    },
+    {
+      "id": "pruebas",
+      "etapa": "publicar",
+      "titulo": "Pruebas en Windows, Linux y macOS",
+      "depende": [
+        "diagrama",
+        "sesiones",
+        "bloque"
+      ],
+      "dias": 2,
+      "horas": 4
+    },
+    {
+      "id": "notas",
+      "etapa": "publicar",
+      "titulo": "Novedades y manual",
+      "depende": [
+        "pruebas"
+      ],
+      "dias": 1,
+      "horas": 2
+    },
+    {
+      "id": "co-registro",
+      "titulo": "Quién trabaja en cada carpeta (sesiones, agente, rama, archivos)",
+      "etapa": "coordinacion",
+      "estado": "hecho",
+      "depende": [
+        "skill"
+      ],
+      "dias": 1,
+      "horas": 3,
+      "por": "Claude Code",
+      "notas": "Core/Workspace.cs: sesiones-activas/ + las de Claude Code abiertas fuera. PR #49."
+    },
+    {
+      "id": "co-contexto",
+      "titulo": "Reglas al abrir y contexto en cada turno, para cualquier agente",
+      "etapa": "coordinacion",
+      "estado": "hecho",
+      "depende": [
+        "co-registro"
+      ],
+      "dias": 1,
+      "horas": 3,
+      "por": "Claude Code",
+      "notas": "Reglas con el primer pedido y nota cuando cambia; también en las instrucciones del MCP. PR #49."
+    },
+    {
+      "id": "co-freno",
+      "titulo": "Freno en los permisos de git que pisan trabajo ajeno",
+      "etapa": "coordinacion",
+      "estado": "revision",
+      "depende": [
+        "co-registro"
+      ],
+      "dias": 1,
+      "horas": 3,
+      "por": "Claude Code",
+      "notas": "Aviso en el bloque del permiso y sin «Siempre aquí». Falta mostrarlo en la tarjeta de la isla. PR #49."
+    },
+    {
+      "id": "co-mcp",
+      "titulo": "Herramienta MCP workspace_status",
+      "etapa": "coordinacion",
+      "estado": "por-hacer",
+      "depende": [
+        "co-registro"
+      ],
+      "dias": 1,
+      "horas": 2,
+      "por": "Claude Code",
+      "notas": "Las reglas ya van en las instrucciones del servidor; falta la herramienta workspace_status."
+    },
+    {
+      "id": "co-worktree",
+      "titulo": "Worktree propio al abrir una sesión (prototipo HTML primero)",
+      "etapa": "coordinacion",
+      "estado": "por-hacer",
+      "depende": [
+        "co-contexto"
+      ],
+      "dias": 2,
+      "horas": 5,
+      "por": "Claude Code"
+    }
   ],
   "hitos": [
-    { "id": "beta", "titulo": "Beta para probar", "depende": ["tarjeta", "sesiones"] },
-    { "id": "v24", "titulo": "Publicar 2.4", "fecha": "2026-11-16", "depende": ["notas"] }
+    {
+      "id": "beta",
+      "titulo": "Beta para probar",
+      "depende": [
+        "tarjeta",
+        "sesiones"
+      ]
+    },
+    {
+      "id": "v24",
+      "titulo": "Publicar 2.4",
+      "fecha": "2026-11-16",
+      "depende": [
+        "notas"
+      ]
+    }
   ]
 }
