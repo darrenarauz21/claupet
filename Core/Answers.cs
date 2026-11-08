@@ -510,11 +510,12 @@ sealed record Place(string? Name, double Latitude, double Longitude, string? Tim
 /// <summary>
 /// El clima sin IA, de Open-Meteo (sin clave): el lugar se busca con su geocodificación, y si no lo nombran,
 /// es el de Ajustes › Respuestas › Mi ciudad: por la IP (ipwho.is), con la ubicación de Windows o una ciudad
-/// escrita. El pronóstico se guarda 15 minutos y la ubicación, 6 horas.
+/// escrita; desactivada, no hay lugar propio y se pregunta. El pronóstico se guarda 15 minutos y la ubicación, 6 horas.
 /// </summary>
 static class WeatherService
 {
-    public const string ByIp = "ip", ByWindows = "windows", ByCity = "ciudad";
+    /// <summary>Off: la ubicación desactivada; no se averigua dónde está (ni por la IP ni por Windows).</summary>
+    public const string ByIp = "ip", ByWindows = "windows", ByCity = "ciudad", Off = "no";
 
     /// <summary>La ubicación de Windows (la pone la app de Windows; null en Linux y macOS o si no hay permiso).</summary>
     public static Func<CancellationToken, Task<(double Lat, double Lon)?>>? WindowsLocation { get; set; }
@@ -584,6 +585,7 @@ static class WeatherService
     /// <summary>El lugar de Mi ciudad, según cómo se eligió.</summary>
     public static async Task<Place?> HereAsync(AppSettings settings, CancellationToken cancel)
     {
+        if (settings.WeatherPlace == Off) return null;
         var key = settings.WeatherPlace + "|" + settings.WeatherCity;
         if (_here is { } cached && cached.Key == key && DateTime.UtcNow - cached.At < TimeSpan.FromHours(6)) return cached.Place;
         Place? place = null;

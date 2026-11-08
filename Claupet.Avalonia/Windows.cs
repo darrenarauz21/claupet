@@ -110,7 +110,9 @@ sealed class ToastWindow : Window
     {
         Notice = notice;
         if (notice is { Kind: NoticeKind.Permission or NoticeKind.Question, SessionId: { } session })
-            Watch = new AnswerWatch(session, notice.Kind == NoticeKind.Question ? "AskUserQuestion" : null);
+            Watch = notice.Request is { } request
+                ? new AnswerWatch(session, request.Tool, request.InputJson)
+                : new AnswerWatch(session, notice.Kind == NoticeKind.Question ? "AskUserQuestion" : null);
         Title = "Claupet";
         SystemDecorations = SystemDecorations.None;
         CanResize = false;
@@ -333,6 +335,15 @@ sealed class ToastStack
     public void Sessions(IReadOnlyList<SessionInfo> sessions)
     {
         foreach (var toast in _toasts.Where(t => t.Watch?.Answered(sessions) == true).ToList()) toast.Dismiss();
+    }
+
+    /// <summary>Hay un aviso que espera una respuesta: las sesiones se leen más seguido, para quitarlo apenas se responda.</summary>
+    public bool Waiting => _toasts.Any(t => t.Watch is not null);
+
+    /// <summary>Quita el aviso de ese pedido: se respondió en la isla o en el bloque de Claupet Terminal.</summary>
+    public void Answered(ApprovalRequest request)
+    {
+        foreach (var toast in _toasts.Where(t => ReferenceEquals(t.Notice.Request, request)).ToList()) toast.Dismiss();
     }
 
     public void CloseAll()

@@ -135,6 +135,8 @@ sealed record AssistantRequest
     public string? Data { get; init; }
     /// <summary>Con Data: quién responde con esos datos (el mismo que pidió la acción); null, la nube.</summary>
     public Engine? Engine { get; init; }
+    /// <summary>La ubicación está desactivada (Mi ciudad): para el clima no se usa la del equipo, se pregunta la ciudad.</summary>
+    public bool NoLocation { get; init; }
 }
 
 /// <summary>
@@ -758,6 +760,7 @@ static class Assistant
         {
             prompt.AppendLine();
             if (!tools) prompt.AppendLine(L.T("No tienes acceso a internet: si para responder hace falta (noticias, precios), dilo en una frase; no inventes."));
+            else if (r.NoLocation) prompt.AppendLine(L.T("Internet: puedes buscar con WebSearch y leer páginas con WebFetch. No anuncies que vas a buscar: busca y responde, sin enlaces ni lista de fuentes. Para el clima, usa WebFetch con https://wttr.in/<ciudad>?format=j1&lang=es. La persona desactivó la ubicación: si no dice la ciudad, pregúntasela; nunca uses ni busques la ubicación del equipo."));
             else prompt.AppendLine(L.T("Internet: puedes buscar con WebSearch y leer páginas con WebFetch. No anuncies que vas a buscar: busca y responde, sin enlaces ni lista de fuentes. Para el clima, usa WebFetch con https://wttr.in/<ciudad>?format=j1&lang=es (sin ciudad, https://wttr.in/?format=j1&lang=es, que usa la ubicación del equipo)."));
             prompt.AppendLine();
             if (!actions)

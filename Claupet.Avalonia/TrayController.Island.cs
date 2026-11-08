@@ -17,6 +17,8 @@ sealed partial class TrayController
     ChatTarget? _islandChat;
     /// <summary>Los permisos que se respondieron «Siempre en esta sesión» (sesión, herramienta y destino).</summary>
     readonly HashSet<string> _alwaysAllow = new();
+    /// <summary>Cuándo pidió permiso cada sesión por el hook PermissionRequest (ya avisado: el hook Notification no lo repite).</summary>
+    readonly Dictionary<string, long> _permissionAsked = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>El modelo de sus sesiones (el de la última que respondió), para el chip de la isla.</summary>
     string? _defaultModel;
     string? _lastAnalysis, _lastAnalysisFile;
@@ -170,6 +172,14 @@ sealed partial class TrayController
             ?? Path.GetFileName(request.Cwd.TrimEnd('\\', '/'));
         if (_mascotWindow is not null) _director.Gesture(ChibiMove.Think, 3000);
         var item = pending.Add(request, title);
+        // El aviso sale ya, con el pedido: no espera al hook Notification, que Claude Code dispara más tarde.
+        if (!request.IsQuestion)
+        {
+            _permissionAsked[request.SessionId] = Environment.TickCount64;
+            if (_settings.Notifications)
+                ShowNotice(new Notice(NoticeKind.Permission, L.T("Necesita su permiso"), title, L.T("Pide permiso para usar {0}", request.Tool), request.SessionId)
+                    { Request = request });
+        }
         try
         {
             var wait = request.FromTerminal ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(Approvals.DecisionSeconds - 5);
@@ -178,6 +188,7 @@ sealed partial class TrayController
         catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
         {
             pending.Gone(item); // quien preguntó ya no espera
+            if (request.FromTerminal) _toasts.Answered(request); // Claupet Terminal cierra el pipe al responder en su bloque
             return null;
         }
     }
@@ -198,6 +209,7 @@ sealed partial class TrayController
             case IslandWindow.ApprovalChoice.Answered when answer.Picks is { } picks: reply = Approvals.Answer(request, picks); break;
         }
         pending.Answer(item, reply);
+        _toasts.Answered(request);
     }
 
     static string AlwaysKey(ApprovalRequest request) => $"{request.SessionId}|{request.Tool}|{request.Target}";

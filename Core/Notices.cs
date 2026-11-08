@@ -11,6 +11,12 @@ sealed record Notice(NoticeKind Kind, string Title, string Subtitle, string Deta
     /// <summary>Lo que necesita su atención se queda hasta que lo cierre; lo demás se va a los 6 s.</summary>
     public bool Sticky => Kind is NoticeKind.Question or NoticeKind.Permission or NoticeKind.Failed
         or NoticeKind.Closed or NoticeKind.Expired or NoticeKind.Reminder;
+
+    /// <summary>
+    /// El pedido del hook PermissionRequest que lo originó (si vino por ahí): el aviso sabe qué herramienta y qué pedido
+    /// mirar, y se va también cuando se responde en la isla.
+    /// </summary>
+    public ApprovalRequest? Request { get; init; }
 }
 
 /// <summary>

@@ -166,6 +166,16 @@ public sealed class PendingApprovalsTests
     }
 
     [Fact]
+    public void ElAvisoQueLlegaDespuesDeResponderSeVa()
+    {
+        // El hook Notification llegó tarde: cuando el aviso sale, el paso ya se respondió y no hay ninguno esperando.
+        var late = new AnswerWatch(Session);
+        var answered = Info(SessionState.Working, flow: [Step("a1", "Read", true), Step("a2", "Edit", true)]);
+        Assert.False(late.Answered([answered])); // una lectura sola puede ser antes de que se escriba el paso
+        Assert.True(late.Answered([answered]));
+    }
+
+    [Fact]
     public void ElPedidoDelHookYElDelRegistroSeReconocenAunqueSeEscapenDistinto()
     {
         // El hook lo vuelve a escribir con System.Text.Json (escapa «ó»); el registro de Claude Code lo trae tal cual.
