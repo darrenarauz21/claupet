@@ -42,6 +42,8 @@ static class PlanWork
             ? L.T("- La tarea ya está en curso. Al terminarla y comprobar que funciona, márcala «hecho» con plan_update; si hace falta que la revise, «revision»; si te bloqueas, «bloqueado» con una nota de por qué.")
             : L.T("- Marca cada tarea «en-curso» con plan_update al empezarla y «hecho» al terminarla y comprobar que funciona; si hace falta que la revise, «revision»; si te bloqueas, «bloqueado» con una nota de por qué."));
         text.AppendLine(L.T("- Haz solo lo que se pide aquí: no empieces otras tareas del plan."));
+        // Lo que se muestra para aprobar se ve dentro de Claupet, ligado al plan, y no en un archivo para el navegador.
+        text.AppendLine(L.T("- Si hace falta un prototipo, una plantilla o una pantalla para aprobar, hazlo en Claupet Canvas: canvas_create con una sección html autocontenida (HTML, CSS y JS juntos) y plan = {0}. No lo dejes como un archivo .html suelto.", path));
         text.Append(L.T("- Al final, dime en pocas líneas qué hiciste y cómo probarlo."));
         return text.ToString();
     }
