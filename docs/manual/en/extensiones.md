@@ -26,11 +26,31 @@ Speech to text, text to speech and assistant are **exclusive slots**: only one t
 one. Installing an extension doesn't put it in those slots; you choose when you install it and can change it
 later.
 
+## Official extensions
+
+In Claupet Console, **Settings › Extensions** shows the catalog of official extensions, the ones Claupet
+publishes and signs with its key. They're shown as cards, in three tabs:
+
+- **Explore**: everything in the catalog plus what you already have installed. You can search and filter by
+  type (speech to text, text to speech, assistant, skill, pet…).
+- **Installed**: the ones on this computer, including those from other authors.
+- **Updates**: the ones with a new version, with **Update all**.
+
+Tap a card to see what it does, what it brings, its size and the permissions it asks for. The card's button
+installs it (⤓), updates it (⤒) or takes you to its settings (⚙). If one needs a newer Claupet, it says so
+instead of the button.
+
+Claupet checks the catalog once a day; the ↻ button checks it right away. It only trusts a catalog signed by
+Claupet, and only installs a download that matches what the catalog says.
+
+**Update all** installs official updates that don't ask for new permissions without asking. If one asks for
+something new, its review opens.
+
 ## How to install an extension
 
-1. Get the `.claupet` file from someone you trust.
-2. Drop it on the pet or the island. (Or, in Claupet Console, **Settings › Extensions › Install from
-   file…**; or **Install…** in the setup assistant.)
+1. Pick one from the catalog and tap ⤓, or get the `.claupet` file from someone you trust.
+2. If it's a file, drop it on the pet or the island. (Or, in Claupet Console, **Settings › Extensions** and
+   the **Install from .claupet file** button; or **Install…** in the setup assistant.)
 3. Claupet Console opens the **review**: which version it is (or whether it updates, rolls back or
    reinstalls), who signed it, what it brings, whether it runs a program, the permissions it asks for and
    the slots it can fill.
@@ -71,9 +91,10 @@ If an update asks for new permissions, the review shows them before you install 
 
 ## How to manage your extensions
 
-In Claupet Console, **Settings › Extensions** lists the installed ones. Tap one to see its page:
+In Claupet Console, **Settings › Extensions › Installed** shows the ones on this computer. Tap one to see its page:
 
 - Whether it's **On** or **Off** (and why it was turned off).
+- If the catalog has a new version, **Update**.
 - Its version, author, signature, license, site, what it brings, its commands and its permissions.
 - **Its settings.** Keys are stored encrypted and never shown again: you type a new one or delete it.
 - **Open its log** and **Open its data folder**, to see what happened.
@@ -86,7 +107,7 @@ In Claupet Console, **Settings › Extensions** lists the installed ones. Tap on
 ## The local API
 
 Some programs on your computer can ask Claupet for things through the **Local API**, in
-**Settings › Extensions**. Each program needs its own **token**:
+**Settings › Extensions**, **Slots and local API** button. Each program needs its own **token**:
 
 1. Turn on the local API and create a token: write which program it's for and what it can ask for.
 2. Copy it right then: it won't be shown again.

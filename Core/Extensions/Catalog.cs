@@ -8,11 +8,12 @@ namespace Claupet;
 /// <summary>
 /// Una extensión del catálogo oficial: lo que se muestra antes de instalarla y de dónde se baja. Lo que se
 /// instala es lo que dice el manifiesto firmado del paquete; Name, Description, Provides y Permissions son
-/// solo para mostrar. Url, Size y Sha256 atan la descarga a lo que firmó el catálogo.
+/// solo para mostrar. Url, Size y Sha256 atan la descarga a lo que firmó el catálogo. Downloads: cuántas veces se
+/// bajó, sumando todas sus Releases (al armar el catálogo); null si no se sabe.
 /// </summary>
 sealed record CatalogEntry(string Id, SemVersion Version, LocalizedText Name, LocalizedText Description, string? Icon,
     string? Author, string? License, SemVersion? MinClaupet, IReadOnlyList<string> Provides, IReadOnlyList<string> Permissions,
-    string Url, string Sha256, long Size, string? KeyId)
+    string Url, string Sha256, long Size, string? KeyId, long? Downloads = null)
 {
     /// <summary>Esta versión de Claupet la puede cargar.</summary>
     public bool Compatible(SemVersion app) => MinClaupet is not { } min || app >= min;
@@ -90,7 +91,7 @@ sealed record ExtensionCatalog(long Sequence, DateTimeOffset? Generated, IReadOn
         return new CatalogEntry(id, version.Value, Text(p, "name") ?? new LocalizedText(new Dictionary<string, string> { ["en"] = id }),
             Text(p, "description") ?? LocalizedText.Empty, Https(icon) ? icon : null, Json.Str(p, "author"), Json.Str(p, "license"),
             SemVersion.Parse(Json.Str(p, "minClaupet")), Strings(p, "provides"), Strings(p, "permissions"), url!, sha.ToLowerInvariant(),
-            size, Json.Str(p, "keyId"));
+            size, Json.Str(p, "keyId"), p.TryGetProperty("downloads", out var d) && d.TryGetInt64(out var n) && n >= 0 ? n : null);
     }
 
     static bool Https(string? url) => Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps;
@@ -114,10 +115,12 @@ sealed record ExtensionCatalog(long Sequence, DateTimeOffset? Generated, IReadOn
     /// <summary>
     /// Arma el catálogo firmado desde los paquetes (--extension-catalog, para el responsable del repositorio). Cada
     /// paquete se abre y se valida como al instalar; su url es la de su Release (PackageUrl) y su ícono, el
-    /// icon.png de su carpeta en el repositorio si el paquete trae uno. Lanza InvalidDataException si uno no sirve.
+    /// icon.png de su carpeta en el repositorio si el paquete trae uno. downloads: por id, cuántas veces se bajó (de
+    /// ReleaseDownloadsAsync). Lanza InvalidDataException si uno no sirve.
     /// </summary>
     public static string Build(ExtensionSigner signer, long sequence, IEnumerable<string> packages, string staging,
-        IEnumerable<string>? revokedKeys = null, IReadOnlyDictionary<string, string>? revokedVersions = null, DateTimeOffset? now = null)
+        IEnumerable<string>? revokedKeys = null, IReadOnlyDictionary<string, string>? revokedVersions = null, DateTimeOffset? now = null,
+        IReadOnlyDictionary<string, long>? downloads = null)
     {
         var list = new JsonArray();
         var seen = new HashSet<string>();
@@ -146,6 +149,7 @@ sealed record ExtensionCatalog(long Sequence, DateTimeOffset? Generated, IReadOn
                 ["keyId"] = staged.Signature?.KeyId,
             };
             if (staged.Files.Any(f => f.Path == "icon.png")) entry["icon"] = $"{Raw}/{m.Id}/icon.png";
+            if (downloads is not null && downloads.TryGetValue(m.Id, out var count)) entry["downloads"] = count;
             list.Add(entry);
         }
         var payload = new JsonObject
@@ -158,6 +162,47 @@ sealed record ExtensionCatalog(long Sequence, DateTimeOffset? Generated, IReadOn
             ["packages"] = list,
         };
         return TrustStore.SignOfficial(signer, payload);
+    }
+
+    /// <summary>
+    /// Cuántas veces se bajó cada extensión: la suma de los .claupet de todas sus Releases («&lt;id&gt;-v&lt;versión&gt;»), de la
+    /// API de GitHub. Vacío si no se pudo leer (el catálogo sale igual, sin el número).
+    /// </summary>
+    public static async Task<Dictionary<string, long>> ReleaseDownloadsAsync(HttpClient http, string? api = null, CancellationToken cancel = default)
+    {
+        var counts = new Dictionary<string, long>();
+        var url = api ?? "https://api.github.com/repos/darrenarauz21/claupet-extensions/releases?per_page=100";
+        try
+        {
+            for (var page = 1; page <= 20; page++)
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"{url}&page={page}");
+                request.Headers.UserAgent.ParseAdd($"Claupet/{SemVersion.App}");
+                request.Headers.Accept.ParseAdd("application/vnd.github+json");
+                using var response = await http.SendAsync(request, cancel);
+                response.EnsureSuccessStatusCode();
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancel));
+                if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0) break;
+                foreach (var release in doc.RootElement.EnumerateArray())
+                {
+                    if (Json.Str(release, "tag_name") is not { } tag) continue;
+                    var at = tag.LastIndexOf("-v", StringComparison.Ordinal);
+                    if (at < 1) continue;
+                    var id = tag[..at];
+                    if (!ExtensionManifest.ValidId(id) || !release.TryGetProperty("assets", out var assets)) continue;
+                    foreach (var asset in assets.EnumerateArray())
+                        if (Json.Str(asset, "name")?.EndsWith(".claupet", StringComparison.Ordinal) == true
+                            && asset.TryGetProperty("download_count", out var c) && c.TryGetInt64(out var n))
+                            counts[id] = counts.GetValueOrDefault(id) + n;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
+        {
+            Console.WriteLine(L.T("No se pudieron leer las descargas de GitHub: {0}", ex.Message));
+            return new();
+        }
+        return counts;
     }
 
     static JsonObject Localized(LocalizedText text) => new(text.ByLanguage.Select(t => KeyValuePair.Create(t.Key, (JsonNode?)t.Value)));
@@ -187,6 +232,9 @@ sealed class CatalogClient
         try { return File.Exists(_cache) ? ExtensionCatalog.Read(File.ReadAllText(_cache), _trust) : null; }
         catch (IOException) { return null; }
     }
+
+    /// <summary>Cuándo se pidió por última vez con éxito (o se confirmó con un 304); null si nunca.</summary>
+    public DateTimeOffset? LastChecked => File.Exists(_cache) ? new DateTimeOffset(File.GetLastWriteTimeUtc(_cache), TimeSpan.Zero) : null;
 
     /// <summary>Hace falta pedirlo: nunca se pidió, pasó un día o el reloj volvió atrás.</summary>
     public bool Due(DateTimeOffset now) => !File.Exists(_cache) || File.GetLastWriteTimeUtc(_cache) is var last
@@ -241,13 +289,24 @@ sealed class CatalogClient
     /// <summary>
     /// Baja el paquete de esa entrada a folder y comprueba su tamaño y su SHA-256 contra el catálogo (si no
     /// coincide, se borra). Devuelve la ruta, lista para ExtensionStore.Prepare.
+    /// http: para las pruebas (sin él, el de siempre, con reintentos y reanudando lo bajado).
     /// </summary>
-    public static async Task<string> DownloadAsync(CatalogEntry entry, string folder, IProgress<long>? progress = null, CancellationToken cancel = default)
+    public static async Task<string> DownloadAsync(CatalogEntry entry, string folder, IProgress<long>? progress = null,
+        CancellationToken cancel = default, HttpClient? http = null)
     {
         var path = Path.Combine(folder, entry.FileName);
         if (File.Exists(path)) File.Delete(path);
-        await ModelDownload.FetchAsync(entry.Url, path, entry.Size, entry.Sha256, progress ?? new Progress<long>(), cancel,
-            L.T("lo descargado no coincide con el catálogo; se borró"));
+        var mismatch = L.T("lo descargado no coincide con el catálogo; se borró");
+        if (http is null)
+        {
+            await ModelDownload.FetchAsync(entry.Url, path, entry.Size, entry.Sha256, progress ?? new Progress<long>(), cancel, mismatch);
+            return path;
+        }
+        Directory.CreateDirectory(folder);
+        var bytes = await http.GetByteArrayAsync(entry.Url, cancel);
+        if (bytes.LongLength != entry.Size || Convert.ToHexStringLower(SHA256.HashData(bytes)) != entry.Sha256) throw new IOException(mismatch);
+        await File.WriteAllBytesAsync(path, bytes, cancel);
+        progress?.Report(bytes.LongLength);
         return path;
     }
 }

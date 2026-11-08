@@ -137,7 +137,10 @@ static class ExtensionCli
         for (var i = at + 4; i < args.Length && !args[i].StartsWith("--", StringComparison.Ordinal); i++) packages.Add(args[i]);
         var (keys, versions) = Revoked(args);
         var staging = Path.Combine(Path.GetTempPath(), "claupet-catalogo-" + Guid.NewGuid().ToString("N")[..8]);
-        try { File.WriteAllText(output, ExtensionCatalog.Build(signer, sequence, packages, staging, keys, versions)); }
+        Dictionary<string, long> downloads;
+        using (var http = SystemProxy.Client(TimeSpan.FromSeconds(20)))
+            downloads = ExtensionCatalog.ReleaseDownloadsAsync(http).GetAwaiter().GetResult();
+        try { File.WriteAllText(output, ExtensionCatalog.Build(signer, sequence, packages, staging, keys, versions, downloads: downloads)); }
         finally { StagedPackage.TryDelete(staging); }
         Console.WriteLine(L.T("Catálogo {0}: {1} extensiones, firmado con la clave {2}.", sequence, packages.Count, ExtensionKeys.Short(signer.KeyId)));
         return 0;

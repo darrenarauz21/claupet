@@ -40,9 +40,10 @@ sealed class ManagerFixture : IAsyncDisposable
     public MemorySecretStore Secrets { get; } = new();
     public ExtensionManager Manager { get; }
 
-    public ManagerFixture()
+    /// <summary>officialKeys: las claves oficiales de la prueba (para el catálogo); sin ellas, ninguna.</summary>
+    public ManagerFixture(IReadOnlyList<string>? officialKeys = null)
     {
-        var store = new ExtensionStore(Dir["extensiones"], new TrustStore(Dir["extensiones/confianza.json"], []));
+        var store = new ExtensionStore(Dir["extensiones"], new TrustStore(Dir["extensiones/confianza.json"], officialKeys ?? []));
         Manager = new ExtensionManager(store, () => Settings, change => change(Settings), Secrets)
         {
             HostApi = Api,
