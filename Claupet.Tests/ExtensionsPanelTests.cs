@@ -304,6 +304,7 @@ public sealed class ExtensionsPanelTests
         // Lo que viaja por la tubería vuelve igual (las filas nuevas también).
         var back = ConsoleLink.Decode(ConsoleLink.Encode(new ConsoleMessage { Type = ConsoleLink.State, Pages = pages }))!;
         Assert.Equal(pages.Select(p => p with { Rows = [] }), back.Pages!.Select(p => p with { Rows = [] }));
-        Assert.Equal(pages.SelectMany(p => p.Rows).Select(r => r with { Links = null }), back.Pages!.SelectMany(p => p.Rows).Select(r => r with { Links = null }));
+        Assert.Equal(pages.SelectMany(p => p.Rows).Select(r => r with { Links = null, Icons = null }), back.Pages!.SelectMany(p => p.Rows).Select(r => r with { Links = null, Icons = null }));
+        Assert.Equal(pages.SelectMany(p => p.Rows).SelectMany(r => r.Icons ?? []), back.Pages!.SelectMany(p => p.Rows).SelectMany(r => r.Icons ?? []));
     }
 }

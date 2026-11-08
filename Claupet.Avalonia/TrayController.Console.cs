@@ -125,6 +125,9 @@ sealed partial class TrayController : IConsoleApp
             CheckUpdates = s.CheckUpdates,
             UpdateStatus = _updates?.Row().Status ?? "",
             UpdateAction = _updates?.Row().Action ?? "",
+            Skills = SkillList(),
+            SkillStatus = _skillStatus,
+            SkillProblem = _skillProblem,
         };
     }
 
@@ -162,6 +165,7 @@ sealed partial class TrayController : IConsoleApp
             return;
         }
         if (ThemeAction(key)) return;
+        if (SkillAction(key)) return;
         if (key.StartsWith("topic:", StringComparison.Ordinal))
         {
             var topic = AnswerTopics.Find(key["topic:".Length..]);

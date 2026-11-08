@@ -114,6 +114,7 @@ sealed partial class TrayController
         WatchMascotScreens(); // también sin mascota: con la sesión bloqueada se pausa la isla
         StartConsole();
         StartUpdates();
+        StartSkills();
         _ = StartExtensionsAsync();
         PushSettings();
         _toasts.Clicked += OpenNotice;
@@ -428,6 +429,7 @@ sealed partial class TrayController
                 case "setup": await ShowSetupAsync(); break;
                 case "diag": await CopyDiagnosticsAsync(); break;
                 case "updates": ToggleUpdates(); break;
+                case SettingsPages.UpdatesNowKey: _ = _updates?.CheckNowAsync(); break;
                 case "update": await OnUpdateAsync(); break;
                 case "unsetup":
                     _popup.HoldOpen = true;

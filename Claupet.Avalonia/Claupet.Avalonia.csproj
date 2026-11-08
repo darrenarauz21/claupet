@@ -29,6 +29,8 @@
     <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
     <!-- Los términos y condiciones del asistente (Terms), en cada idioma. -->
     <EmbeddedResource Include="..\Core\Terminos\*.txt" LogicalName="terminos/%(Filename)%(Extension)" />
+    <!-- Las skills de Claude Code que trae Claupet (ClaudeSkills): se instalan desde Ajustes › Skills. -->
+    <EmbeddedResource Include="..\Core\Skills\*\SKILL.md" LogicalName="skills/%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Las pruebas (Claupet.Tests) ven lo interno de la app. -->
     <InternalsVisibleTo Include="Claupet.Tests" />
   </ItemGroup>
