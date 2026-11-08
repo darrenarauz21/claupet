@@ -23,12 +23,13 @@ sealed partial class TerminalPane
     /// <summary>El menú abierto (otro toque al + lo cierra).</summary>
     Popup? _newMenu;
 
-    /// <summary>La marca de cada agente, como en la lista: ✻ Claude Code, cx Codex, ✦ Gemini, gh Copilot.</summary>
+    /// <summary>La marca de cada agente, como en la lista: ✻ Claude Code, cx Codex, ✦ Gemini, gh Copilot, oc OpenCode.</summary>
     static string AgentMark(string kind) => kind switch
     {
         AgentKinds.Codex => "cx",
         AgentKinds.Gemini => "✦",
         AgentKinds.Copilot => "gh",
+        AgentKinds.OpenCode => "oc",
         _ => "✻",
     };
 

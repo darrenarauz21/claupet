@@ -121,13 +121,13 @@ the push-to-talk key only while you're speaking.
 
 ## Claupet Terminal
 
-### Codex, Gemini CLI or Copilot CLI don't show up
+### Codex, Gemini CLI, Copilot CLI or OpenCode don't show up
 
 They need to be installed and on the `PATH`. Check by typing their name in a terminal.
 
 ### An agent says it needs to sign in
 
-Run the command it shows once in a terminal (`gemini`, `copilot login`…), sign in and type in the session
+Run the command it shows once in a terminal (`gemini`, `copilot login`, `opencode auth login`…), sign in and type in the session
 again. [Claupet Terminal](terminal.md#how-to-sign-in-to-the-other-agents) explains it.
 
 ### I closed the Console and my sessions closed

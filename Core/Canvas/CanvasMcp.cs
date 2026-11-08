@@ -111,6 +111,7 @@ static class CanvasMcp
             var n when n.Contains("codex") => "Codex",
             var n when n.Contains("gemini") => "Gemini CLI",
             var n when n.Contains("copilot") => "Copilot",
+            var n when n.Contains("opencode") => "OpenCode",
             var n when n.Contains("cursor") => "Cursor",
             _ => raw,
         };
