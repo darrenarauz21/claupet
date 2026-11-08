@@ -40,8 +40,8 @@ static class ExtensionMcp
     static readonly Regex HeaderPattern = new(@"^[A-Za-z0-9-]{1,64}$", RegexOptions.CultureInvariant);
     static readonly Regex Setting = new(@"\{setting:([A-Za-z0-9_]+)\}", RegexOptions.CultureInvariant);
 
-    /// <summary>Los servidores de las extensiones encendidas; lo pone la app (sin extensiones, ninguno).</summary>
-    public static Func<IReadOnlyList<McpServer>> Source { get; set; } = () => [];
+    /// <summary>Los servidores de las extensiones encendidas: en la Console, leídos del disco; en la bandeja, los de su ExtensionManager.</summary>
+    public static Func<IReadOnlyList<McpServer>> Source { get; set; } = ExtensionsOnDisk.McpServers;
 
     public static IReadOnlyList<McpServer> Servers()
     {

@@ -9,7 +9,7 @@
   "version": "1.0.0",
   "author": "Claupet",
   "license": "MIT",
-  "claupet": ">=2.6.2",
+  "claupet": ">=2.6.3",
   "provides": ["mcp"],
   "settings": [
     { "key": "carpeta", "label": { "es": "Carpeta de las notas", "en": "Notes folder" } }
