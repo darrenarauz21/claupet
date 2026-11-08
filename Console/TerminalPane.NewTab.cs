@@ -430,10 +430,10 @@ sealed partial class TerminalPane
     internal static AgentOptions NewClaudeOptions(string folder, string? configDir, string? model, string? effort) =>
         new(folder, configDir, model, effort);
 
-    /// <summary>Abre un agente en bloques (Claude Code con su cuenta, su modelo y su esfuerzo; los otros, con lo suyo).</summary>
-    void OpenAgent(string kind, string folder, Account? account, string? model, string? effort)
+    /// <summary>Abre un agente en bloques (Claude Code con su cuenta, su modelo y su esfuerzo; los otros, con lo suyo). Null si la carpeta no existe.</summary>
+    Tab? OpenAgent(string kind, string folder, Account? account, string? model, string? effort)
     {
-        if (!Directory.Exists(folder)) return;
+        if (!Directory.Exists(folder)) return null;
         var claude = kind == AgentKinds.Claude;
         var last = TerminalRecents.Load();
         var options = claude ? NewClaudeOptions(folder, account?.ConfigDir, model, effort) : new AgentOptions(folder, Kind: kind);
@@ -447,6 +447,7 @@ sealed partial class TerminalPane
         Add(tab);
         agent.Start();
         _input.Focus();
+        return tab;
     }
 
     /// <summary>La pestaña nueva pasa a ser la elegida.</summary>

@@ -893,11 +893,23 @@ sealed class ProjectsPane : Panel
         else _ask(L.T("{0}\n\nGuárdalo como un plan de Claupet con plan_create.", text), _folders().FirstOrDefault() ?? Account.Home);
     }
 
+    /// <summary>
+    /// «Trabajar en esto»: la tarea pasa a en curso y una sesión nueva de Claude Code en la carpeta del proyecto arranca
+    /// ya con el pedido del plan enviado (PlanWork), sin que haya que pegarlo ni enviarlo.
+    /// </summary>
     void Work(PlanTask task)
     {
-        if (Selected is not { } entry) return;
-        var text = L.T("Trabaja en la tarea «{0}» ({1}) del plan {2}. Marca su estado con plan_update al empezar y al terminar.", task.Title, task.Id, entry.Path);
-        if (task.Notes is { } notes) text += "\n\n" + notes;
+        if (Selected is not { Plan: { } plan } entry) return;
+        var text = PlanWork.Prompt(plan, entry.Path, [task]);
+        if (task.State != PlanState.Doing)
+        {
+            try
+            {
+                PlanTools.SetState(entry.Path, task.Id, PlanState.Doing);
+                Reload(L.T("Usted"));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CanvasException) { } // la sesión la marcará
+        }
         _work(text, entry.Folder);
     }
 

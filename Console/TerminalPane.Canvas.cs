@@ -12,7 +12,7 @@ sealed partial class TerminalPane
 
     /// <summary>
     /// Un pedido de la sección Proyectos: va a una sesión de esa misma carpeta (nunca a la de otro proyecto). Si no hay, se
-    /// abre una con el texto ya escrito, para que la persona lo envíe: devuelve false y hay que mostrar la Terminal.
+    /// abre una que arranca con él ya enviado: devuelve false y hay que mostrar la Terminal.
     /// </summary>
     internal bool AskInFolder(string text, string folder)
     {
@@ -26,12 +26,19 @@ sealed partial class TerminalPane
         return false;
     }
 
-    /// <summary>«Trabajar en esto»: una sesión nueva de Claude Code en la carpeta del proyecto, con la tarea ya escrita.</summary>
+    /// <summary>
+    /// «Trabajar en esto»: una sesión nueva de Claude Code en la carpeta del proyecto (con la cuenta, el modelo y el
+    /// esfuerzo de la última vez) que arranca con el pedido ya enviado. Si no pudo abrir, el pedido queda escrito en la caja.
+    /// </summary>
     internal void WorkOn(string text, string folder)
     {
         var last = TerminalRecents.Load();
         var account = Accounts().FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, last.Account ?? "")) ?? Accounts().FirstOrDefault();
-        OpenAgent(AgentKinds.Claude, Directory.Exists(folder) ? folder : global::Claupet.Account.Home, account, last.Model, last.Effort);
+        if (OpenAgent(AgentKinds.Claude, Directory.Exists(folder) ? folder : global::Claupet.Account.Home, account, last.Model, last.Effort) is { Agent.Running: true } tab)
+        {
+            tab.Agent.Send(text);
+            return;
+        }
         _input.Text = text;
         _input.CaretIndex = text.Length;
     }

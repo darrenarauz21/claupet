@@ -144,8 +144,9 @@ IAs (con las herramientas `plan_*`) o usted: el archivo sigue en la carpeta del 
 plan, y **Ctrl+K** busca en todos. El embudo filtra por atrasadas, bloqueadas, listas o en curso. Las teclas 1 a 6 cambian de vista.
 
 **Una tarea.** Al tocarla se abre su detalle: su estado (se guarda en el archivo), sus horas, lo que necesita y lo que la
-espera. **Trabajar en esto** abre una sesión de Claude Code en la carpeta del proyecto con la tarea ya escrita, para que usted la
-envíe. La barra de abajo le pide un cambio a una sesión de esa misma carpeta.
+espera. **Trabajar en esto** pone la tarea en curso y abre una sesión de Claude Code en la carpeta del proyecto que empieza a
+trabajar de una vez: con el plan, la etapa, las notas y lo que ya está hecho, y la indicación de marcar la tarea al terminar. La
+barra de abajo le pide un cambio a una sesión de esa misma carpeta (si no hay, abre una que empieza con su pedido).
 
 **Canvas del plan.** El botón de canvas de la barra abre los que están ligados a este plan o crea uno nuevo, ya ligado.
 
