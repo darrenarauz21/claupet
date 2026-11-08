@@ -91,7 +91,7 @@ cada una con su tipo:
 |---|---|
 | **Texto** | Markdown: títulos, listas, tablas, enlaces. |
 | **Código** | En cualquier lenguaje. |
-| **HTML** | Una página o una app entera (con su CSS y JavaScript). Se ve en el navegador, aislada. |
+| **HTML** | Una página o una app entera (con su CSS y JavaScript). En Windows se ve y se usa dentro del canvas, aislada; en macOS y Linux, con el botón que la abre en el navegador. |
 | **Diagrama** | Mermaid. Se dibuja en la app; los que no sabe dibujar se ven como código, y dibujados en el navegador y el PDF. |
 | **SVG**, **Datos** (JSON o CSV, que se ve como tabla o gráfico) e **Imagen** | Gráficos, tablas y resultados, imágenes. |
 | **Plan** | Etapas y tareas con resumen, tablero y cronograma. |
@@ -116,7 +116,8 @@ sus detalles en [Proyectos](#proyectos). Un canvas se liga a un solo plan; un pl
 también puede ligarlos.
 
 **Exportar.** PDF, Word, Markdown, una página HTML que se abre sola en cualquier navegador, o JSON. También **Ver en el
-navegador**. El PDF necesita Microsoft Edge, Google Chrome o Chromium. En Word, los diagramas y el HTML van como texto.
+navegador**. El PDF necesita Microsoft Edge, Google Chrome o Chromium; cada sección HTML o SVG va en sus propias hojas,
+entera y con sus colores. En Word, los diagramas y el HTML van como texto.
 
 **Desde otras apps.** **⋯ › Usar desde otras apps** copia la configuración MCP para pegarla en Claude Desktop, Cursor,
 VS Code o cualquier app con MCP: sus modelos verán y editarán los mismos canvas. A mano, el comando es

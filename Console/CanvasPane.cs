@@ -66,6 +66,13 @@ sealed partial class CanvasPane : Grid
     readonly HashSet<string> _seen = [];
     /// <summary>La vista elegida de cada sección que tiene varias (página o código, tabla o gráfico…). No se guarda.</summary>
     readonly Dictionary<string, string> _views = [];
+    /// <summary>Las páginas vivas (HTML y SVG, en Windows) de lo último dibujado: al redibujar, las que no cambiaron se reusan.</summary>
+    readonly Dictionary<string, CanvasLivePage> _live = [];
+    readonly HashSet<string> _liveShown = [];
+    /// <summary>WebView2 falló una vez: hasta cerrar, las páginas vuelven al botón del navegador.</summary>
+    bool _liveOff;
+    /// <summary>Lo que flota sobre el documento en este momento (el aviso, las versiones…): las páginas vivas no lo tapan.</summary>
+    readonly List<Control> _overlaysOn = [];
     int _shownVersion;
 
     public CanvasPane(Func<string, string, Control> markdown, CanvasStore? store = null, Func<string, string?, bool>? askAgent = null)
@@ -404,7 +411,9 @@ sealed partial class CanvasPane : Grid
         var offset = _scroll.Offset;
         _bar.Child = Bar();
         var shown = _past ?? _doc;
+        _liveShown.Clear();
         _scroll.Content = shown is null ? Empty() : Document(shown);
+        foreach (var id in _live.Keys.Where(id => !_liveShown.Contains(id)).ToList()) _live.Remove(id);
         if (keepScroll) Dispatcher.UIThread.Post(() => _scroll.Offset = offset, DispatcherPriority.Loaded);
         if (_doc is { } doc && doc.Version != _shownVersion && _shownVersion != 0 && _past is null) Bump();
         _shownVersion = _doc?.Version ?? 0;
@@ -742,13 +751,18 @@ sealed partial class CanvasPane : Grid
         doc = _doc ?? doc;
         if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
         var name = string.Concat(doc.Title.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '-' : c)).Trim();
+        var extension = CanvasExport.Extension(format);
+        // Con su tipo: sin él, Windows ofrece «Todos los archivos» y el nombre puede quedar sin extensión.
         var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = L.T("Exportar"),
-            SuggestedFileName = (name.Length > 0 ? name : "Canvas") + CanvasExport.Extension(format),
+            SuggestedFileName = (name.Length > 0 ? name : "Canvas") + extension,
+            DefaultExtension = extension.TrimStart('.'),
+            FileTypeChoices = [FileType(format)],
             ShowOverwritePrompt = true,
         });
         if (file?.TryGetLocalPath() is not { } path) return;
+        if (!path.EndsWith(extension, StringComparison.OrdinalIgnoreCase)) path += extension;
         // El PDF tarda unos segundos (lo imprime el navegador): se hace aparte y se avisa al empezar.
         if (format == "pdf") Toast(L.T("Creando el PDF…"), CanvasIcons.Pdf);
         var copy = doc.Clone();
@@ -759,6 +773,16 @@ sealed partial class CanvasPane : Grid
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CanvasException) { Toast(ex.Message, CanvasIcons.Warn); }
     }
+
+    /// <summary>El tipo de archivo de cada formato, para el diálogo de guardar (Windows, macOS y Linux).</summary>
+    static FilePickerFileType FileType(string format) => format switch
+    {
+        "pdf" => new("PDF") { Patterns = ["*.pdf"], MimeTypes = ["application/pdf"], AppleUniformTypeIdentifiers = ["com.adobe.pdf"] },
+        "docx" => new(L.T("Documento de Word")) { Patterns = ["*.docx"], MimeTypes = ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"], AppleUniformTypeIdentifiers = ["org.openxmlformats.wordprocessingml.document"] },
+        "html" => new(L.T("Página HTML")) { Patterns = ["*.html", "*.htm"], MimeTypes = ["text/html"], AppleUniformTypeIdentifiers = ["public.html"] },
+        "json" => new("JSON") { Patterns = ["*.json"], MimeTypes = ["application/json"], AppleUniformTypeIdentifiers = ["public.json"] },
+        _ => new("Markdown") { Patterns = ["*.md"], MimeTypes = ["text/markdown"], AppleUniformTypeIdentifiers = ["net.daringfireball.markdown"] },
+    };
 
     // ── Avisos ──────────────────────────────────────────────────────────────────────────
 
@@ -796,5 +820,8 @@ sealed partial class CanvasPane : Grid
         overlay.IsHitTestVisible = on && overlay != _toast;
         var away = overlay.VerticalAlignment == VerticalAlignment.Top ? "translateY(-12px)" : "translateY(16px)";
         overlay.RenderTransform = TransformOperations.Parse(on ? "translateY(0px)" : away);
+        _overlaysOn.Remove(overlay);
+        if (on) _overlaysOn.Add(overlay);
+        foreach (var page in _live.Values) page.Refit();
     }
 }

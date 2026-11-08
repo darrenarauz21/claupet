@@ -49,7 +49,9 @@
     <PackageReference Include="XTerm.NET" Version="3.0.0" />
     <!-- Los .md de la vista de archivos de Claupet Terminal, dibujados como documento (títulos, listas, tablas…). -->
     <PackageReference Include="Markdig" Version="1.4.1" />
-    <!-- Los shells de Claupet Terminal en Linux y macOS: una pty abierta por su ayudante nativo (en Windows va la ConPTY
+    <!-- En Windows, las secciones HTML y SVG de Claupet Canvas se ven vivas dentro del panel (CanvasLivePage): el motor
+         de Edge (WebView2), que trae Windows. En Linux y macOS no se usa: ahí siguen con el botón del navegador. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />    <!-- Los shells de Claupet Terminal en Linux y macOS: una pty abierta por su ayudante nativo (en Windows va la ConPTY
          propia, Core/PseudoConsole.cs). Su ConPTY de Windows no se usa: ni conpty.dll ni OpenConsole.exe en el paquete. -->
     <PackageReference Include="Porta.Pty" Version="2.2.3" />
     <PackageReference Include="Microsoft.Windows.Console.ConPTY" Version="1.24.260710001" ExcludeAssets="all" />
@@ -63,5 +65,12 @@
     <PackageReference Include="Whisper.net" Version="1.9.1" />
     <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
   </ItemGroup>
+
+  <!-- De WebView2 solo se usa el núcleo (Core): sus controles de WPF y WinForms no van (y el de WPF choca con WindowsBase). -->
+  <Target Name="WebView2SoloNucleo" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf' Or '%(Filename)' == 'Microsoft.Web.WebView2.WinForms'" />
+    </ItemGroup>
+  </Target>
 
 </Project>
