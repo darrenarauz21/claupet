@@ -2082,5 +2082,10 @@
   "No se pudo sacar un nombre válido para la skill.": "Couldn't get a valid name for the skill.",
   "Skill «{0}» agregada: la usan las sesiones nuevas de Claude Code.": "Skill “{0}” added: new Claude Code sessions use it.",
   "¿Quitar la skill «{0}» de todas las cuentas de Claude Code? Se borra su carpeta.": "Remove the skill “{0}” from every Claude Code account? Its folder is deleted.",
-  "Skill «{0}» quitada.": "Skill “{0}” removed."
+  "Skill «{0}» quitada.": "Skill “{0}” removed.",
+  "Hay otra sesión en esta carpeta ({0}).": "Another session is working in this folder ({0}).",
+  "Hay otras {0} sesiones en esta carpeta.": "{0} other sessions are working in this folder.",
+  "1 archivo con cambios que esta sesión no hizo.": "1 file has changes this session didn't make.",
+  "{0} archivos con cambios que esta sesión no hizo.": "{0} files have changes this session didn't make.",
+  "Este comando puede llevárselos o pisarlos.": "This command could take them away or overwrite them."
 }

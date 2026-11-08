@@ -365,7 +365,7 @@ sealed class SessionMonitor
                         Title = Json.Str(r, "aiTitle") ?? Title;
                         break;
                     case "last-prompt":
-                        LastPrompt = Json.Str(r, "lastPrompt") ?? LastPrompt;
+                        LastPrompt = Json.Str(r, "lastPrompt") is { } prompt ? Workspace.Strip(prompt) : LastPrompt;
                         break;
                     case "system" when Json.Str(r, "subtype") == "turn_duration":
                         TurnEndedAt = Json.Date(r, "timestamp");
