@@ -308,6 +308,38 @@ public sealed class ProjectsPaneTests
     });
 
     [Fact]
+    public void TrabajarEnEstoLaPoneEnCursoYMandaElPedidoDelPlan() => Headless.Run(() =>
+    {
+        using var scene = new Scene(dir => dir.Write("uno/planes/tienda.plan.json", Sample(state: "por-hacer")));
+        scene.Pane.ShowView("tablero");
+        Headless.Frame(scene.Window);
+        scene.Click(scene.Title("Página de producto"));
+        scene.Click(scene.Title(L.T("Trabajar en esto")));
+
+        var (text, _) = Assert.Single(scene.Worked);
+        Assert.Contains("«Tienda»", text);
+        Assert.Contains("«Catálogo»", text); // lo que ya está hecho y necesita
+        Assert.Contains("plan_update", text);
+        var path = Path.Combine(scene.Dir["uno"], "planes", "tienda.plan.json");
+        Assert.Equal(PlanState.Doing, Plan.Parse(File.ReadAllText(path)).Tasks.First(t => t.Id == "t2").State);
+    });
+
+    [Fact]
+    public void ElPedidoDeUnaEtapaTraeSusTareasYLoQueYaEstaHecho()
+    {
+        var plan = Plan.Parse(Sample(state: "por-hacer"));
+        var text = PlanWork.Prompt(plan, @"C:\uno\tienda.plan.json", plan.Tasks.Where(t => t.Stage == "e2").ToList());
+        Assert.Contains("Pagos", text);
+        Assert.Contains("(id t3)", text);
+        Assert.Contains("(id t4)", text);
+        Assert.Contains("Faltan las credenciales.", text);
+        Assert.Contains(@"C:\uno\tienda.plan.json", text);
+        // t3 depende de t2, que no está hecha: no se da como punto de partida; t4 depende de t3, que va en el mismo pedido.
+        Assert.DoesNotContain("«Página de producto»", text);
+        Assert.Contains("«en-curso»", text); // con varias, la sesión marca cada una al empezarla
+    }
+
+    [Fact]
     public void UnaTareaQueEsperaOtraNoSePuedeMandarATrabajar() => Headless.Run(() =>
     {
         using var scene = Two();
