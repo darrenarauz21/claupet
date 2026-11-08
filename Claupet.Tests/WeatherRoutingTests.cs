@@ -75,6 +75,24 @@ public sealed class WeatherRoutingTests : IDisposable
     public void NoSeConfundeConOtraCosa(string prompt) => Assert.Null(AnswerRules.WeatherAsked(prompt));
 
     [Fact]
+    public async Task ConLaUbicacionDesactivadaPreguntaLaCiudad()
+    {
+        Assistant.External = () => new FakeBrain("Soleado, según wttr.");
+        Api("En Madrid ahora: 20 °C.");
+        var off = new AppSettings { WeatherPlace = WeatherService.Off };
+
+        // Sin lugar: no se consulta nada ni se manda a la nube (que usaría la ubicación del equipo); se pide la ciudad.
+        var result = await Answers.AskAsync(new AssistantRequest { Prompt = "¿Cómo está el clima?" }, off);
+        Assert.Contains("ubicación desactivada", result.Text);
+        Assert.Empty(_asked);
+        Assert.Null(await WeatherService.HereAsync(off, CancellationToken.None));
+
+        // Con la ciudad en la pregunta, el clima sale como siempre.
+        result = await Answers.AskAsync(new AssistantRequest { Prompt = "¿Cómo está el clima en Madrid?" }, off);
+        Assert.Equal("En Madrid ahora: 20 °C.", result.Text);
+    }
+
+    [Fact]
     public async Task SoloConElModeloLocalElClimaLoDaLaApi()
     {
         var brain = new SmallBrain();

@@ -128,7 +128,7 @@ sealed class AppSettings
     public Engine AnswerFallback { get; set; } = Engine.Cloud;
     /// <summary>Debajo de cada respuesta, quién respondió («Sin IA · al instante»).</summary>
     public bool ShowWhoAnswered { get; set; } = true;
-    /// <summary>Mi ciudad, para el clima: «ip», «windows» (la ubicación de Windows) o «ciudad» (WeatherCity).</summary>
+    /// <summary>Mi ciudad, para el clima: «ip», «windows» (la ubicación de Windows), «ciudad» (WeatherCity) o «no» (desactivada).</summary>
     public string WeatherPlace { get; set; } = WeatherService.ByIp;
     public string? WeatherCity { get; set; }
     /// <summary>Cuenta que responde el chat (su carpeta de configuración); null: la elegida en Uso.</summary>

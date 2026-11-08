@@ -25,6 +25,7 @@ static class Answers
         Action<AssistantStage>? onStage = null, CancellationToken cancel = default)
     {
         var onlyLocal = request.Model == AssistantModels.Local;
+        if (settings.WeatherPlace == WeatherService.Off) request = request with { NoLocation = true };
         if (request.File is not null)
         {
             if (!onlyLocal) return await CloudAsync(request, onText, onStage, cancel);
@@ -158,6 +159,9 @@ static class Answers
                 return (await WeatherService.TimeInAsync(place, cancel), "Open-Meteo");
             case AnswerTopics.Time:
                 return (Assistant.TimeText(), L.T(Instant));
+            // Con la ubicación desactivada no se averigua dónde está: sin un lugar en la pregunta, se le pide.
+            case AnswerTopics.Weather when intent.Place is null && settings.WeatherPlace == WeatherService.Off:
+                return (L.T("Tengo la ubicación desactivada, así que no sé dónde estás. Dime la ciudad, por ejemplo «clima en Madrid». (^_^)"), L.T(Instant));
             case AnswerTopics.Weather:
                 return (await Forecast(settings, intent.Place, intent.Day, intent.Rain, cancel), "Open-Meteo");
             case AnswerTopics.Usage:
