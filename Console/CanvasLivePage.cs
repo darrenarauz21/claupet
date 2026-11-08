@@ -1,5 +1,6 @@
 namespace Claupet;
 
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Avalonia;
@@ -95,6 +96,20 @@ sealed class CanvasLivePage : NativeControlHost
         if (_fitQueued) return;
         _fitQueued = true;
         Dispatcher.UIThread.Post(() => { _fitQueued = false; Fit(); }, DispatcherPriority.Background);
+    }
+
+    /// <summary>
+    /// Avalonia crea la ventana nativa al entrar al árbol, en medio del acomodo: si Windows no la deja crear, el error
+    /// cortaba el acomodo y la Console quedaba vacía. Aquí se anota y el canvas vuelve al botón del navegador.
+    /// </summary>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        try { base.OnAttachedToVisualTree(e); }
+        catch (Exception ex) when (ex is InvalidOperationException or COMException or Win32Exception)
+        {
+            ErrorLog.Write(ex);
+            Dispatcher.UIThread.Post(() => Failed?.Invoke());
+        }
     }
 
     protected override IPlatformHandle CreateNativeControlCore(IPlatformHandle parent)

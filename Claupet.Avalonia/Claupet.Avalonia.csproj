@@ -13,6 +13,7 @@
     <AssemblyTitle>Claupet</AssemblyTitle>
     <Product>Claupet</Product>
     <ApplicationIcon>..\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <InvariantGlobalization>false</InvariantGlobalization>
     <PortaPtyStageConPtyHost>false</PortaPtyStageConPtyHost>
