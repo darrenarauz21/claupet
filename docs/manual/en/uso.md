@@ -5,7 +5,7 @@
 How much each account has left, what your sessions are doing right now and how you've used Claude Code
 over the last six months: the three views in the icon's window.
 
-**On this page:** [Usage](#usage) · [Other agents](#other-agents-codex-gemini-and-copilot) ·
+**On this page:** [Usage](#usage) · [Other agents](#other-agents-codex-gemini-copilot-and-opencode) ·
 [Activity](#activity) · [History](#history) · [Open a new session](#open-a-new-session)
 
 > [!NOTE]
@@ -40,9 +40,9 @@ says what time it's from) and tries again later.
 **If you see "Session expired: refresh to renew it."** Press **Refresh**: Claupet asks Claude Code to renew
 that account's access and checks again.
 
-## Other agents: Codex, Gemini and Copilot
+## Other agents: Codex, Gemini, Copilot and OpenCode
 
-If you also use Codex CLI, Gemini CLI or GitHub Copilot CLI on this computer, Claupet finds them on its own
+If you also use Codex CLI, Gemini CLI, GitHub Copilot CLI or OpenCode on this computer, Claupet finds them on its own
 and shows them below the account, under **Other agents**:
 
 | Agent | What you see in Usage |
@@ -50,6 +50,7 @@ and shows them below the account, under **Other agents**:
 | **Codex CLI** | Its 5-hour and weekly limits, with their percentage, once it has answered at least once. |
 | **Gemini CLI** | Today's responses and tokens. Gemini CLI doesn't record how much of its quota is left, so there's no percentage. |
 | **GitHub Copilot CLI** | Today's activity (its format isn't documented, so you see less). |
+| **OpenCode** | Today's responses and tokens, read from its database (`opencode.db`) with your system's SQLite. It doesn't record limits, so there's no percentage. |
 
 Only the ones that did something today or have a limit still running show up. Choose which ones to follow
 in Claupet Console's **Settings › Accounts**. Claupet only reads their files: it doesn't use their accounts

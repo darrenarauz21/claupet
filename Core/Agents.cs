@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace Claupet;
 
 /// <summary>
-/// Otro agente que Claupet sigue además de Claude Code (Codex CLI, Gemini CLI o GitHub Copilot CLI): su carpeta en este
+/// Otro agente que Claupet sigue además de Claude Code (Codex CLI, Gemini CLI, GitHub Copilot CLI u OpenCode): su carpeta en este
 /// equipo. Va en una lista aparte de las cuentas de Claude (AppSettings.Agents); Follow apagado lo deja de mostrar sin que
 /// la detección lo vuelva a agregar.
 /// </summary>
@@ -27,7 +27,7 @@ sealed record AgentSession(string Kind, string Id, string? Folder, string? Model
 
 /// <summary>
 /// Lo leído de un agente: sus límites (si los escribe), sus sesiones recientes y lo de hoy. ResponsesToday y TokensToday,
-/// solo de los que los anotan (Gemini): las respuestas del modelo y los tokens que generó (salida y razonamiento).
+/// solo de los que los anotan (Gemini, OpenCode): las respuestas del modelo y los tokens que generó (salida y razonamiento).
 /// </summary>
 sealed record AgentSnapshot(AgentAccount Account, string Name, bool Exists, IReadOnlyList<AgentLimit> Limits,
     IReadOnlyList<AgentSession> Sessions, int SessionsToday, int MessagesToday, int Unreadable, int ResponsesToday = 0, long TokensToday = 0)
@@ -42,24 +42,26 @@ sealed record AgentSnapshot(AgentAccount Account, string Name, bool Exists, IRea
 /// </summary>
 static class Agents
 {
-    public const string Codex = "codex", Gemini = "gemini", Copilot = "copilot";
+    public const string Codex = "codex", Gemini = "gemini", Copilot = "copilot", OpenCode = "opencode";
 
     /// <summary>Cuántas sesiones de cada agente se leen (las más recientes): sus archivos pueden ser grandes.</summary>
     const int Recent = 30;
 
-    public static readonly string[] Kinds = [Codex, Gemini, Copilot];
+    public static readonly string[] Kinds = [Codex, Gemini, Copilot, OpenCode];
 
     public static string Name(string kind) => kind switch
     {
         Codex => "Codex CLI",
         Gemini => "Gemini CLI",
         Copilot => "GitHub Copilot CLI",
+        OpenCode => "OpenCode",
         _ => kind,
     };
 
     /// <summary>
     /// Su carpeta de siempre: $CODEX_HOME o ~/.codex, $COPILOT_HOME o ~/.copilot, y .gemini en $GEMINI_CLI_HOME o en la
-    /// carpeta del usuario (Gemini CLI toma esa variable como su «home», no como su carpeta).
+    /// carpeta del usuario (Gemini CLI toma esa variable como su «home», no como su carpeta). La de OpenCode es la de sus
+    /// datos: opencode en $XDG_DATA_HOME o en ~/.local/share, también en Windows.
     /// </summary>
     public static string DefaultFolder(string kind)
     {
@@ -68,6 +70,7 @@ static class Agents
         {
             Codex => Environment.GetEnvironmentVariable("CODEX_HOME") is { Length: > 0 } codex ? codex : Path.Combine(home, ".codex"),
             Copilot => Environment.GetEnvironmentVariable("COPILOT_HOME") is { Length: > 0 } copilot ? copilot : Path.Combine(home, ".copilot"),
+            OpenCode => Path.Combine(Environment.GetEnvironmentVariable("XDG_DATA_HOME") is { Length: > 0 } data ? data : Path.Combine(home, ".local", "share"), "opencode"),
             _ => Path.Combine(Environment.GetEnvironmentVariable("GEMINI_CLI_HOME") is { Length: > 0 } gemini ? gemini : home, ".gemini"),
         };
     }
@@ -117,6 +120,7 @@ static class Agents
     /// </summary>
     public static DateTimeOffset? LastWrite(AgentAccount agent)
     {
+        if (agent.Kind == OpenCode) return OpenCodeReader.LastWrite(agent);
         var (folder, pattern, depth) = agent.Kind switch
         {
             Codex => ("sessions", "rollout-*.jsonl", 4),
@@ -155,8 +159,8 @@ static class Agents
         var sessions = s.SessionsToday == 1 ? L.T("1 sesión") : L.T("{0} sesiones", s.SessionsToday);
         return s.Account.Kind switch
         {
-            Gemini when s.TokensToday > 0 => L.T("Hoy: {0} · {1} respuestas · {2} tokens", sessions, s.ResponsesToday, Format.Tokens(s.TokensToday)),
-            Gemini => L.T("Hoy: {0} · {1} mensajes", sessions, s.MessagesToday),
+            Gemini or OpenCode when s.TokensToday > 0 => L.T("Hoy: {0} · {1} respuestas · {2} tokens", sessions, s.ResponsesToday, Format.Tokens(s.TokensToday)),
+            Gemini or OpenCode => L.T("Hoy: {0} · {1} mensajes", sessions, s.MessagesToday),
             Copilot => L.T("Hoy: {0} · {1} eventos", sessions, s.MessagesToday),
             _ => L.T("Hoy: {0}", sessions),
         };
@@ -176,6 +180,7 @@ static class Agents
                 Codex => CodexReader.Read(agent, now),
                 Gemini => GeminiReader.Read(agent, now),
                 Copilot => CopilotReader.Read(agent, now),
+                OpenCode => OpenCodeReader.Read(agent, now),
                 _ => new(agent, agent.Label, true, [], [], 0, 0, 0),
             };
         }

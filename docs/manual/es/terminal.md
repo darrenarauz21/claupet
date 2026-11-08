@@ -8,7 +8,7 @@ que piensa, cada paso con su cambio, los permisos y el cierre del turno, todo a 
 **En esta página:** [Qué es](#qué-es) · [Abrir una sesión](#cómo-abrir-una-sesión) ·
 [Los bloques](#los-bloques) · [Permisos y preguntas](#permisos-y-preguntas) ·
 [Cambiar modelo, esfuerzo y permisos](#cómo-cambiar-el-modelo-el-esfuerzo-o-los-permisos-a-mitad-de-sesión) ·
-[Otros agentes](#codex-gemini-cli-y-copilot-cli) · [Shells](#shells-en-bloques) ·
+[Otros agentes](#codex-gemini-cli-copilot-cli-y-opencode) · [Shells](#shells-en-bloques) ·
 [Proyectos](#proyectos) · [Ramas, Cambios y Procesos](#el-panel-ramas-cambios-y-procesos) ·
 [Ajustes › Terminal](#ajustes--terminal) · [Límites](#límites)
 
@@ -17,7 +17,7 @@ que piensa, cada paso con su cambio, los permisos y el cierre del turno, todo a 
 Claupet Terminal es una vista de [Claupet Console](console.md) (el botón **Terminal** del riel). Abre
 agentes de código y shells en pestañas y muestra cada cosa en su bloque:
 
-- **Claude Code**, **Codex**, **Gemini CLI** y **Copilot CLI**: los que estén instalados en su equipo.
+- **Claude Code**, **Codex**, **Gemini CLI**, **Copilot CLI** y **OpenCode**: los que estén instalados en su equipo.
 - **Shells**: PowerShell, Git Bash y bash de WSL en Windows; bash, zsh y PowerShell 7 (si está) en Linux y
   macOS. Cada comando con su salida, y los programas de pantalla completa (vim, less, claude) en la sesión entera.
 - **Varias sesiones a la vez**, agrupadas por proyecto, cada una con su cuenta, su modelo, su esfuerzo y
@@ -35,7 +35,7 @@ agentes de código y shells en pestañas y muestra cada cosa en su bloque:
    | Parte | Qué elige |
    |---|---|
    | **Proyecto** | Arriba: dónde se abre. Toque **Cambiar** para elegir otro: los proyectos vinculados, los recientes, **Buscar una carpeta…** o **Buscar un archivo del proyecto…** (se abre la raíz de su repositorio de git o, sin repositorio, su carpeta). |
-   | **Abrir con** | Claude Code, otro agente instalado (Codex, Gemini CLI, Copilot CLI) o una de las terminales de su equipo. |
+   | **Abrir con** | Claude Code, otro agente instalado (Codex, Gemini CLI, Copilot CLI, OpenCode) o una de las terminales de su equipo. |
    | **Con la cuenta** | *(Claude Code)* La cuenta de esta pestaña; el punto verde dice que tiene la sesión iniciada. |
    | **Modelo y esfuerzo** | *(Claude Code)* `haiku`, `sonnet`, `opus`, `fable` o «por defecto», y el esfuerzo: bajo, medio, alto, muy alto o máximo. Las variantes (`opus[1m]`, `sonnet[1m]`, `opusplan`) se eligen dentro de la sesión. |
 
@@ -125,15 +125,15 @@ esfuerzo («opus · alto») y los permisos.
 La cuenta no se cambia en una sesión abierta: si elige otra, se abre una pestaña nueva con esa cuenta, en la
 misma carpeta y con el mismo modelo.
 
-## Codex, Gemini CLI y Copilot CLI
+## Codex, Gemini CLI, Copilot CLI y OpenCode
 
 Si están instalados (y en el `PATH`), aparecen en el menú de la pestaña nueva. Se ven en bloques igual que
 Claude Code, con sus permisos aquí y en la isla.
 
 - El modelo, el esfuerzo y los permisos se eligen **dentro de la sesión**, en la caja de abajo, entre lo que
   el agente dice tener al abrirse.
-- La marca de la pestaña dice qué es: **✻** Claude Code, **cx** Codex, **✦** Gemini CLI, **gh** Copilot CLI y
-  **>_** una terminal.
+- La marca de la pestaña dice qué es: **✻** Claude Code, **cx** Codex, **✦** Gemini CLI, **gh** Copilot CLI, **oc**
+  OpenCode y **>_** una terminal.
 
 ### Cómo iniciar sesión en los otros agentes
 
@@ -144,6 +144,7 @@ falta. Hágalo una vez en una terminal cualquiera y vuelva a escribir en la sesi
 |---|---|
 | **Gemini CLI** | `gemini` (y siga los pasos para iniciar sesión) |
 | **Copilot CLI** | `copilot login` |
+| **OpenCode** | `opencode auth login` |
 | **Codex** | `codex login`, o inicie sesión en la extensión de Codex de su editor (VS Code, Cursor o Windsurf): si `codex` no está en el PATH, Claupet usa el que trae esa extensión |
 
 > [!NOTE]

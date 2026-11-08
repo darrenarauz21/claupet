@@ -21,7 +21,7 @@
 ---
 
 Claude Code hace el trabajo. Claupet le mantiene al tanto: cuánto le queda de su plan, qué sesión
-le necesita y en qué anda cada una, sin abrir una terminal. ¿También usa Codex, Gemini o Copilot?
+le necesita y en qué anda cada una, sin abrir una terminal. ¿También usa Codex, Gemini, Copilot u OpenCode?
 Claupet los sigue a ellos también.
 
 ## Qué hace
@@ -33,9 +33,9 @@ Claupet los sigue a ellos también.
   y una sesión nueva con la cuenta, la carpeta y el modelo que usted elija.
 - 🎬 **Actividad.** Cada sesión paso a paso, en vivo. Todo sale de archivos locales: no gasta
   tokens.
-- 🤖 **También Codex, Gemini y Copilot.** Si usa además Codex CLI, Gemini CLI o GitHub Copilot CLI,
-  sus sesiones salen en Uso y Actividad (con los límites de Codex y los tokens de Gemini), leídas de sus propios
-  archivos.
+- 🤖 **También Codex, Gemini, Copilot y OpenCode.** Si usa además Codex CLI, Gemini CLI, GitHub Copilot CLI u OpenCode,
+  sus sesiones salen en Uso y Actividad (con los límites de Codex y los tokens de Gemini y OpenCode), leídas de sus
+  propios archivos.
 - 🔔 **Avisos amables.** Un mensajito, con sonido, cuando una sesión termina, pregunta algo,
   necesita permiso, falla o se acerca a un límite.
 - 🐾 **Mascotas con personalidad.** Chibi, Dokki, Gemma o Ciel (o la criaturita clásica) leen,

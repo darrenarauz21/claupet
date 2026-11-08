@@ -809,6 +809,7 @@ sealed partial class CanvasPane
         ["Gemini CLI"] = Color.Parse("#7A5AF8"),
         ["Copilot"] = Color.Parse("#2DA44E"),
         ["Copilot CLI"] = Color.Parse("#2DA44E"),
+        ["OpenCode"] = Color.Parse("#CA8A04"),
         ["Cursor"] = Color.Parse("#1F1E1D"),
     };
 
