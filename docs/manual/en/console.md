@@ -25,7 +25,7 @@ picked.
 
 ## The rail
 
-On the left, a rail with six buttons:
+On the left, a rail with seven buttons:
 
 | Button | What for |
 |---|---|
@@ -34,6 +34,7 @@ On the left, a rail with six buttons:
 | 📝 **Editor** | Open and write documents and code. |
 | 🎨 **Canvas** | Live documents you and any AI edit together. |
 | 📊 **Projects** | Your projects' plans: board, timeline, diagram and metrics. |
+| 🧑‍🔬 **Specialists** | Agents with their role, instructions and tools (experimental). |
 | ⚙️ **Settings** | All of Claupet's options, by section. |
 
 ## Chat
@@ -152,6 +153,24 @@ the bottom asks a session in that same folder for a change.
 **Export to PDF.** The button in the bar saves the current view or the whole plan as a report: white letter pages, with the
 same content in tables and charts made for reading or printing, whatever your theme. What doesn't fit continues on the
 next page.
+
+## Specialists
+
+> [!NOTE]
+> **Experimental.** This view isn't finished yet: it may change or fail.
+
+A specialist is an agent with a name, role, instructions and tools, ready to open in the Terminal. For example, a
+"PR reviewer" with Claude Code, its review rules and the GitHub server.
+
+- **+** creates one. You type the name and role in place; tap the big icon to change its color and icon.
+  Everything saves on its own.
+- **Agent**: Claude Code, Codex, Gemini or Copilot. With Claude Code you also pick the model and effort.
+- **Folder**: where it opens; if you don't pick one, in the project you're using.
+- **Tools**: Claupet's canvas and the MCP servers of your extensions. The shield says whether the agent asks
+  before using each one or uses it without asking.
+- **▶ Open** opens it as a Terminal tab. It also shows up in the Terminal's **+** menu.
+- The ones extensions bring are under **From extensions**, read-only: **Duplicate** makes your own copy.
+- **⋯** has **Export as .json**, to share it.
 
 ## Settings
 

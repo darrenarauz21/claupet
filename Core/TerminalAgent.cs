@@ -638,7 +638,7 @@ static class AgentProtocol
 
 /// <summary>Con qué se abre una sesión de la Terminal: el agente (AgentKinds), la carpeta, la cuenta, el modelo, el esfuerzo y el modo de permisos.</summary>
 /// <summary>Resume: el id de una sesión de Claude Code para retomarla (--resume), con su conversación.</summary>
-sealed record AgentOptions(string Folder, string? ConfigDir = null, string? Model = null, string? Effort = null, string? PermissionMode = null, string Kind = AgentKinds.Claude, string? Resume = null);
+sealed record AgentOptions(string Folder, string? ConfigDir = null, string? Model = null, string? Effort = null, string? PermissionMode = null, string Kind = AgentKinds.Claude, string? Resume = null, Specialist? Specialist = null);
 
 /// <summary>
 /// Una sesión de agente de la Terminal (Claude Code, Codex, Gemini CLI o Copilot CLI): abre el proceso que dice su

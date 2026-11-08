@@ -37,6 +37,7 @@ Hay ejemplos en [`ejemplos/`](ejemplos): [Python](ejemplos/python), [Node.js](ej
 | `voice-style` | No | — | No |
 | `sounds` | No (se elige un estilo) | — | No |
 | `mcp` | No | — | No (el agente corre el servidor; [sección 11](#11-herramientas-para-los-agentes-mcp)) |
+| `agent` | No | — | No (especialistas, experimental; [sección 11](#especialistas-agent)) |
 
 Una extensión puede traer varias cosas a la vez (el ejemplo de Node trae `skill`, `speech-to-text`,
 `text-to-speech` y `assistant`). Que la instale no significa que ocupe las ranuras exclusivas: al instalarla
@@ -123,6 +124,7 @@ campos opcionales nuevos siga sirviendo. Se permiten comentarios y comas finales
 | `pet` | Con `pet` | Sección 10 |
 | `sounds` | Con `sounds` | Sección 10 |
 | `mcp` | Con `mcp` | Sección 11 |
+| `agents` | Con `agent` | Sección 11 |
 
 Un texto por idioma se muestra en el idioma de la app; si falta ese idioma, en inglés, y si tampoco está,
 el primero.
@@ -526,6 +528,47 @@ En `args`, `env`, `url` y `headers` van `{package}`, `{data}` y `{setting:clave}
   paquete, o tráigalo dentro del `.claupet`.
 
 Hay un ejemplo completo, sin dependencias, en [`ejemplos/mcp`](ejemplos/mcp).
+
+### Especialistas (`agent`)
+
+> **Experimental.** La vista Especialistas de la Console todavía puede cambiar.
+
+Un especialista es un agente con nombre, rol, instrucciones y herramientas, que se abre como una pestaña de la
+Terminal. La ranura `agent` trae especialistas listos; la persona los ve en **Especialistas › De extensiones**, de
+solo lectura, y los duplica para cambiarlos. Suelen ir junto con sus servidores (`"provides": ["mcp", "agent"]`).
+
+```json
+{
+  "provides": ["mcp", "agent"],
+  "mcp": { "github": { "url": "https://api.github.com/mcp", "headers": { "Authorization": "Bearer {setting:token}" } } },
+  "agents": [
+    {
+      "id": "revisor",
+      "name": { "es": "Revisor de PRs", "en": "PR reviewer" },
+      "role": "Revisa los cambios y deja comentarios claros",
+      "instructions": "Agrupe los comentarios por archivo, de más grave a menos grave.",
+      "agent": "claude", "model": "opus", "effort": "high",
+      "color": "#D97757", "icon": "search",
+      "tools": ["canvas", "github"]
+    }
+  ]
+}
+```
+
+| Campo | Qué es |
+|---|---|
+| `id` | `^[a-zA-Z][a-zA-Z0-9_]{0,31}$`, único en la extensión. Hasta 16 especialistas |
+| `name`, `role` | Hasta 60 y 120 caracteres; un texto o uno por idioma |
+| `instructions` | Hasta 8000 caracteres |
+| `agent` | `claude` (por defecto), `codex`, `gemini` o `copilot` |
+| `model`, `effort` | Solo con `claude`: un modelo de Claude Code y `low`, `medium`, `high`, `xhigh` o `max` |
+| `color` | `#D97757`, `#5BA3E0`, `#6DB283`, `#A48BE0`, `#E07CA4` o `#E0A84B` |
+| `icon` | `search`, `pen`, `bug`, `chart`, `code`, `book`, `rocket`, `flask`, `shield`, `spark`, `globe` o `heart` |
+| `tools` | `canvas` y nombres de servidores de `mcp` de la misma extensión. Piden permiso antes de usarse |
+
+Al abrirlo, Claude Code recibe las instrucciones con `--append-system-prompt-file`; Codex, como
+`developerInstructions` del hilo; un agente ACP, con el primer pedido. Cada agente recibe solo las herramientas del
+especialista.
 
 ---
 

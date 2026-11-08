@@ -331,55 +331,76 @@ static class CanvasMcp
     /// </summary>
     public static string? ClaudeConfigFile(string author, string? folder) => ClaudeConfigFile(author, folder, ExtensionMcp.Servers());
 
-    /// <summary>extra: los servidores de las extensiones (la ranura «mcp»); sus claves quedan en este archivo, en la carpeta de datos de la persona.</summary>
-    internal static string? ClaudeConfigFile(string author, string? folder, IReadOnlyList<McpServer> extra)
+    /// <summary>
+    /// extra: los servidores de las extensiones (la ranura «mcp»); sus claves quedan en este archivo, en la carpeta de datos
+    /// de la persona. canvas: si va el de Claupet (un especialista puede quitarlo). tag: lo que distingue el archivo de un
+    /// especialista del de una sesión común. Null si no hay servidores o no se pudo escribir.
+    /// </summary>
+    internal static string? ClaudeConfigFile(string author, string? folder, IReadOnlyList<McpServer> extra, bool canvas = true, string? tag = null)
     {
         if (Command is not { } command) return null;
-        var servers = new JsonObject
-        {
-            [Name] = new JsonObject
+        var servers = new JsonObject();
+        if (canvas)
+            servers[Name] = new JsonObject
             {
                 ["type"] = "stdio",
                 ["command"] = command,
                 ["args"] = new JsonArray(Flag),
                 ["env"] = Env(author, folder),
-            },
-        };
+            };
         foreach (var server in extra)
             servers[server.Name] = server.Type == McpServerSpec.Http
                 ? new JsonObject { ["type"] = "http", ["url"] = server.Url, ["headers"] = Object(server.Headers) }
                 : new JsonObject { ["type"] = "stdio", ["command"] = server.Command, ["args"] = ListOf(server.Args), ["env"] = Object(server.Env) };
+        if (servers.Count == 0) return null;
         var config = new JsonObject { ["mcpServers"] = servers };
         try
         {
             var dir = DataFolder.In("Canvas", "mcp");
             Directory.CreateDirectory(dir);
-            var file = Path.Combine(dir, "claude-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(author + "|" + folder)))[..10].ToLowerInvariant() + ".json");
+            var file = Path.Combine(dir, "claude-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(author + "|" + folder + "|" + tag)))[..10].ToLowerInvariant() + ".json");
             File.WriteAllText(file, config.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
             return file;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ErrorLog.Write(ex); return null; }
     }
 
-    /// <summary>Lo que se le agrega a Claude Code: el servidor y sus herramientas seguras sin preguntar.</summary>
-    public static IEnumerable<string> ClaudeArguments(string? folder)
+    /// <summary>
+    /// Lo que se le agrega a Claude Code: los servidores, las herramientas que van sin preguntar (las seguras del canvas y
+    /// los servidores que un especialista marcó así) y, con un especialista, sus instrucciones.
+    /// </summary>
+    public static IEnumerable<string> ClaudeArguments(string? folder, Specialist? specialist = null) =>
+        ClaudeArguments(folder, specialist, ExtensionMcp.Servers());
+
+    internal static IEnumerable<string> ClaudeArguments(string? folder, Specialist? specialist, IReadOnlyList<McpServer> all)
     {
-        if (ClaudeConfigFile("Claude Code", folder) is not { } file) return [];
-        return ["--mcp-config", file, "--allowedTools", string.Join(',', SafeTools.Select(t => $"mcp__{Name}__{t}"))];
+        var servers = Specialists.ServersFor(specialist, all);
+        var canvas = Specialists.UsesCanvas(specialist);
+        var args = new List<string>();
+        if (ClaudeConfigFile("Claude Code", folder, servers, canvas, specialist?.Id) is { } file)
+        {
+            args.AddRange(["--mcp-config", file]);
+            var allowed = (canvas ? SafeTools.Select(t => $"mcp__{Name}__{t}") : [])
+                .Concat(servers.Where(s => specialist is not null && !specialist.AsksFor(s.Name)).Select(s => $"mcp__{s.Name}")).ToList();
+            if (allowed.Count > 0) args.AddRange(["--allowedTools", string.Join(',', allowed)]);
+        }
+        if (specialist is not null && Specialists.PromptFile(specialist) is { } prompt) args.AddRange(["--append-system-prompt-file", prompt]);
+        return args;
     }
 
     /// <summary>
     /// Lo que va antes de «app-server» en Codex: «-c» con la tabla del servidor en TOML. Comillas simples (cadenas
     /// literales de TOML): la ruta de Windows no necesita escapes y no hay comillas dobles que cmd.exe rompa.
     /// </summary>
-    public static IEnumerable<string> CodexArguments(string? folder) => CodexArguments(folder, ExtensionMcp.Servers());
+    public static IEnumerable<string> CodexArguments(string? folder, Specialist? specialist = null) =>
+        CodexArguments(folder, Specialists.ServersFor(specialist, ExtensionMcp.Servers()), Specialists.UsesCanvas(specialist));
 
-    internal static IEnumerable<string> CodexArguments(string? folder, IReadOnlyList<McpServer> extra)
+    internal static IEnumerable<string> CodexArguments(string? folder, IReadOnlyList<McpServer> extra, bool canvas = true)
     {
         if (Command is not { } command || command.Contains('\'') || (folder?.Contains('\'') ?? false)) return [];
         var key = "mcp_servers.claupet_canvas";
         var env = $"{{{AuthorVariable}='Codex'" + (folder is null ? "" : $",{FolderVariable}='{folder}'") + "}";
-        List<string> args = ["-c", $"{key}.command='{command}'", "-c", $"{key}.args=['{Flag}']", "-c", $"{key}.env={env}"];
+        List<string> args = canvas ? ["-c", $"{key}.command='{command}'", "-c", $"{key}.args=['{Flag}']", "-c", $"{key}.env={env}"] : [];
         foreach (var server in extra) args.AddRange(CodexServer(server));
         return args;
     }
@@ -405,14 +426,15 @@ static class CanvasMcp
     /// Los servidores para «session/new» de ACP (Gemini CLI, Copilot CLI…): el de Claupet y los de las extensiones.
     /// http: el agente dijo que acepta servidores por HTTP (mcpCapabilities.http); si no, solo van los stdio.
     /// </summary>
-    public static JsonArray AcpServers(string author, string? folder, bool http = false) => AcpServers(author, folder, http, ExtensionMcp.Servers());
+    public static JsonArray AcpServers(string author, string? folder, bool http = false, Specialist? specialist = null) =>
+        AcpServers(author, folder, http, Specialists.ServersFor(specialist, ExtensionMcp.Servers()), Specialists.UsesCanvas(specialist));
 
-    internal static JsonArray AcpServers(string author, string? folder, bool http, IReadOnlyList<McpServer> extra)
+    internal static JsonArray AcpServers(string author, string? folder, bool http, IReadOnlyList<McpServer> extra, bool canvas = true)
     {
         if (Command is not { } command) return [];
         var env = new JsonArray(new JsonObject { ["name"] = AuthorVariable, ["value"] = author });
         if (folder is not null) env.Add(new JsonObject { ["name"] = FolderVariable, ["value"] = folder });
-        var list = new JsonArray(new JsonObject { ["name"] = Name, ["command"] = command, ["args"] = new JsonArray(Flag), ["env"] = env });
+        var list = canvas ? new JsonArray(new JsonObject { ["name"] = Name, ["command"] = command, ["args"] = new JsonArray(Flag), ["env"] = env }) : [];
         foreach (var server in extra)
             if (server.Type != McpServerSpec.Http)
                 list.Add(new JsonObject { ["name"] = server.Name, ["command"] = server.Command, ["args"] = ListOf(server.Args), ["env"] = Pairs(server.Env) });

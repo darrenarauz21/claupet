@@ -111,7 +111,7 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
         }
         else start.FileName = codex;
         // Claupet Canvas (MCP), con «-c» antes del subcomando: así no se toca el config.toml de la persona.
-        foreach (var arg in CanvasMcp.CodexArguments(options.Folder)) start.ArgumentList.Add(arg);
+        foreach (var arg in CanvasMcp.CodexArguments(options.Folder, options.Specialist)) start.ArgumentList.Add(arg);
         start.ArgumentList.Add("app-server");
         return start;
     }
@@ -324,6 +324,8 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
         // Un modelo que Codex no lista (por ejemplo, uno de Claude) no se pasa: abre con el de su configuración.
         if (_model is not null && ModelInfo(_model) is not null) start["model"] = _model;
         else _model = null;
+        // Un especialista: sus instrucciones van como las del desarrollador del hilo (developerInstructions).
+        if (_options?.Specialist is { } specialist) start["developerInstructions"] = specialist.Prompt();
         return Request("thread/start", start);
     }
 

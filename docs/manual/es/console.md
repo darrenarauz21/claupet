@@ -24,7 +24,7 @@ Hay una sola Console a la vez. Sigue el modo claro u oscuro del sistema y el col
 
 ## El riel
 
-A la izquierda, un riel con seis botones:
+A la izquierda, un riel con siete botones:
 
 | Botón | Para qué |
 |---|---|
@@ -33,6 +33,7 @@ A la izquierda, un riel con seis botones:
 | 📝 **Editor** | Abrir y escribir documentos y código. |
 | 🎨 **Canvas** | Documentos vivos que usted y cualquier IA editan a la vez. |
 | 📊 **Proyectos** | Los planes de sus proyectos: tablero, cronograma, diagrama y métricas. |
+| 🧑‍🔬 **Especialistas** | Agentes con su rol, sus instrucciones y sus herramientas (experimental). |
 | ⚙️ **Ajustes** | Todas las opciones de Claupet, por secciones. |
 
 ## Chat
@@ -152,6 +153,24 @@ envíe. La barra de abajo le pide un cambio a una sesión de esa misma carpeta.
 **Exportar a PDF.** El botón de la barra guarda la vista que se ve o todo el plan como un informe: hojas carta en blanco,
 con el mismo contenido en tablas y gráficos pensados para leer o imprimir, sea cual sea el tema. Lo que no cabe sigue en
 la hoja siguiente.
+
+## Especialistas
+
+> [!NOTE]
+> **Experimental.** Esta vista todavía no está terminada: puede cambiar o fallar.
+
+Un especialista es un agente con nombre, rol, instrucciones y herramientas, listo para abrir en la Terminal. Por
+ejemplo, un «Revisor de PRs» con Claude Code, sus reglas para revisar y el servidor de GitHub.
+
+- Con **+** se crea uno. El nombre y el rol se escriben en el mismo lugar; tocando el ícono grande se cambian el
+  color y el ícono. Todo se guarda solo.
+- **Agente**: Claude Code, Codex, Gemini o Copilot. Con Claude Code también se eligen el modelo y el esfuerzo.
+- **Carpeta**: dónde abre; si no se elige, en la del proyecto que se está usando.
+- **Herramientas**: el canvas de Claupet y los servidores MCP de sus extensiones. El escudo dice si el agente
+  pide permiso antes de usar cada una o la usa sin preguntar.
+- **▶ Abrir** lo abre como una pestaña de la Terminal. También aparece en el menú **+** de la Terminal.
+- Los que traen las extensiones están en **De extensiones**, de solo lectura: **Duplicar** hace una copia suya.
+- En **⋯** está **Exportar como .json**, para compartirlo.
 
 ## Ajustes
 

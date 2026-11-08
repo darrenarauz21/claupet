@@ -13,11 +13,11 @@ namespace Claupet;
 static class ExtensionSlots
 {
     public const string SpeechToText = "speech-to-text", TextToSpeech = "text-to-speech", Assistant = "assistant",
-        Skill = "skill", Pet = "pet", VoiceStyle = "voice-style", Sounds = "sounds", Mcp = "mcp";
+        Skill = "skill", Pet = "pet", VoiceStyle = "voice-style", Sounds = "sounds", Mcp = "mcp", Agent = "agent";
 
     public static readonly string[] Exclusive = [SpeechToText, TextToSpeech, Assistant];
 
-    public static readonly string[] All = [SpeechToText, TextToSpeech, Assistant, Skill, Pet, VoiceStyle, Sounds, Mcp];
+    public static readonly string[] All = [SpeechToText, TextToSpeech, Assistant, Skill, Pet, VoiceStyle, Sounds, Mcp, Agent];
 
     public static bool IsExclusive(string slot) => Exclusive.Contains(slot);
 
@@ -34,6 +34,7 @@ static class ExtensionSlots
         VoiceStyle => L.T("Voces"),
         Sounds => L.T("Sonidos"),
         Mcp => L.T("Herramientas MCP"),
+        Agent => L.T("Especialistas"),
         _ => slot,
     };
 
@@ -233,6 +234,10 @@ sealed record RuntimeSpec
 
 sealed record CommandSpec(string Name, LocalizedText Description);
 
+/// <summary>Un especialista que trae una extensión (la ranura «agent»). Tools: «canvas» y servidores de su «mcp».</summary>
+sealed record AgentSpec(string Id, LocalizedText Name, LocalizedText Role, string Instructions, string Agent, string? Model, string? Effort,
+    string? Color, string? Glyph, IReadOnlyList<string> Tools);
+
 sealed record VoiceSpec(string Id, LocalizedText Name, string File, string? Language);
 
 /// <summary>Una animación de la mascota: una tira PNG de cuadros del mismo tamaño, de izquierda a derecha.</summary>
@@ -291,6 +296,8 @@ sealed record ExtensionManifest
     public IReadOnlyList<SettingSpec> Settings { get; init; } = [];
     /// <summary>Los servidores MCP que trae (la ranura «mcp»): se suman a los agentes.</summary>
     public IReadOnlyList<McpServerSpec> Mcp { get; init; } = [];
+    /// <summary>Los especialistas que trae (la ranura «agent»).</summary>
+    public IReadOnlyList<AgentSpec> Agents { get; init; } = [];
 
     /// <summary>Corre código en el equipo (un programa o una DLL), no solo datos o un servidor.</summary>
     public bool RunsCode => Runtime?.Type is RuntimeSpec.Process or RuntimeSpec.Native || Mcp.Any(m => m.Type == McpServerSpec.Stdio);
@@ -378,13 +385,16 @@ sealed record ExtensionManifest
             var mcp = ExtensionMcp.Parse(r, errors, files, settings, permissions);
             if (provides.Contains(ExtensionSlots.Mcp) != (mcp.Count > 0))
                 errors.Add(L.T("«mcp» en «provides» va con al menos un servidor en «mcp»."));
+            var agents = AgentsOf(r, errors, mcp);
+            if (provides.Contains(ExtensionSlots.Agent) != (agents.Count > 0))
+                errors.Add(L.T("«agent» en «provides» va con al menos un especialista en «agents»."));
 
             if (errors.Count > 0) return (null, errors);
             return (new ExtensionManifest
             {
                 Id = id, Version = version!.Value, Name = name, Description = description, Author = author, License = license,
                 Homepage = homepage, MinClaupet = min, Api = api, Provides = provides, Runtime = runtime, Commands = commands,
-                Events = events, Voices = voices, Pet = pet, Sounds = sounds, Permissions = permissions, Settings = settings, Mcp = mcp,
+                Events = events, Voices = voices, Pet = pet, Sounds = sounds, Permissions = permissions, Settings = settings, Mcp = mcp, Agents = agents,
             }, errors);
         }
     }
@@ -590,6 +600,42 @@ sealed record ExtensionManifest
             _ => true,
         };
         if (!ok) errors.Add(L.T("El formato «{0}» no sirve para lo que dice «provides».", runtime.Format ?? ""));
+    }
+
+    static List<AgentSpec> AgentsOf(JsonElement r, List<string> errors, IReadOnlyList<McpServerSpec> mcp)
+    {
+        var list = new List<AgentSpec>();
+        if (!r.TryGetProperty("agents", out var v)) return list;
+        if (v.ValueKind != JsonValueKind.Array) { errors.Add(L.T("«{0}» debe ser una lista.", "agents")); return list; }
+        string[] kinds = [AgentKinds.Claude, AgentKinds.Codex, AgentKinds.Gemini, AgentKinds.Copilot];
+        foreach (var item in v.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object) { errors.Add(L.T("Cada especialista de «agents» es un objeto.")); continue; }
+            var id = Json.Str(item, "id") ?? "";
+            if (!KeyPattern.IsMatch(id)) errors.Add(L.T("Especialista con «id» inválido: «{0}».", id));
+            if (list.Any(a => a.Id == id)) errors.Add(L.T("Especialista repetido: «{0}».", id));
+            var name = Text(item, "name", errors, required: true, max: Specialist.MaxName);
+            var role = Text(item, "role", errors, required: false, max: Specialist.MaxRole);
+            var instructions = Json.Str(item, "instructions") ?? "";
+            if (instructions.Length > Specialist.MaxInstructions || instructions.Contains(char.MinValue))
+                errors.Add(L.T("Especialista «{0}»: «instructions» es demasiado largo (máximo {1}).", id, Specialist.MaxInstructions));
+            var agent = Json.Str(item, "agent") ?? AgentKinds.Claude;
+            if (!kinds.Contains(agent)) errors.Add(L.T("Especialista «{0}»: «agent» es uno de: {1}.", id, string.Join(", ", kinds)));
+            var model = Json.Str(item, "model");
+            if (model is not null && (agent != AgentKinds.Claude || !Launcher.IsValid(model))) errors.Add(L.T("Especialista «{0}»: «model» es solo para Claude Code y debe ser un modelo válido.", id));
+            var effort = Json.Str(item, "effort");
+            if (effort is not null && (agent != AgentKinds.Claude || !Launcher.Efforts.Contains(effort))) errors.Add(L.T("Especialista «{0}»: «effort» es solo para Claude Code: {1}.", id, string.Join(", ", Launcher.Efforts)));
+            var color = Json.Str(item, "color");
+            if (color is not null && !Specialist.Colors.Contains(color, StringComparer.OrdinalIgnoreCase)) errors.Add(L.T("Especialista «{0}»: «color» es uno de: {1}.", id, string.Join(", ", Specialist.Colors)));
+            var icon = Json.Str(item, "icon");
+            if (icon is not null && !Specialist.Glyphs.Contains(icon)) errors.Add(L.T("Especialista «{0}»: «icon» es uno de: {1}.", id, string.Join(", ", Specialist.Glyphs)));
+            var tools = Strings(item, "tools", errors);
+            foreach (var t in tools.Where(t => t != Specialist.CanvasTool && mcp.All(m => m.Name != t)))
+                errors.Add(L.T("Especialista «{0}»: la herramienta «{1}» no es «canvas» ni un servidor de «mcp».", id, t));
+            list.Add(new AgentSpec(id, name, role, instructions, agent, model, effort, color?.ToUpperInvariant(), icon, tools));
+        }
+        if (list.Count > 16) errors.Add(L.T("«{0}» trae demasiados elementos.", "agents"));
+        return list;
     }
 
     static List<CommandSpec> CommandsOf(JsonElement r, List<string> errors)

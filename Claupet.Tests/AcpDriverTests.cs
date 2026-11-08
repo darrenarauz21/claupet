@@ -499,4 +499,25 @@ public sealed class AcpDriverTests
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    [Fact]
+    public void Un_especialista_da_sus_instrucciones_con_el_primer_pedido_y_solo_sus_herramientas()
+    {
+        var specialist = new Specialist { Id = "abcdef123456", Name = "Redactor", Instructions = "Frases cortas.", Tools = new() { [Specialist.CanvasTool] = new SpecialistTool { On = false } } };
+        var s = new Session(AgentKinds.Gemini, new AgentOptions(Folder, Kind: AgentKinds.Gemini, Specialist: specialist));
+        s.Feed(GeminiInit);
+        // Sin el canvas y sin servidores de extensiones: la sesión abre sin servidores MCP.
+        Assert.Empty(s.Last["params"]!["mcpServers"]!.AsArray());
+        s.Feed(GeminiSession);
+
+        s.Ask("hola");
+        var prompt = s.LastOf("session/prompt")!;
+        var parts = prompt["params"]!["prompt"]!.AsArray();
+        Assert.Contains("Frases cortas.", (string?)parts[0]!["text"]);
+        Assert.Equal("hola", (string?)parts[^1]!["text"]);
+
+        s.Feed(Result((int)prompt["id"]!, """{"stopReason":"end_turn"}"""));
+        s.Ask("dos");
+        Assert.Equal("dos", (string?)Assert.Single(s.LastOf("session/prompt")!["params"]!["prompt"]!.AsArray())!["text"]);
+    }
 }
