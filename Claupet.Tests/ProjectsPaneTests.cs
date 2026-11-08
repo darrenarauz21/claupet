@@ -337,6 +337,7 @@ public sealed class ProjectsPaneTests
         // t3 depende de t2, que no está hecha: no se da como punto de partida; t4 depende de t3, que va en el mismo pedido.
         Assert.DoesNotContain("«Página de producto»", text);
         Assert.Contains("«en-curso»", text); // con varias, la sesión marca cada una al empezarla
+        Assert.Contains(@"canvas_create con una sección html autocontenida (HTML, CSS y JS juntos) y plan = C:\uno\tienda.plan.json", text);
     }
 
     [Fact]
