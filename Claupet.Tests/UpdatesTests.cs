@@ -149,6 +149,37 @@ public sealed class UpdatesTests
     }
 
     [Fact]
+    public async Task ElBotonDeRefrescarDiceComoTermino()
+    {
+        using var kit = new Kit();
+        using var server = new FakeHttpServer((_, path, _, _) => path == "/latest"
+            ? (200, "application/json", Encoding.UTF8.GetBytes(Release("v2.2.1", "https://x", false, Asset)))
+            : (404, "text/plain", []));
+        var updates = kit.Make(server.Url + "/latest");
+        // La de cada día calla; la pedida a mano dice que está al día.
+        await updates.CheckAsync();
+        Assert.Equal(("", ""), updates.Row());
+        await updates.CheckNowAsync();
+        Assert.Equal((L.T("Claupet {0} es la versión más nueva", updates.Current), ""), updates.Row());
+
+        using var closed = new FakeHttpServer((_, _, _, _) => (200, "text/plain", []));
+        var url = closed.Url + "/latest";
+        closed.Dispose();
+        var offline = kit.Make(url);
+        await offline.CheckNowAsync();
+        Assert.Equal(L.T("No se pudo buscar: revise la conexión"), offline.Row().Status);
+    }
+
+    [Fact]
+    public void BuscarActualizacionesLlevaSuBotonDeRefrescar()
+    {
+        var row = SettingsPages.Build(new SettingsState()).Single(p => p.Id == "sistema").Rows.Single(r => r.Key == "updates");
+        var icon = Assert.Single(row.Icons!);
+        Assert.Equal(RowIconKind.Refresh, icon.Icon);
+        Assert.Equal(SettingsPages.UpdatesNowKey, icon.Key);
+    }
+
+    [Fact]
     public async Task ConPermisoSeBajaSeCompruebaYQuedaLista()
     {
         using var kit = new Kit();

@@ -128,6 +128,11 @@ sealed record SettingsState
     public bool CheckUpdates { get; init; } = true;
     public string UpdateStatus { get; init; } = "";
     public string UpdateAction { get; init; } = "";
+    /// <summary>Las skills de Claude Code de todas las cuentas (ClaudeSkills), para Ajustes › Skills.</summary>
+    public IReadOnlyList<SkillState> Skills { get; init; } = [];
+    /// <summary>Cómo terminó lo último con las skills (agregar una, quitarla); null, nada que decir.</summary>
+    public string? SkillStatus { get; init; }
+    public bool SkillProblem { get; init; }
 }
 
 /// <summary>Un tipo de pregunta y quién lo responde primero, para elegirlo uno por uno en Claupet Console.</summary>
@@ -156,6 +161,15 @@ enum RowPlace { Both, Console }
 
 sealed record SettingsLink(string Text, string Key);
 
+/// <summary>Los íconos que la Console sabe dibujar en un botón de fila.</summary>
+enum RowIconKind { Refresh, Add, Folder, Trash }
+
+/// <summary>
+/// Un botón de solo ícono a la derecha de una fila (refrescar, agregar, abrir, quitar), con Name como su descripción al
+/// pasar el mouse. Key es su acción; File, como en un enlace, hace que la Console pida antes un archivo («*.md;*.zip»).
+/// </summary>
+sealed record RowIcon(RowIconKind Icon, string Name, string Key, RowTone Tone = RowTone.Normal, string? File = null);
+
 /// <summary>
 /// Una tarjeta de Apariencia › Temas. Id vacío: «Claupet», sin tema propio (con la paleta elegida). Creating: la que
 /// se está generando (Name es lo pedido). La Console lee los colores del tema de temas/ por su Id.
@@ -173,7 +187,7 @@ sealed record ThemeCard(string Id, string Name, bool Selected = false, bool Crea
 sealed record SettingsRow(RowKind Kind, string Text, string Key = "", string Value = "", bool On = false,
     RowTone Tone = RowTone.Normal, bool Swatch = false, RowPlace Place = RowPlace.Both, IReadOnlyList<SettingsLink>? Links = null,
     bool Secret = false, string? Placeholder = null, string? File = null, string? Copy = null, string? Submit = null,
-    IReadOnlyList<ThemeCard>? Cards = null);
+    IReadOnlyList<ThemeCard>? Cards = null, IReadOnlyList<RowIcon>? Icons = null);
 
 /// <summary>
 /// Una sección de Ajustes. Tab es la pestaña de los ajustes rápidos donde van sus filas (las que no son solo de
@@ -192,8 +206,12 @@ static class SettingsPages
     public static IReadOnlyList<SettingsPage> Build(SettingsState s) =>
     [
         GeneralPage(s), NoticesPage(s), LooksPage(s), MascotPage(s), AssistantPage(s), AnswersPage(s), ExtensionsPage(s),
-        IslandPage(s), AccountsPage(s), MachinePage(s),
+        IslandPage(s), AccountsPage(s), SkillsPage(s), MachinePage(s),
     ];
+
+    /// <summary>Las claves de Ajustes › Skills: el interruptor de las de Claupet, agregar (la ruta en Value), abrir y quitar.</summary>
+    public const string SkillBundledKey = "skill-claupet:", SkillAddKey = "skill-add", SkillOpenKey = "skill-open:", SkillRemoveKey = "skill-remove:",
+        UpdatesNowKey = "updates-now";
 
     internal static SettingsRow Caption(string text) => new(RowKind.Caption, text, Place: RowPlace.Console);
     internal static SettingsRow Switch(string text, string key, bool on) => new(RowKind.Switch, text, key, On: on);
@@ -448,6 +466,39 @@ static class SettingsPages
         return new("cuentas", L.T("Cuentas"), L.T("Las cuentas de Claude Code y los otros agentes que sigue Claupet."), null, rows);
     }
 
+    /// <summary>
+    /// Las skills de Claude Code: las de Claupet con su interruptor, las demás con sus botones de abrir y quitar, y una fila
+    /// para agregar otra desde un archivo. Solo en la Console: no es de todos los días.
+    /// </summary>
+    static SettingsPage SkillsPage(SettingsState s)
+    {
+        List<SettingsRow> rows = [Caption(L.T("De Claupet"))];
+        foreach (var (name, label) in ClaudeSkills.Bundled)
+        {
+            rows.Add(Switch(L.T(label), SkillBundledKey + name, s.Skills.Any(k => k.Name == name)));
+            rows.Add(Note(L.T("{0}: Claude Code arma y sigue los planes (.plan.json) que Claupet dibuja, y marca cada tarea al empezarla y al terminarla.", name)));
+        }
+        rows.Add(Caption(L.T("Instaladas")));
+        var others = s.Skills.Where(k => !k.Bundled).ToList();
+        if (others.Count == 0) rows.Add(Note(L.T("Todavía no hay otras skills.")));
+        foreach (var skill in others)
+        {
+            rows.Add(Info(skill.Name, "") with
+            {
+                Icons = [new(RowIconKind.Folder, L.T("Abrir su carpeta"), SkillOpenKey + skill.Name),
+                    new(RowIconKind.Trash, L.T("Quitar la skill"), SkillRemoveKey + skill.Name, RowTone.Danger)],
+            });
+            if (skill.Description.Length > 0) rows.Add(Note(skill.Description));
+        }
+        rows.Add(Info(L.T("Agregar una skill"), "") with
+        {
+            Icons = [new(RowIconKind.Add, L.T("Elegir su SKILL.md, .zip o .skill"), SkillAddKey, RowTone.Accent, ClaudeSkills.FilePattern)],
+        });
+        rows.Add(Note(L.T("Un SKILL.md (con lo que haya en su carpeta), o la carpeta en un .zip o un .skill. Se agrega en todas las cuentas de Claude Code.")));
+        if (s.SkillStatus is { } status) rows.Add(Note(status, s.SkillProblem ? RowTone.Warn : RowTone.Normal));
+        return new("skills", L.T("Skills"), L.T("Lo que Claude Code sabe hacer además: instrucciones que usa cuando vienen al caso."), null, rows);
+    }
+
     static SettingsPage MachinePage(SettingsState s)
     {
         List<SettingsRow> rows =
@@ -461,7 +512,10 @@ static class SettingsPages
         {
             rows.Add(Caption(L.T("Actualizaciones")));
             rows.Add(Full(Info(L.T("Versión instalada"), SemVersion.App.ToString())));
-            rows.Add(Full(Switch(L.T("Buscar actualizaciones"), "updates", s.CheckUpdates)));
+            rows.Add(Full(Switch(L.T("Buscar actualizaciones"), "updates", s.CheckUpdates) with
+            {
+                Icons = [new(RowIconKind.Refresh, L.T("Buscar ahora"), UpdatesNowKey)],
+            }));
             rows.Add(Full(Note(L.T("Una vez al día, en las versiones publicadas en GitHub. Nada se instala sin preguntarle."))));
             // Con una versión nueva (o bajándose), también en los rápidos: así se ve sin abrir la Console.
             if (s.UpdateStatus.Length > 0)

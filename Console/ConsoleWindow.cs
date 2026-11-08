@@ -456,8 +456,13 @@ sealed class ConsoleWindow : Window
         terminal.Padding = new Thickness(12, 0);
         terminal.CornerRadius = new CornerRadius(12);
         if (_terminalSettings) terminal.Background = _ink.Pill;
-        _sections.Children.Add(terminal);
+        // Sistema va siempre al final: la Terminal, justo antes.
+        var system = _pages.Where(p => p.Parent is null).ToList().FindIndex(p => p.Id == SystemSection);
+        _sections.Children.Insert(system < 0 ? _sections.Children.Count : system, terminal);
     }
+
+    /// <summary>La sección que cierra la lista de Ajustes (SettingsPages.MachinePage).</summary>
+    const string SystemSection = "sistema";
 
     /// <summary>Arrastrar el borde cambia el ancho de la lista (entre TerminalProjects.MinWidth y MaxWidth); al soltar, se guarda.</summary>
     void Grip()
