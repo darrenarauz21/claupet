@@ -127,7 +127,8 @@ static partial class ClaudeHistory
             for (var i = 1; i <= images && !text.Contains("[Image", StringComparison.Ordinal); i++) text = $"[Image #{i}] " + text;
         }
         else return null;
-        text = text.Trim();
+        // La nota de Claupet al final del pedido (Workspace) no es de la persona.
+        text = Workspace.Strip(text).Trim();
         // Los comandos (/model, /clear…), su salida y los recordatorios del sistema no son pedidos.
         if (text.Length == 0 || text.StartsWith('<') || text.StartsWith("[Request interrupted", StringComparison.Ordinal)) return null;
         return text;

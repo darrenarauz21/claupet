@@ -31,7 +31,9 @@ static class CanvasMcp
         "Workflow: canvas_create (or canvas_list + canvas_read), then canvas_edit with small operations instead of rewriting " +
         "everything: 'edit' (find/replace exact text) for changes, 'insert' for new sections, 'replace' only for full rewrites. " +
         "Read the canvas again before editing if the user may have changed it. Answer the user's comments with op 'comment' " +
-        "(parent = comment id) and mark them 'resolve' when done. " + PlanTools.Instructions;
+        "(parent = comment id) and mark them 'resolve' when done. " + PlanTools.Instructions +
+        // Las reglas de la coordinación (Workspace): así las tiene cualquier agente con este servidor, también fuera de Claupet.
+        "\nShared folders: " + Workspace.Rules;
 
     public static int Run()
     {
@@ -109,6 +111,7 @@ static class CanvasMcp
             var n when n.Contains("codex") => "Codex",
             var n when n.Contains("gemini") => "Gemini CLI",
             var n when n.Contains("copilot") => "Copilot",
+            var n when n.Contains("opencode") => "OpenCode",
             var n when n.Contains("cursor") => "Cursor",
             _ => raw,
         };

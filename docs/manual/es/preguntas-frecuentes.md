@@ -121,13 +121,13 @@ hablar solo mientras habla.
 
 ## Claupet Terminal
 
-### Codex, Gemini CLI o Copilot CLI no aparecen
+### Codex, Gemini CLI, Copilot CLI u OpenCode no aparecen
 
 Tienen que estar instalados y en el `PATH`. Compruébelo escribiendo su nombre en una terminal.
 
 ### Un agente dice que necesita iniciar sesión
 
-Ejecute una vez en una terminal el comando que indica (`gemini`, `copilot login`…), inicie sesión y vuelva a
+Ejecute una vez en una terminal el comando que indica (`gemini`, `copilot login`, `opencode auth login`…), inicie sesión y vuelva a
 escribir en la sesión. Lo explica [Claupet Terminal](terminal.md#cómo-iniciar-sesión-en-los-otros-agentes).
 
 ### Cerré la Console y se cerraron mis sesiones

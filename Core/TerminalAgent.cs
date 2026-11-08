@@ -51,6 +51,8 @@ sealed class AgentBlock
     public IReadOnlyDictionary<string, IReadOnlyList<string>>? Picks { get; set; }
     /// <summary>Se respondió en la isla, no en el bloque.</summary>
     public bool FromIsland { get; set; }
+    /// <summary>El aviso del freno (Workspace): el comando puede llevarse o pisar trabajo de otra sesión; null, ninguno.</summary>
+    public string? Warning { get; set; }
 
     // El cierre del turno.
     public double Cost { get; init; }
@@ -661,6 +663,24 @@ sealed class TerminalAgent : IDisposable
     /// <summary>Los permisos también se preguntan en la isla de la app (si está). Una copia de prueba no la usa.</summary>
     public bool AskIsland { get; init; }
 
+    /// <summary>
+    /// Se coordina con las otras sesiones de su carpeta (Workspace): se anota, le da las reglas al agente con el primer
+    /// pedido y, cuando cambia, quién más trabaja ahí y qué cambios no son suyos; y frena los git que pisarían trabajo ajeno.
+    /// </summary>
+    public bool Coordinate { get; init; }
+
+    WorkspaceSession? _workspace;
+    Task _registered = Task.CompletedTask;
+    /// <summary>Los pedidos con su nota salen en orden, uno detrás de otro.</summary>
+    Task _sending = Task.CompletedTask;
+    bool _ruled;
+    string? _noteSent;
+    readonly HashSet<AgentBlock> _checked = [];
+
+    /// <summary>Las carpetas de Claude Code donde buscar sus sesiones abiertas fuera de Claupet.</summary>
+    IReadOnlyList<string> ClaudeDirs => _options.ConfigDir is { Length: > 0 } dir && !Account.SamePath(dir, Account.DefaultDir)
+        ? [dir, Account.DefaultDir] : [Account.DefaultDir];
+
     public TerminalAgent(AgentOptions options, Action<Action> post)
     {
         _options = options;
@@ -719,6 +739,7 @@ sealed class TerminalAgent : IDisposable
             return;
         }
         _process = process;
+        if (Coordinate) _registered = Task.Run(RegisterAsync);
         Write(_driver.Opening(_options));
         _ = Task.Run(() => ReadAsync(process));
     }
@@ -730,7 +751,95 @@ sealed class TerminalAgent : IDisposable
         // El bloque se crea aunque nadie escuche (una prueba): Changed solo avisa.
         var ask = Transcript.Ask(text);
         Changed?.Invoke([ask]);
-        Write(_driver.Prompt(text, images));
+        if (!Coordinate)
+        {
+            Write(_driver.Prompt(text, images));
+            return;
+        }
+        var touched = Touched();
+        var sessionId = Transcript.SessionId;
+        _sending = _sending.ContinueWith(_ => SendWithNoteAsync(text, images, touched, sessionId), TaskScheduler.Default).Unwrap();
+    }
+
+    // ── La coordinación con las otras sesiones de la carpeta (Workspace) ────────────────────
+
+    /// <summary>Se anota, con los archivos que ya tenían cambios al empezar (esos no son de esta sesión).</summary>
+    async Task RegisterAsync()
+    {
+        IReadOnlyList<string> dirty = [];
+        try { dirty = await Workspace.DirtyAsync(Workspace.Root(_options.Folder)).WaitAsync(TimeSpan.FromSeconds(5)); }
+        catch (Exception) { }
+        _workspace = new WorkspaceSession(Guid.NewGuid().ToString("N"), _driver.Name, _options.Folder, Environment.ProcessId,
+            DateTimeOffset.Now, DirtyAtStart: dirty);
+        Workspace.Save(_workspace);
+    }
+
+    /// <summary>
+    /// El pedido con la nota de Claupet al final: las reglas con el primero y, después, solo si cambió quién más trabaja
+    /// en la carpeta o qué cambios no son suyos. Si algo falla, el pedido sale igual, sin nota.
+    /// </summary>
+    async Task SendWithNoteAsync(string text, IReadOnlyList<AgentImage>? images, IReadOnlyList<string> touched, string? sessionId)
+    {
+        string? note = null;
+        try
+        {
+            await _registered;
+            if (_workspace is { } self)
+            {
+                _workspace = self = self with { Touched = touched, SessionId = sessionId ?? self.SessionId, Title = self.Title ?? Short(text) };
+                Workspace.Save(self);
+                var state = await Workspace.ReadAsync(_options.Folder, self, ClaudeDirs).WaitAsync(TimeSpan.FromSeconds(5));
+                var print = Workspace.Fingerprint(state);
+                var first = !_ruled;
+                if (first || (state.Shared && print != _noteSent)) note = Workspace.Note(state, first);
+                _ruled = true;
+                if (note is not null) _noteSent = print;
+            }
+        }
+        catch (Exception ex) { ErrorLog.Write(ex); }
+        Write(_driver.Prompt(note is null ? text : text + note, images));
+    }
+
+    static string Short(string text)
+    {
+        var line = text.ReplaceLineEndings(" ").Trim();
+        return line.Length <= 80 ? line : line[..79] + "…";
+    }
+
+    /// <summary>Los archivos que esta sesión editó (rutas completas): los pasos que escribieron un archivo.</summary>
+    IReadOnlyList<string> Touched() => Transcript.Blocks
+        .Where(b => b.Kind == AgentBlockKind.Step && b.Text.Length > 0
+            && (b.Tool is "Edit" or "MultiEdit" or "Write" or "NotebookEdit" || b.Diff.Count > 0))
+        .Select(b => b.Text.TrimEnd(' ', '…'))
+        .Select(f => Path.IsPathRooted(f) ? f : Path.Combine(_options.Folder, f))
+        .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>
+    /// El freno: un permiso para un git que puede llevarse o pisar trabajo ajeno (stash, cambiar de rama, reset --hard…)
+    /// sale con su aviso si hay otra sesión en la carpeta o cambios que esta no hizo. Para cualquier agente.
+    /// </summary>
+    void CheckRisky(AgentBlock permission)
+    {
+        if (!Coordinate || !_checked.Add(permission) || !Workspace.IsRisky(Workspace.CommandOf(permission.Input) ?? permission.Text)) return;
+        var self = _workspace is { } w ? w with { Touched = Touched() } : null;
+        _ = Task.Run(async () =>
+        {
+            string? warning = null;
+            try { warning = Workspace.Warning(await Workspace.ReadAsync(_options.Folder, self, ClaudeDirs).WaitAsync(TimeSpan.FromSeconds(5))); }
+            catch (Exception ex) { ErrorLog.Write(ex); }
+            if (warning is null) return;
+            _post(() =>
+            {
+                if (permission.Answer is not null) return;
+                permission.Warning = warning;
+                Changed?.Invoke([permission]);
+            });
+        });
+    }
+
+    void Unregister()
+    {
+        if (_workspace is { } self) Workspace.Remove(self.Id);
     }
 
     /// <summary>El esfuerzo de la sesión: el elegido al abrirla o el último que se cambió.</summary>
@@ -840,6 +949,7 @@ sealed class TerminalAgent : IDisposable
             foreach (var permission in _island.Keys.ToList()) StopIsland(permission);
             var reason = code == 0 || problem.Length == 0 ? L.T("La sesión terminó.") : problem.Split('\n')[0].Trim();
             Ended = true;
+            Unregister();
             Notice(reason);
         });
     }
@@ -855,6 +965,7 @@ sealed class TerminalAgent : IDisposable
             foreach (var block in _driver.Apply(line, replies))
                 if (!changed.Contains(block)) changed.Add(block);
         Write(replies);
+        foreach (var permission in changed.Where(b => b.Kind == AgentBlockKind.Permission && b.Answer is null)) CheckRisky(permission);
         if (AskIsland)
             foreach (var permission in changed.Where(b => b.Kind == AgentBlockKind.Permission && b.Answer is null && !_island.ContainsKey(b)))
                 _ = AskIslandAsync(permission);
@@ -889,6 +1000,7 @@ sealed class TerminalAgent : IDisposable
 
     public void Dispose()
     {
+        Unregister();
         foreach (var permission in _island.Keys.ToList()) StopIsland(permission);
         var process = _process;
         _process = null;
