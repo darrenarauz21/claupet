@@ -29,6 +29,8 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
     AgentOptions? _options;
     int _requests;
     string? _thread, _turn;
+    /// <summary>Ya se intentó retomar el hilo (options.Resume): si falla, se abre uno nuevo.</summary>
+    bool _resumeTried;
     /// <summary>Se mandó un turn/start y su turno todavía no terminó.</summary>
     bool _active;
     bool _interruptPending;
@@ -110,6 +112,8 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
             foreach (var arg in new[] { "/d", "/s", "/c", codex }) start.ArgumentList.Add(arg);
         }
         else start.FileName = codex;
+        // Codex no mira el proxy de Windows, solo HTTPS_PROXY.
+        SystemProxy.AddTo(start.Environment);
         // Claupet Canvas (MCP), con «-c» antes del subcomando: así no se toca el config.toml de la persona.
         foreach (var arg in CanvasMcp.CodexArguments(options.Folder, options.Specialist)) start.ArgumentList.Add(arg);
         start.ArgumentList.Add("app-server");
@@ -171,6 +175,11 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
                     break;
                 case "turn/interrupt":
                     break;
+                case "thread/resume":
+                    // No se pudo retomar: un hilo nuevo en la misma carpeta, y el aviso.
+                    transcript.CodexFailure(L.T("Codex no pudo retomar la sesión ({0}): se abrió una nueva.", message), false, changed);
+                    replies.Add(ThreadStart());
+                    break;
                 default:
                     // initialize o thread/start: la sesión no se puede usar; lo que estaba en cola no sale.
                     _queue.Clear();
@@ -198,8 +207,9 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
                 if (Json.Str(result, "nextCursor") is { Length: > 0 } cursor) replies.Add(Request("model/list", new JsonObject { ["cursor"] = cursor }));
                 else replies.Add(ThreadStart());
                 break;
-            case "thread/start":
+            case "thread/start" or "thread/resume":
                 _thread = result.TryGetProperty("thread", out var thread) ? Json.Str(thread, "id") : null;
+                if (method == "thread/resume" && thread.ValueKind == JsonValueKind.Object) transcript.CodexReplay(thread, changed);
                 transcript.CodexThread(result, _mode);
                 if (_mode != "plan" && result.TryGetProperty("sandbox", out var sandbox) && sandbox.ValueKind == JsonValueKind.Object)
                     _writeSandbox = JsonNode.Parse(sandbox.GetRawText());
@@ -313,8 +323,11 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
         lines.Add(Request("turn/start", turn));
     }
 
+    /// <summary>El hilo: el que se pidió retomar (options.Resume, con thread/resume) o, si no o si ya falló, uno nuevo.</summary>
     string ThreadStart()
     {
+        var resume = !_resumeTried && _options?.Resume is { Length: > 0 } id ? id : null;
+        _resumeTried |= resume is not null;
         var start = new JsonObject
         {
             ["cwd"] = _options?.Folder,
@@ -326,7 +339,9 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
         else _model = null;
         // Un especialista: sus instrucciones van como las del desarrollador del hilo (developerInstructions).
         if (_options?.Specialist is { } specialist) start["developerInstructions"] = specialist.Prompt();
-        return Request("thread/start", start);
+        if (resume is null) return Request("thread/start", start);
+        start["threadId"] = resume;
+        return Request("thread/resume", start);
     }
 
     static string Policy(string mode) => mode switch { "default" => "untrusted", "auto" => "never", _ => "on-request" };

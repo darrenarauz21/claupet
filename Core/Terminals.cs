@@ -25,6 +25,33 @@ static class Terminals
         return false;
     }
 
+    /// <summary>
+    /// La sesión corre fuera de Claupet: su proceso sigue vivo y ninguno de sus padres es este mismo programa (la
+    /// Terminal de Claupet Console). false si terminó o si es de Claupet.
+    /// </summary>
+    public static bool RunsOutside(int pid, string? claupet)
+    {
+        if (pid <= 0) return false;
+        try
+        {
+            using (var process = Process.GetProcessById(pid))
+                if (process.HasExited) return false;
+            if (claupet is null) return true;
+            var current = pid;
+            for (var depth = 0; depth < MaxDepth && current > 4; depth++)
+            {
+                using var process = Process.GetProcessById(current);
+                string? file = null;
+                try { file = process.MainModule?.FileName; }
+                catch (Exception) { }
+                if (file is not null && Account.SamePath(file, claupet)) return false;
+                current = OperatingSystem.IsWindows() ? ParentOf(process.Handle) : UnixParent(current);
+            }
+            return true;
+        }
+        catch (Exception) { return false; } // ya no está
+    }
+
     static bool FocusWindows(int pid)
     {
         var current = pid;

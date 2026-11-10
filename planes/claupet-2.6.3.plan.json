@@ -1,0 +1,107 @@
+{
+  "titulo": "Claupet 2.6.3: Especialistas y Ajustes",
+  "descripcion": "Especialistas y extensiones MCP (rama feature/extensiones-mcp) y mejoras en Ajustes. Se empieza cuando el usuario avise.",
+  "inicio": "2026-11-09",
+  "etapas": [
+    {
+      "id": "e1",
+      "nombre": "Especialistas"
+    },
+    {
+      "id": "e2",
+      "nombre": "Ajustes"
+    },
+    {
+      "id": "e3",
+      "nombre": "Publicar"
+    }
+  ],
+  "tareas": [
+    {
+      "id": "t1",
+      "titulo": "Prototipo de la vista Especialistas",
+      "etapa": "e1",
+      "estado": "hecho",
+      "inicio": "2026-11-08",
+      "dias": 1,
+      "notas": "Canvas 20261108-580186. Aprobado el 2026-11-08."
+    },
+    {
+      "id": "t2",
+      "titulo": "Pasar SpecialistsPane al diseño del prototipo",
+      "etapa": "e1",
+      "estado": "hecho",
+      "depende": [
+        "t1"
+      ],
+      "dias": 1,
+      "inicio": "2026-11-10",
+      "por": "Claude Code",
+      "notas": "Commit 350b558 en feature/extensiones-mcp. 791 pruebas pasan; capturas claro y oscuro iguales al prototipo."
+    },
+    {
+      "id": "t3",
+      "titulo": "Probar Especialistas y extensiones MCP en la app real",
+      "etapa": "e1",
+      "estado": "por-hacer",
+      "depende": [
+        "t2"
+      ],
+      "dias": 1,
+      "notas": "Confirmar developerInstructions (Codex) y --append-system-prompt-file (Claude Code)."
+    },
+    {
+      "id": "t4",
+      "titulo": "Prototipo: vista de comandos y Ctrl+K en Ajustes",
+      "etapa": "e2",
+      "estado": "revision",
+      "dias": 1,
+      "inicio": "2026-11-10",
+      "por": "Claude Code",
+      "notas": "Canvas 20261110-a3fbe1. Falta la aprobación."
+    },
+    {
+      "id": "t5",
+      "titulo": "Ajustes: vista con todos los comandos",
+      "etapa": "e2",
+      "estado": "por-hacer",
+      "depende": [
+        "t4"
+      ],
+      "dias": 2,
+      "notas": "Atajos de teclado y comandos de cada vista."
+    },
+    {
+      "id": "t6",
+      "titulo": "Ajustes: buscar con Ctrl+K como en Proyectos",
+      "etapa": "e2",
+      "estado": "por-hacer",
+      "depende": [
+        "t4"
+      ],
+      "dias": 1
+    },
+    {
+      "id": "t7",
+      "titulo": "Traer los últimos cambios de main a la rama y abrir el PR",
+      "etapa": "e3",
+      "estado": "por-hacer",
+      "depende": [
+        "t3",
+        "t5",
+        "t6"
+      ],
+      "dias": 1
+    }
+  ],
+  "hitos": [
+    {
+      "id": "h1",
+      "titulo": "2.6.3 lista",
+      "depende": [
+        "t7"
+      ]
+    }
+  ],
+  "claupet": "plan/1"
+}

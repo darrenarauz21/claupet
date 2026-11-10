@@ -52,6 +52,8 @@ sealed class ConsoleWindow : Window
     bool _projectsList = true;
     /// <summary>La lista de canvas, a la izquierda (se oculta con el botón de la barra de Canvas).</summary>
     bool _canvasFiles = true;
+    /// <summary>Cómo estaba la lista de canvas antes de abrir la mesa de diseño.</summary>
+    bool _canvasFilesBeforeMesa = true;
     readonly StackPanel _fileList = new() { Spacing = 2 };
     /// <summary>El borde de la lista de la Terminal, que se arrastra para ensancharla (la Terminal recuerda la medida).</summary>
     readonly Border _grip = new()
@@ -83,11 +85,16 @@ sealed class ConsoleWindow : Window
     /// <summary>La conversación que se muestra: los mensajes de otra que lleguen tarde se ignoran.</summary>
     string _chatId = ConsoleLink.QuickChat;
     bool _connected;
+    /// <summary>La sesión que pidió la isla al abrir la Console; null si no pidió ninguna.</summary>
+    readonly SessionTarget? _openSession;
 
     public ConsoleWindow(string? section)
     {
         // Con archivos se abre en el editor; sin sección, en el chat; con una, en esa sección de Ajustes.
-        _mode = ConsoleApp.Files.Count > 0 ? Mode.Editor : section is null ? Mode.Chat : Mode.Settings;
+        // Con una sesión (la pide la isla), en la Terminal, con esa sesión.
+        _openSession = SessionTarget.Parse(section);
+        if (_openSession is not null) section = null;
+        _mode = ConsoleApp.Files.Count > 0 ? Mode.Editor : _openSession is not null ? Mode.Terminal : section is null ? Mode.Chat : Mode.Settings;
         _section = section ?? "general";
         Title = "Claupet Console";
         Icon = Ui.LogoIcon();
@@ -108,12 +115,19 @@ sealed class ConsoleWindow : Window
         _view.Action += (key, value) => _client.Send(new ConsoleMessage { Type = ConsoleLink.Action, Key = key, Value = value });
         _view.Navigate += Select;
         // El ✦ de Canvas le pide el cambio a un agente de la Terminal; si no había ninguno, se ve la Terminal para enviarlo.
+        // El chat de la mesa de diseño habla con las sesiones de la Terminal sin salir de Canvas.
+        var sessions = new CanvasSessions(_terminal.CanvasSessions, _terminal.OpenCanvasSession, agent =>
+        {
+            _terminal.Reveal(agent);
+            SetMode(Mode.Terminal);
+        });
+        _terminal.TabsChanged += sessions.Notify;
         _canvas = new CanvasPane((text, folder) => _terminal.MarkdownPage(text, folder), askAgent: (text, folder) =>
         {
             var sent = _terminal.AskAgent(text, folder);
             if (!sent) SetMode(Mode.Terminal);
             return sent;
-        });
+        }, sessions: sessions);
         _projects = new ProjectsPane(_terminal.ProjectFolders, _terminal.WorkingIn,
             ask: (text, folder) => { if (!_terminal.AskInFolder(text, folder)) SetMode(Mode.Terminal); },
             work: (text, folder) => { _terminal.WorkOn(text, folder); SetMode(Mode.Terminal); });
@@ -151,6 +165,13 @@ sealed class ConsoleWindow : Window
             Render(rebuild: true);
         };
         _canvas.ListChanged += () => { if (_mode == Mode.Canvas) RenderCanvasList(); };
+        // La mesa de diseño usa todo el ancho: la lista de canvas se esconde mientras se ve y vuelve como estaba.
+        _canvas.MesaChanged += on =>
+        {
+            if (on) (_canvasFilesBeforeMesa, _canvasFiles) = (_canvasFiles, false);
+            else _canvasFiles = _canvasFilesBeforeMesa;
+            if (_mode == Mode.Canvas) Render(rebuild: true);
+        };
         // Un agente creó o pidió mostrar un canvas: se ve en seguida.
         _canvas.OpenRequested += () => SetMode(Mode.Canvas);
         _chat.Request += OnChatRequest;
@@ -187,6 +208,13 @@ sealed class ConsoleWindow : Window
             else Render(rebuild: true);
         };
         _client.Received += OnMessage;
+        // Los títulos cortos del historial los escribe el asistente de la bandeja (sin ella, se ve el pedido recortado).
+        _terminal.AskTitle = (id, prompt) =>
+        {
+            if (!_connected) return false;
+            _client.Send(new ConsoleMessage { Type = ConsoleLink.SessionTitle, Key = id, Value = prompt });
+            return true;
+        };
         // El esqueleto se arma una vez; al cambiar el tema o el idioma se rehacen la barra y el contenido.
         _root.Children.Add(_header);
         Grid.SetRow(_body, 1);
@@ -210,6 +238,7 @@ sealed class ConsoleWindow : Window
         _editor.RestoreSession();
         foreach (var file in ConsoleApp.Files) _editor.Open(file);
         _terminal.RestoreOpen();
+        if (_openSession is { } asked) _terminal.OpenSession(asked);
         _canvas.CheckOpenRequest();
         _client.Start();
 
@@ -306,7 +335,12 @@ sealed class ConsoleWindow : Window
                 Ui.ShowOptions(message, anchor, _ink, value => _client.Send(new ConsoleMessage { Type = ConsoleLink.Pick, Token = message.Token, Value = value }));
                 break;
             case ConsoleLink.Show:
-                if (message.Key is { Length: > 0 } section && _pages.Any(p => p.Id == section))
+                if (SessionTarget.Parse(message.Key) is { } target)
+                {
+                    SetMode(Mode.Terminal);
+                    _terminal.OpenSession(target);
+                }
+                else if (message.Key is { Length: > 0 } section && _pages.Any(p => p.Id == section))
                 {
                     var moved = section != _section;
                     _mode = Mode.Settings;
@@ -336,6 +370,9 @@ sealed class ConsoleWindow : Window
                 break;
             case ConsoleLink.Chat when message.Chat is { } chat && chat.Id == _chatId:
                 _chat.Show(chat);
+                break;
+            case ConsoleLink.SessionTitle when message.Key is { Length: > 0 } session:
+                _terminal.TitleArrived(session, message.Value);
                 break;
         }
     }

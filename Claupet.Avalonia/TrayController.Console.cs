@@ -357,6 +357,14 @@ sealed partial class TrayController : IConsoleApp
 
     void IConsoleApp.StopQuick() => _quickAsking?.Cancel();
 
+    /// <summary>
+    /// El título de una sesión del historial, con el asistente que esté elegido: el de una extensión, el modelo local o
+    /// Claude (Haiku, con la cuenta del asistente). Si las respuestas no deben salir del equipo, Claude no se usa.
+    /// </summary>
+    Task<string?> IConsoleApp.SessionTitleAsync(string prompt, CancellationToken cancel) =>
+        SessionTitles.AskAsync(prompt, Assistant.External?.Invoke(), Assistant.Local?.Invoke(), cloud: _settings.AnswerFallback != Engine.Local,
+            async (text, c) => (await Assistant.AskPlainAsync(text, "haiku", AssistantAccounts.ConfigDir(_settings), c)).Text, cancel);
+
     void IConsoleApp.ClearQuick()
     {
         _quickAsking?.Cancel();

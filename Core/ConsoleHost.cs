@@ -34,6 +34,8 @@ interface IConsoleApp
     bool ReadAloud { get; }
     /// <summary>Corre en el hilo de la interfaz de la bandeja.</summary>
     void Post(Action action);
+    /// <summary>Un título corto para una sesión del historial, escrito por el asistente elegido; null si no pudo.</summary>
+    Task<string?> SessionTitleAsync(string prompt, CancellationToken cancel) => Task.FromResult<string?>(null);
 }
 
 /// <summary>
@@ -142,7 +144,27 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
                 app.ClearQuick();
                 PushChats();
                 break;
+            case ConsoleLink.SessionTitle when message.Key is { Length: > 0 } session && message.Value is { Length: > 0 } prompt:
+                _ = TitleAsync(session, prompt);
+                break;
         }
+    }
+
+    /// <summary>De a dos títulos a la vez: un historial largo no abre un montón de consultas juntas.</summary>
+    readonly SemaphoreSlim _titling = new(2);
+
+    async Task TitleAsync(string session, string prompt)
+    {
+        string? title = null;
+        await _titling.WaitAsync();
+        try
+        {
+            using var limit = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            title = await app.SessionTitleAsync(prompt, limit.Token);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        finally { _titling.Release(); }
+        if (_server.IsConnected) _server.Send(new ConsoleMessage { Type = ConsoleLink.SessionTitle, Key = session, Value = title });
     }
 
     /// <summary>

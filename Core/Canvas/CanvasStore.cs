@@ -31,13 +31,34 @@ sealed class CanvasStore(string root)
         id.Length is > 0 and <= 64 && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_')
             ? id : throw new CanvasException(L.T("Id de canvas no válido: {0}", id));
 
+    /// <summary>
+    /// El resumen de cada archivo ya leído, con su fecha y tamaño: la lista solo vuelve a leer (y a interpretar) los que
+    /// cambiaron. Sin esto, cada cambio de una sección leía todos los canvas.
+    /// </summary>
+    readonly Dictionary<string, (DateTime Time, long Length, CanvasSummary Summary)> _summaries = new(StringComparer.OrdinalIgnoreCase);
+
     public IReadOnlyList<CanvasSummary> List()
     {
         if (!Directory.Exists(Root)) return [];
         var list = new List<CanvasSummary>();
-        foreach (var file in Directory.EnumerateFiles(Root, "*" + Extension))
-            if (Read(file) is { } doc)
-                list.Add(new(doc.Id, doc.Title, doc.Updated, doc.Version, doc.Sections.Count, doc.Changes.LastOrDefault()?.Author, doc.Plan));
+        lock (_summaries)
+        {
+            var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var info in new DirectoryInfo(Root).EnumerateFiles("*" + Extension))
+            {
+                present.Add(info.FullName);
+                if (_summaries.TryGetValue(info.FullName, out var known) && known.Time == info.LastWriteTimeUtc && known.Length == info.Length)
+                {
+                    list.Add(known.Summary);
+                    continue;
+                }
+                if (Read(info.FullName) is not { } doc) continue; // a medio escribir o dañado: no se guarda, se lee la próxima vez
+                var summary = new CanvasSummary(doc.Id, doc.Title, doc.Updated, doc.Version, doc.Sections.Count, doc.Changes.LastOrDefault()?.Author, doc.Plan);
+                _summaries[info.FullName] = (info.LastWriteTimeUtc, info.Length, summary);
+                list.Add(summary);
+            }
+            foreach (var gone in _summaries.Keys.Where(k => !present.Contains(k)).ToList()) _summaries.Remove(gone);
+        }
         return [.. list.OrderByDescending(s => s.Updated)];
     }
 

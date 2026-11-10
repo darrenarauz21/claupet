@@ -42,6 +42,41 @@ sealed class SystemProxy : IWebProxy
     /// <summary>El valor de HTTPS_PROXY para Claude Code («http://host:puerto»), o null si va directo.</summary>
     public static string? ForClaude() => Current()?.GetLeftPart(UriPartial.Authority);
 
+    /// <summary>
+    /// Las variables del proxy para lo que abre la Terminal: Codex, Gemini, Copilot, OpenCode y lo que se corra en un
+    /// shell tampoco miran el proxy de Windows, solo HTTPS_PROXY y HTTP_PROXY. Sin ellas, en una red que solo deja
+    /// salir por el proxy, fallan al buscar el servidor («getaddrinfo ENOTFOUND»). No pisa las que ya tenga la app.
+    /// NO_PROXY lleva el propio equipo (el canvas corre en él) y las excepciones del proxy de Windows. Node (Gemini y
+    /// Copilot) solo mira esas variables con NODE_USE_ENV_PROXY, que va si se pide node.
+    /// </summary>
+    public static Dictionary<string, string> Variables(bool node = false) =>
+        Variables(ForClaude(), Environment.GetEnvironmentVariable, Exceptions(), node);
+
+    /// <summary>Variables con el proxy, las variables y las excepciones dadas (las pruebas no tocan las del proceso).</summary>
+    internal static Dictionary<string, string> Variables(string? proxy, Func<string, string?> env, IEnumerable<string> exceptions, bool node)
+    {
+        var vars = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (proxy is null) return vars;
+        bool Has(string name) => !string.IsNullOrWhiteSpace(env(name)) || !string.IsNullOrWhiteSpace(env(name.ToLowerInvariant()));
+        foreach (var name in new[] { "HTTPS_PROXY", "HTTP_PROXY" })
+            if (!Has(name)) vars[name] = proxy;
+        if (!Has("NO_PROXY"))
+        {
+            // «*.dominio» es «.dominio»; «<local>» (nombres sin punto) no tiene forma en NO_PROXY.
+            var rules = new[] { "localhost", "127.0.0.1", "::1" }
+                .Concat(exceptions.Where(r => r != "<local>").Select(r => r.StartsWith("*.") ? r[1..] : r).Where(r => r is not ("*" or "")));
+            vars["NO_PROXY"] = string.Join(',', rules.Distinct(StringComparer.OrdinalIgnoreCase));
+        }
+        if (node && !Has("NODE_USE_ENV_PROXY")) vars["NODE_USE_ENV_PROXY"] = "1";
+        return vars;
+    }
+
+    /// <summary>Suma Variables a las de un proceso, sin pisar las que ya trae.</summary>
+    public static void AddTo(IDictionary<string, string?> env, bool node = false)
+    {
+        foreach (var (name, value) in Variables(node)) env.TryAdd(name, value);
+    }
+
     static Uri? Parse(string value) =>
         Uri.TryCreate(value.Contains("://") ? value.Trim() : "http://" + value.Trim(), UriKind.Absolute, out var uri) ? uri : null;
 

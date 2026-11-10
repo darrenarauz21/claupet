@@ -35,6 +35,14 @@ sealed partial class AgentTranscript
         Cwd = cwd ?? Cwd;
     }
 
+    /// <summary>Se retomó una sesión anterior (session/load ya repitió lo de antes): se cierra y queda el aviso.</summary>
+    internal void AcpResumed(List<AgentBlock> changed)
+    {
+        Close(changed);
+        Busy = false;
+        Add(new AgentBlock { Kind = AgentBlockKind.Notice, Text = L.T("Sesión retomada: lo de arriba es lo de antes. Siga escribiendo abajo.") }, changed);
+    }
+
     internal void AcpModel(string? model) => Model = model ?? Model;
     internal void AcpMode(string? mode) => PermissionMode = mode ?? PermissionMode;
 
@@ -76,6 +84,17 @@ sealed partial class AgentTranscript
                 }
                 say.Text += text;
                 Touch(say, changed);
+                break;
+            case "user_message_chunk" when !Busy && AcpText(u) is { } asked:
+                // Lo que se pidió antes (session/load repite la conversación): se ve como un pedido, sin abrir un turno.
+                var ask = _blocks.LastOrDefault() is { Kind: AgentBlockKind.Ask, Open: true } last ? last : null;
+                if (ask is null)
+                {
+                    Close(changed);
+                    ask = Add(new AgentBlock { Kind = AgentBlockKind.Ask, Open = true }, changed);
+                }
+                ask.Text += asked;
+                Touch(ask, changed);
                 break;
             case "agent_thought_chunk" when AcpText(u) is { } thought:
                 var think = OpenThink();

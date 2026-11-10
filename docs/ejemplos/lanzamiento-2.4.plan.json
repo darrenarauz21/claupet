@@ -50,7 +50,7 @@
       "id": "historial",
       "etapa": "correcciones",
       "titulo": "Borrar el historial (una o todo)",
-      "estado": "revision",
+      "estado": "hecho",
       "inicio": "2026-10-29",
       "dias": 2,
       "horas": 3,
@@ -178,7 +178,7 @@
       "id": "co-freno",
       "titulo": "Freno en los permisos de git que pisan trabajo ajeno",
       "etapa": "coordinacion",
-      "estado": "revision",
+      "estado": "hecho",
       "depende": [
         "co-registro"
       ],
