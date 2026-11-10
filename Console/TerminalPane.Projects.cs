@@ -27,11 +27,11 @@ sealed partial class TerminalPane
 
     /// <summary>Los proyectos en el orden de la lista: los vinculados y, por si acaso, las carpetas con pestañas que no lo estén.</summary>
     List<string> Projects() =>
-        _projects.Folders.Concat(_tabs.Select(t => t.Agent.Options.Folder).Where(f => !_projects.Has(f)))
+        _projects.Folders.Concat(_tabs.Select(t => t.ProjectFolder).Where(f => !_projects.Has(f)))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     List<Tab> TabsOf(string folder) =>
-        _tabs.Where(t => string.Equals(Path.TrimEndingDirectorySeparator(t.Agent.Options.Folder), Path.TrimEndingDirectorySeparator(folder),
+        _tabs.Where(t => string.Equals(Path.TrimEndingDirectorySeparator(t.ProjectFolder), Path.TrimEndingDirectorySeparator(folder),
             StringComparison.OrdinalIgnoreCase)).ToList();
 
     /// <summary>Lo arrastró el borde de la lista: se recuerda la medida.</summary>
@@ -41,11 +41,13 @@ sealed partial class TerminalPane
         _projects.Save();
     }
 
-    /// <summary>Al abrir una sesión, su carpeta queda vinculada.</summary>
+    /// <summary>Al abrir una sesión, su carpeta queda vinculada (la del proyecto, si la sesión va en su propio worktree).</summary>
     void LinkProject(string folder)
     {
-        if (_projects.Link(folder)) _projects.Save();
+        var project = SessionWorktrees.ProjectOf(folder);
+        if (_projects.Link(project)) _projects.Save();
         RefreshGit(folder, force: true);
+        if (project != folder) RefreshGit(project, force: true);
     }
 
     PressGuard? _listGuard;
@@ -88,7 +90,8 @@ sealed partial class TerminalPane
     {
         var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(folder)) is { Length: > 0 } n ? n : folder;
         var status = _git.TryGetValue(folder, out var git) ? git.Status : null;
-        var branch = status?.Branch ?? tabs.FirstOrDefault()?.Branch ?? GitBranch.Of(folder);
+        // El proyecto es el repositorio: se muestra con su rama principal, no con la que quedó en su carpeta.
+        var branch = SessionWorktrees.Default(folder) ?? status?.Branch ?? GitBranch.Of(folder);
 
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Height = 26 };
         var chevron = Icon(folded ? ChevronRightIcon : ChevronDownIcon, _ink.Tertiary, 10, 2);

@@ -66,6 +66,10 @@ sealed partial class TerminalPane
         var where = folder is not null && Directory.Exists(folder) ? folder
             : _current?.Agent.Options.Folder is { } here && Directory.Exists(here) ? here
             : recents.Folders.FirstOrDefault(Directory.Exists) ?? global::Claupet.Account.Home;
+        // Desde una pestaña en su propio worktree, la sesión nueva es del mismo proyecto.
+        where = SessionWorktrees.ProjectOf(where);
+        // Con un agente o un especialista, la sesión empieza en su propio worktree, desde la rama principal al día.
+        var ownWorktree = true;
         var accounts = Accounts();
         var shells = Shells.Available();
         var kinds = new List<(string Id, string Mark, string Name, string? Note, bool Accent)> { ("agente:" + AgentKinds.Claude, "✻", "Claude Code", null, true) };
@@ -103,12 +107,15 @@ sealed partial class TerminalPane
         var placeName = Ui.Text("", 13, _ink.Text, FontWeight.SemiBold);
         var placePath = Ui.Text("", 11.5, _ink.Tertiary, family: Mono);
         placePath.TextTrimming = TextTrimming.PrefixCharacterEllipsis;
+        bool Isolated() => ownWorktree && !shells.Any(s => s.Id == choice) && SessionWorktrees.Locate(where) is not null;
         void PaintPlace()
         {
             var name = FolderName(where);
-            placeName.Text = GitBranch.Of(where) is { } branch ? $"{name} · {branch}" : name;
-            placePath.Text = where;
-            ToolTip.SetTip(placePath, where);
+            // El proyecto, con su rama principal; sin worktree propio, con la rama en que está su carpeta.
+            var branch = Isolated() ? SessionWorktrees.Default(where) ?? GitBranch.Of(where) : GitBranch.Of(where);
+            placeName.Text = branch is not null ? $"{name} · {branch}" : name;
+            placePath.Text = Isolated() ? SessionWorktrees.NewName(SessionWorktrees.Locate(where)!.MainRoot ?? where, DateTime.Now).Path : where;
+            ToolTip.SetTip(placePath, placePath.Text);
         }
         PaintPlace();
         var placeRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
@@ -131,6 +138,43 @@ sealed partial class TerminalPane
         placeButton.CornerRadius = new CornerRadius(9);
         ToolTip.SetTip(placeButton, L.T("Cambiar de proyecto"));
         list.Children.Add(placeButton);
+
+        // El worktree propio: solo con un agente o un especialista, y en un repositorio de git.
+        var isolate = new StackPanel { Spacing = 0, Margin = new Thickness(4, 2, 4, 0) };
+        var isolateRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(10, 4, 4, 0) };
+        var isolateIcon = Icon(BranchIcon, _ink.Tertiary, 14, 1.8);
+        isolateIcon.Margin = new Thickness(0, 0, 10, 0);
+        isolateRow.Children.Add(isolateIcon);
+        var isolateName = Ui.Text(L.T("Worktree propio"), 13, _ink.Text);
+        isolateName.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(isolateName, 1);
+        isolateRow.Children.Add(isolateName);
+        var isolateSwitch = new Border { VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(isolateSwitch, 2);
+        isolateRow.Children.Add(isolateSwitch);
+        ToolTip.SetTip(isolateRow, L.T("Empezar desde la rama principal, en una carpeta y una rama propias"));
+        isolate.Children.Add(isolateRow);
+        var isolateNote = Ui.Text("", 11.5, _ink.Tertiary);
+        isolateNote.TextWrapping = TextWrapping.Wrap;
+        isolateNote.Margin = new Thickness(34, 2, 6, 4);
+        isolate.Children.Add(isolateNote);
+        list.Children.Add(isolate);
+        paints.Add(() =>
+        {
+            isolate.IsVisible = !shells.Any(s => s.Id == choice) && SessionWorktrees.Locate(where) is not null;
+            isolateSwitch.Child = Switch(ownWorktree, on =>
+            {
+                ownWorktree = on;
+                Paint();
+            });
+            var main = SessionWorktrees.Default(where) ?? "main";
+            isolateNote.Text = ownWorktree
+                ? L.T("Empieza desde {0} al día, en su propia rama. La carpeta del proyecto no se toca.", main)
+                : GitBranch.Of(where) is { } now && now != main
+                    ? L.T("Abre en la carpeta del proyecto tal como está: en la rama {0}.", now)
+                    : L.T("Abre en la carpeta del proyecto.");
+        });
+        paints.Add(PaintPlace);
         list.Children.Add(MenuRule());
 
         list.Children.Add(MenuLabel(L.T("Abrir con")));
@@ -338,8 +382,8 @@ sealed partial class TerminalPane
 
         void Chosen(string folder)
         {
-            where = folder;
-            PaintPlace();
+            where = SessionWorktrees.ProjectOf(folder);
+            Paint();
             ShowMain();
         }
 
@@ -390,12 +434,25 @@ sealed partial class TerminalPane
                 return;
             }
             popup.IsOpen = false;
-            if (choice.StartsWith("agente:", StringComparison.Ordinal))
-                OpenAgent(choice["agente:".Length..], where, account, model, effort);
-            else if (shells.FirstOrDefault(s => s.Id == choice) is { } shell)
+            if (shells.FirstOrDefault(s => s.Id == choice) is { } shell)
+            {
                 OpenShell(shell, where);
-            else if (specialists.FirstOrDefault(s => "especialista:" + s.Id == choice) is { } chosen)
-                OpenSpecialist(chosen, where);
+                return;
+            }
+            var picked = choice;
+            void Open(string folder)
+            {
+                if (picked.StartsWith("agente:", StringComparison.Ordinal))
+                    OpenAgent(picked["agente:".Length..], folder, account, model, effort);
+                else if (specialists.FirstOrDefault(s => "especialista:" + s.Id == picked) is { } chosen)
+                    OpenSpecialist(chosen, folder);
+            }
+            if (!Isolated())
+            {
+                Open(where);
+                return;
+            }
+            _ = OpenIsolatedAsync(where, Open);
         }
 
         Paint();
@@ -411,6 +468,20 @@ sealed partial class TerminalPane
         popup.IsOpen = true;
         card.Opacity = 1;
         Dispatcher.UIThread.Post(() => card.Focus(), DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Crea el worktree de la sesión (desde la rama principal al día) y la abre ahí. Mientras git trabaja se ve un aviso;
+    /// si no se puede, lo dice y abre en la carpeta del proyecto.
+    /// </summary>
+    async Task OpenIsolatedAsync(string folder, Action<string> open)
+    {
+        var (path, error) = await SessionWorktrees.CreateAsync(folder, DateTime.Now);
+        Dispatcher.UIThread.Post(() =>
+        {
+            open(path ?? folder);
+            if (error is not null) _current?.Agent.Transcript.Notice(error + " " + L.T("Se abrió en la carpeta del proyecto."));
+        });
     }
 
     /// <summary>El diálogo del sistema para buscar una carpeta o un archivo (las pruebas ponen otro).</summary>
