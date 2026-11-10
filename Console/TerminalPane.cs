@@ -162,9 +162,10 @@ sealed partial class TerminalPane : Grid
         else if (!_creating) _input.Focus();
     }
 
-    /// <summary>Al cerrar la Console: ningún Claude Code queda corriendo.</summary>
+    /// <summary>Al cerrar la Console: las pestañas se anotan para la próxima vez y ningún Claude Code queda corriendo.</summary>
     public void CloseAll()
     {
+        SaveOpen();
         foreach (var tab in _tabs)
         {
             tab.Agent.Dispose();

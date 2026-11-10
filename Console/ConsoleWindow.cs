@@ -193,6 +193,7 @@ sealed class ConsoleWindow : Window
         Content = _root;
         Render(rebuild: true);
         foreach (var file in ConsoleApp.Files) _editor.Open(file);
+        _terminal.RestoreOpen();
         _canvas.CheckOpenRequest();
         _client.Start();
 
