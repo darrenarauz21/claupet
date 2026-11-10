@@ -75,16 +75,19 @@ sealed partial class CanvasPane : Grid
     readonly List<Control> _overlaysOn = [];
     int _shownVersion;
 
-    public CanvasPane(Func<string, string, Control> markdown, CanvasStore? store = null, Func<string, string?, bool>? askAgent = null)
+    public CanvasPane(Func<string, string, Control> markdown, CanvasStore? store = null, Func<string, string?, bool>? askAgent = null, CanvasSessions? sessions = null)
     {
         _store = store ?? CanvasStore.Default;
         _markdown = markdown;
         _askAgent = askAgent;
+        _sessions = sessions;
         RowDefinitions = new RowDefinitions("Auto,*");
         ClipToBounds = true;
         Grid.SetRow(_scroll, 1);
         Children.Add(_bar);
         Children.Add(_scroll);
+        InitDesk();
+        Children.Add(_deskArea);
         foreach (var overlay in new[] { _timeline, _viewing, _toast })
         {
             Grid.SetRow(overlay, 1);
@@ -121,7 +124,15 @@ sealed partial class CanvasPane : Grid
 
     public void SetInk(Ink ink)
     {
+        var before = DeskTheme();
         _ink = ink;
+        // La mesa lleva los colores en su página: con otro tema se vuelve a hacer (conservando la pantalla elegida).
+        if (_desk is not null && DeskTheme() != before)
+        {
+            var sel = _deskSel;
+            DropDesk();
+            _deskSel = sel;
+        }
         Render(keepScroll: true);
     }
 
@@ -176,6 +187,23 @@ sealed partial class CanvasPane : Grid
     /// <summary>Los atajos mientras se ve Canvas: Ctrl+K (comandos), Ctrl+N (nuevo), Ctrl+J (pedir a la IA).</summary>
     public void HandleKey(KeyEventArgs e)
     {
+        if (_mesa)
+        {
+            if (e.Key == Key.J && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                if (!_chatOpen) ToggleChat();
+                _chatInput.Focus();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape && _picking)
+            {
+                _picking = false;
+                PostDesk(new { t = "pick", on = false });
+                RenderChat();
+                e.Handled = true;
+            }
+            return;
+        }
         if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
         switch (e.Key)
         {
@@ -262,6 +290,8 @@ sealed partial class CanvasPane : Grid
         _busyTimer.Stop();
         _toastTimer.Stop();
         _bumpTimer.Stop();
+        _chatTimer.Stop();
+        Watch(null);
         ClosePopover();
     }
 
@@ -409,10 +439,14 @@ sealed partial class CanvasPane : Grid
     void Render(bool keepScroll = false)
     {
         var offset = _scroll.Offset;
+        var mesa = ShowingMesa();
         _bar.Child = Bar();
         var shown = _past ?? _doc;
         _liveShown.Clear();
-        _scroll.Content = shown is null ? Empty() : Document(shown);
+        _scroll.IsVisible = !mesa;
+        _deskArea.IsVisible = mesa;
+        _scroll.Content = mesa ? null : shown is null ? Empty() : Document(shown);
+        if (mesa) RenderDesk(_doc!);
         foreach (var id in _live.Keys.Where(id => !_liveShown.Contains(id)).ToList()) _live.Remove(id);
         if (keepScroll) Dispatcher.UIThread.Post(() => _scroll.Offset = offset, DispatcherPriority.Loaded);
         if (_doc is { } doc && doc.Version != _shownVersion && _shownVersion != 0 && _past is null) Bump();
@@ -428,6 +462,7 @@ sealed partial class CanvasPane : Grid
     Control Bar()
     {
         var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Height = 56, Margin = new Thickness(12, 0, 14, 0) };
+        if (_mesa && _doc is { } desk) return MesaBar(desk);
         var toggle = IconButton(CanvasIcons.Side, L.T("Lista"), () => ListToggled?.Invoke());
         toggle.VerticalAlignment = VerticalAlignment.Center;
         bar.Children.Add(toggle);
@@ -490,6 +525,8 @@ sealed partial class CanvasPane : Grid
             link = IconButton(CanvasIcons.Link, doc.Plan is null ? L.T("Ligar a un plan") : L.T("Cambiar el plan ligado"), () => _ = LinkMenuAsync(link!), on: doc.Plan is not null);
             right.Children.Add(link);
         }
+        if (_past is null && !_liveOff && DeskAvailable && CanvasDesk.HasScreens(doc))
+            right.Children.Add(IconButton(DeskIcons.Desk, L.T("Mesa de diseño"), EnterMesa, accent: true));
         ask = IconButton(CanvasIcons.Spark, L.T("Pedir a la IA") + " · Ctrl+J", () => AskPopup(ask!, null));
         right.Children.Add(ask);
         right.Children.Add(IconButton(CanvasIcons.History, L.T("Versiones"), ToggleHistory, on: _history));
@@ -822,6 +859,6 @@ sealed partial class CanvasPane : Grid
         overlay.RenderTransform = TransformOperations.Parse(on ? "translateY(0px)" : away);
         _overlaysOn.Remove(overlay);
         if (on) _overlaysOn.Add(overlay);
-        foreach (var page in _live.Values) page.Refit();
+        RefitPages();
     }
 }

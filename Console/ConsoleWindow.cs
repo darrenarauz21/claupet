@@ -52,6 +52,8 @@ sealed class ConsoleWindow : Window
     bool _projectsList = true;
     /// <summary>La lista de canvas, a la izquierda (se oculta con el botón de la barra de Canvas).</summary>
     bool _canvasFiles = true;
+    /// <summary>Cómo estaba la lista de canvas antes de abrir la mesa de diseño.</summary>
+    bool _canvasFilesBeforeMesa = true;
     readonly StackPanel _fileList = new() { Spacing = 2 };
     /// <summary>El borde de la lista de la Terminal, que se arrastra para ensancharla (la Terminal recuerda la medida).</summary>
     readonly Border _grip = new()
@@ -108,12 +110,19 @@ sealed class ConsoleWindow : Window
         _view.Action += (key, value) => _client.Send(new ConsoleMessage { Type = ConsoleLink.Action, Key = key, Value = value });
         _view.Navigate += Select;
         // El ✦ de Canvas le pide el cambio a un agente de la Terminal; si no había ninguno, se ve la Terminal para enviarlo.
+        // El chat de la mesa de diseño habla con las sesiones de la Terminal sin salir de Canvas.
+        var sessions = new CanvasSessions(_terminal.CanvasSessions, _terminal.OpenCanvasSession, agent =>
+        {
+            _terminal.Reveal(agent);
+            SetMode(Mode.Terminal);
+        });
+        _terminal.TabsChanged += sessions.Notify;
         _canvas = new CanvasPane((text, folder) => _terminal.MarkdownPage(text, folder), askAgent: (text, folder) =>
         {
             var sent = _terminal.AskAgent(text, folder);
             if (!sent) SetMode(Mode.Terminal);
             return sent;
-        });
+        }, sessions: sessions);
         _projects = new ProjectsPane(_terminal.ProjectFolders, _terminal.WorkingIn,
             ask: (text, folder) => { if (!_terminal.AskInFolder(text, folder)) SetMode(Mode.Terminal); },
             work: (text, folder) => { _terminal.WorkOn(text, folder); SetMode(Mode.Terminal); });
@@ -151,6 +160,13 @@ sealed class ConsoleWindow : Window
             Render(rebuild: true);
         };
         _canvas.ListChanged += () => { if (_mode == Mode.Canvas) RenderCanvasList(); };
+        // La mesa de diseño usa todo el ancho: la lista de canvas se esconde mientras se ve y vuelve como estaba.
+        _canvas.MesaChanged += on =>
+        {
+            if (on) (_canvasFilesBeforeMesa, _canvasFiles) = (_canvasFiles, false);
+            else _canvasFiles = _canvasFilesBeforeMesa;
+            if (_mode == Mode.Canvas) Render(rebuild: true);
+        };
         // Un agente creó o pidió mostrar un canvas: se ve en seguida.
         _canvas.OpenRequested += () => SetMode(Mode.Canvas);
         _chat.Request += OnChatRequest;
