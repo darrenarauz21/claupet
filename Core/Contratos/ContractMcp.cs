@@ -85,7 +85,7 @@ static class ContractMcp
             Tool("contract_search", S("Busca contratos por id, etiqueta, título, resumen o texto de sus reglas.", "Search contracts by id, tag, title, summary or rule text."),
                 new JsonObject { ["query"] = Str(S("Qué buscar, por ejemplo «api errores» o «login»", "What to search, e.g. «api errors» or «login»")) }, ["query"]),
             Tool("contract_read", S("Un contrato completo con sus reglas resueltas por capas.", "A full contract with its rules resolved by layer."),
-                new JsonObject { ["id"] = Str(S("El id del contrato, por ejemplo «estilo.escritura»", "The contract id, e.g. «estilo.escritura»")) }, ["id"]),
+                new JsonObject { ["id"] = Str(S("El id del contrato, por ejemplo «estilo.escritura»", "The contract id, e.g. «estilo.escritura»")) }, ["id"])
         );
 
         static JsonObject Tool(string name, string description, JsonObject properties, string[]? required = null)
