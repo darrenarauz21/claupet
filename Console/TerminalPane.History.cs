@@ -85,11 +85,7 @@ sealed partial class TerminalPane
         }
         if (!Directory.Exists(folder)) return;
         OtherHistory.Forget(past.Kind, folder);
-        var agent = new TerminalAgent(new AgentOptions(folder, Kind: past.Kind, Resume: past.Id), action => Dispatcher.UIThread.Post(action))
-        {
-            AskIsland = !Program.Args.Contains("--preview"),
-            Coordinate = true,
-        };
+        var agent = NewAgent(new AgentOptions(folder, Kind: past.Kind, Resume: past.Id));
         var tab = new Tab(agent, AgentKinds.Label(past.Kind));
         agent.Changed += changed => OnChanged(tab, changed);
         Add(tab);
@@ -100,7 +96,7 @@ sealed partial class TerminalPane
     /// <summary>Lee la conversación de antes (aparte) y abre la pestaña que la sigue con --resume.</summary>
     void StartResumed(AgentOptions options, string label, PastSession past, Action<Tab>? placed = null)
     {
-        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview"), Coordinate = true };
+        var agent = NewAgent(options);
         _ = Task.Run(() =>
         {
             ClaudeHistory.Replay(past.Path, agent.Transcript);

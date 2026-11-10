@@ -211,4 +211,20 @@ public sealed class WorkspaceWarningViewTests
         Assert.DoesNotContain(L.T("Siempre aquí"), shown);
         Assert.Contains(L.T("Siempre aquí"), Texts(Block(null)));
     });
+
+    [Fact]
+    public void TodasLasPestanasSeCoordinanTambienLosEspecialistasYLasReabiertas() => Headless.Run(() =>
+    {
+        // Antes, un especialista o una pestaña reabierta al iniciar Claupet no se anotaba ni recibía las reglas.
+        var agent = TerminalPane.NewAgent(new AgentOptions(Path.GetTempPath(), Kind: AgentKinds.OpenCode));
+        Assert.True(agent.Coordinate);
+        Assert.False(agent.Running); // crearlo no lo abre
+
+        var terminal = new TerminalPane();
+        var openTab = typeof(TerminalPane).GetNestedType("OpenTab", System.Reflection.BindingFlags.NonPublic)!;
+        var saved = Activator.CreateInstance(openTab, Path.GetTempPath(), AgentKinds.Codex, null, null, null, null, null, null, null, "")!;
+        var reopened = (TerminalAgent)typeof(TerminalPane).GetMethod("Prepare", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(terminal, [saved])!;
+        Assert.True(reopened.Coordinate);
+        Assert.True(reopened.AskIsland);
+    });
 }
