@@ -167,8 +167,9 @@ A specialist is an agent with a name, role, instructions and tools, ready to ope
 - **Agent**: Claude Code, Codex, Gemini or Copilot. With Claude Code you also pick the model and effort.
 - **Folder**: where it opens; if you don't pick one, in the project you're using.
 - **Tools**: Claupet's canvas and the MCP servers of your extensions. The shield says whether the agent asks
-  before using each one or uses it without asking.
-- **▶ Open** opens it as a Terminal tab. It also shows up in the Terminal's **+** menu.
+  before using each one or uses it without asking. **+** takes you to extensions to add more.
+- **Search**, above the list, filters by name or role.
+- **▶ Open** opens it as a Terminal tab (in the list, ▶ shows up on hover). It also shows up in the Terminal's **+** menu.
 - The ones extensions bring are under **From extensions**, read-only: **Duplicate** makes your own copy.
 - **⋯** has **Export as .json**, to share it.
 

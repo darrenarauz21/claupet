@@ -231,9 +231,63 @@ public sealed class SpecialistsTests : IDisposable
     public void Sin_especialistas_invita_a_crear_uno_y_dice_que_es_experimental() => Headless.Run(() =>
     {
         using var scene = new Scene();
-        var texts = scene.Texts(scene.Pane).ToList();
-        Assert.Contains(L.T("Sus especialistas"), texts);
-        Assert.Contains(L.T("Experimental"), texts);
+        // Sin texto de más: el ícono y el botón de uno nuevo.
+        Assert.Empty(scene.Texts(scene.Pane).Where(t => t.Length > 0));
+        Assert.Contains(scene.Pane.GetVisualDescendants().OfType<Avalonia.Controls.Control>(), c => Avalonia.Automation.AutomationProperties.GetName(c) == L.T("Especialista nuevo"));
+        // «Experimental» va en el tooltip del frasco, junto al título.
+        var badge = SpecialistsPane.Badge(Ink.For(true));
+        Assert.Equal(L.T("Experimental"), Avalonia.Automation.AutomationProperties.GetName(badge));
+        Assert.Equal(L.T("Experimental: puede cambiar o fallar"), Avalonia.Controls.ToolTip.GetTip(badge));
+    });
+
+    /// <summary>Con CLAUPET_SPECIALISTS_SHOT, guarda capturas de la vista (claro y oscuro) para compararla con el prototipo.</summary>
+    [Fact]
+    public void Captura_de_la_vista() => Headless.Run(() =>
+    {
+        if (Environment.GetEnvironmentVariable("CLAUPET_SPECIALISTS_SHOT") is not { Length: > 0 } shot) return;
+        Specialists.Save(Reviewer());
+        var ext = Reviewer();
+        ext.Id = "prueba.x/analista";
+        ext.Name = "Investigador";
+        ext.Color = Specialist.Colors[3];
+        ext.Glyph = "globe";
+        ext.Extension = "Investigación";
+        Specialists.FromExtensions = () => [ext];
+        foreach (var dark in new[] { false, true })
+        {
+            using var scene = new Scene();
+            scene.Pane.SetInk(Ink.For(dark));
+            scene.Window.Background = Ink.For(dark).Window;
+            for (var i = 0; i < 8; i++)
+            {
+                Thread.Sleep(80);
+                Headless.Frame(scene.Window);
+            }
+            Avalonia.Headless.HeadlessWindowExtensions.CaptureRenderedFrame(scene.Window)?.Save(shot + (dark ? ".oscuro.png" : ".claro.png"));
+        }
+    });
+
+    [Fact]
+    public void La_busqueda_filtra_la_lista_por_nombre_o_rol() => Headless.Run(() =>
+    {
+        Specialists.Save(Reviewer());
+        var other = Reviewer();
+        other.Id = Specialists.NewId();
+        other.Name = "Datos";
+        other.Role = "Consultas y gráficos";
+        Specialists.Save(other);
+        using var scene = new Scene();
+        var search = scene.Pane.List.GetVisualDescendants().OfType<TextBox>().First();
+
+        search.Text = "gráf";
+        Headless.Frame(scene.Window);
+        var list = scene.Texts(scene.Pane.List).ToList();
+        Assert.Contains("Datos", list);
+        Assert.DoesNotContain("Revisor de PRs", list);
+
+        search.Text = "zzz";
+        Headless.Frame(scene.Window);
+        Assert.Contains(L.T("Sin resultados"), scene.Texts(scene.Pane.List));
     });
 
     [Fact]

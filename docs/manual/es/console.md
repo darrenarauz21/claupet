@@ -167,8 +167,9 @@ ejemplo, un «Revisor de PRs» con Claude Code, sus reglas para revisar y el ser
 - **Agente**: Claude Code, Codex, Gemini o Copilot. Con Claude Code también se eligen el modelo y el esfuerzo.
 - **Carpeta**: dónde abre; si no se elige, en la del proyecto que se está usando.
 - **Herramientas**: el canvas de Claupet y los servidores MCP de sus extensiones. El escudo dice si el agente
-  pide permiso antes de usar cada una o la usa sin preguntar.
-- **▶ Abrir** lo abre como una pestaña de la Terminal. También aparece en el menú **+** de la Terminal.
+  pide permiso antes de usar cada una o la usa sin preguntar. El **+** lleva a las extensiones para sumar más.
+- **Buscar**, arriba de la lista, filtra por nombre o rol.
+- **▶ Abrir** lo abre como una pestaña de la Terminal (en la lista, ▶ aparece al pasar el mouse). También aparece en el menú **+** de la Terminal.
 - Los que traen las extensiones están en **De extensiones**, de solo lectura: **Duplicar** hace una copia suya.
 - En **⋯** está **Exportar como .json**, para compartirlo.
 

@@ -38,6 +38,13 @@ sealed class SpecialistsPane : Panel
     const string GlobeIcon = "M12,3.5 A8.5,8.5 0 1 0 12,20.5 A8.5,8.5 0 1 0 12,3.5 Z M3.5,12 H20.5 M12,3.5 C9.5,6 9.5,18 12,20.5 C14.5,18 14.5,6 12,3.5";
     const string CanvasIcon = "M4,4 H20 A1,1 0 0 1 21,5 V19 A1,1 0 0 1 20,20 H4 A1,1 0 0 1 3,19 V5 A1,1 0 0 1 4,4 Z M3,9 H21 M10,9 V20 M13,13 H18 M13,16.5 H16.5";
     const string FolderIcon = "M4,6.5 H10 L12,8.5 H20 V18.5 H4 Z";
+    const string SearchIcon = "M10.5,4 A6.5,6.5 0 1 0 10.5,17 A6.5,6.5 0 1 0 10.5,4 Z M15.5,15.5 L20,20";
+    const string BotIcon = "M7,8 H17 A2,2 0 0 1 19,10 V17 A2,2 0 0 1 17,19 H7 A2,2 0 0 1 5,17 V10 A2,2 0 0 1 7,8 Z M12,8 V4.5 M10,13 V13.01 M14,13 V13.01 M2.5,12.5 V14.5 M21.5,12.5 V14.5";
+    const string ModelIcon = "M7,7 H17 V17 H7 Z M10,10 H14 V14 H10 Z M10,3.5 V7 M14,3.5 V7 M10,17 V20.5 M14,17 V20.5 M3.5,10 H7 M3.5,14 H7 M17,10 H20.5 M17,14 H20.5";
+    const string GaugeIcon = "M4,16 A8,8 0 1 1 20,16 M12,16 L15.5,10.5";
+    const string ShieldAskIcon = ShieldIcon + " M10,10 A2,2 0 1 1 12.6,11.9 C12,12.2 12,12.6 12,13.3 M12,16.2 V16.21";
+    const string PlugIcon = "M9,3.5 V8 M15,3.5 V8 M6.5,8 H17.5 V11 A5.5,5.5 0 0 1 6.5,11 Z M12,16.5 V20.5";
+    const string DownloadIcon = "M12,4 V15 M7,10 L12,15 L17,10 M5,20 H19";
     const string FlaskIcon = "M9.5,3.5 H14.5 M10.5,3.5 V9.5 L5.5,18 A1.5,1.5 0 0 0 6.8,20.5 H17.2 A1.5,1.5 0 0 0 18.5,18 L13.5,9.5 V3.5 M7.8,14.5 H16.2";
 
     /// <summary>Los íconos que se pueden elegir (los de Specialist.Glyphs).</summary>
@@ -60,6 +67,11 @@ sealed class SpecialistsPane : Panel
     static readonly (string Kind, string Mark)[] Agents =
         [(AgentKinds.Claude, "✻"), (AgentKinds.Codex, "cx"), (AgentKinds.Gemini, "✦"), (AgentKinds.Copilot, "gh")];
 
+    static readonly Dictionary<string, string> Short = new()
+    {
+        [AgentKinds.Claude] = "CC", [AgentKinds.Codex] = "CX", [AgentKinds.Gemini] = "GE", [AgentKinds.Copilot] = "CP",
+    };
+
     public static string MarkOf(string kind) => Agents.FirstOrDefault(a => a.Kind == kind).Mark ?? "✻";
 
     Ink _ink = Ink.For(true);
@@ -67,16 +79,17 @@ sealed class SpecialistsPane : Panel
     IReadOnlyList<McpServer> _servers = [];
     string? _selected;
     readonly StackPanel _list = new() { Spacing = 2 };
+    readonly StackPanel _listView = new();
+    readonly TextBox _search = new();
     readonly Border _host = new();
-    TextBlock? _saved;
-    TextBlock? _barName;
-    Border? _barAvatar, _heroAvatar;
+    Control? _saved;
+    Border? _heroAvatar;
     readonly DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     readonly DispatcherTimer _savedTimer = new() { Interval = TimeSpan.FromMilliseconds(1400) };
-    readonly Dictionary<string, (TextBlock Name, TextBlock Role, TextBlock Mark, Border Avatar)> _rows = [];
+    readonly Dictionary<string, (TextBlock Name, Border Avatar)> _rows = [];
 
-    /// <summary>La lista de la columna de la izquierda.</summary>
-    public Control List => _list;
+    /// <summary>La búsqueda y la lista (la columna de la izquierda).</summary>
+    public Control List => _listView;
 
     /// <summary>Se pidió abrir este especialista en la Terminal.</summary>
     public event Action<Specialist>? Launch;
@@ -87,6 +100,8 @@ sealed class SpecialistsPane : Panel
     public SpecialistsPane()
     {
         Children.Add(_host);
+        _listView.Children.Add(_list);
+        _search.TextChanged += (_, _) => RenderList(animate: false);
         _saveTimer.Tick += (_, _) =>
         {
             _saveTimer.Stop();
@@ -105,6 +120,7 @@ sealed class SpecialistsPane : Panel
     public void SetInk(Ink ink)
     {
         _ink = ink;
+        RenderSearch();
         RenderList();
         RenderMain();
     }
@@ -181,71 +197,96 @@ sealed class SpecialistsPane : Panel
 
     // ── La lista ────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>La búsqueda, arriba de la lista: por nombre o rol.</summary>
+    void RenderSearch()
+    {
+        if (_listView.Children.Count > 1) _listView.Children.RemoveAt(0);
+        _search.Watermark = L.T("Buscar");
+        Paint(_search, _ink.Pill, _ink.Text, framed: false);
+        _search.Resources["TextControlBackgroundFocused"] = _ink.Raised;
+        _search.Resources["TextControlBorderBrushFocused"] = _ink.Accent;
+        _search.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(1.5);
+        _search.Resources["ControlCornerRadius"] = new CornerRadius(999);
+        _search.CornerRadius = new CornerRadius(999);
+        _search.Padding = new Thickness(32, 7, 12, 7);
+        _search.FontSize = 13.5;
+        _search.MinHeight = 0;
+        _search.CaretBrush = _ink.Accent;
+        var box = new Panel { Margin = new Thickness(2, 0, 2, 8) };
+        if (_search.Parent is Panel previous) previous.Children.Remove(_search);
+        box.Children.Add(_search);
+        var lens = Glyph(SearchIcon, _ink.Tertiary, 14, 1.8);
+        lens.HorizontalAlignment = HorizontalAlignment.Left;
+        lens.Margin = new Thickness(11, 0, 0, 0);
+        lens.IsHitTestVisible = false;
+        box.Children.Add(lens);
+        _listView.Children.Insert(0, box);
+    }
+
     void RenderList(bool animate = true)
     {
+        if (_listView.Children.Count < 2) RenderSearch();
         _list.Children.Clear();
         _rows.Clear();
+        var filter = _search.Text?.Trim() ?? "";
+        bool Shown(Specialist s) => filter.Length == 0 || s.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase) || s.Role.Contains(filter, StringComparison.CurrentCultureIgnoreCase);
         var index = 0;
-        foreach (var s in _all.Where(s => !s.ReadOnly)) _list.Children.Add(Appear(ListItem(s), animate ? index++ * 35 : -1));
-        if (_all.Any(s => s.ReadOnly))
+        foreach (var s in _all.Where(s => !s.ReadOnly && Shown(s))) _list.Children.Add(Appear(ListItem(s), animate ? index++ * 25 : -1));
+        if (_all.Any(s => s.ReadOnly && Shown(s)))
         {
-            var caption = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(10, 14, 10, 5) };
+            var caption = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(10, 14, 10, 4) };
             caption.Children.Add(Glyph(PackageIcon, _ink.Tertiary, 12, 1.8));
             caption.Children.Add(Ui.Text(L.T("De extensiones"), 12, _ink.Tertiary, FontWeight.SemiBold));
             _list.Children.Add(caption);
-            foreach (var s in _all.Where(s => s.ReadOnly)) _list.Children.Add(Appear(ListItem(s), animate ? index++ * 35 : -1));
+            foreach (var s in _all.Where(s => s.ReadOnly && Shown(s))) _list.Children.Add(Appear(ListItem(s), animate ? index++ * 25 : -1));
         }
+        if (filter.Length > 0 && _list.Children.Count == 0)
+            _list.Children.Add(new TextBlock { Text = L.T("Sin resultados"), FontFamily = Ink.Sans, FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = _ink.Tertiary, Margin = new Thickness(10, 10, 10, 4) });
     }
 
+    /// <summary>Una fila: el ícono y el nombre; al pasar, ▶ para abrirlo.</summary>
     Control ListItem(Specialist s)
     {
         var current = s.Id == _selected;
-        var avatar = Avatar(s, 34, 11, 17);
-        avatar.Margin = new Thickness(0, 0, 11, 0);
-        var name = Ui.Text(s.Name, 14, _ink.Text, FontWeight.Medium);
-        var mark = Ui.Text(MarkOf(s.Agent), 11, _ink.Tertiary, FontWeight.SemiBold, Ink.Mono);
-        var role = Ui.Text(s.Role, 12, _ink.Tertiary);
-        var sub = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-        mark.Margin = new Thickness(0, 0, 5, 0);
-        sub.Children.Add(mark);
-        Grid.SetColumn(role, 1);
-        sub.Children.Add(role);
-        var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { name, sub } };
+        var avatar = Avatar(s, 30, 9, 16);
+        avatar.Margin = new Thickness(0, 0, 10, 0);
+        var name = Ui.Text(s.Name, 14, current ? _ink.Text : _ink.Secondary, FontWeight.Medium);
+        name.VerticalAlignment = VerticalAlignment.Center;
 
-        var run = Ui.Press(Glyph(PlayIcon, _ink.Secondary, 14, 1.8), () => Launch?.Invoke(s),
+        var run = Ui.Press(Glyph(PlayIcon, _ink.Tertiary, 12, 0, fill: true), () => Launch?.Invoke(s),
             (b, on) => b.Background = on ? _ink.Raised : Brushes.Transparent, L.T("Abrir sesión"));
-        run.Width = run.Height = 30;
+        run.Width = run.Height = 28;
         run.CornerRadius = new CornerRadius(999);
-        run.Opacity = current ? 1 : 0;
+        run.Opacity = 0;
         if (TerminalPane.Animate) run.Transitions = [new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(200) }];
         ToolTip.SetTip(run, L.T("Abrir sesión"));
 
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Children = { avatar } };
-        Grid.SetColumn(words, 1);
-        row.Children.Add(words);
+        Grid.SetColumn(name, 1);
+        row.Children.Add(name);
         Grid.SetColumn(run, 2);
         row.Children.Add(run);
         var item = Ui.Press(row, () => Select(s.Id), (b, on) =>
         {
             b.Background = on || s.Id == _selected ? _ink.Pill : Brushes.Transparent;
-            run.Opacity = on || s.Id == _selected ? 1 : 0;
+            name.Foreground = on || s.Id == _selected ? _ink.Text : _ink.Secondary;
+            run.Opacity = on ? 1 : 0;
         }, s.Name);
-        item.Padding = new Thickness(10, 8, 8, 8);
-        item.CornerRadius = new CornerRadius(12);
+        item.Height = 44;
+        item.Padding = new Thickness(8, 0, 6, 0);
+        item.CornerRadius = new CornerRadius(10);
         item.Background = current ? _ink.Pill : Brushes.Transparent;
         if (TerminalPane.Animate) item.Transitions = [new BrushTransition { Property = Border.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(180) }];
-        _rows[s.Id] = (name, role, mark, avatar);
+        _rows[s.Id] = (name, avatar);
         return item;
     }
 
-    /// <summary>La fila de la lista sin rehacerla (mientras se escribe el nombre o el rol).</summary>
+    /// <summary>La fila de la lista sin rehacerla (mientras se escribe el nombre).</summary>
     void PaintRow(Specialist s)
     {
         if (!_rows.TryGetValue(s.Id, out var row)) return;
         row.Name.Text = s.Name;
-        row.Role.Text = s.Role;
-        row.Mark.Text = MarkOf(s.Agent);
-        PaintAvatar(row.Avatar, s, 17);
+        PaintAvatar(row.Avatar, s, 16);
     }
 
     // ── El panel ────────────────────────────────────────────────────────────────────────────
@@ -253,8 +294,7 @@ sealed class SpecialistsPane : Panel
     void RenderMain(bool focusName = false)
     {
         _saved = null;
-        _barName = null;
-        _barAvatar = _heroAvatar = null;
+        _heroAvatar = null;
         if (Current is not { } s)
         {
             _host.Child = Appear(EmptyState(), 0);
@@ -275,51 +315,38 @@ sealed class SpecialistsPane : Panel
             }, DispatcherPriority.Loaded);
     }
 
+    /// <summary>La barra: «Guardado» al guardar, Duplicar, Más y Abrir (el nombre ya está grande abajo).</summary>
     Control Bar(Specialist s)
     {
-        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"), MinHeight = 58, Margin = new Thickness(14, 0, 12, 0) };
-        // El ícono, el nombre y la etiqueta, pegados a la izquierda; con poco lugar el nombre se acorta con «…» (los botones no se salen).
-        var crumb = new DockPanel { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-        _barAvatar = Avatar(s, 24, 8, 14);
-        _barAvatar.Margin = new Thickness(0, 0, 9, 0);
-        DockPanel.SetDock(_barAvatar, Dock.Left);
-        crumb.Children.Add(_barAvatar);
-        if (s.ReadOnly)
-        {
-            var chip = Chip(LockIcon, L.T("De una extensión"), _ink.Tertiary, _ink.Pill);
-            chip.Margin = new Thickness(9, 0, 0, 0);
-            DockPanel.SetDock(chip, Dock.Right);
-            crumb.Children.Add(chip);
-        }
-        _barName = new TextBlock { Text = s.Name, FontFamily = Ink.Display, FontSize = 15, FontWeight = FontWeight.SemiBold, Foreground = _ink.Text, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-        crumb.Children.Add(_barName);
-        bar.Children.Add(crumb);
-
-        _saved = new TextBlock { Text = "✓ " + L.T("Guardado"), FontFamily = Ink.Sans, FontSize = 12, Foreground = _ink.Tertiary, VerticalAlignment = VerticalAlignment.Center, Opacity = 0, Margin = new Thickness(0, 0, 6, 0) };
-        _saved.Transitions = [new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(300) }];
-        Grid.SetColumn(_saved, 1);
-        bar.Children.Add(_saved);
+        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto,Auto"), MinHeight = 54, Margin = new Thickness(18, 0, 12, 0) };
+        var saved = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center, Opacity = 0, Margin = new Thickness(0, 0, 6, 0) };
+        saved.Children.Add(Glyph(CheckIcon, _ink.Tertiary, 12, 2));
+        saved.Children.Add(Ui.Text(L.T("Guardado"), 12, _ink.Tertiary));
+        saved.Transitions = [new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(300) }];
+        _saved = saved;
+        Grid.SetColumn(saved, 1);
+        bar.Children.Add(saved);
         var copy = Round(CopyIcon, L.T("Duplicar"), () => Duplicate(s));
         Grid.SetColumn(copy, 2);
         bar.Children.Add(copy);
         Border? more = null;
-        more = Round(MoreIcon, L.T("Más opciones"), () => ShowMore(more!, s), fill: true);
+        more = Round(MoreIcon, L.T("Más"), () => ShowMore(more!, s), fill: true);
         Grid.SetColumn(more, 3);
         bar.Children.Add(more);
 
-        var runRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var runRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
         runRow.Children.Add(Glyph(PlayIcon, Ink.On(_ink.Accent), 13, 0, fill: true));
         runRow.Children.Add(Ui.Text(L.T("Abrir"), 13, Ink.On(_ink.Accent), FontWeight.SemiBold));
-        var run = Ui.Press(runRow, () => Launch?.Invoke(s), (b, on) => b.Opacity = on ? 0.9 : 1, L.T("Abrir sesión"));
+        var run = Ui.Press(runRow, () => Launch?.Invoke(s), (b, on) => b.Opacity = on ? 0.9 : 1, L.T("Abrir sesión en la Terminal"));
         run.Background = _ink.Accent;
         run.Height = 34;
-        run.Padding = new Thickness(11, 0, 14, 0);
+        run.Padding = new Thickness(13, 0, 16, 0);
         run.CornerRadius = new CornerRadius(999);
-        run.Margin = new Thickness(4, 0, 0, 0);
+        run.Margin = new Thickness(6, 0, 0, 0);
         run.VerticalAlignment = VerticalAlignment.Center;
         run.RenderTransformOrigin = RelativePoint.Center;
         if (TerminalPane.Animate) run.Transitions = [new TransformOperationsTransition { Property = RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(160) }];
-        run.PointerPressed += (_, _) => run.RenderTransform = TransformOperations.Parse("scale(0.95)");
+        run.PointerPressed += (_, _) => run.RenderTransform = TransformOperations.Parse("scale(0.94)");
         run.PointerReleased += (_, _) => run.RenderTransform = TransformOperations.Identity;
         run.PointerExited += (_, _) => run.RenderTransform = TransformOperations.Identity;
         ToolTip.SetTip(run, L.T("Abrir sesión en la Terminal"));
@@ -332,43 +359,45 @@ sealed class SpecialistsPane : Panel
     Control Document(Specialist s, out TextBox nameBox)
     {
         var ro = s.ReadOnly;
-        var doc = new StackPanel { Spacing = 26, MaxWidth = 760, Margin = new Thickness(32, 28, 32, 90) };
+        var doc = new StackPanel { Spacing = 26, MaxWidth = 680, Margin = new Thickness(32, 30, 32, 80) };
 
         // El nombre, el rol y el ícono: se cambian en el lugar.
         var hero = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
-        _heroAvatar = Avatar(s, 64, 19, 30);
+        _heroAvatar = Avatar(s, 56, 16, 26);
         Control avatar = _heroAvatar;
         if (!ro)
         {
             Border? press = null;
             press = Ui.Press(_heroAvatar, () => ShowLooks(press!, s), null, L.T("Color e ícono"));
-            press.CornerRadius = new CornerRadius(19);
+            press.CornerRadius = new CornerRadius(16);
             press.RenderTransformOrigin = RelativePoint.Center;
             if (TerminalPane.Animate) press.Transitions = [new TransformOperationsTransition { Property = RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(250), Easing = new CubicEaseOut() }];
-            press.PointerEntered += (_, _) => press.RenderTransform = TransformOperations.Parse("scale(1.05) rotate(-3deg)");
+            press.PointerEntered += (_, _) => press.RenderTransform = TransformOperations.Parse("scale(1.05)");
             press.PointerExited += (_, _) => press.RenderTransform = TransformOperations.Identity;
             ToolTip.SetTip(press, L.T("Color e ícono"));
             avatar = press;
         }
-        avatar.Margin = new Thickness(0, 0, 18, 0);
+        avatar.Margin = new Thickness(0, 0, 16, 0);
         avatar.VerticalAlignment = VerticalAlignment.Center;
         hero.Children.Add(avatar);
-        var words = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        var words = new StackPanel { Spacing = 0, VerticalAlignment = VerticalAlignment.Center };
         var name = Inline(s.Name, L.T("Nombre"), 25, Ink.Display, FontWeight.SemiBold, _ink.Text, Specialist.MaxName, ro);
         nameBox = name;
         name.TextChanged += (_, _) =>
         {
             var text = name.Text ?? "";
-            s.Name = text.Trim().Length > 0 ? text : L.T("Sin nombre");
-            if (_barName is not null) _barName.Text = s.Name;
+            var value = text.Trim().Length > 0 ? text : L.T("Sin nombre");
+            // Al cargarse el cuadro también avisa: solo cuenta lo que cambió.
+            if (value == s.Name) return;
+            s.Name = value;
             PaintRow(s);
             Changed();
         };
         var roleBox = Inline(s.Role, L.T("Qué hace, en una línea"), 14, Ink.Sans, FontWeight.Normal, _ink.Secondary, Specialist.MaxRole, ro);
         roleBox.TextChanged += (_, _) =>
         {
+            if ((roleBox.Text ?? "") == s.Role) return;
             s.Role = roleBox.Text ?? "";
-            PaintRow(s);
             Changed();
         };
         words.Children.Add(name);
@@ -379,28 +408,31 @@ sealed class SpecialistsPane : Panel
 
         if (ro)
         {
+            // De una extensión: el candado, de cuál viene y Duplicar para cambiarlo.
             var from = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
-            var icon = Glyph(PackageIcon, _ink.Secondary, 15, 1.8);
-            icon.Margin = new Thickness(0, 0, 8, 0);
+            var icon = Glyph(LockIcon, _ink.Secondary, 15, 1.8);
+            icon.Margin = new Thickness(0, 0, 10, 0);
             from.Children.Add(icon);
-            var note = Ui.Text(L.T("Viene con {0}. Para cambiarlo, duplíquelo.", s.Extension!), 13, _ink.Secondary);
+            var note = Ui.Text(s.Extension!, 14, _ink.Secondary);
+            note.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(note, 1);
             from.Children.Add(note);
-            var dup = Ui.Press(Ui.Text(L.T("Duplicar"), 13, _ink.Accent, FontWeight.SemiBold), () => Duplicate(s), (b, on) => b.Opacity = on ? 0.8 : 1, L.T("Duplicar"));
-            dup.Margin = new Thickness(10, 0, 0, 0);
+            var dup = Round(CopyIcon, L.T("Duplicar para cambiarlo"), () => Duplicate(s), size: 28);
             Grid.SetColumn(dup, 2);
             from.Children.Add(dup);
-            doc.Children.Add(new Border { Background = _ink.Pill, CornerRadius = new CornerRadius(12), Padding = new Thickness(12, 9), Margin = new Thickness(0, -10, 0, 0), Child = from });
+            doc.Children.Add(new Border { Background = _ink.Pill, CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 6, 8, 6), Child = from });
         }
 
         // Las instrucciones.
-        var count = Ui.Text($"{s.Instructions.Length} / {Specialist.MaxInstructions}", 12, _ink.Tertiary);
+        var count = Ui.Text("", 11, _ink.Tertiary, FontWeight.Medium, Ink.Mono);
+        void Count() => count.Text = s.Instructions.Length > Specialist.MaxInstructions * 3 / 4 ? $"{s.Instructions.Length:N0} / {Specialist.MaxInstructions:N0}" : "";
+        Count();
         var text = new TextBox
         {
             Text = s.Instructions,
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
-            MinHeight = 120,
+            MinHeight = 150,
             MaxHeight = 340,
             MaxLength = Specialist.MaxInstructions,
             IsReadOnly = ro,
@@ -414,45 +446,41 @@ sealed class SpecialistsPane : Panel
         Paint(text, _ink.Raised, ro ? _ink.Secondary : _ink.Text, framed: true);
         text.TextChanged += (_, _) =>
         {
+            if ((text.Text ?? "") == s.Instructions) return;
             s.Instructions = text.Text ?? "";
-            count.Text = $"{s.Instructions.Length} / {Specialist.MaxInstructions}";
+            Count();
             Changed();
         };
         doc.Children.Add(Section(L.T("Instrucciones"), text, count));
 
-        // El agente: cuál, y con Claude Code el modelo y el esfuerzo; la carpeta.
-        var rows = new StackPanel { Spacing = 6 };
-        var model = Row(L.T("Modelo"), ValuePick(s.Model is { } m ? Format.ModelChoice(m) : L.T("por defecto"), ro, anchor => PickModel(anchor, s)));
-        var effort = Row(L.T("Esfuerzo"), ValuePick(EffortLabel(s.Effort), ro, anchor => PickEffort(anchor, s)));
+        // El agente: cuál, y con Claude Code el modelo y el esfuerzo; la carpeta. Cada fila con su ícono (el nombre, en el tooltip).
+        var rows = new StackPanel();
+        var model = Row(ModelIcon, L.T("Modelo"), ValuePick(s.Model is { } m ? Format.ModelChoice(m) : L.T("Por defecto"), ro, anchor => PickModel(anchor, s)));
+        var effort = Row(GaugeIcon, L.T("Esfuerzo"), ValuePick(EffortLabel(s.Effort), ro, anchor => PickEffort(anchor, s)));
         void Claude(bool animate)
         {
             var claude = s.Agent == AgentKinds.Claude;
             foreach (var row in new[] { model, effort }) Collapse(row, !claude, animate);
         }
-        rows.Children.Add(Row(L.T("Agente"), AgentSegments(s, ro, () =>
+        rows.Children.Add(Row(BotIcon, L.T("Agente"), AgentButtons(s, ro, () =>
         {
             Claude(animate: true);
             RenderTools(s);
-            PaintRow(s);
             Changed();
-        })));
+        }), first: true));
         rows.Children.Add(model);
         rows.Children.Add(effort);
-        rows.Children.Add(Row(L.T("Carpeta"), ValuePick(s.Folder ?? L.T("la del proyecto abierto"), ro, anchor => PickFolder(anchor, s), FolderIcon, s.Folder is null ? null : Ink.Mono)));
+        var folder = ValuePick(s.Folder is { } f ? ShortPath(f) : L.T("Proyecto abierto"), ro, anchor => PickFolder(anchor, s), family: s.Folder is null ? null : Ink.Mono);
+        if (s.Folder is not null) ToolTip.SetTip(folder, s.Folder);
+        rows.Children.Add(Row(FolderIcon, L.T("Carpeta"), folder));
         Claude(animate: false);
         doc.Children.Add(Section(L.T("Agente"), rows));
 
-        // Las herramientas.
-        _tools = new StackPanel { Spacing = 6 };
+        // Las herramientas; el + lleva a las extensiones MCP para sumar más.
+        _tools = new StackPanel();
         RenderTools(s);
-        var tools = new StackPanel { Spacing = 6, Children = { _tools } };
-        var more = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(4, 2, 0, 0) };
-        more.Children.Add(Glyph(PackageIcon, _ink.Tertiary, 12, 1.8));
-        more.Children.Add(Ui.Text(L.T("Más herramientas con extensiones MCP."), 12.5, _ink.Tertiary));
-        var see = Ui.Press(Ui.Text(L.T("Ver extensiones"), 12.5, _ink.Accent, FontWeight.SemiBold), () => ExtensionsRequested?.Invoke(), (b, on) => b.Opacity = on ? 0.8 : 1, L.T("Ver extensiones"));
-        more.Children.Add(see);
-        tools.Children.Add(more);
-        doc.Children.Add(Section(L.T("Herramientas"), tools));
+        var add = Round(PlusIcon, L.T("Más con extensiones MCP"), () => ExtensionsRequested?.Invoke(), size: 28);
+        doc.Children.Add(Section(L.T("Herramientas"), _tools, add));
 
         return new Border { Child = doc, HorizontalAlignment = HorizontalAlignment.Stretch };
     }
@@ -464,48 +492,60 @@ sealed class SpecialistsPane : Panel
         if (_tools is null) return;
         _tools.Children.Clear();
         var index = 0;
-        _tools.Children.Add(Appear(ToolRow(s, Specialist.CanvasTool, L.T("Canvas de Claupet"), L.T("Integrado · documentos y planes"), CanvasIcon, builtin: true), index++ * 40));
+        void Add(Control row) => _tools.Children.Add(Appear(Line(row, _tools.Children.Count == 0), index++ * 30));
+        Add(ToolRow(s, Specialist.CanvasTool, "Canvas", L.T("Integrado"), CanvasIcon));
         foreach (var server in _servers)
         {
             var http = server.Type == McpServerSpec.Http;
             var where = http && Uri.TryCreate(server.Url, UriKind.Absolute, out var u) ? u.Host : null;
-            var note = L.T("Extensión {0}", server.Extension) + (where is null ? "" : " · " + where);
-            if (http && s.Agent is AgentKinds.Gemini or AgentKinds.Copilot) note += " · " + L.T("si {0} acepta servidores por internet", AgentKinds.Label(s.Agent));
-            _tools.Children.Add(Appear(ToolRow(s, server.Name, server.Name, note, http ? GlobeIcon : PackageIcon), index++ * 40));
+            var warn = http && s.Agent is AgentKinds.Gemini or AgentKinds.Copilot ? L.T("Por internet: si {0} lo acepta", AgentKinds.Label(s.Agent)) : null;
+            var tip = string.Join(" · ", new[] { where, warn }.Where(x => x is not null));
+            Add(ToolRow(s, server.Name, server.Name, server.Extension, http ? GlobeIcon : PlugIcon, tip: tip.Length == 0 ? null : tip, warn: warn is not null));
         }
-        // Las que eligió y ya no están instaladas: se ven apagadas, para que no se pierdan sin aviso.
+        // Las que eligió y ya no están instaladas: se ven apagadas, con un botón para ir a instalarlas.
         foreach (var missing in s.Tools.Where(t => t.Value.On && t.Key != Specialist.CanvasTool && _servers.All(x => x.Name != t.Key)).Select(t => t.Key))
-            _tools.Children.Add(Appear(ToolRow(s, missing, missing, L.T("No está instalada"), PackageIcon, missing: true), index++ * 40));
+            Add(ToolRow(s, missing, missing, L.T("No instalada"), PackageIcon, missing: true));
     }
 
-    Control ToolRow(Specialist s, string id, string name, string note, string icon, bool builtin = false, bool missing = false)
+    /// <summary>Una herramienta: ícono, nombre y de dónde viene; el escudo (permiso) y el interruptor.</summary>
+    Control ToolRow(Specialist s, string id, string name, string note, string icon, bool missing = false, string? tip = null, bool warn = false)
     {
-        var ro = s.ReadOnly || missing;
+        var ro = s.ReadOnly;
         var on = s.Uses(id);
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto") };
-        var tile = new Border { Width = 30, Height = 30, CornerRadius = new CornerRadius(9), Background = _ink.Pill, Margin = new Thickness(0, 0, 12, 0), Child = Glyph(icon, _ink.Secondary, 15, 1.8) };
-        row.Children.Add(tile);
-        var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        words.Children.Add(Ui.Text(name, 13.5, _ink.Text, FontWeight.Medium));
-        words.Children.Add(Ui.Text(note, 12, missing ? _ink.Warn : _ink.Tertiary));
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("28,*,Auto,Auto") };
+        row.Children.Add(Glyph(icon, _ink.Tertiary, 15, 1.8));
+        var words = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0), Opacity = missing ? 0.55 : on ? 1 : 0.5, Background = Brushes.Transparent };
+        words.Children.Add(Ui.Text(name, 14, _ink.Text, FontWeight.Medium));
+        var sub = Ui.Text(warn ? note + " · ?" : note, 12.5, _ink.Tertiary);
+        sub.TextTrimming = TextTrimming.CharacterEllipsis;
+        sub.VerticalAlignment = VerticalAlignment.Center;
+        words.Children.Add(sub);
+        if (tip is not null) ToolTip.SetTip(words, tip);
         Grid.SetColumn(words, 1);
         row.Children.Add(words);
-        if (!builtin)
+        if (missing)
+        {
+            var install = Round(DownloadIcon, L.T("Instalar"), () => ExtensionsRequested?.Invoke(), size: 28);
+            Grid.SetColumn(install, 3);
+            row.Children.Add(install);
+            return row;
+        }
+        if (id != Specialist.CanvasTool)
         {
             var asks = s.AsksFor(id);
-            var shieldName = asks ? L.T("Pide permiso antes de usarla") : L.T("La usa sin preguntar");
-            var shield = Ui.Press(Glyph(asks ? ShieldIcon : ShieldCheckIcon, asks ? _ink.Tertiary : _ink.Accent, 15, 1.8), () =>
+            var shieldName = asks ? L.T("Pide permiso") : L.T("Sin preguntar");
+            var shield = Ui.Press(Glyph(asks ? ShieldAskIcon : ShieldCheckIcon, asks ? _ink.Tertiary : _ink.Accent, 15, 1.8), () =>
             {
                 if (ro || !on) return;
                 Tool(s, id).Ask = !asks;
                 Changed();
                 RenderTools(s);
-            }, ro || !on ? null : (b, hover) => b.Background = hover ? _ink.Pill : asks ? Brushes.Transparent : PlanPanel.Translucent(_ink.Accent, 0.13), shieldName);
-            shield.Width = shield.Height = 30;
+            }, ro ? null : (b, hover) => b.Background = hover ? _ink.Pill : Brushes.Transparent, shieldName);
+            shield.Width = shield.Height = 28;
             shield.CornerRadius = new CornerRadius(999);
-            shield.Margin = new Thickness(6, 0, 6, 0);
-            shield.Background = asks ? Brushes.Transparent : PlanPanel.Translucent(_ink.Accent, 0.13);
-            shield.Opacity = ro || !on ? 0.4 : 1;
+            shield.Margin = new Thickness(0, 0, 8, 0);
+            shield.IsVisible = on;
+            if (ro) shield.Cursor = Cursor.Default;
             ToolTip.SetTip(shield, shieldName);
             Grid.SetColumn(shield, 2);
             row.Children.Add(shield);
@@ -516,19 +556,10 @@ sealed class SpecialistsPane : Panel
             Changed();
             RenderTools(s);
         }, name);
+        toggle.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(toggle, 3);
         row.Children.Add(toggle);
-        var card = new Border
-        {
-            Background = _ink.Raised,
-            BorderBrush = _ink.Hairline,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(12, 9, 8, 9),
-            Opacity = on && !missing ? 1 : 0.62,
-            Child = row,
-        };
-        return card;
+        return row;
     }
 
     static SpecialistTool Tool(Specialist s, string id)
@@ -537,64 +568,46 @@ sealed class SpecialistsPane : Panel
         return tool;
     }
 
-    /// <summary>El agente: las marcas en una pastilla con una perilla que se desliza; con lugar, también el nombre.</summary>
-    Control AgentSegments(Specialist s, bool ro, Action changed)
+    /// <summary>El agente: cuatro botones cortos (CC, CX, GE, CP); el nombre, en el tooltip.</summary>
+    Control AgentButtons(Specialist s, bool ro, Action changed)
     {
-        var host = new Border { HorizontalAlignment = HorizontalAlignment.Right };
-        var wide = true;
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         void Build()
         {
-            var width = wide ? 104.0 : 40.0;
-            var index = Math.Max(0, Array.FindIndex(Agents, a => a.Kind == s.Agent));
-            var knob = new Border { Width = width, Height = 28, CornerRadius = new CornerRadius(999), Background = _ink.Raised, BoxShadow = BoxShadows.Parse("0 1 3 0 #24000000"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(index * width, 0, 0, 0) };
-            if (TerminalPane.Animate) knob.Transitions = [new ThicknessTransition { Property = MarginProperty, Duration = TimeSpan.FromMilliseconds(320), Easing = new CubicEaseOut() }];
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            foreach (var (kind, mark) in Agents)
+            row.Children.Clear();
+            foreach (var (kind, _) in Agents)
             {
                 var chosen = kind == s.Agent;
-                var face = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center };
-                face.Children.Add(Ui.Text(mark, 11.5, chosen ? _ink.Text : _ink.Tertiary, FontWeight.SemiBold, Ink.Mono));
-                if (wide) face.Children.Add(Ui.Text(AgentKinds.Label(kind), 12.5, chosen ? _ink.Text : _ink.Tertiary));
                 var k = kind;
-                var button = Ui.Press(face, () =>
+                var label = Ui.Text(Short[kind], 11.5, chosen ? _ink.Accent : _ink.Tertiary, FontWeight.SemiBold);
+                label.HorizontalAlignment = HorizontalAlignment.Center;
+                label.VerticalAlignment = VerticalAlignment.Center;
+                var button = Ui.Press(label, () =>
                 {
                     if (ro || s.Agent == k) return;
                     s.Agent = k;
                     if (k != AgentKinds.Claude) s.Model = s.Effort = null;
-                    knob.Margin = new Thickness(Array.FindIndex(Agents, a => a.Kind == k) * width, 0, 0, 0);
-                    // Los colores de las letras, después de que llega la perilla.
-                    DispatcherTimer.RunOnce(Build, TimeSpan.FromMilliseconds(TerminalPane.Animate ? 200 : 0));
+                    Build();
                     changed();
-                }, null, AgentKinds.Label(kind));
-                button.Width = width;
-                button.Height = 28;
-                button.CornerRadius = new CornerRadius(999);
+                }, ro ? null : (b, on) => label.Foreground = chosen ? _ink.Accent : on ? _ink.Text : _ink.Tertiary, AgentKinds.Label(kind));
+                button.Width = 34;
+                button.Height = 30;
+                button.CornerRadius = new CornerRadius(9);
+                button.Background = chosen ? PlanPanel.Translucent(_ink.Accent, 0.13) : _ink.Pill;
+                if (ro) button.Cursor = Cursor.Default;
                 ToolTip.SetTip(button, AgentKinds.Label(kind));
-                buttons.Children.Add(button);
+                row.Children.Add(button);
             }
-            host.Child = new Border
-            {
-                Background = _ink.Surface,
-                CornerRadius = new CornerRadius(999),
-                Padding = new Thickness(3),
-                Opacity = ro ? 0.8 : 1,
-                Child = new Panel { Children = { knob, buttons } },
-            };
         }
         Build();
-        // Sin lugar para los nombres, solo las marcas (el nombre queda en el tooltip).
-        host.AttachedToVisualTree += (_, _) =>
-        {
-            if (host.Parent is Control parent)
-                parent.SizeChanged += (_, e) =>
-                {
-                    var fits = e.NewSize.Width >= 4 * 104 + 6 + 8;
-                    if (fits == wide) return;
-                    wide = fits;
-                    Build();
-                };
-        };
-        return host;
+        return row;
+    }
+
+    /// <summary>Las dos últimas partes de una ruta (la completa, en el tooltip).</summary>
+    static string ShortPath(string path)
+    {
+        var parts = path.TrimEnd('\\', '/').Split('\\', '/');
+        return parts.Length <= 2 ? path : string.Join(System.IO.Path.DirectorySeparatorChar, parts[^2..]);
     }
 
     // ── Menús ───────────────────────────────────────────────────────────────────────────────
@@ -602,7 +615,7 @@ sealed class SpecialistsPane : Panel
     void PickModel(Control anchor, Specialist s)
     {
         string[] models = ["", "haiku", "sonnet", "opus", "fable"];
-        DropList.Show(anchor, _ink, [.. models.Select(m => new DropList.Entry(m, m.Length == 0 ? L.T("por defecto") : Format.ModelChoice(m), (s.Model ?? "") == m))], picked =>
+        DropList.Show(anchor, _ink, [.. models.Select(m => new DropList.Entry(m, m.Length == 0 ? L.T("Por defecto") : Format.ModelChoice(m), (s.Model ?? "") == m))], picked =>
         {
             if (picked is null) return;
             s.Model = picked.Length == 0 ? null : picked;
@@ -626,9 +639,9 @@ sealed class SpecialistsPane : Panel
     {
         var folders = TerminalRecents.Load().Folders.Where(Directory.Exists).Take(6).ToList();
         if (s.Folder is { } mine && !folders.Contains(mine, StringComparer.OrdinalIgnoreCase)) folders.Insert(0, mine);
-        List<DropList.Entry> entries = [new("", L.T("La del proyecto abierto"), s.Folder is null)];
+        List<DropList.Entry> entries = [new("", L.T("Proyecto abierto"), s.Folder is null)];
         entries.AddRange(folders.Select(f => new DropList.Entry("f:" + f, f, string.Equals(f, s.Folder, StringComparison.OrdinalIgnoreCase))));
-        entries.Add(new DropList.Entry("browse", L.T("Elegir otra carpeta…"), Action: true));
+        entries.Add(new DropList.Entry("browse", L.T("Elegir otra…"), Action: true));
         DropList.Show(anchor, _ink, entries, async picked =>
         {
             if (picked is null) return;
@@ -646,8 +659,8 @@ sealed class SpecialistsPane : Panel
 
     void ShowMore(Control anchor, Specialist s)
     {
-        List<DropList.Entry> entries = [new("export", L.T("Exportar como .json…"))];
-        if (!s.ReadOnly) entries.Add(new("delete", L.T("Borrar…"), Action: true, Danger: true));
+        List<DropList.Entry> entries = [new("export", L.T("Exportar como .json"))];
+        if (!s.ReadOnly) entries.Add(new("delete", L.T("Borrar"), Action: true, Danger: true));
         DropList.Show(anchor, _ink, entries, picked =>
         {
             if (picked == "export") _ = ExportAsync(s);
@@ -764,7 +777,7 @@ sealed class SpecialistsPane : Panel
     {
         if (_heroAvatar is not null)
         {
-            PaintAvatar(_heroAvatar, s, 30);
+            PaintAvatar(_heroAvatar, s, 26);
             if (TerminalPane.Animate)
             {
                 _heroAvatar.RenderTransformOrigin = RelativePoint.Center;
@@ -774,7 +787,6 @@ sealed class SpecialistsPane : Panel
                 Dispatcher.UIThread.Post(() => _heroAvatar.RenderTransform = TransformOperations.Identity, DispatcherPriority.Render);
             }
         }
-        if (_barAvatar is not null) PaintAvatar(_barAvatar, s, 14);
         PaintRow(s);
         Changed();
     }
@@ -783,19 +795,9 @@ sealed class SpecialistsPane : Panel
 
     Control EmptyState()
     {
-        var panel = new StackPanel { Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 360, Margin = new Thickness(24) };
-        var avatar = new Border { Width = 64, Height = 64, CornerRadius = new CornerRadius(19), Background = PlanPanel.Translucent(_ink.Accent, 0.15), Child = Glyph(Icon, _ink.Accent, 30, 1.6), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 6) };
+        var panel = new StackPanel { Spacing = 14, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 360, Margin = new Thickness(24) };
+        var avatar = new Border { Width = 56, Height = 56, CornerRadius = new CornerRadius(16), Background = PlanPanel.Translucent(_ink.Accent, 0.15), Child = Glyph(Icon, _ink.Accent, 26, 1.6), HorizontalAlignment = HorizontalAlignment.Center };
         panel.Children.Add(avatar);
-        panel.Children.Add(new TextBlock { Text = L.T("Sus especialistas"), FontFamily = Ink.Display, FontSize = 18, FontWeight = FontWeight.SemiBold, Foreground = _ink.Text, HorizontalAlignment = HorizontalAlignment.Center });
-        var badge = Badge(_ink);
-        badge.HorizontalAlignment = HorizontalAlignment.Center;
-        panel.Children.Add(badge);
-        panel.Children.Add(new TextBlock
-        {
-            Text = L.T("Un agente con su rol, sus instrucciones y sus herramientas, listo para abrir en la Terminal."),
-            FontFamily = Ink.Sans, FontSize = 14, Foreground = _ink.Secondary, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center,
-            Margin = new Thickness(0, 2, 0, 10),
-        });
         var add = Ui.Press(Glyph(PlusIcon, Ink.On(_ink.Accent), 15, 2.2), New, (b, on) => b.Opacity = on ? 0.88 : 1, L.T("Especialista nuevo"));
         add.Width = add.Height = 34;
         add.CornerRadius = new CornerRadius(999);
@@ -821,23 +823,21 @@ sealed class SpecialistsPane : Panel
         return panel;
     }
 
-    /// <summary>La etiqueta «Experimental»: el módulo todavía no está terminado.</summary>
+    /// <summary>«Experimental»: un frasco chico junto al título; lo que significa, en el tooltip.</summary>
     public static Border Badge(Ink ink)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-        row.Children.Add(Glyph(FlaskIcon, ink.Accent, 11, 2));
-        row.Children.Add(new TextBlock { Text = L.T("Experimental"), FontFamily = Ink.Sans, FontSize = 11, FontWeight = FontWeight.SemiBold, Foreground = ink.Accent, VerticalAlignment = VerticalAlignment.Center });
         var badge = new Border
         {
-            Child = row,
-            Height = 19,
-            Padding = new Thickness(6, 0, 8, 0),
+            Width = 24,
+            Height = 24,
             CornerRadius = new CornerRadius(999),
             Background = PlanPanel.Translucent(ink.Accent, 0.15),
-            HorizontalAlignment = HorizontalAlignment.Left,
+            Child = Glyph(FlaskIcon, ink.Accent, 13, 2),
+            VerticalAlignment = VerticalAlignment.Center,
             Focusable = true,
         };
-        ToolTip.SetTip(badge, L.T("Aún en desarrollo: puede cambiar o fallar"));
+        ToolTip.SetTip(badge, L.T("Experimental: puede cambiar o fallar"));
+        Avalonia.Automation.AutomationProperties.SetName(badge, L.T("Experimental"));
         return badge;
     }
 
@@ -916,8 +916,10 @@ sealed class SpecialistsPane : Panel
 
     Control Section(string title, Control body, Control? right = null)
     {
-        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 8) };
-        head.Children.Add(Ui.Text(title, 12, _ink.Tertiary, FontWeight.SemiBold));
+        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), MinHeight = 28, Margin = new Thickness(2, 0, 0, 4) };
+        var text = Ui.Text(title, 12, _ink.Tertiary, FontWeight.SemiBold);
+        text.VerticalAlignment = VerticalAlignment.Center;
+        head.Children.Add(text);
         if (right is not null)
         {
             Grid.SetColumn(right, 1);
@@ -926,16 +928,32 @@ sealed class SpecialistsPane : Panel
         return new StackPanel { Children = { head, body } };
     }
 
-    Border Row(string label, Control value)
+    /// <summary>Una fila de ajuste: el ícono (su nombre, en el tooltip) y el valor; una línea fina la separa de la anterior.</summary>
+    Border Row(string icon, string name, Control value, bool first = false)
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("120,*") };
-        var text = Ui.Text(label, 13, _ink.Secondary);
-        grid.Children.Add(text);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("28,*") };
+        var mark = new Border { Background = Brushes.Transparent, Child = Glyph(icon, _ink.Tertiary, 15, 1.8) };
+        ToolTip.SetTip(mark, name);
+        grid.Children.Add(mark);
+        value.HorizontalAlignment = HorizontalAlignment.Left;
+        value.VerticalAlignment = VerticalAlignment.Center;
+        value.Margin = new Thickness(12, 0, 0, 0);
         Grid.SetColumn(value, 1);
-        value.HorizontalAlignment = HorizontalAlignment.Right;
         grid.Children.Add(value);
-        return new Border { Background = _ink.Pill, CornerRadius = new CornerRadius(10), MinHeight = 42, Padding = new Thickness(14, 4, 6, 4), ClipToBounds = true, Child = grid };
+        Avalonia.Automation.AutomationProperties.SetName(grid, name);
+        return Line(grid, first);
     }
+
+    /// <summary>El alto y la línea fina de arriba que comparten las filas.</summary>
+    Border Line(Control child, bool first) => new()
+    {
+        MinHeight = 48,
+        Padding = new Thickness(6, 6, 4, 6),
+        BorderBrush = first ? null : _ink.Hairline,
+        BorderThickness = new Thickness(0, first ? 0 : 1, 0, 0),
+        ClipToBounds = true,
+        Child = child,
+    };
 
     /// <summary>Esconde o muestra una fila; con animación, se encoge y se desvanece.</summary>
     static void Collapse(Border row, bool hide, bool animate)
@@ -959,23 +977,32 @@ sealed class SpecialistsPane : Panel
         }
     }
 
-    Control ValuePick(string value, bool ro, Action<Control> pick, string? icon = null, FontFamily? family = null)
+    /// <summary>Un valor que se elige de un menú: una pastilla con la flecha (de solo lectura, el texto solo).</summary>
+    Control ValuePick(string value, bool ro, Action<Control> pick, FontFamily? family = null)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        var text = Ui.Text(value, 13, ro ? _ink.Secondary : _ink.Text, family: family);
-        text.TextTrimming = family is null ? TextTrimming.CharacterEllipsis : TextTrimming.PrefixCharacterEllipsis;
-        text.MaxWidth = 340;
+        var text = Ui.Text(value, family is null ? 13 : 12, _ink.Secondary, family: family);
+        text.TextTrimming = TextTrimming.CharacterEllipsis;
+        text.MaxWidth = 300;
+        text.VerticalAlignment = VerticalAlignment.Center;
         row.Children.Add(text);
-        Control mark = icon is null ? Ui.Chevron(_ink.Tertiary) : Glyph(icon, _ink.Tertiary, 14, 1.8);
-        mark.VerticalAlignment = VerticalAlignment.Center;
-        if (!ro) row.Children.Add(mark);
+        if (!ro)
+        {
+            var mark = Ui.Chevron(_ink.Tertiary);
+            mark.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(mark);
+        }
         Border? button = null;
-        button = Ui.Press(row, () => { if (!ro) pick(button!); }, ro ? null : (b, on) => b.Background = on ? _ink.Raised : Brushes.Transparent, value);
-        button.Height = 32;
-        button.Padding = new Thickness(10, 0, 8, 0);
-        button.CornerRadius = new CornerRadius(8);
+        button = Ui.Press(row, () => { if (!ro) pick(button!); }, ro ? null : (b, on) =>
+        {
+            b.Background = on ? _ink.Track : _ink.Pill;
+            text.Foreground = on ? _ink.Text : _ink.Secondary;
+        }, value);
+        button.Height = 30;
+        button.Padding = ro ? new Thickness(0) : new Thickness(12, 0, 10, 0);
+        button.CornerRadius = new CornerRadius(999);
+        button.Background = ro ? Brushes.Transparent : _ink.Pill;
         if (ro) button.Cursor = Cursor.Default;
-        ToolTip.SetTip(button, value);
         return button;
     }
 
@@ -998,20 +1025,12 @@ sealed class SpecialistsPane : Panel
         return track;
     }
 
-    Border Chip(string icon, string text, IBrush foreground, IBrush background)
-    {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
-        row.Children.Add(Glyph(icon, foreground, 12, 1.8));
-        row.Children.Add(Ui.Text(text, 11.5, foreground));
-        return new Border { Child = row, Background = background, CornerRadius = new CornerRadius(999), Padding = new Thickness(8, 2, 9, 2), VerticalAlignment = VerticalAlignment.Center };
-    }
-
     TextBlock Caption(string text) => new() { Text = text, FontFamily = Ink.Sans, FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = _ink.Tertiary, Margin = new Thickness(10, 6, 10, 3) };
 
-    Border Round(string path, string name, Action onClick, bool fill = false)
+    Border Round(string path, string name, Action onClick, bool fill = false, double size = 34)
     {
         var button = Ui.Press(Glyph(path, _ink.Secondary, fill ? 17 : 15, fill ? 0 : 1.8, fill), onClick, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name);
-        button.Width = button.Height = 34;
+        button.Width = button.Height = size;
         button.CornerRadius = new CornerRadius(999);
         button.VerticalAlignment = VerticalAlignment.Center;
         ToolTip.SetTip(button, name);
@@ -1040,12 +1059,12 @@ sealed class SpecialistsPane : Panel
 
     static string EffortLabel(string? effort) => effort switch
     {
-        null or "" => L.T("por defecto"),
-        "low" => L.T("bajo"),
-        "medium" => L.T("medio"),
-        "high" => L.T("alto"),
-        "xhigh" => L.T("muy alto"),
-        "max" => L.T("máximo"),
+        null or "" => L.T("Por defecto"),
+        "low" => L.T("Bajo"),
+        "medium" => L.T("Medio"),
+        "high" => L.T("Alto"),
+        "xhigh" => L.T("Muy alto"),
+        "max" => L.T("Máximo"),
         _ => effort,
     };
 

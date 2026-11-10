@@ -558,15 +558,15 @@ sealed class ConsoleWindow : Window
     /// <summary>«Proyectos», el botón de uno nuevo y, debajo, su buscador y sus filtros.</summary>
     Control ProjectsHeader() => new StackPanel { Children = { ListHeader(L.T("Proyectos"), _projects.New, L.T("Proyecto nuevo")), _projects.ListTools() } };
 
-    /// <summary>«Especialistas» con su etiqueta «Experimental» debajo, y el botón de uno nuevo.</summary>
+    /// <summary>«Especialistas» con el frasco de «Experimental» al lado, y el botón de uno nuevo.</summary>
     Control SpecialistsHeader()
     {
         var header = (Grid)ListHeader(L.T("Especialistas"), _specialists.New, L.T("Especialista nuevo"));
         var title = (TextBlock)header.Children[0];
         header.Children.Remove(title);
         var badge = SpecialistsPane.Badge(_ink);
-        badge.Margin = new Thickness(0, 4, 0, 0);
-        header.Children.Insert(0, new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { title, badge } });
+        badge.Margin = new Thickness(8, 0, 0, 0);
+        header.Children.Insert(0, new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { title, badge } });
         return header;
     }
 
