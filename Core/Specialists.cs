@@ -73,7 +73,7 @@ sealed class Specialist
         Instructions = Clip(Instructions, MaxInstructions);
         if (!Colors.Contains(Color)) Color = Colors[0];
         if (!Glyphs.Contains(Glyph)) Glyph = Glyphs[0];
-        if (Agent is not (AgentKinds.Claude or AgentKinds.Codex or AgentKinds.Gemini or AgentKinds.Copilot)) Agent = AgentKinds.Claude;
+        if (Agent is not (AgentKinds.Claude or AgentKinds.Codex or AgentKinds.Gemini or AgentKinds.Copilot or AgentKinds.OpenCode)) Agent = AgentKinds.Claude;
         if (Agent != AgentKinds.Claude) Model = Effort = null;
         if (Folder is { Length: 0 }) Folder = null;
         Tools ??= new();

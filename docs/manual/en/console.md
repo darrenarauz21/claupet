@@ -165,7 +165,7 @@ A specialist is an agent with a name, role, instructions and tools, ready to ope
 
 - **+** creates one. You type the name and role in place; tap the big icon to change its color and icon.
   Everything saves on its own.
-- **Agent**: Claude Code, Codex, Gemini or Copilot. With Claude Code you also pick the model and effort.
+- **Agent**: Claude Code, Codex, Gemini, Copilot or OpenCode. With Claude Code you also pick the model and effort.
 - **Folder**: where it opens; if you don't pick one, in the project you're using.
 - **Tools**: Claupet's canvas and the MCP servers of your extensions. The shield says whether the agent asks
   before using each one or uses it without asking. **+** takes you to extensions to add more.

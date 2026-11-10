@@ -607,7 +607,7 @@ sealed record ExtensionManifest
         var list = new List<AgentSpec>();
         if (!r.TryGetProperty("agents", out var v)) return list;
         if (v.ValueKind != JsonValueKind.Array) { errors.Add(L.T("«{0}» debe ser una lista.", "agents")); return list; }
-        string[] kinds = [AgentKinds.Claude, AgentKinds.Codex, AgentKinds.Gemini, AgentKinds.Copilot];
+        string[] kinds = [AgentKinds.Claude, AgentKinds.Codex, AgentKinds.Gemini, AgentKinds.Copilot, AgentKinds.OpenCode];
         foreach (var item in v.EnumerateArray())
         {
             if (item.ValueKind != JsonValueKind.Object) { errors.Add(L.T("Cada especialista de «agents» es un objeto.")); continue; }

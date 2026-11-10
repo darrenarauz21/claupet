@@ -486,7 +486,7 @@ la persona (la carpeta `propios`) siguen teniendo prioridad.
 
 La ranura `mcp` trae servidores [MCP](https://modelcontextprotocol.io). Claupet los suma a su propio servidor
 (el del canvas) en cada agente que abre la Console: Claude Code (`--mcp-config`), Codex (`-c mcp_servers…`) y
-los agentes ACP, como Gemini CLI o Copilot CLI (`session/new`). No lleva `runtime`: el agente arranca el
+los agentes ACP: Gemini CLI, Copilot CLI y OpenCode (`session/new`). No lleva `runtime`: el agente arranca el
 servidor y habla con él, no Claupet. Así, cualquier servidor MCP que ya exista se instala soltando un `.claupet`.
 
 ```json
@@ -560,7 +560,7 @@ solo lectura, y los duplica para cambiarlos. Suelen ir junto con sus servidores 
 | `id` | `^[a-zA-Z][a-zA-Z0-9_]{0,31}$`, único en la extensión. Hasta 16 especialistas |
 | `name`, `role` | Hasta 60 y 120 caracteres; un texto o uno por idioma |
 | `instructions` | Hasta 8000 caracteres |
-| `agent` | `claude` (por defecto), `codex`, `gemini` o `copilot` |
+| `agent` | `claude` (por defecto), `codex`, `gemini`, `copilot` u `opencode` |
 | `model`, `effort` | Solo con `claude`: un modelo de Claude Code y `low`, `medium`, `high`, `xhigh` o `max` |
 | `color` | `#D97757`, `#5BA3E0`, `#6DB283`, `#A48BE0`, `#E07CA4` o `#E0A84B` |
 | `icon` | `search`, `pen`, `bug`, `chart`, `code`, `book`, `rocket`, `flask`, `shield`, `spark`, `globe` o `heart` |

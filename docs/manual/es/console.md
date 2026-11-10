@@ -165,7 +165,7 @@ ejemplo, un «Revisor de PRs» con Claude Code, sus reglas para revisar y el ser
 
 - Con **+** se crea uno. El nombre y el rol se escriben en el mismo lugar; tocando el ícono grande se cambian el
   color y el ícono. Todo se guarda solo.
-- **Agente**: Claude Code, Codex, Gemini o Copilot. Con Claude Code también se eligen el modelo y el esfuerzo.
+- **Agente**: Claude Code, Codex, Gemini, Copilot u OpenCode. Con Claude Code también se eligen el modelo y el esfuerzo.
 - **Carpeta**: dónde abre; si no se elige, en la del proyecto que se está usando.
 - **Herramientas**: el canvas de Claupet y los servidores MCP de sus extensiones. El escudo dice si el agente
   pide permiso antes de usar cada una o la usa sin preguntar. El **+** lleva a las extensiones para sumar más.

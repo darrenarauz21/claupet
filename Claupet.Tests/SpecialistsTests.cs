@@ -83,6 +83,11 @@ public sealed class SpecialistsTests : IDisposable
         read.Agent = AgentKinds.Codex;
         Specialists.Save(read);
         Assert.Null(Assert.Single(Specialists.Mine()).Model);
+
+        // OpenCode es uno más de los agentes que puede llevar.
+        read.Agent = AgentKinds.OpenCode;
+        Specialists.Save(read);
+        Assert.Equal(AgentKinds.OpenCode, Assert.Single(Specialists.Mine()).Agent);
     }
 
     [Fact]

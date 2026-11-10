@@ -65,11 +65,11 @@ sealed class SpecialistsPane : Panel
     };
 
     static readonly (string Kind, string Mark)[] Agents =
-        [(AgentKinds.Claude, "✻"), (AgentKinds.Codex, "cx"), (AgentKinds.Gemini, "✦"), (AgentKinds.Copilot, "gh")];
+        [(AgentKinds.Claude, "✻"), (AgentKinds.Codex, "cx"), (AgentKinds.Gemini, "✦"), (AgentKinds.Copilot, "gh"), (AgentKinds.OpenCode, "oc")];
 
     static readonly Dictionary<string, string> Short = new()
     {
-        [AgentKinds.Claude] = "CC", [AgentKinds.Codex] = "CX", [AgentKinds.Gemini] = "GE", [AgentKinds.Copilot] = "CP",
+        [AgentKinds.Claude] = "CC", [AgentKinds.Codex] = "CX", [AgentKinds.Gemini] = "GE", [AgentKinds.Copilot] = "CP", [AgentKinds.OpenCode] = "OC",
     };
 
     public static string MarkOf(string kind) => Agents.FirstOrDefault(a => a.Kind == kind).Mark ?? "✻";
@@ -498,7 +498,7 @@ sealed class SpecialistsPane : Panel
         {
             var http = server.Type == McpServerSpec.Http;
             var where = http && Uri.TryCreate(server.Url, UriKind.Absolute, out var u) ? u.Host : null;
-            var warn = http && s.Agent is AgentKinds.Gemini or AgentKinds.Copilot ? L.T("Por internet: si {0} lo acepta", AgentKinds.Label(s.Agent)) : null;
+            var warn = http && s.Agent is AgentKinds.Gemini or AgentKinds.Copilot or AgentKinds.OpenCode ? L.T("Por internet: si {0} lo acepta", AgentKinds.Label(s.Agent)) : null;
             var tip = string.Join(" · ", new[] { where, warn }.Where(x => x is not null));
             Add(ToolRow(s, server.Name, server.Name, server.Extension, http ? GlobeIcon : PlugIcon, tip: tip.Length == 0 ? null : tip, warn: warn is not null));
         }
@@ -568,7 +568,7 @@ sealed class SpecialistsPane : Panel
         return tool;
     }
 
-    /// <summary>El agente: cuatro botones cortos (CC, CX, GE, CP); el nombre, en el tooltip.</summary>
+    /// <summary>El agente: cinco botones cortos (CC, CX, GE, CP, OC); el nombre, en el tooltip.</summary>
     Control AgentButtons(Specialist s, bool ro, Action changed)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
