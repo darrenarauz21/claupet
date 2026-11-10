@@ -5,10 +5,11 @@ using System.Text.RegularExpressions;
 namespace Claupet;
 
 /// <summary>
-/// Una sesión anterior de Claude Code en una carpeta: su id, su título, cuándo se usó y lo primero que se pidió. Named:
-/// el título es uno de verdad (el que guardó Claude Code o uno escrito por el asistente); si no, es el pedido recortado.
+/// Una sesión anterior de un agente en una carpeta: su id, su título, cuándo se usó, lo primero que se pidió (si se sabe)
+/// y de qué agente es (Kind). Named: el título es uno de verdad (el que guardó el agente o uno escrito por el asistente);
+/// si no, es el pedido recortado. Path: el .jsonl, solo en las de Claude Code (las otras las guarda su agente).
 /// </summary>
-sealed record PastSession(string Id, string Title, DateTime LastUsed, string Path, string Prompt = "", bool Named = true);
+sealed record PastSession(string Id, string Title, DateTime LastUsed, string Path, string Prompt = "", bool Named = true, string Kind = AgentKinds.Claude);
 
 /// <summary>
 /// El historial de Claude Code de una carpeta, para retomarlo desde Claupet Terminal: cada sesión es un .jsonl en

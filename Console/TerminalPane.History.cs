@@ -44,6 +44,11 @@ sealed partial class TerminalPane
     /// </summary>
     void Resume(Tab from, PastSession past, bool replace = false, string draft = "")
     {
+        if (past.Kind != AgentKinds.Claude)
+        {
+            ResumeOther(from.Agent.Options.Folder, past);
+            return;
+        }
         if (_tabs.FirstOrDefault(t => (!replace || t != from) && t.Shell is null && (t.Agent.Transcript.SessionId == past.Id || t.Agent.Options.Resume == past.Id)) is { } open)
         {
             Select(open);
@@ -65,6 +70,31 @@ sealed partial class TerminalPane
             options = new AgentOptions(o.Folder, account?.ConfigDir, last.Model, last.Effort, null, AgentKinds.Claude, past.Id);
         }
         StartResumed(options, account?.Label ?? L.T("cuenta por defecto"), past, replace ? tab => ReplaceEnded(from, tab, draft) : null);
+    }
+
+    /// <summary>
+    /// Retoma la sesión de otro agente (Codex, Gemini CLI, Copilot CLI, OpenCode) en una pestaña nueva: el agente la abre
+    /// con lo suyo (thread/resume, session/load) y repite lo de antes. Si ya está abierta en otra pestaña, se va a esa.
+    /// </summary>
+    void ResumeOther(string folder, PastSession past)
+    {
+        if (_tabs.FirstOrDefault(t => t.Shell is null && (t.Agent.Transcript.SessionId == past.Id || t.Agent.Options.Resume == past.Id)) is { } open)
+        {
+            Select(open);
+            return;
+        }
+        if (!Directory.Exists(folder)) return;
+        OtherHistory.Forget(past.Kind, folder);
+        var agent = new TerminalAgent(new AgentOptions(folder, Kind: past.Kind, Resume: past.Id), action => Dispatcher.UIThread.Post(action))
+        {
+            AskIsland = !Program.Args.Contains("--preview"),
+            Coordinate = true,
+        };
+        var tab = new Tab(agent, AgentKinds.Label(past.Kind));
+        agent.Changed += changed => OnChanged(tab, changed);
+        Add(tab);
+        agent.Start();
+        _input.Focus();
     }
 
     /// <summary>Lee la conversación de antes (aparte) y abre la pestaña que la sigue con --resume.</summary>

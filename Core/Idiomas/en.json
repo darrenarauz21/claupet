@@ -1767,8 +1767,6 @@
   "Quitar del panel": "Remove from the panel",
   "Sesión retomada: lo de arriba es lo de antes. Siga escribiendo abajo.": "Session resumed: what's above is from before. Keep typing below.",
   "Sesión retomada al abrir Claupet: lo de arriba es lo de antes. Siga escribiendo abajo.": "Session resumed when Claupet opened: what's above is from before. Keep typing below.",
-  "El historial es el de Claude Code: se ve en una pestaña de Claude Code.": "The history is Claude Code's: it shows in a Claude Code tab.",
-  "Todavía no hay sesiones de Claude Code en esta carpeta con esta cuenta.": "There are no Claude Code sessions in this folder with this account yet.",
   "Toque una para retomarla en una pestaña nueva, con lo de antes a la vista (también con /resume).": "Tap one to resume it in a new tab, with what came before in view (also with /resume).",
   "ayer, {0:HH:mm}": "yesterday, {0:HH:mm}",
   "esta pestaña": "this tab",
@@ -2247,5 +2245,10 @@
   "Buscar en el historial": "Search history",
   "Mostrar {0} sesiones más": "Show {0} more sessions",
   "Ninguna sesión habla de «{0}».": "No session mentions “{0}”.",
-  "Busca en los títulos y en lo que se pidió": "Searches titles and what was asked"
+  "Busca en los títulos y en lo que se pidió": "Searches titles and what was asked",
+  "Sesión de {0}": "{0} session",
+  "[Imagen]": "[Image]",
+  "Todavía no hay sesiones en esta carpeta.": "There are no sessions in this folder yet.",
+  "{0} no pudo retomar la sesión ({1}): se abrió una nueva.": "{0} couldn't resume the session ({1}): a new one was opened.",
+  "Codex no pudo retomar la sesión ({0}): se abrió una nueva.": "Codex couldn't resume the session ({0}): a new one was opened."
 }

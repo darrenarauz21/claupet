@@ -358,18 +358,79 @@ sealed partial class TerminalPane
         if (_historyTitles.TryGetValue(id, out var text)) text.Text = clean;
     }
 
+    /// <summary>
+    /// El primer pedido de una sesión de otro agente (Gemini CLI, Copilot CLI y OpenCode no dicen qué se pidió al listar
+    /// sus sesiones): se pide su título ya, así el historial no la muestra como «Sesión de OpenCode».
+    /// </summary>
+    void TitleFirstAsk(Tab tab, string text)
+    {
+        if (tab.Agent.Options.Kind == AgentKinds.Claude || tab.Agent.Options.Resume is not null) return;
+        if (tab.Agent.Transcript.SessionId is not { } id || SessionTitles.Cached(id) is not null || TitlesAsked.Contains(id)) return;
+        if (tab.Agent.Transcript.Blocks.Count(b => b.Kind == AgentBlockKind.Ask) > 1 || text.Trim().Length == 0) return;
+        if (AskTitle?.Invoke(id, text.Length > SessionTitles.PromptLimit ? text[..SessionTitles.PromptLimit] : text) == true) TitlesAsked.Add(id);
+    }
+
     /// <summary>Lee la página del historial (con la búsqueda) aparte y la muestra.</summary>
     void ReadHistory(Tab tab, int version)
     {
-        var configDir = tab.Agent.Options.ConfigDir ?? global::Claupet.Account.DefaultDir;
+        var configDir = HistoryAccount(tab);
         var folder = tab.Agent.Options.Folder;
         var (shown, query, read) = (_historyShown, _historyQuery, ++_historyRead);
-        _ = Task.Run(() =>
+        _ = Task.Run(async () =>
         {
+            void Show(IReadOnlyList<PastSession> list) =>
+                Dispatcher.UIThread.Post(() => { if (version == _sideVersion && read == _historyRead) ShowHistory(tab, list); });
             // Una más de las que se muestran: si llega, hay más para cargar.
-            var sessions = ClaudeHistory.List(configDir, folder, shown + 1, query);
-            Dispatcher.UIThread.Post(() => { if (version == _sideVersion && read == _historyRead) ShowHistory(tab, sessions); });
+            var claude = ClaudeHistory.List(configDir, folder, shown + 1, query);
+            var others = AgentKinds.Available().Where(k => k != AgentKinds.Claude).ToList();
+            var known = others.Select(k => OtherHistory.Cached(k, folder)).ToList();
+            // Los otros agentes se preguntan aparte (abrir cada uno tarda): mientras, se ve lo que ya se sabe.
+            Show(Merge(claude, known.OfType<IReadOnlyList<PastSession>>(), shown, query));
+            if (known.All(k => k is not null)) return;
+            var all = await Task.WhenAll(others.Select(k => OtherHistory.GetAsync(k, folder)));
+            Show(Merge(claude, all, shown, query));
         });
+    }
+
+    /// <summary>La cuenta de Claude Code del historial: la de la pestaña (si es de Claude Code) o la de siempre.</summary>
+    static string HistoryAccount(Tab tab) =>
+        tab.Agent.Options.Kind == AgentKinds.Claude ? tab.Agent.Options.ConfigDir ?? global::Claupet.Account.DefaultDir : global::Claupet.Account.DefaultDir;
+
+    /// <summary>Las de Claude Code y las de los otros agentes juntas, la más reciente primero, con la búsqueda; una más de las que se ven.</summary>
+    internal static IReadOnlyList<PastSession> Merge(IReadOnlyList<PastSession> claude, IEnumerable<IReadOnlyList<PastSession>> others, int shown, string query) =>
+        claude.Concat(others.SelectMany(list => list).Where(p => query.Length == 0 || ClaudeHistory.Matches(p, query)))
+            .OrderByDescending(p => p.LastUsed).Take(shown + 1).ToList();
+
+    /// <summary>
+    /// Lo que dijo cada agente (que no es Claude Code) de sus sesiones en una carpeta, por un minuto: «Cargar más» y la
+    /// búsqueda no lo vuelven a abrir.
+    /// </summary>
+    internal static class OtherHistory
+    {
+        static readonly TimeSpan Fresh = TimeSpan.FromMinutes(1);
+        static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime At, Task<IReadOnlyList<PastSession>> List)> Seen =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        static string Key(string kind, string folder) => kind + "|" + global::Claupet.Account.Normalize(folder);
+
+        public static IReadOnlyList<PastSession>? Cached(string kind, string folder) =>
+            Seen.TryGetValue(Key(kind, folder), out var seen) && DateTime.UtcNow - seen.At < Fresh && seen.List.IsCompletedSuccessfully
+                ? WithTitles(seen.List.Result) : null;
+
+        public static async Task<IReadOnlyList<PastSession>> GetAsync(string kind, string folder)
+        {
+            var key = Key(kind, folder);
+            if (!Seen.TryGetValue(key, out var seen) || DateTime.UtcNow - seen.At >= Fresh || seen.List.IsFaulted)
+                Seen[key] = seen = (DateTime.UtcNow, AgentHistory.ListAsync(kind, folder));
+            return WithTitles(await seen.List);
+        }
+
+        /// <summary>Con los títulos que el asistente escribió después de preguntar.</summary>
+        static IReadOnlyList<PastSession> WithTitles(IReadOnlyList<PastSession> list) =>
+            list.Select(p => !p.Named && SessionTitles.Cached(p.Id) is { } title ? p with { Title = title, Named = true } : p).ToList();
+
+        /// <summary>Se abrió una sesión de ese agente ahí: la próxima vez se vuelve a preguntar.</summary>
+        public static void Forget(string kind, string folder) => Seen.TryRemove(Key(kind, folder), out _);
     }
 
     /// <summary>
@@ -378,13 +439,6 @@ sealed partial class TerminalPane
     /// </summary>
     void ShowHistory(Tab tab, IReadOnlyList<PastSession> sessions)
     {
-        if (tab.Agent.Options.Kind != AgentKinds.Claude)
-        {
-            _sideBody.Children.Clear();
-            _historySearch = null;
-            _sideBody.Children.Add(Hint(L.T("El historial es el de Claude Code: se ve en una pestaña de Claude Code.")));
-            return;
-        }
         var (field, rows) = HistoryFrame(tab);
         rows.Children.Clear();
         _historyTitles.Clear();
@@ -396,14 +450,15 @@ sealed partial class TerminalPane
         {
             rows.Children.Add(Hint(_historyQuery.Length > 0
                 ? L.T("Ninguna sesión habla de «{0}».", _historyQuery)
-                : L.T("Todavía no hay sesiones de Claude Code en esta carpeta con esta cuenta.")));
+                : L.T("Todavía no hay sesiones en esta carpeta.")));
             return;
         }
         var here = tab.Agent.Transcript.SessionId ?? tab.Agent.Options.Resume;
         var open = OpenSessions();
-        var configDir = tab.Agent.Options.ConfigDir ?? global::Claupet.Account.DefaultDir;
+        var configDir = HistoryAccount(tab);
         _historySessions = sessions;
-        _historyClearable = !page.All(s => open.Contains(s.Id));
+        // Solo se borran las de Claude Code (las de los otros agentes las guarda cada uno).
+        _historyClearable = page.Any(s => s.Kind == AgentKinds.Claude && !open.Contains(s.Id));
         // Borrar todo el historial de esta carpeta (se pide desde el título): pregunta aquí arriba, a la vista.
         if (_confirmClearHistory && _historyClearable)
         {
@@ -516,13 +571,17 @@ sealed partial class TerminalPane
         _historyTitles[past.Id] = title;
         text.Children.Add(title);
         var isOpen = open.Contains(past.Id);
-        var when = Ago(past.LastUsed) + (past.Id == here ? " · " + L.T("esta pestaña") : isOpen ? " · " + L.T("abierta") : "");
+        // De otro agente, su nombre al lado de cuándo.
+        var when = (past.LastUsed == DateTime.MinValue ? AgentKinds.Label(past.Kind)
+                : Ago(past.LastUsed) + (past.Kind == AgentKinds.Claude ? "" : " · " + AgentKinds.Label(past.Kind)))
+            + (past.Id == here ? " · " + L.T("esta pestaña") : isOpen ? " · " + L.T("abierta") : "");
         text.Children.Add(Ui.Text(when, 11.5, past.Id == here ? _ink.Accent : _ink.Tertiary));
         var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         content.Children.Add(text);
-        // La papelera al pasar el mouse; la de una sesión abierta en una pestaña no está (Claude Code la sigue escribiendo).
+        // La papelera al pasar el mouse; la de una sesión abierta en una pestaña no está (Claude Code la sigue escribiendo),
+        // ni la de otro agente (sus sesiones las guarda él).
         Border? trash = null;
-        if (!isOpen)
+        if (!isOpen && past.Kind == AgentKinds.Claude)
         {
             trash = Tool(ChatPane.TrashIcon, L.T("Borrar del historial"), () =>
             {

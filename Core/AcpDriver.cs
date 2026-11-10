@@ -34,6 +34,10 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
     long _requests;
     AgentOptions? _options;
     bool _initialized, _creating, _turn;
+    /// <summary>Lo que anunció para retomar sesiones: session/load (con lo de antes) y session/resume (sin repetirlo).</summary>
+    bool _canLoad, _canResume;
+    /// <summary>Ya se intentó retomar (options.Resume): si falla, la siguiente es una sesión nueva.</summary>
+    bool _resumeTried;
     /// <summary>El agente acepta servidores MCP por HTTP (agentCapabilities.mcpCapabilities.http).</summary>
     bool _mcpHttp;
     /// <summary>El agente ya recibió las instrucciones del especialista (ACP no tiene instrucciones de sistema: van con el primer pedido).</summary>
@@ -245,12 +249,17 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
                 _mcpHttp = result.ValueKind == JsonValueKind.Object && result.TryGetProperty("agentCapabilities", out var caps)
                     && caps.ValueKind == JsonValueKind.Object && caps.TryGetProperty("mcpCapabilities", out var mcp)
                     && mcp.ValueKind == JsonValueKind.Object && mcp.TryGetProperty("http", out var http) && http.ValueKind == JsonValueKind.True;
+                (_canLoad, _canResume) = ResumeCapabilities(result);
                 replies.Add(NewSession());
                 break;
-            case "session/new":
+            case "session/new" or "session/load" or "session/resume":
                 _creating = false;
-                if (result.ValueKind != JsonValueKind.Object || Json.Str(result, "sessionId") is not { } session) return;
+                // session/load y session/resume no devuelven el id: es el que se pidió retomar.
+                var session = result.ValueKind == JsonValueKind.Object ? Json.Str(result, "sessionId") : null;
+                if (request.Method != "session/new") session ??= _options?.Resume;
+                if (session is null) return;
                 _session = session;
+                if (request.Method != "session/new") transcript.AcpResumed(changed);
                 transcript.AcpStarted(session, _options?.Folder);
                 SessionState(result);
                 replies.AddRange(Chosen());
@@ -280,6 +289,12 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
         var message = ErrorMessage(error);
         switch (method)
         {
+            case "session/load" or "session/resume":
+                // No se pudo retomar: una sesión nueva en la misma carpeta, y el aviso.
+                _creating = false;
+                transcript.AcpError(L.T("{0} no pudo retomar la sesión ({1}): se abrió una nueva.", Name, message), changed);
+                replies.Add(NewSession());
+                break;
             case "initialize":
             case "session/new":
                 _creating = false;
@@ -440,9 +455,33 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
         })];
     }
 
+    /// <summary>Lo que anunció en initialize para retomar: loadSession y sessionCapabilities.resume.</summary>
+    internal static (bool Load, bool Resume) ResumeCapabilities(JsonElement init)
+    {
+        if (init.ValueKind != JsonValueKind.Object || !init.TryGetProperty("agentCapabilities", out var caps) || caps.ValueKind != JsonValueKind.Object) return (false, false);
+        var load = caps.TryGetProperty("loadSession", out var l) && l.ValueKind == JsonValueKind.True;
+        var resume = caps.TryGetProperty("sessionCapabilities", out var s) && s.ValueKind == JsonValueKind.Object
+            && s.TryGetProperty("resume", out var r) && r.ValueKind is not (JsonValueKind.Null or JsonValueKind.False);
+        return (load, resume);
+    }
+
+    /// <summary>
+    /// La sesión: si se pidió retomar una (options.Resume), con session/load (el agente repite lo de antes) o, si solo
+    /// sabe session/resume, con ese; si no, o si ya falló, una nueva.
+    /// </summary>
     string NewSession()
     {
         _creating = true;
+        if (!_resumeTried && _options?.Resume is { Length: > 0 } resume && (_canLoad || _canResume))
+        {
+            _resumeTried = true;
+            return Request(_canLoad ? "session/load" : "session/resume", new JsonObject
+            {
+                ["sessionId"] = resume,
+                ["cwd"] = _options.Folder,
+                ["mcpServers"] = CanvasMcp.AcpServers(Name, _options.Folder, _mcpHttp, _options.Specialist),
+            });
+        }
         return Request("session/new", new JsonObject { ["cwd"] = _options?.Folder ?? Environment.CurrentDirectory, ["mcpServers"] = CanvasMcp.AcpServers(Name, _options?.Folder, _mcpHttp, _options?.Specialist) });
     }
 

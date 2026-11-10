@@ -37,6 +37,49 @@ sealed partial class AgentTranscript
         PermissionMode = mode;
     }
 
+    /// <summary>
+    /// Lo de antes de un hilo retomado (thread/resume trae sus turnos): lo pedido se ve como pedidos y lo demás (las
+    /// respuestas, los pasos) como sus bloques ya terminados. Al final, el aviso de que se retomó.
+    /// </summary>
+    internal void CodexReplay(JsonElement thread, List<AgentBlock> changed)
+    {
+        if (thread.TryGetProperty("turns", out var turns) && turns.ValueKind == JsonValueKind.Array)
+            foreach (var turn in turns.EnumerateArray())
+            {
+                if (!turn.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) continue;
+                foreach (var item in items.EnumerateArray())
+                {
+                    if (Json.Str(item, "type") == "userMessage")
+                    {
+                        if (CodexUserText(item) is { Length: > 0 } text)
+                        {
+                            Close(changed);
+                            Add(new AgentBlock { Kind = AgentBlockKind.Ask, Text = text }, changed);
+                        }
+                        continue;
+                    }
+                    CodexItem(item, true, changed);
+                }
+            }
+        Close(changed);
+        Busy = false;
+        Add(new AgentBlock { Kind = AgentBlockKind.Notice, Text = L.T("Sesión retomada: lo de arriba es lo de antes. Siga escribiendo abajo.") }, changed);
+    }
+
+    /// <summary>El texto de un userMessage de Codex (sus partes «text»; las imágenes, como «[Imagen]»).</summary>
+    static string? CodexUserText(JsonElement item)
+    {
+        if (!item.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array) return null;
+        var parts = new List<string>();
+        foreach (var part in content.EnumerateArray())
+            switch (Json.Str(part, "type"))
+            {
+                case "text" when Json.Str(part, "text") is { } text: parts.Add(text); break;
+                case "image" or "localImage": parts.Add(L.T("[Imagen]")); break;
+            }
+        return string.Join("\n", parts).Trim();
+    }
+
     internal void CodexModel(string? model) => Model = model ?? Model;
     internal void CodexMode(string mode) => PermissionMode = mode;
 
