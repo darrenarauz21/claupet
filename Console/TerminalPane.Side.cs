@@ -21,6 +21,7 @@ sealed partial class TerminalPane
     const string ProcesosIcon = "M8,8 H16 V16 H8 Z M5,5 H19 V19 H5 Z M9,2 V5 M15,2 V5 M9,19 V22 M15,19 V22 M2,9 H5 M2,15 H5 M19,9 H22 M19,15 H22";
     const string StopSquare = "M8,8 H16 V16 H8 Z";
     const string HistoryIcon = "M12,3.5 A8.5,8.5 0 1 0 12.01,3.5 Z M12,7.5 V12 L15,14";
+    const string SearchIcon = "M17,11 A6,6 0 1 1 5,11 A6,6 0 1 1 17,11 Z M15.5,15.5 L20,20";
 
     /// <summary>
     /// Lo de la vista elegida. Se crea uno nuevo con cada panel: el de antes sigue dentro de su ScrollViewer aunque ya
@@ -199,13 +200,17 @@ sealed partial class TerminalPane
             case "historial":
                 _deletingSession = null;
                 _confirmClearHistory = false;
-                Loading();
-                var configDir = tab.Agent.Options.ConfigDir ?? global::Claupet.Account.DefaultDir;
-                _ = Task.Run(() =>
+                // Otra carpeta u otra cuenta: vuelve a la primera página y sin búsqueda.
+                var where = (tab.Agent.Options.ConfigDir ?? global::Claupet.Account.DefaultDir) + "|" + folder;
+                if (_historyWhere != where)
                 {
-                    var sessions = ClaudeHistory.List(configDir, folder);
-                    Dispatcher.UIThread.Post(() => { if (version == _sideVersion) ShowHistory(tab, sessions); });
-                });
+                    _historyWhere = where;
+                    _historyShown = HistoryPage;
+                    _historyQuery = "";
+                }
+                _historySearch = null;
+                Loading();
+                ReadHistory(tab, version);
                 return;
             case "cambios":
                 Loading();
@@ -324,25 +329,81 @@ sealed partial class TerminalPane
 
     // ── Historial ───────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Las sesiones anteriores de Claude Code en esta carpeta (con esta cuenta): al tocar una, se retoma.</summary>
+    /// <summary>Cuántas sesiones muestra el historial de una vez; «Cargar más» suma otras tantas.</summary>
+    const int HistoryPage = 15;
+    int _historyShown = HistoryPage;
+    string _historyQuery = "";
+    /// <summary>La cuenta y la carpeta del historial que se ve (al cambiar, vuelve a la primera página).</summary>
+    string? _historyWhere;
+    /// <summary>El buscador y las filas: al buscar se rehacen solo las filas (el buscador no pierde el foco).</summary>
+    TextBox? _historySearch;
+    StackPanel? _historyRows;
+    DispatcherTimer? _historyTyping;
+    /// <summary>Sube con cada lectura: lo que llega de una vieja (se siguió escribiendo) se descarta.</summary>
+    int _historyRead;
+    /// <summary>El texto del título de cada fila, para cambiarlo cuando llega el título corto.</summary>
+    readonly Dictionary<string, TextBlock> _historyTitles = [];
+    /// <summary>Las sesiones cuyo título ya se pidió (una vez por sesión mientras la Console sigue abierta).</summary>
+    static readonly HashSet<string> TitlesAsked = [];
+
+    /// <summary>Pide el título corto de una sesión a la bandeja (con el asistente elegido); false si no se pudo pedir. Lo pone la ventana.</summary>
+    public Func<string, string, bool>? AskTitle { get; set; }
+
+    /// <summary>Llegó el título corto de una sesión: se guarda y se ve en su fila.</summary>
+    public void TitleArrived(string id, string? title)
+    {
+        if (SessionTitles.Clean(title) is not { } clean) return;
+        SessionTitles.Remember(id, clean);
+        _historySessions = _historySessions.Select(p => p.Id == id ? p with { Title = clean, Named = true } : p).ToList();
+        if (_historyTitles.TryGetValue(id, out var text)) text.Text = clean;
+    }
+
+    /// <summary>Lee la página del historial (con la búsqueda) aparte y la muestra.</summary>
+    void ReadHistory(Tab tab, int version)
+    {
+        var configDir = tab.Agent.Options.ConfigDir ?? global::Claupet.Account.DefaultDir;
+        var folder = tab.Agent.Options.Folder;
+        var (shown, query, read) = (_historyShown, _historyQuery, ++_historyRead);
+        _ = Task.Run(() =>
+        {
+            // Una más de las que se muestran: si llega, hay más para cargar.
+            var sessions = ClaudeHistory.List(configDir, folder, shown + 1, query);
+            Dispatcher.UIThread.Post(() => { if (version == _sideVersion && read == _historyRead) ShowHistory(tab, sessions); });
+        });
+    }
+
+    /// <summary>
+    /// Las sesiones anteriores de Claude Code en esta carpeta (con esta cuenta), de a HistoryPage, con un buscador arriba:
+    /// al tocar una, se retoma. Las que no tienen título se lo piden al asistente; mientras, se ve el pedido recortado.
+    /// </summary>
     void ShowHistory(Tab tab, IReadOnlyList<PastSession> sessions)
     {
-        _sideBody.Children.Clear();
         if (tab.Agent.Options.Kind != AgentKinds.Claude)
         {
+            _sideBody.Children.Clear();
+            _historySearch = null;
             _sideBody.Children.Add(Hint(L.T("El historial es el de Claude Code: se ve en una pestaña de Claude Code.")));
             return;
         }
-        if (sessions.Count == 0)
+        var (field, rows) = HistoryFrame(tab);
+        rows.Children.Clear();
+        _historyTitles.Clear();
+        var more = sessions.Count > _historyShown;
+        IReadOnlyList<PastSession> page = more ? sessions.Take(_historyShown).ToList() : sessions;
+        // Sin ninguna sesión (y sin buscar) el buscador no tiene qué buscar.
+        field.IsVisible = page.Count > 0 || _historyQuery.Length > 0;
+        if (page.Count == 0)
         {
-            _sideBody.Children.Add(Hint(L.T("Todavía no hay sesiones de Claude Code en esta carpeta con esta cuenta.")));
+            rows.Children.Add(Hint(_historyQuery.Length > 0
+                ? L.T("Ninguna sesión habla de «{0}».", _historyQuery)
+                : L.T("Todavía no hay sesiones de Claude Code en esta carpeta con esta cuenta.")));
             return;
         }
         var here = tab.Agent.Transcript.SessionId ?? tab.Agent.Options.Resume;
         var open = OpenSessions();
         var configDir = tab.Agent.Options.ConfigDir ?? global::Claupet.Account.DefaultDir;
         _historySessions = sessions;
-        _historyClearable = !sessions.All(s => open.Contains(s.Id));
+        _historyClearable = !page.All(s => open.Contains(s.Id));
         // Borrar todo el historial de esta carpeta (se pide desde el título): pregunta aquí arriba, a la vista.
         if (_confirmClearHistory && _historyClearable)
         {
@@ -356,15 +417,15 @@ sealed partial class TerminalPane
                 var folder = tab.Agent.Options.Folder;
                 DeleteHistory(tab, () => ClaudeHistory.DeleteAll(configDir, folder, open) > 0);
             });
-            _sideBody.Children.Add(confirm);
-            _sideBody.Children.Add(Hint(L.T("Las sesiones abiertas en una pestaña se quedan.")));
+            rows.Children.Add(confirm);
+            rows.Children.Add(Hint(L.T("Las sesiones abiertas en una pestaña se quedan.")));
             Dispatcher.UIThread.Post(() => confirm.BringIntoView());
         }
-        foreach (var past in sessions)
+        foreach (var past in page)
         {
             if (_deletingSession == past.Id)
             {
-                _sideBody.Children.Add(ConfirmRow(L.T("¿Borrarla del historial?"), () =>
+                rows.Children.Add(ConfirmRow(L.T("¿Borrarla del historial?"), () =>
                 {
                     _deletingSession = null;
                     ShowHistory(tab, sessions);
@@ -375,43 +436,117 @@ sealed partial class TerminalPane
                 }));
                 continue;
             }
-            var text = new StackPanel { Spacing = 1 };
-            var title = Ui.Text(past.Title, 12.5, _ink.Text);
-            title.TextTrimming = TextTrimming.CharacterEllipsis;
-            text.Children.Add(title);
-            var isOpen = open.Contains(past.Id);
-            var when = Ago(past.LastUsed) + (past.Id == here ? " · " + L.T("esta pestaña") : isOpen ? " · " + L.T("abierta") : "");
-            text.Children.Add(Ui.Text(when, 11.5, past.Id == here ? _ink.Accent : _ink.Tertiary));
-            var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            content.Children.Add(text);
-            // La papelera al pasar el mouse; la de una sesión abierta en una pestaña no está (Claude Code la sigue escribiendo).
-            Border? trash = null;
-            if (!isOpen)
-            {
-                trash = Tool(ChatPane.TrashIcon, L.T("Borrar del historial"), () =>
-                {
-                    _deletingSession = past.Id;
-                    _confirmClearHistory = false;
-                    ShowHistory(tab, sessions);
-                });
-                trash.Opacity = 0;
-                trash.Margin = new Thickness(6, 0, -2, 0);
-                trash.VerticalAlignment = VerticalAlignment.Center;
-                Grid.SetColumn(trash, 1);
-                content.Children.Add(trash);
-            }
-            var row = Ui.Press(content, () => Resume(tab, past), (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, past.Title);
-            row.Padding = new Thickness(8, 6);
-            row.CornerRadius = new CornerRadius(8);
-            if (trash is not null)
-            {
-                row.PointerEntered += (_, _) => trash.Opacity = 1;
-                row.PointerExited += (_, _) => trash.Opacity = 0;
-            }
-            ToolTip.SetTip(row, past.Title);
-            _sideBody.Children.Add(row);
+            rows.Children.Add(HistoryRow(tab, past, sessions, here, open));
         }
-        _sideBody.Children.Add(Hint(L.T("Toque una para retomarla en una pestaña nueva, con lo de antes a la vista (también con /resume).")));
+        if (more)
+        {
+            var load = Pill(L.T("Cargar más"), _ink.Pill, _ink.Text, () =>
+            {
+                _historyShown += HistoryPage;
+                ReadHistory(tab, _sideVersion);
+            });
+            load.HorizontalAlignment = HorizontalAlignment.Center;
+            load.Margin = new Thickness(0, 8, 0, 0);
+            ToolTip.SetTip(load, L.T("Mostrar {0} sesiones más", HistoryPage));
+            rows.Children.Add(load);
+        }
+        rows.Children.Add(Hint(L.T("Toque una para retomarla en una pestaña nueva, con lo de antes a la vista (también con /resume).")));
+        // Los títulos cortos de las que se ven y todavía no tienen (una vez por sesión).
+        foreach (var past in page)
+            if (!past.Named && past.Prompt.Length > 0 && !TitlesAsked.Contains(past.Id) && AskTitle?.Invoke(past.Id, past.Prompt) == true)
+                TitlesAsked.Add(past.Id);
+    }
+
+    /// <summary>El buscador arriba y el panel de las filas debajo; si ya están, se dejan (no se pierde lo escrito ni el foco).</summary>
+    (Control Field, StackPanel Rows) HistoryFrame(Tab tab)
+    {
+        if (_historySearch?.Parent is Panel { Parent: { } holder } kept && holder == _sideBody && _historyRows?.Parent == _sideBody)
+            return (kept, _historyRows);
+        _sideBody.Children.Clear();
+        var box = _historySearch = new TextBox { Text = _historyQuery, Watermark = L.T("Buscar en el historial"), MinHeight = 0 };
+        Plain(box);
+        box.FontFamily = Ink.Sans;
+        box.FontSize = 12.5;
+        box.Padding = new Thickness(30, 6, 8, 6);
+        var field = new Panel { Margin = new Thickness(0, 2, 0, 6) };
+        field.Children.Add(new Border { Background = _ink.Pill, CornerRadius = new CornerRadius(9) });
+        field.Children.Add(box);
+        var lens = Icon(SearchIcon, _ink.Tertiary, 13, 1.8);
+        lens.HorizontalAlignment = HorizontalAlignment.Left;
+        lens.VerticalAlignment = VerticalAlignment.Center;
+        lens.Margin = new Thickness(10, 0, 0, 0);
+        lens.IsHitTestVisible = false;
+        field.Children.Add(lens);
+        ToolTip.SetTip(field, L.T("Busca en los títulos y en lo que se pidió"));
+        box.TextChanged += (_, _) =>
+        {
+            // Se busca al dejar de escribir un momento, no con cada tecla.
+            _historyTyping?.Stop();
+            _historyTyping = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _historyTyping.Tick += (_, _) =>
+            {
+                _historyTyping?.Stop();
+                var query = box.Text?.Trim() ?? "";
+                if (query == _historyQuery || _historySearch != box) return;
+                _historyQuery = query;
+                _historyShown = HistoryPage;
+                ReadHistory(tab, _sideVersion);
+            };
+            _historyTyping.Start();
+        };
+        box.KeyDown += (_, e) =>
+        {
+            // Esc borra la búsqueda.
+            if (e.Key != Avalonia.Input.Key.Escape || string.IsNullOrEmpty(box.Text)) return;
+            box.Text = "";
+            e.Handled = true;
+        };
+        _sideBody.Children.Add(field);
+        _historyRows = new StackPanel { Spacing = 2 };
+        _sideBody.Children.Add(_historyRows);
+        return (field, _historyRows);
+    }
+
+    /// <summary>Una sesión del historial: su título, cuándo y la papelera al pasar el mouse; al detenerse encima, lo que se pidió.</summary>
+    Control HistoryRow(Tab tab, PastSession past, IReadOnlyList<PastSession> sessions, string? here, HashSet<string> open)
+    {
+        var text = new StackPanel { Spacing = 1 };
+        var title = Ui.Text(past.Title, 12.5, _ink.Text);
+        title.TextTrimming = TextTrimming.CharacterEllipsis;
+        _historyTitles[past.Id] = title;
+        text.Children.Add(title);
+        var isOpen = open.Contains(past.Id);
+        var when = Ago(past.LastUsed) + (past.Id == here ? " · " + L.T("esta pestaña") : isOpen ? " · " + L.T("abierta") : "");
+        text.Children.Add(Ui.Text(when, 11.5, past.Id == here ? _ink.Accent : _ink.Tertiary));
+        var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        content.Children.Add(text);
+        // La papelera al pasar el mouse; la de una sesión abierta en una pestaña no está (Claude Code la sigue escribiendo).
+        Border? trash = null;
+        if (!isOpen)
+        {
+            trash = Tool(ChatPane.TrashIcon, L.T("Borrar del historial"), () =>
+            {
+                _deletingSession = past.Id;
+                _confirmClearHistory = false;
+                ShowHistory(tab, sessions);
+            });
+            trash.Opacity = 0;
+            trash.Margin = new Thickness(6, 0, -2, 0);
+            trash.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(trash, 1);
+            content.Children.Add(trash);
+        }
+        var row = Ui.Press(content, () => Resume(tab, past), (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, past.Title);
+        row.Padding = new Thickness(8, 6);
+        row.CornerRadius = new CornerRadius(8);
+        if (trash is not null)
+        {
+            row.PointerEntered += (_, _) => trash.Opacity = 1;
+            row.PointerExited += (_, _) => trash.Opacity = 0;
+        }
+        var tip = past.Prompt.Length > 0 ? past.Prompt : past.Title;
+        ToolTip.SetTip(row, tip.Length > 300 ? tip[..300] + "…" : tip);
+        return row;
     }
 
     /// <summary>Lo último que mostró el historial, para volver a mostrarlo desde el título.</summary>

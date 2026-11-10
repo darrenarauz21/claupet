@@ -4,8 +4,11 @@ using System.Text.RegularExpressions;
 
 namespace Claupet;
 
-/// <summary>Una sesión anterior de Claude Code en una carpeta: su id, de qué trató (lo primero que se pidió) y cuándo se usó.</summary>
-sealed record PastSession(string Id, string Title, DateTime LastUsed, string Path);
+/// <summary>
+/// Una sesión anterior de Claude Code en una carpeta: su id, su título, cuándo se usó y lo primero que se pidió. Named:
+/// el título es uno de verdad (el que guardó Claude Code o uno escrito por el asistente); si no, es el pedido recortado.
+/// </summary>
+sealed record PastSession(string Id, string Title, DateTime LastUsed, string Path, string Prompt = "", bool Named = true);
 
 /// <summary>
 /// El historial de Claude Code de una carpeta, para retomarlo desde Claupet Terminal: cada sesión es un .jsonl en
@@ -19,24 +22,74 @@ static partial class ClaudeHistory
     public static string ProjectDir(string configDir, string folder) =>
         Path.Combine(configDir, "projects", NotAlphanumeric().Replace(Path.TrimEndingDirectorySeparator(folder), "-"));
 
-    /// <summary>Las sesiones de esa carpeta, la más reciente primero (como mucho limit).</summary>
-    public static IReadOnlyList<PastSession> List(string configDir, string folder, int limit = 40)
+    /// <summary>
+    /// Las sesiones de esa carpeta, la más reciente primero (como mucho limit). Con query, solo las que la tienen en el
+    /// título o en el primer pedido (sin importar mayúsculas ni tildes).
+    /// </summary>
+    public static IReadOnlyList<PastSession> List(string configDir, string folder, int limit = 40, string? query = null)
     {
         var dir = ProjectDir(configDir, folder);
         var list = new List<PastSession>();
+        query = query?.Trim();
         try
         {
             if (!Directory.Exists(dir)) return list;
-            foreach (var file in new DirectoryInfo(dir).EnumerateFiles("*.jsonl").OrderByDescending(f => f.LastWriteTimeUtc).Take(limit * 2))
+            foreach (var file in new DirectoryInfo(dir).EnumerateFiles("*.jsonl").OrderByDescending(f => f.LastWriteTimeUtc))
             {
-                if (!Guid.TryParse(System.IO.Path.GetFileNameWithoutExtension(file.Name), out _)) continue;
-                if (Title(file.FullName) is not { } title) continue;
-                list.Add(new PastSession(System.IO.Path.GetFileNameWithoutExtension(file.Name), title, file.LastWriteTime, file.FullName));
+                var id = System.IO.Path.GetFileNameWithoutExtension(file.Name);
+                if (!Guid.TryParse(id, out _)) continue;
+                var (named, prompt) = Read(file);
+                if (prompt is null && named is null) continue;
+                var title = named ?? SessionTitles.Cached(id);
+                var past = new PastSession(id, title ?? SessionTitles.Short(prompt!), file.LastWriteTime, file.FullName, prompt ?? "", title is not null);
+                if (query is { Length: > 0 } && !Matches(past, query)) continue;
+                list.Add(past);
                 if (list.Count >= limit) break;
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         return list;
+    }
+
+    /// <summary>Una sesión por su id (aunque no esté entre las más recientes); null si no está en esa carpeta.</summary>
+    public static PastSession? Find(string configDir, string folder, string id)
+    {
+        if (!Guid.TryParse(id, out _)) return null;
+        var file = new FileInfo(System.IO.Path.Combine(ProjectDir(configDir, folder), id + ".jsonl"));
+        if (!file.Exists) return null;
+        var (named, prompt) = Read(file);
+        var title = named ?? SessionTitles.Cached(id) ?? (prompt is null ? id : SessionTitles.Short(prompt));
+        return new PastSession(id, title, file.LastWriteTime, file.FullName, prompt ?? "", named is not null);
+    }
+
+    /// <summary>La búsqueda está en el título o en el pedido (sin mayúsculas ni tildes).</summary>
+    internal static bool Matches(PastSession past, string query)
+    {
+        var wanted = Fold(query);
+        return Fold(past.Title).Contains(wanted, StringComparison.Ordinal) || Fold(past.Prompt).Contains(wanted, StringComparison.Ordinal);
+    }
+
+    /// <summary>En minúsculas y sin tildes («Rediseño» → «rediseno»), sea cual sea el idioma del equipo.</summary>
+    static string Fold(string text)
+    {
+        var plain = new System.Text.StringBuilder(text.Length);
+        foreach (var c in text.Normalize(System.Text.NormalizationForm.FormD))
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                plain.Append(char.ToLowerInvariant(c));
+        return plain.ToString();
+    }
+
+    /// <summary>Lo leído de cada archivo, mientras no cambie: «Cargar más» y la búsqueda no lo vuelven a leer.</summary>
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Stamp, long Length, string? Named, string? Prompt)> Seen =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    static (string? Named, string? Prompt) Read(FileInfo file)
+    {
+        if (Seen.TryGetValue(file.FullName, out var seen) && seen.Stamp == file.LastWriteTimeUtc && seen.Length == file.Length)
+            return (seen.Named, seen.Prompt);
+        var (named, prompt) = Title(file.FullName);
+        Seen[file.FullName] = (file.LastWriteTimeUtc, file.Length, named, prompt);
+        return (named, prompt);
     }
 
     /// <summary>
@@ -83,10 +136,13 @@ static partial class ClaudeHistory
         return deleted;
     }
 
-    /// <summary>De qué trató: el resumen que guardó Claude Code o lo primero que se pidió; null si no hay ningún pedido.</summary>
-    static string? Title(string path)
+    /// <summary>
+    /// De qué trató: el título que guardó Claude Code (el que se le puso con /rename, si no el que escribió su IA, si no
+    /// un resumen) y lo primero que se pidió (en una línea, hasta 600 caracteres). Ambos null si no hay ningún pedido.
+    /// </summary>
+    internal static (string? Named, string? Prompt) Title(string path)
     {
-        string? first = null;
+        string? first = null, custom = null, ai = null, summary = null;
         try
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
@@ -94,14 +150,30 @@ static partial class ClaudeHistory
             for (var i = 0; i < 400 && reader.ReadLine() is { } line; i++)
             {
                 if (line.Length == 0 || line[0] != '{') continue;
-                using var doc = JsonDocument.Parse(line);
-                var r = doc.RootElement;
-                if (Json.Str(r, "type") == "summary" && Json.Str(r, "summary") is { Length: > 0 } summary) return summary;
-                if (first is null && Prompt(r) is { } prompt) first = prompt;
+                JsonDocument doc;
+                try { doc = JsonDocument.Parse(line); }
+                catch (JsonException) { continue; }
+                using (doc)
+                {
+                    var r = doc.RootElement;
+                    switch (Json.Str(r, "type"))
+                    {
+                        case "custom-title" when Json.Str(r, "customTitle") is { Length: > 0 } t: custom = t; break;
+                        case "ai-title" when Json.Str(r, "aiTitle") is { Length: > 0 } t: ai = t; break;
+                        case "summary" when Json.Str(r, "summary") is { Length: > 0 } t: summary ??= t; break;
+                        default:
+                            if (first is null && Prompt(r) is { } prompt) first = prompt;
+                            break;
+                    }
+                }
             }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
-        return first is null ? null : first.ReplaceLineEndings(" ").Trim();
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        var named = (custom ?? ai ?? summary)?.ReplaceLineEndings(" ").Trim();
+        first = first?.ReplaceLineEndings(" ").Trim();
+        if (first is { Length: > SessionTitles.PromptLimit }) first = first[..SessionTitles.PromptLimit];
+        // Sin pedido no se muestra (aunque tenga un resumen): es la de otra sesión, como antes.
+        return first is null ? (null, null) : (named is { Length: > 0 } ? named : null, first);
     }
 
     /// <summary>Lo que la persona escribió en esa línea; null si es otra cosa (un resultado, un comando, un aviso interno).</summary>

@@ -61,7 +61,7 @@ sealed partial class TrayController
         {
             var island = _island = new IslandWindow();
             island.SessionClicked += s => { View.FocusSession(s.SessionId); ShowForm(); };
-            island.TerminalClicked += s => Terminals.Focus(s.Pid);
+            island.TerminalClicked += OpenInTerminal;
             island.NewSessionClicked += () => _ = NewSessionAsync(null);
             island.SettingsClicked += () => _ = OpenConsoleAsync("isla");
             island.ModelPicked += m =>
@@ -111,6 +111,17 @@ sealed partial class TrayController
         _island.SetChat(_quick.Turns.ToList(), IslandChat.Streaming, IslandChat.Asking);
         if (_lastSessions is { } sessions) _island.SetSessions(sessions);
         PushApproval(); // una isla nueva muestra lo que sigue esperando
+    }
+
+    /// <summary>
+    /// «Abrir en la terminal» de la isla: en la Terminal de Claupet Console (la pestaña donde está la sesión, o la sesión
+    /// retomada en una nueva). Solo si sigue corriendo en otra terminal fuera de Claupet se trae esa ventana: retomarla
+    /// aquí dejaría dos procesos escribiendo la misma sesión.
+    /// </summary>
+    void OpenInTerminal(SessionInfo s)
+    {
+        if (Terminals.RunsOutside(s.Pid, Environment.ProcessPath) && Terminals.Focus(s.Pid)) return;
+        _ = OpenConsoleAsync(new SessionTarget(s.SessionId, s.Cwd, s.Account.ConfigDir).Section);
     }
 
     /// <summary>La isla muestra el primer pedido que espera (o ninguno).</summary>

@@ -41,6 +41,11 @@ static class ConsoleLink
     public const string State = "estado", Options = "opciones", Show = "mostrar", Action = "accion", Pick = "elegir";
     public const string Chats = "chats", Chat = "chat", ChatOpen = "chat-abrir", ChatNew = "chat-nuevo", ChatSend = "chat-enviar",
         ChatStop = "chat-parar", ChatDelete = "chat-borrar", ChatClear = "chat-limpiar";
+    /// <summary>
+    /// El título corto de una sesión del historial: la Console manda su id (Key) y su primer pedido (Value); la bandeja
+    /// responde con el mismo id y el título (Value null si el asistente no pudo).
+    /// </summary>
+    public const string SessionTitle = "titulo-sesion";
 
     /// <summary>La conversación de la isla y la nubecita, que la Console muestra arriba de las guardadas.</summary>
     public const string QuickChat = "rapida";
@@ -86,5 +91,27 @@ static class ConsoleLink
     {
         try { return JsonSerializer.Deserialize<ConsoleMessage>(line, Json); }
         catch (JsonException) { return null; }
+    }
+}
+
+/// <summary>
+/// La sesión que la isla pide ver en la Terminal de Claupet Console («Abrir en la terminal»): va como la sección que se
+/// abre («sesion:» y la sesión en JSON), así llega igual con la Console abierta o al abrirla.
+/// </summary>
+sealed record SessionTarget(string Id, string Folder, string? ConfigDir)
+{
+    const string Prefix = "sesion:";
+
+    [JsonIgnore]
+    public string Section => Prefix + System.Text.Json.JsonSerializer.Serialize(this);
+
+    public static SessionTarget? Parse(string? section)
+    {
+        if (section is null || !section.StartsWith(Prefix, StringComparison.Ordinal)) return null;
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<SessionTarget>(section[Prefix.Length..]) is { Id.Length: > 0, Folder.Length: > 0 } target ? target : null;
+        }
+        catch (System.Text.Json.JsonException) { return null; }
     }
 }

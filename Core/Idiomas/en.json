@@ -2242,5 +2242,10 @@
   "Ver la pantalla": "Show the screen",
   "Volver al documento": "Back to the document",
   "ligada": "linked",
-  "¿Qué le cambio?": "What should I change?"
+  "¿Qué le cambio?": "What should I change?",
+  "Cargar más": "Load more",
+  "Buscar en el historial": "Search history",
+  "Mostrar {0} sesiones más": "Show {0} more sessions",
+  "Ninguna sesión habla de «{0}».": "No session mentions “{0}”.",
+  "Busca en los títulos y en lo que se pidió": "Searches titles and what was asked"
 }
