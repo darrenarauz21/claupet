@@ -151,7 +151,7 @@ sealed record AgentState(string Kind, string Label, bool Follow, string Detail, 
 /// El tipo de una fila. Input: un cuadro para escribir (la acción lleva lo escrito en Value). Page: lleva a otra
 /// página (Key es su id) sin pedirle nada a la bandeja, como el detalle de una extensión.
 /// </summary>
-enum RowKind { Caption, Switch, Choice, Info, Note, Link, Links, Input, Page, Themes }
+enum RowKind { Caption, Switch, Choice, Info, Note, Link, Links, Input, Page, Themes, Market }
 
 /// <summary>El color de una nota o de un enlace: el de siempre, el apagado, el de cuidado, el acento o el de peligro.</summary>
 enum RowTone { Normal, Muted, Warn, Accent, Danger }
@@ -162,7 +162,7 @@ enum RowPlace { Both, Console }
 sealed record SettingsLink(string Text, string Key);
 
 /// <summary>Los íconos que la Console sabe dibujar en un botón de fila.</summary>
-enum RowIconKind { Refresh, Add, Folder, Trash }
+enum RowIconKind { Refresh, Add, Folder, Trash, Package, Sliders }
 
 /// <summary>
 /// Un botón de solo ícono a la derecha de una fila (refrescar, agregar, abrir, quitar), con Name como su descripción al
@@ -177,6 +177,16 @@ sealed record RowIcon(RowIconKind Icon, string Name, string Key, RowTone Tone = 
 sealed record ThemeCard(string Id, string Name, bool Selected = false, bool Creating = false);
 
 /// <summary>
+/// Una tarjeta de Ajustes › Extensiones: una del catálogo oficial o una instalada (también las de otros autores). Page:
+/// la página de su detalle. Installed: la versión instalada; Latest: la del catálogo; Update: la del catálogo es más
+/// nueva. NeedsClaupet: la del catálogo pide un Claupet más nuevo. Percent: se está bajando. Downloads: cuántas veces
+/// se bajó (de las Releases). Las acciones: «ext-get:&lt;id&gt;» instala o actualiza; tocar la tarjeta lleva a Page.
+/// </summary>
+sealed record ExtensionCard(string Id, string Name, string Description, IReadOnlyList<string> Provides, string Page,
+    bool Official = false, string? Installed = null, string? Latest = null, bool Update = false, string? NeedsClaupet = null,
+    long? Downloads = null, int? Percent = null, bool Enabled = true);
+
+/// <summary>
 /// Una fila de Ajustes. Text es la etiqueta; Value, lo que se muestra a la derecha (la opción elegida, el dato
 /// o el texto del enlace; en un cuadro para escribir, lo escrito); Key, la acción que se le pide a la bandeja al tocarla.
 /// En un cuadro para escribir, Secret oculta lo escrito, Placeholder es lo que se ve mientras está vacío y Submit, el
@@ -187,7 +197,7 @@ sealed record ThemeCard(string Id, string Name, bool Selected = false, bool Crea
 sealed record SettingsRow(RowKind Kind, string Text, string Key = "", string Value = "", bool On = false,
     RowTone Tone = RowTone.Normal, bool Swatch = false, RowPlace Place = RowPlace.Both, IReadOnlyList<SettingsLink>? Links = null,
     bool Secret = false, string? Placeholder = null, string? File = null, string? Copy = null, string? Submit = null,
-    IReadOnlyList<ThemeCard>? Cards = null, IReadOnlyList<RowIcon>? Icons = null);
+    IReadOnlyList<ThemeCard>? Cards = null, IReadOnlyList<RowIcon>? Icons = null, IReadOnlyList<ExtensionCard>? Market = null);
 
 /// <summary>
 /// Una sección de Ajustes. Tab es la pestaña de los ajustes rápidos donde van sus filas (las que no son solo de

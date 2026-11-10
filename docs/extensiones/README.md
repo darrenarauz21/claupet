@@ -70,9 +70,20 @@ mi-extension.claupet
   - `claves.json`: las claves (`secret`) de los ajustes, cifradas con DPAPI para el usuario de Windows.
   - `confianza.json`: los autores aceptados, la clave fijada de cada extensión y las revocaciones.
 
-Se instala soltando el `.claupet` sobre la mascota o la isla, o con **Instalar desde archivo…** en
-Claupet Console (**Ajustes › Extensiones**). En los dos casos la Console muestra antes la revisión (qué es,
-su firma, sus permisos y sus ranuras) y se instala solo si se acepta allí.
+Se instala soltando el `.claupet` sobre la mascota o la isla, con el botón **Instalar desde archivo
+.claupet** de Claupet Console (**Ajustes › Extensiones**) o, si es oficial, desde el catálogo de esa misma
+página. En todos los casos la Console muestra antes la revisión (qué es, su firma, sus permisos y sus
+ranuras) y se instala solo si se acepta allí.
+
+### Publicarla en el catálogo oficial
+
+Las extensiones oficiales viven en [claupet-extensions](https://github.com/darrenarauz21/claupet-extensions):
+cada versión es una Release con su `.claupet` firmado con la clave oficial, y `catalog.json` es el catálogo
+firmado que lee la app (una vez por día, con ETag). La app solo muestra un catálogo con firma oficial, rechaza
+uno con una secuencia más vieja que el último visto y solo instala lo bajado si su tamaño y su SHA-256
+coinciden con el catálogo. El formato y los comandos están en
+[`docs/catalog.md`](https://github.com/darrenarauz21/claupet-extensions/blob/main/docs/catalog.md) de ese
+repositorio (`--extension-catalog`).
 
 ---
 
@@ -395,7 +406,7 @@ Por el mismo canal (o `host->call` en una DLL, o la API local de la sección 9):
 
 Otros programas del equipo (un script, una macro, Stream Deck…) pueden pedirle cosas a Claupet con los
 mismos métodos de la sección 8. Está **apagada por defecto**: se enciende en Claupet Console
-(**Ajustes › Extensiones › API local**), donde también se crean los tokens, cada uno con sus permisos.
+(**Ajustes › Extensiones › Ranuras y API local**), donde también se crean los tokens, cada uno con sus permisos.
 
 ```
 POST http://127.0.0.1:47615/v1/rpc

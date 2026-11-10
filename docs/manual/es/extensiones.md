@@ -27,11 +27,31 @@ Sume a Claupet voces, mascotas, sonidos, habilidades y asistentes de otros, en p
 Voz a texto, texto a voz y asistente son **ranuras exclusivas**: solo una cosa a la vez ocupa cada una.
 Instalar una extensión no la pone en esas ranuras; se elige al instalarla y se cambia después.
 
+## Las extensiones oficiales
+
+En Claupet Console, **Ajustes › Extensiones** muestra el catálogo de las extensiones oficiales, las que
+publica Claupet y firma con su clave. Están en tarjetas, en tres pestañas:
+
+- **Explorar**: todas las del catálogo y las que ya tiene instaladas. Se puede buscar y filtrar por tipo
+  (voz a texto, texto a voz, asistente, habilidad, mascota…).
+- **Instaladas**: las que tiene en este equipo, también las de otros autores.
+- **Actualizaciones**: las que tienen una versión nueva, con **Actualizar todas**.
+
+Toque una tarjeta para ver qué hace, qué trae, cuánto pesa y qué permisos pide. El botón de la tarjeta la
+instala (⤓), la actualiza (⤒) o lleva a sus ajustes (⚙). Si una necesita una versión más nueva de Claupet, lo
+dice en lugar del botón.
+
+Claupet revisa el catálogo una vez por día; el botón ↻ lo revisa en el momento. Solo confía en un catálogo
+firmado por Claupet, y solo instala lo bajado si coincide con lo que dice el catálogo.
+
+**Actualizar todas** instala sin preguntar las actualizaciones oficiales que no piden permisos nuevos. Si una
+pide algo nuevo, se abre su revisión.
+
 ## Cómo instalar una extensión
 
-1. Consiga el archivo `.claupet` de alguien en quien confíe.
-2. Suéltelo sobre la mascota o la isla. (O, en Claupet Console, **Ajustes › Extensiones › Instalar desde
-   archivo…**; o **Instalar…** en el asistente de configuración.)
+1. Elija una del catálogo y toque ⤓, o consiga el archivo `.claupet` de alguien en quien confíe.
+2. Si es un archivo, suéltelo sobre la mascota o la isla. (O, en Claupet Console, **Ajustes › Extensiones** y
+   el botón **Instalar desde archivo .claupet**; o **Instalar…** en el asistente de configuración.)
 3. Claupet Console abre la **revisión**: qué versión es (o si actualiza, vuelve atrás o reinstala), quién
    la firmó, qué trae, si corre un programa, los permisos que pide y las ranuras que puede ocupar.
 4. Si está de acuerdo, pulse **Instalar**. Nada se instala sin ese paso.
@@ -71,9 +91,10 @@ Si una actualización pide permisos nuevos, la revisión los muestra antes de in
 
 ## Cómo manejar sus extensiones
 
-En Claupet Console, **Ajustes › Extensiones** lista las instaladas. Toque una para ver su página:
+En Claupet Console, **Ajustes › Extensiones › Instaladas** muestra las de este equipo. Toque una para ver su página:
 
 - Si está **Encendida** o **Apagada** (y por qué se apagó).
+- Si hay una versión nueva en el catálogo, **Actualizar**.
 - Su versión, autor, firma, licencia, sitio, qué trae, sus comandos y sus permisos.
 - **Sus ajustes.** Las claves se guardan cifradas y no se vuelven a mostrar: se escribe otra o se borra.
 - **Abrir su registro** y **Abrir su carpeta de datos**, para ver qué pasó.
@@ -86,7 +107,7 @@ En Claupet Console, **Ajustes › Extensiones** lista las instaladas. Toque una 
 ## La API local
 
 Algunos programas de su equipo pueden pedirle cosas a Claupet a través de la **API local**, en
-**Ajustes › Extensiones**. Cada programa necesita su **token**:
+**Ajustes › Extensiones**, botón **Ranuras y API local**. Cada programa necesita su **token**:
 
 1. Encienda la API local y cree un token: escriba para qué programa es y qué puede pedir.
 2. Cópielo en ese momento: no se vuelve a mostrar.

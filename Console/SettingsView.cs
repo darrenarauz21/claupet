@@ -28,6 +28,9 @@ sealed class SettingsView : StackPanel
     /// <summary>Las tarjetas de los temas (Apariencia), si la página las tiene, y su fila.</summary>
     ThemeGallery? _gallery;
     int _galleryIndex;
+    /// <summary>Las tarjetas de las extensiones (Extensiones), si la página las tiene, y su fila.</summary>
+    ExtensionMarket? _market;
+    int _marketIndex;
     readonly TextBlock _title = new() { FontFamily = Ink.Display, FontSize = 26, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
     readonly TextBlock _description = new() { FontSize = 13.5, FontFamily = Ink.Sans, Margin = new Thickness(0, 6, 0, 0), TextWrapping = TextWrapping.Wrap };
     string _shape = "";
@@ -40,11 +43,12 @@ sealed class SettingsView : StackPanel
     {
         var rows = page.Rows.ToList();
         var shape = string.Join("|", rows.Select(r => $"{r.Kind}:{r.Key}:{r.Tone}:{r.Text.Length > 0}"));
-        if (!rebuild && page.Id == _page && shape == _shape && _rows.Count > 0)
+        if (!rebuild && page.Id == _page && shape == _shape && (_rows.Count > 0 || _gallery is not null || _market is not null))
         {
             // Mismo armado: solo cambian los textos y los interruptores.
             for (var i = 0; i < _rows.Count; i++) _rows[i].Update(_rows[i].Index < rows.Count ? rows[_rows[i].Index] : _rows[i].Row, ink);
             _gallery?.Show(rows[_galleryIndex].Cards ?? [], ink);
+            _market?.Show(rows[_marketIndex], ink);
             _title.Text = page.Title;
             _description.Text = page.Description;
             _description.IsVisible = page.Description.Length > 0;
@@ -54,6 +58,7 @@ sealed class SettingsView : StackPanel
         _shape = shape;
         _rows.Clear();
         _gallery = null;
+        _market = null;
         Children.Clear();
         if (page.Parent is { } parent && back is not null) Children.Add(BackLink(parent, back, ink));
         _title.Text = page.Title;
@@ -93,6 +98,17 @@ sealed class SettingsView : StackPanel
                 _galleryIndex = i;
                 _gallery.Show(row.Cards ?? [], ink);
                 Children.Add(_gallery);
+                card = null;
+                last = null;
+                continue;
+            }
+            if (row.Kind == RowKind.Market)
+            {
+                // Las tarjetas de las extensiones, con sus pestañas y su búsqueda, también van sueltas.
+                _market = new ExtensionMarket(Act, id => Navigate?.Invoke(id));
+                _marketIndex = i;
+                _market.Show(row, ink);
+                Children.Add(_market);
                 card = null;
                 last = null;
                 continue;
@@ -355,6 +371,8 @@ sealed class RowView
         RowIconKind.Refresh => "M19.5,12 A7.5,7.5 0 1 1 17.3,6.7 M17.5,3 V7 H13.5",
         RowIconKind.Add => "M12,5 V19 M5,12 H19",
         RowIconKind.Folder => "M3.5,7 A1.5,1.5 0 0 1 5,5.5 H9.5 L11.5,7.5 H19 A1.5,1.5 0 0 1 20.5,9 V17.5 A1.5,1.5 0 0 1 19,19 H5 A1.5,1.5 0 0 1 3.5,17.5 Z",
+        RowIconKind.Package => "M14,3 H6 A2,2 0 0 0 4,5 V19 A2,2 0 0 0 6,21 H18 A2,2 0 0 0 20,19 V9 Z M14,3 V9 H20 M12,18 V12 M9,15 L12,18 L15,15",
+        RowIconKind.Sliders => "M4,6 H13 M17,6 H20 M4,12 H7 M11,12 H20 M4,18 H15 M19,18 H20 M15,4 V8 M9,10 V14 M17,16 V20",
         _ => "M4.5,7 H19.5 M9.5,7 V4.5 H14.5 V7 M6.5,7 L7.5,20 H16.5 L17.5,7 M10.5,11 V16 M13.5,11 V16",
     };
 

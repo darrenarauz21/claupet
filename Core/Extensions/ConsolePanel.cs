@@ -36,16 +36,18 @@ interface IConsoleSurface
 }
 
 /// <summary>
-/// Ajustes › Extensiones en Claupet Console: la lista de las instaladas, una página por extensión (encender o apagar, qué
-/// es, de quién, su firma, sus permisos, sus ajustes, su registro y desinstalar), las ranuras, la API local con sus
-/// tokens y, antes de instalar un paquete, la página de revisión (firma, permisos y ranuras) con «Instalar». Todo son
-/// filas de Ajustes; las acciones empiezan con «ext-» y llegan aquí desde ConsoleHost.
+/// Ajustes › Extensiones en Claupet Console: el catálogo oficial y las instaladas en tarjetas (Explorar, Instaladas y
+/// Actualizaciones, que filtra la Console), una página por extensión (encender o apagar, qué es, de quién, su firma, sus
+/// permisos, sus ajustes, su registro y desinstalar; o, si no está instalada, lo que dice el catálogo), las ranuras y la
+/// API local con sus tokens en su propia página y, antes de instalar un paquete (bajado del catálogo o elegido), la
+/// página de revisión (firma, permisos y ranuras) con «Instalar». Las acciones empiezan con «ext-» y llegan aquí desde
+/// ConsoleHost.
 /// </summary>
 sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
 {
     /// <summary>La sección de la lista; las demás páginas cuelgan de ella.</summary>
     public const string PageId = "extensiones";
-    public const string ReviewPage = "ext-revision", TokenPage = "ext-token";
+    public const string ReviewPage = "ext-revision", TokenPage = "ext-token", MorePage = "ext-mas";
     const string Prefix = "ext-";
 
     /// <summary>Los permisos que se le pueden dar a un token de la API local (los que Claupet controla).</summary>
@@ -77,12 +79,36 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
 
     Pending? _review;
     TokenDraft? _token;
+    CatalogClient? _catalogClient;
+    /// <summary>El catálogo oficial verificado (el guardado o el recién bajado); null si todavía no hay.</summary>
+    ExtensionCatalog? _catalog;
+    bool _catalogLoaded, _refreshing;
+    string? _catalogProblem;
+    DateTimeOffset? _catalogChecked;
+    /// <summary>Las que se están bajando del catálogo, con su avance (0–100).</summary>
+    readonly Dictionary<string, int> _downloads = new();
     /// <summary>Un aviso bajo una fila de una página (un ajuste que no se guardó, un registro vacío…): la página, la clave y el texto.</summary>
     (string Page, string Key, string Text)? _note;
 
     ExtensionManager Manager => host.Extensions;
 
     public static string DetailPage(string id) => "ext:" + id;
+
+    /// <summary>La página de una del catálogo que no está instalada.</summary>
+    public static string CatalogPage(string id) => "ext-cat:" + id;
+
+    /// <summary>El cliente del catálogo; las pruebas ponen otro (otra dirección).</summary>
+    internal CatalogClient Catalogs
+    {
+        get => _catalogClient ??= new CatalogClient(Manager.Store.Root, Manager.Store.Trust);
+        set => _catalogClient = value;
+    }
+
+    /// <summary>Para las pruebas: el HttpClient con que se pide el catálogo; null, el de siempre.</summary>
+    internal HttpClient? CatalogHttp { get; set; }
+
+    /// <summary>El catálogo que se muestra.</summary>
+    internal ExtensionCatalog? Catalog => _catalog;
 
     /// <summary>Esa acción es de este panel.</summary>
     public static bool Handles(string key) => key.StartsWith(Prefix, StringComparison.Ordinal);
@@ -96,11 +122,15 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
     public IReadOnlyList<SettingsPage> Merge(IReadOnlyList<SettingsPage> pages) =>
         pages.SelectMany(p => p.Id == PageId ? Pages() : new[] { p }).ToList();
 
-    /// <summary>La lista, el detalle de cada instalada y, si hacen falta, la revisión y el token nuevo.</summary>
+    /// <summary>La lista, las ranuras, el detalle de cada instalada y de cada una del catálogo y, si hacen falta, la revisión y el token nuevo.</summary>
     public IEnumerable<SettingsPage> Pages()
     {
+        LoadCatalog();
         yield return ListPage();
+        yield return More();
         foreach (var ext in Manager.Installed) yield return Detail(ext);
+        if (_catalog is { } catalog)
+            foreach (var entry in catalog.Entries.Where(e => Manager.Find(e.Id) is null)) yield return CatalogDetail(entry);
         if (_review is { } review) yield return Review(review);
         if (_token is { } token) yield return Token(token);
     }
@@ -114,26 +144,30 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
         foreach (var (id, problem) in Manager.Broken) rows.Add(SettingsPages.Note(L.T("«{0}» no se puede leer: {1}", id, problem), RowTone.Warn));
         foreach (var (command, winner, loser) in Manager.CommandConflicts())
             rows.Add(SettingsPages.Note(L.T("El comando /{0} está en «{1}» y en «{2}»: lo atiende la primera.", command, NameOf(winner), NameOf(loser)), RowTone.Warn));
+        if (_note is { Page: PageId } note) rows.Add(SettingsPages.Note(note.Text, RowTone.Warn));
 
-        rows.Add(SettingsPages.Caption(L.T("Instaladas")));
-        if (Manager.Installed.Count == 0) rows.Add(SettingsPages.Note(L.T("No hay extensiones instaladas.")));
-        foreach (var ext in Manager.Installed)
-        {
-            rows.Add(new(RowKind.Page, ext.Manifest.Name.Text, DetailPage(ext.Id), StatusOf(ext), On: Manager.IsEnabled(ext.Id)));
-            rows.Add(SettingsPages.Note($"{ext.Manifest.Version} · {Provides(ext.Manifest)} · {TrustLabel(ext.Record.Trust)}"));
-        }
-        rows.Add(new(RowKind.Link, L.T("Un paquete .claupet"), Prefix + "install", L.T("Instalar desde archivo…"), Tone: RowTone.Accent, File: "*.claupet"));
-        rows.Add(SettingsPages.Note(L.T("Instale solo paquetes de quien confíe: un programa o una DLL corre con sus permisos.")));
+        rows.Add(new(RowKind.Market, L.T("Extensiones"), Prefix + "market", CatalogStatus, Place: RowPlace.Console, Market: Cards(),
+            Icons:
+            [
+                new(RowIconKind.Refresh, L.T("Buscar actualizaciones"), Prefix + "catalog"),
+                new(RowIconKind.Package, L.T("Instalar desde archivo .claupet"), Prefix + "install", File: "*.claupet"),
+                new(RowIconKind.Sliders, L.T("Ranuras y API local"), Prefix + "more"),
+            ]));
+        return new(PageId, L.T("Extensiones"),
+            L.T("Habilidades, voces, mascotas y modelos. Las oficiales vienen firmadas por Claupet; también puede soltar un .claupet sobre la mascota."),
+            null, rows);
+    }
 
-        // Las ranuras exclusivas, si alguna instalada puede ocupar una.
+    /// <summary>Las ranuras y la API local, en su propia página.</summary>
+    SettingsPage More()
+    {
+        var rows = new List<SettingsRow>();
         var slots = ExtensionSlots.Exclusive.Where(s => Manager.Installed.Any(e => e.Manifest.Provides.Contains(s))).ToList();
-        if (slots.Count > 0)
-        {
-            rows.Add(SettingsPages.Caption(L.T("Ranuras")));
-            rows.Add(SettingsPages.Note(L.T("Una extensión en una ranura apaga lo que trae Claupet en ella, para que no choquen.")));
-            foreach (var slot in slots)
-                rows.Add(SettingsPages.Choice(ExtensionSlots.Label(slot), Prefix + "slot:" + slot, SlotLabel(slot)));
-        }
+        rows.Add(SettingsPages.Caption(L.T("Ranuras")));
+        rows.Add(SettingsPages.Note(L.T("Una extensión en una ranura apaga lo que trae Claupet en ella, para que no choquen.")));
+        if (slots.Count == 0) rows.Add(SettingsPages.Note(L.T("Ninguna extensión instalada puede ocupar una ranura."), RowTone.Muted));
+        foreach (var slot in slots)
+            rows.Add(SettingsPages.Choice(ExtensionSlots.Label(slot), Prefix + "slot:" + slot, SlotLabel(slot)));
 
         rows.Add(SettingsPages.Caption(L.T("API local")));
         rows.Add(SettingsPages.Switch(L.T("Encender la API local"), Prefix + "api", host.LocalApiEnabled));
@@ -146,9 +180,85 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
             rows.Add(SettingsPages.Note(L.T("{0} · creado el {1}", permissions, token.Created.ToLocalTime().ToString("d", CultureInfo.CurrentCulture))));
         }
         rows.Add(SettingsPages.Link(L.T("Para otro programa"), L.T("Nuevo token…"), Prefix + "token-new"));
-        return new(PageId, L.T("Extensiones"), L.T("Habilidades, voces, mascotas y modelos de otros. También puede soltar un .claupet sobre la mascota."),
-            null, rows);
+        return new(MorePage, L.T("Ranuras y API local"), L.T("Qué extensión ocupa cada ranura, y los programas de este equipo que le piden cosas a Claupet."),
+            null, rows, PageId);
     }
+
+    /// <summary>Las tarjetas: las del catálogo (con lo instalado de cada una) y, después, las instaladas que no están en él.</summary>
+    internal IReadOnlyList<ExtensionCard> Cards()
+    {
+        var cards = new List<ExtensionCard>();
+        var app = SemVersion.App;
+        foreach (var entry in _catalog?.Entries ?? [])
+        {
+            var installed = Manager.Find(entry.Id);
+            var newer = installed is null || entry.Version > installed.Manifest.Version;
+            cards.Add(new ExtensionCard(entry.Id, installed?.Manifest.Name.Text ?? entry.Name.Text,
+                installed?.Manifest.Description.Text ?? entry.Description.Text, entry.Provides,
+                installed is null ? CatalogPage(entry.Id) : DetailPage(entry.Id),
+                Official: installed is null || installed.Record.Trust == PackageTrust.Official,
+                Installed: installed?.Manifest.Version.ToString(), Latest: entry.Version.ToString(),
+                Update: installed is not null && entry.Version > installed.Manifest.Version && entry.Compatible(app),
+                NeedsClaupet: newer && !entry.Compatible(app) ? entry.MinClaupet.ToString() : null,
+                Downloads: entry.Downloads, Percent: _downloads.TryGetValue(entry.Id, out var p) ? p : null,
+                Enabled: installed is null || Manager.IsEnabled(entry.Id)));
+        }
+        foreach (var ext in Manager.Installed.Where(e => cards.All(c => c.Id != e.Id)))
+            cards.Add(new ExtensionCard(ext.Id, ext.Manifest.Name.Text, ext.Manifest.Description.Text, ext.Manifest.Provides, DetailPage(ext.Id),
+                Official: ext.Record.Trust == PackageTrust.Official, Installed: ext.Manifest.Version.ToString(), Enabled: Manager.IsEnabled(ext.Id)));
+        return cards;
+    }
+
+    /// <summary>Lo que se dice del catálogo bajo las tarjetas.</summary>
+    string CatalogStatus
+    {
+        get
+        {
+            if (_refreshing) return L.T("Buscando en el catálogo…");
+            if (_catalogProblem is { } problem) return problem;
+            if (_catalog is null) return L.T("Todavía no se leyó el catálogo oficial.");
+            return _catalogChecked is { } at
+                ? L.T("Catálogo oficial verificado · {0}", Ago(DateTimeOffset.UtcNow - at))
+                : L.T("Catálogo oficial verificado");
+        }
+    }
+
+    static string Ago(TimeSpan span) => span.TotalMinutes < 1 ? L.T("hace un momento")
+        : span.TotalHours < 1 ? L.T("hace {0} min", (int)span.TotalMinutes)
+        : span.TotalDays < 1 ? L.T("hace {0} h", (int)span.TotalHours)
+        : L.T("hace {0} días", (int)span.TotalDays);
+
+    /// <summary>Una del catálogo que no está instalada: lo que dice el catálogo y «Instalar».</summary>
+    SettingsPage CatalogDetail(CatalogEntry entry)
+    {
+        var page = CatalogPage(entry.Id);
+        var rows = new List<SettingsRow>();
+        if (!entry.Compatible(SemVersion.App))
+            rows.Add(SettingsPages.Note(L.T("Necesita Claupet {0} o más nueva. Actualice Claupet para instalarla.", entry.MinClaupet), RowTone.Warn));
+        else if (_downloads.TryGetValue(entry.Id, out var percent))
+            rows.Add(SettingsPages.Note(L.T("Descargando y comprobando la firma… {0} %", percent)));
+        else
+            rows.Add(new(RowKind.Link, L.T("Oficial, firmada por Claupet · {0}", Size(entry.Size)), Prefix + "get:" + entry.Id, L.T("Instalar"), Tone: RowTone.Accent));
+        AddNote(rows, page, "get");
+        rows.Add(SettingsPages.Caption(L.T("Detalle")));
+        rows.Add(SettingsPages.Info(L.T("Versión"), entry.Version.ToString()));
+        if (entry.Author is { Length: > 0 } author) rows.Add(SettingsPages.Info(L.T("Autor"), author));
+        rows.Add(SettingsPages.Info(L.T("Qué trae"), string.Join(", ", entry.Provides.Select(ExtensionSlots.Label))));
+        rows.Add(SettingsPages.Info(L.T("Tamaño"), Size(entry.Size)));
+        if (entry.Downloads is { } downloads) rows.Add(SettingsPages.Info(L.T("Descargas"), downloads.ToString("N0", CultureInfo.CurrentCulture)));
+        if (entry.License is { Length: > 0 } license) rows.Add(SettingsPages.Info(L.T("Licencia"), license));
+        rows.Add(SettingsPages.Link(L.T("Su código"), L.T("Abrir en GitHub"), Prefix + "source:" + entry.Id));
+        rows.Add(SettingsPages.Caption(L.T("Permisos")));
+        rows.Add(entry.Permissions.Count == 0
+            ? SettingsPages.Note(L.T("No pide permisos."))
+            : SettingsPages.Note(string.Join("\n", entry.Permissions.Select(p => "• " + ExtensionPermissions.Label(p))), RowTone.Normal));
+        rows.Add(SettingsPages.Note(L.T("Antes de instalarla verá su firma y sus permisos, tal como vienen en el paquete."), RowTone.Muted));
+        return new(page, entry.Name.Text, entry.Description.Text, null, rows, PageId);
+    }
+
+    static string Size(long bytes) => bytes < 1024 * 1024
+        ? L.T("{0} KB", Math.Max(1, bytes / 1024))
+        : L.T("{0} MB", (bytes / (1024.0 * 1024)).ToString("0.#", CultureInfo.CurrentCulture));
 
     SettingsPage Detail(InstalledExtension ext)
     {
@@ -157,6 +267,16 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
         var page = DetailPage(ext.Id);
         var rows = new List<SettingsRow> { SettingsPages.Switch(L.T("Encendida"), Prefix + "on:" + ext.Id, state.Enabled) };
         if (state.DisabledReason is { } reason) rows.Add(SettingsPages.Note(L.T("Se apagó: {0}", reason), RowTone.Warn));
+        if (_catalog?.Find(ext.Id) is { } entry && entry.Version > m.Version)
+        {
+            if (_downloads.TryGetValue(ext.Id, out var percent))
+                rows.Add(SettingsPages.Note(L.T("Descargando la versión {0}… {1} %", entry.Version, percent)));
+            else if (!entry.Compatible(SemVersion.App))
+                rows.Add(SettingsPages.Note(L.T("La versión {0} necesita Claupet {1} o más nueva.", entry.Version, entry.MinClaupet), RowTone.Warn));
+            else
+                rows.Add(new(RowKind.Link, L.T("Versión {0} disponible", entry.Version), Prefix + "get:" + ext.Id, L.T("Actualizar"), Tone: RowTone.Accent));
+            AddNote(rows, page, "get");
+        }
 
         rows.Add(SettingsPages.Caption(L.T("Detalle")));
         rows.Add(SettingsPages.Info(L.T("Versión"), m.Version.ToString()));
@@ -364,6 +484,25 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
             case "install":
                 if (value is { Length: > 0 } file) _ = ReviewAsync(file);
                 break;
+            case "catalog":
+                _ = RefreshCatalogAsync(force: true);
+                break;
+            case "more":
+                console.Show(MorePage);
+                return;
+            case "get" when _catalog?.Find(argument) is { } entry && entry.Compatible(SemVersion.App) && !_downloads.ContainsKey(entry.Id):
+                _ = DownloadAsync(entry);
+                break;
+            case "update-all" when _catalog is { } catalog:
+                foreach (var entry in catalog.Entries)
+                    if (Manager.Find(entry.Id) is { } ext && entry.Version > ext.Manifest.Version && entry.Compatible(SemVersion.App)
+                        && !_downloads.ContainsKey(entry.Id))
+                        _ = DownloadAsync(entry, quiet: true);
+                break;
+            case "source" when _catalog?.Find(argument) is { } entry:
+                Open($"{ExtensionCatalog.Repository}/tree/main/extensions/{entry.Id}");
+                break;
+
             case "on" when Manager.Find(argument) is { } ext:
                 _ = RunAsync(() => Manager.SetEnabledAsync(ext.Id, !Manager.IsEnabled(ext.Id)));
                 break;
@@ -541,12 +680,14 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
     /// Console abierta ahí: se instala solo si la persona toca «Instalar». Lo usan «Instalar desde archivo…» y soltar un
     /// .claupet sobre la mascota o la isla.
     /// </summary>
-    public async Task ReviewAsync(string path)
+    /// deleteAfter: el paquete se bajó del catálogo; ya abierto (o si no sirve), se borra.
+    public async Task ReviewAsync(string path, bool deleteAfter = false)
     {
         InstallReview? review = null;
         string? problem = null;
         try { review = await Task.Run(() => Manager.Store.Prepare(path)); }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException) { problem = ex.Message; }
+        finally { if (deleteAfter) TryDelete(path); }
         console.Post(() =>
         {
             CloseReview();
@@ -589,6 +730,118 @@ sealed class ExtensionsPanel(IExtensionsHost host, IConsoleSurface console)
             console.Push();
             console.Show(DetailPage(installed.Id));
         });
+    }
+
+    // ── Catálogo ────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>La primera vez que se arman las páginas: el catálogo guardado y, si toca (una vez por día), el del repositorio.</summary>
+    void LoadCatalog()
+    {
+        if (_catalogLoaded) return;
+        _catalogLoaded = true;
+        _catalog = Catalogs.Cached();
+        _catalogChecked = Catalogs.LastChecked;
+        if (Catalogs.Due(DateTimeOffset.UtcNow)) _ = RefreshCatalogAsync(force: false);
+    }
+
+    /// <summary>Pide el catálogo al repositorio (force: aunque no haya pasado un día) y muestra lo nuevo.</summary>
+    internal async Task RefreshCatalogAsync(bool force)
+    {
+        if (_refreshing || (!force && !Catalogs.Due(DateTimeOffset.UtcNow))) return;
+        _refreshing = true;
+        console.Post(console.Push);
+        ExtensionCatalog? catalog = null;
+        string? problem = null;
+        try { (catalog, problem) = await Catalogs.RefreshAsync(CatalogHttp); }
+        catch (OperationCanceledException) { }
+        console.Post(() =>
+        {
+            _refreshing = false;
+            if (catalog is not null) _catalog = catalog;
+            _catalogProblem = problem;
+            _catalogChecked = Catalogs.LastChecked;
+            console.Push();
+        });
+    }
+
+    /// <summary>
+    /// Baja el paquete de esa entrada (comprobando su tamaño y su SHA-256 contra el catálogo) y lo abre en la página de
+    /// revisión, como uno elegido a mano. quiet («Actualizar todas»): una actualización oficial que no pide permisos nuevos
+    /// se instala sin pasar por la revisión; si pide algo nuevo, va a la revisión igual.
+    /// </summary>
+    async Task DownloadAsync(CatalogEntry entry, bool quiet = false)
+    {
+        _downloads[entry.Id] = 0;
+        var folder = Path.Combine(Manager.Store.Root, "descargas");
+        string? path = null, problem = null;
+        try
+        {
+            path = await CatalogClient.DownloadAsync(entry, folder, new Progress<long>(have => console.Post(() =>
+            {
+                var percent = (int)Math.Clamp(have * 100 / Math.Max(1, entry.Size), 0, 100);
+                if (!_downloads.TryGetValue(entry.Id, out var before) || before == percent) return;
+                _downloads[entry.Id] = percent;
+                console.Push();
+            })), http: CatalogHttp);
+        }
+        catch (Exception ex) when (ex is IOException or HttpRequestException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            ErrorLog.Write(ex);
+            problem = L.T("No se pudo bajar «{0}»: {1}", entry.Name.Text, ex.Message.TrimEnd('.'));
+        }
+        if (path is not null && quiet && await TryUpdateQuietlyAsync(path, entry)) return;
+        console.Post(() =>
+        {
+            _downloads.Remove(entry.Id);
+            if (problem is not null)
+            {
+                var page = Manager.Find(entry.Id) is null ? CatalogPage(entry.Id) : DetailPage(entry.Id);
+                _note = (quiet ? PageId : page, quiet ? "market" : "get", problem);
+                console.Push();
+            }
+        });
+        if (path is not null) await ReviewAsync(path, deleteAfter: true);
+    }
+
+    /// <summary>
+    /// Una actualización oficial sin permisos nuevos: se instala sin revisión y se borra el paquete. false si necesita la
+    /// revisión (el paquete queda para ella).
+    /// </summary>
+    async Task<bool> TryUpdateQuietlyAsync(string path, CatalogEntry entry)
+    {
+        InstallReview? review = null;
+        try
+        {
+            review = await Task.Run(() => Manager.Store.Prepare(path));
+            if (review is not { IsUpdate: true, Allowed: true, Trust: PackageTrust.Official } || review.NewPermissions.Count > 0)
+            {
+                review.Package.Dispose();
+                return false;
+            }
+            var slots = review.Manifest.Provides.Where(s => ExtensionSlots.IsExclusive(s) && Manager.ProviderFor(s)?.Id == entry.Id).ToList();
+            var installed = await Manager.InstallAsync(review, slots);
+            await host.InstalledAsync(installed, update: true, useAsPet: false);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // Lo que falló se ve en la revisión (que también borra el paquete).
+            ErrorLog.Write(ex);
+            review?.Package.Dispose();
+            return false;
+        }
+        TryDelete(path);
+        console.Post(() =>
+        {
+            _downloads.Remove(entry.Id);
+            console.Push();
+        });
+        return true;
+    }
+
+    static void TryDelete(string path)
+    {
+        try { if (System.IO.File.Exists(path)) System.IO.File.Delete(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     /// <summary>Sin instalar: lo que se abrió del paquete se borra.</summary>

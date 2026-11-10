@@ -182,7 +182,11 @@ sealed class TrustStore
     /// lista de revocaciones; se agregan con la clave que genera el responsable del repositorio
     /// (--extension-keygen) y nunca se guarda la privada en el repositorio.
     /// </summary>
-    public static readonly string[] OfficialKeys = [];
+    public static readonly string[] OfficialKeys =
+    [
+        // claupet-extensiones (2F0A 01CF 1379 7CF2): la privada está en ~/.claupet-firma del responsable.
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOtT9L/a9KlZo5MH64sSpfpCfzVXbMNBbKSsxuYC2EYBGsnwVbHu33DVa9e+KdFxK8+WVoOIB57FkphT4GYQM2Q==",
+    ];
 
     sealed class Data
     {
@@ -318,19 +322,8 @@ sealed class TrustStore
     {
         try
         {
-            using var doc = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 4 });
-            var r = doc.RootElement;
-            var payloadB64 = Json.Str(r, "payload");
-            var keyId = Json.Str(r, "keyId");
-            var signature = Json.Str(r, "signature");
-            if (payloadB64 is null || keyId is null || signature is null || !_official.Contains(keyId)) return false;
-            var publicKey = OfficialKeysFor(keyId);
-            if (publicKey is null) return false;
-            var payload = Encoding.UTF8.GetString(Convert.FromBase64String(payloadB64));
-            using (var key = ExtensionKeys.ImportPublic(Convert.FromBase64String(publicKey)))
-                if (!key.VerifyData(Encoding.UTF8.GetBytes(payload), Convert.FromBase64String(signature), HashAlgorithmName.SHA256)) return false;
-
-            using var list = JsonDocument.Parse(payload, new JsonDocumentOptions { MaxDepth = 4 });
+            if (VerifiedPayload(json) is not { } payload) return false;
+            using var list = JsonDocument.Parse(payload, new JsonDocumentOptions { MaxDepth = 8 });
             var p = list.RootElement;
             if (!p.TryGetProperty("sequence", out var s) || !s.TryGetInt64(out var sequence)) return false;
             lock (_gate)
@@ -357,6 +350,28 @@ sealed class TrustStore
         catch (Exception ex) when (ex is JsonException or FormatException or CryptographicException or InvalidOperationException) { return false; }
     }
 
+    /// <summary>
+    /// El payload de un documento firmado con una clave oficial ({"payload", "keyId", "signature"}: la lista de
+    /// revocaciones o el catálogo), si la firma corresponde; null si no.
+    /// </summary>
+    public string? VerifiedPayload(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 4 });
+            var r = doc.RootElement;
+            var payloadB64 = Json.Str(r, "payload");
+            var keyId = Json.Str(r, "keyId");
+            var signature = Json.Str(r, "signature");
+            if (payloadB64 is null || keyId is null || signature is null || !_official.Contains(keyId)) return null;
+            if (OfficialKeysFor(keyId) is not { } publicKey) return null;
+            var payload = Encoding.UTF8.GetString(Convert.FromBase64String(payloadB64));
+            using var key = ExtensionKeys.ImportPublic(Convert.FromBase64String(publicKey));
+            return key.VerifyData(Encoding.UTF8.GetBytes(payload), Convert.FromBase64String(signature), HashAlgorithmName.SHA256) ? payload : null;
+        }
+        catch (Exception ex) when (ex is JsonException or FormatException or CryptographicException or InvalidOperationException) { return null; }
+    }
+
     string? OfficialKeysFor(string keyId) =>
         _officialKeys.FirstOrDefault(k => ExtensionKeys.KeyId(Convert.FromBase64String(k)) == keyId);
 
@@ -368,7 +383,14 @@ sealed class TrustStore
             ["sequence"] = sequence,
             ["keys"] = new JsonArray(keys.Select(k => (JsonNode)k).ToArray()),
             ["extensions"] = new JsonObject(extensions.Select(e => KeyValuePair.Create(e.Key, (JsonNode?)e.Value))),
-        }.ToJsonString();
+        };
+        return SignOfficial(signer, payload);
+    }
+
+    /// <summary>Firma un payload con la clave oficial: {"payload": "&lt;JSON en base64&gt;", "keyId", "signature"}.</summary>
+    public static string SignOfficial(ExtensionSigner signer, JsonObject payloadObject)
+    {
+        var payload = payloadObject.ToJsonString();
         return new JsonObject
         {
             ["payload"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(payload)),

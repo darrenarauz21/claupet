@@ -121,8 +121,8 @@ Más detalles en [Asistente y voz](asistente-y-voz.md).
 
 ## Extensiones
 
-🪟 *Solo en Claupet Console y en Windows.* Las extensiones instaladas, **Instalar desde archivo…** y la API
-local. Lo explica [Extensiones](extensiones.md).
+🪟 *Solo en Claupet Console y en Windows.* El catálogo de las extensiones oficiales y las instaladas, instalar
+desde un archivo `.claupet`, las ranuras y la API local. Lo explica [Extensiones](extensiones.md).
 
 ## Isla
 
