@@ -93,7 +93,11 @@ sealed partial class CanvasPane : Grid
             Grid.SetRow(overlay, 1);
             Children.Add(overlay);
         }
-        _scroll.ScrollChanged += (_, _) => PaintBarLine();
+        _scroll.ScrollChanged += (_, _) =>
+        {
+            PaintBarLine();
+            FillNear(); // las secciones que esperaban, si ya se acercan
+        };
         // Un clic fuera de la sección que se edita la guarda.
         _scroll.AddHandler(PointerPressedEvent, (_, e) =>
         {
@@ -271,6 +275,9 @@ sealed partial class CanvasPane : Grid
         _glowTimer.Stop();
         _flash.Clear();
         foreach (var glow in this.GetVisualDescendants().OfType<Border>().Where(b => b.Tag is "glow")) glow.Opacity = 0;
+        // Con la marca ya apagada, esas secciones se ven como sin marca: el próximo dibujo las reusa en vez de rehacerlas.
+        foreach (var (id, (key, block)) in _blocks.ToList())
+            if (key.Flash) _blocks[id] = (key with { Flash = false, FlashBy = null }, block);
     }
 
     void Rest()
@@ -278,7 +285,7 @@ sealed partial class CanvasPane : Grid
         _busyTimer.Stop();
         foreach (var key in _busy.Where(p => DateTime.UtcNow - p.Value > TimeSpan.FromSeconds(5)).Select(p => p.Key).ToList()) _busy.Remove(key);
         _bar.Child = Bar();
-        RenderList();
+        RenderList(force: true); // el «hace cuánto» y el punto que late cambian con el tiempo
     }
 
     /// <summary>Al cerrar la ventana: deja de mirar la carpeta y apaga los temporizadores.</summary>
@@ -445,9 +452,18 @@ sealed partial class CanvasPane : Grid
         _liveShown.Clear();
         _scroll.IsVisible = !mesa;
         _deskArea.IsVisible = mesa;
+        if (shown?.Id != _blocksOf)
+        {
+            ForgetBlocks(); // otro canvas: nada de lo dibujado se reusa
+            _blocksOf = shown?.Id;
+        }
         _scroll.Content = mesa ? null : shown is null ? Empty() : Document(shown);
         if (mesa) RenderDesk(_doc!);
-        foreach (var id in _live.Keys.Where(id => !_liveShown.Contains(id)).ToList()) _live.Remove(id);
+        foreach (var id in _live.Keys.Where(id => !_liveShown.Contains(id)).ToList())
+        {
+            _live.Remove(id);
+            _blocks.Remove(id); // su sección guardada llevaba esa página: la próxima vez se hace de nuevo
+        }
         if (keepScroll) Dispatcher.UIThread.Post(() => _scroll.Offset = offset, DispatcherPriority.Loaded);
         if (_doc is { } doc && doc.Version != _shownVersion && _shownVersion != 0 && _past is null) Bump();
         _shownVersion = _doc?.Version ?? 0;
@@ -458,6 +474,8 @@ sealed partial class CanvasPane : Grid
     }
 
     Border? _versionPill;
+    /// <summary>El canvas de las secciones guardadas (_blocks).</summary>
+    string? _blocksOf;
 
     Control Bar()
     {
@@ -690,12 +708,21 @@ sealed partial class CanvasPane : Grid
     public Control ListView()
     {
         if (_listView.Parent is Panel old) old.Children.Remove(_listView);
-        RenderList();
+        RenderList(force: true);
         return _listView;
     }
 
-    void RenderList()
+    /// <summary>Lo que mostraba la lista la última vez: cada dibujo del documento la pide, y si nada cambió no se rehace.</summary>
+    (IReadOnlyList<CanvasSummary> List, string? Current, string Filter, Ink Ink)? _listState;
+    /// <summary>Los canvas que ya estaban en la lista: solo los que aparecen entran con animación.</summary>
+    readonly HashSet<string> _listIds = [];
+
+    void RenderList(bool force = false)
     {
+        (IReadOnlyList<CanvasSummary> List, string? Current, string Filter, Ink Ink) state = (_list, _doc?.Id, _search.Text?.Trim() ?? "", _ink);
+        if (!force && _listState is { } last && last.List.SequenceEqual(state.List) && last.Current == state.Current && last.Filter == state.Filter && last.Ink == state.Ink)
+            return;
+        _listState = state;
         _listView.Children.Clear();
         _search.Watermark = L.T("Buscar");
         Plain(_search);
@@ -715,12 +742,16 @@ sealed partial class CanvasPane : Grid
         _listView.Children.Add(search);
         var filter = _search.Text?.Trim() ?? "";
         var i = 0;
+        var shown = new HashSet<string>();
         foreach (var summary in _list.Where(s => filter.Length == 0 || s.Title.Contains(filter, StringComparison.CurrentCultureIgnoreCase)))
         {
             var row = ListRow(summary);
-            Enter(row, i++ * 30, distance: 6);
+            if (!_listIds.Contains(summary.Id)) Enter(row, i++ * 30, distance: 6);
+            shown.Add(summary.Id);
             _listView.Children.Add(row);
         }
+        _listIds.Clear();
+        _listIds.UnionWith(shown);
     }
 
     Border ListRow(CanvasSummary summary)

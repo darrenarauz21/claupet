@@ -85,19 +85,120 @@ sealed partial class CanvasPane
     /// <summary>El aire de adentro de cada sección.</summary>
     static readonly Thickness BlockPadding = new(14, 10);
 
+    /// <summary>
+    /// Todo lo que cambia cómo se ve una sección. Si es igual que en el dibujo anterior, la sección (con su Markdown, su
+    /// gráfico o su página viva) se reusa tal cual en vez de volver a hacerse.
+    /// </summary>
+    readonly record struct BlockKey(
+        string Kind, string? Language, string? Title, string Content, string? Author, DateTimeOffset Updated, string? View,
+        TextBox? Editor, bool Flash, string? FlashBy, int OpenComments, bool ReadOnly, Ink Ink, string? Folder, bool LiveOff);
+
+    /// <summary>Las secciones del último dibujo, con lo que tenían: se reusan las que no cambiaron.</summary>
+    readonly Dictionary<string, (BlockKey Key, Control Block)> _blocks = [];
+    /// <summary>Las líneas del «+» entre secciones del último dibujo.</summary>
+    readonly Dictionary<(string After, bool Last, bool ReadOnly, Ink Ink), Control> _lines = [];
+    /// <summary>Secciones aún sin dibujar (lejos de lo que se ve): un hueco de su alto aproximado, que se llena al acercarse.</summary>
+    readonly Dictionary<string, Border> _lazy = [];
+    /// <summary>Cuánto, más allá de lo que se ve, se dibuja por adelantado (arriba y abajo).</summary>
+    const double LazyMargin = 900;
+
+    /// <summary>Olvida las secciones guardadas (otro canvas): las del anterior no se vuelven a usar.</summary>
+    void ForgetBlocks()
+    {
+        _blocks.Clear();
+        _lines.Clear();
+        _lazy.Clear();
+    }
+
+    BlockKey KeyOf(CanvasDoc doc, CanvasSection section)
+    {
+        var views = Views(section);
+        var view = views.Length == 0 ? null : _views.TryGetValue(section.Id, out var v) && views.Contains(v) ? v : views[0];
+        var flash = _flash.TryGetValue(section.Id, out var by);
+        return new BlockKey(section.Kind, section.Language, section.Title, section.Content, section.Author, section.Updated, view,
+            _editing == section.Id ? _editor : null, flash, by, doc.Comments.Count(c => c.SectionId == section.Id && !c.Resolved),
+            _past is not null, _ink, doc.Folder, _liveOff);
+    }
+
     Control Document(CanvasDoc doc)
     {
         var column = new StackPanel { MaxWidth = Column, Margin = new Thickness(Gutter, 10, Aside, 140), HorizontalAlignment = HorizontalAlignment.Stretch };
         column.Width = double.NaN;
+        var blocks = new Dictionary<string, (BlockKey, Control)>();
+        var lines = new Dictionary<(string, bool, bool, Ink), Control>();
+        // Lo que se ve (y lo de arriba, para que no salte) se dibuja ya; lo que hay que rehacer más abajo espera a acercarse.
+        var budget = Math.Max(_scroll.Viewport.Height, 800) + _scroll.Offset.Y + LazyMargin;
+        var height = 0.0;
         for (var i = 0; i < doc.Sections.Count; i++)
         {
-            var after = i == 0 ? "start" : doc.Sections[i - 1].Id;
-            column.Children.Add(InsertLine(after));
-            column.Children.Add(Block(doc, doc.Sections[i], i));
+            var section = doc.Sections[i];
+            column.Children.Add(Line(lines, i == 0 ? "start" : doc.Sections[i - 1].Id, false));
+            var key = KeyOf(doc, section);
+            Control block;
+            if (_blocks.TryGetValue(section.Id, out var known) && known.Key == key)
+            {
+                block = Detach(known.Block);
+                block.Opacity = 1; // «Borrar» la deja en 0 mientras se va: si no se pudo borrar, vuelve
+                if (_live.ContainsKey(section.Id)) _liveShown.Add(section.Id);
+            }
+            else
+            {
+                _lazy.Remove(section.Id);
+                var defer = height > budget && key.Editor is null && !key.Flash;
+                block = Block(doc, section, i, defer);
+            }
+            blocks[section.Id] = (key, block);
+            height += block.Bounds.Height > 0 ? block.Bounds.Height : Estimate(section);
+            column.Children.Add(block);
         }
-        column.Children.Add(InsertLine(doc.Sections.Count == 0 ? "start" : doc.Sections[^1].Id, last: true));
+        column.Children.Add(Line(lines, doc.Sections.Count == 0 ? "start" : doc.Sections[^1].Id, true));
         foreach (var s in doc.Sections) _seen.Add(s.Id);
+        foreach (var id in _lazy.Keys.Where(id => !blocks.ContainsKey(id)).ToList()) _lazy.Remove(id);
+        _blocks.Clear();
+        foreach (var (id, entry) in blocks) _blocks[id] = entry;
+        _lines.Clear();
+        foreach (var (k, line) in lines) _lines[k] = line;
+        if (_lazy.Count > 0) Dispatcher.UIThread.Post(FillNear, DispatcherPriority.Loaded);
         return column;
+    }
+
+    Control Line(Dictionary<(string, bool, bool, Ink), Control> lines, string after, bool last)
+    {
+        var key = (after, last, _past is not null, _ink);
+        var line = _lines.TryGetValue(key, out var known) ? Detach(known) : InsertLine(after, last);
+        lines[key] = line;
+        return line;
+    }
+
+    /// <summary>El alto aproximado de una sección aún sin dibujar (para que la barra de desplazamiento no salte tanto).</summary>
+    static double Estimate(CanvasSection section)
+    {
+        var lines = section.Content.AsSpan().Count('\n') + 1;
+        return section.Kind switch
+        {
+            CanvasKinds.Markdown => Math.Clamp(lines * 24 + 20, 50, 2400),
+            CanvasKinds.Code or CanvasKinds.Data => Math.Clamp(lines * 20 + 42, 60, 470),
+            CanvasKinds.Html or CanvasKinds.Svg => 400,
+            CanvasKinds.Plan => 420,
+            _ => 300,
+        };
+    }
+
+    /// <summary>Dibuja las secciones que esperaban y ya están cerca de lo que se ve (al desplazarse o al cambiar el tamaño).</summary>
+    void FillNear()
+    {
+        if (_lazy.Count == 0 || (_past ?? _doc) is not { } doc) return;
+        var top = -LazyMargin;
+        var bottom = _scroll.Viewport.Height + LazyMargin;
+        foreach (var (id, body) in _lazy.ToList())
+        {
+            if (body.TranslatePoint(default, _scroll) is not { } at) continue;
+            if (at.Y > bottom || at.Y + body.Bounds.Height < top) continue;
+            _lazy.Remove(id);
+            if (doc.Section(id) is not { } section) continue;
+            body.Child = View(doc, section);
+            if (_live.ContainsKey(id)) _liveShown.Add(id);
+        }
     }
 
     /// <summary>La línea entre secciones: al pasar el mouse se dibuja y aparece el «+», que abre los tipos.</summary>
@@ -134,7 +235,7 @@ sealed partial class CanvasPane
         return zone;
     }
 
-    Control Block(CanvasDoc doc, CanvasSection section, int index)
+    Control Block(CanvasDoc doc, CanvasSection section, int index, bool defer = false)
     {
         var editing = _editing == section.Id;
         var readOnly = _past is not null;
@@ -147,8 +248,9 @@ sealed partial class CanvasPane
             Background = editing ? _ink.Raised : Brushes.Transparent,
             BoxShadow = editing ? Shadow() : default,
             Transitions = [new BrushTransition { Property = Border.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(200) }],
-            Child = editing && _editor is not null ? Detach(_editor) : View(doc, section),
+            Child = editing && _editor is not null ? Detach(_editor) : defer ? new Border { Height = Estimate(section) } : View(doc, section),
         };
+        if (defer) _lazy[section.Id] = body;
         host.Children.Add(body);
 
         // El color de quien la acaba de cambiar, que se apaga solo.
@@ -179,11 +281,11 @@ sealed partial class CanvasPane
             if (section.Kind is CanvasKinds.Markdown or CanvasKinds.Code or CanvasKinds.Data or CanvasKinds.Image or CanvasKinds.Html or CanvasKinds.Svg or CanvasKinds.Diagram or CanvasKinds.Plan)
                 row.Children.Add(editing
                     ? IconButton(CanvasIcons.Check, L.T("Guardar") + " · Ctrl+Enter", SaveEditing, size: 28, glyph: 14, accent: true)
-                    : IconButton(CanvasIcons.Pen, L.T("Editar"), () => StartEditing(section), size: 28, glyph: 14));
+                    : IconButton(CanvasIcons.Pen, L.T("Editar"), () => Current(section, (_, s) => StartEditing(s)), size: 28, glyph: 14));
             Border? ask = null, comment = null, menu = null;
-            ask = IconButton(CanvasIcons.Spark, L.T("Pedir a la IA"), () => AskPopup(ask!, section), size: 28, glyph: 14);
-            comment = IconButton(CanvasIcons.Comment, L.T("Comentar"), () => ThreadPopup(comment!, section), size: 28, glyph: 14);
-            menu = IconButton(CanvasIcons.More, L.T("Más"), () => SectionMenu(menu!, doc, section), size: 28, glyph: 14, fill: true);
+            ask = IconButton(CanvasIcons.Spark, L.T("Pedir a la IA"), () => Current(section, (_, s) => AskPopup(ask!, s)), size: 28, glyph: 14);
+            comment = IconButton(CanvasIcons.Comment, L.T("Comentar"), () => Current(section, (_, s) => ThreadPopup(comment!, s)), size: 28, glyph: 14);
+            menu = IconButton(CanvasIcons.More, L.T("Más"), () => Current(section, (d, s) => SectionMenu(menu!, d, s)), size: 28, glyph: 14, fill: true);
             row.Children.Add(ask);
             row.Children.Add(comment);
             row.Children.Add(menu);
@@ -198,14 +300,16 @@ sealed partial class CanvasPane
         // A la derecha: quién la escribió y sus comentarios abiertos.
         var who = new StackPanel { Spacing = 6, Margin = new Thickness(0, 10, -40, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top };
         var avatar = Avatar(section.Author, 22);
+        // El «hace cuánto» se calcula al pasar el mouse: la sección puede seguir en pantalla (reusada) por mucho rato.
         ToolTip.SetTip(avatar, $"{CanvasJson.AuthorLabel(section.Author)} · {Format.Ago(section.Updated)}");
+        avatar.PointerEntered += (_, _) => ToolTip.SetTip(avatar, $"{CanvasJson.AuthorLabel(section.Author)} · {Format.Ago(section.Updated)}");
         who.Children.Add(avatar);
         var open = doc.Comments.Count(c => c.SectionId == section.Id && !c.Resolved);
         if (open > 0)
         {
             Border? count = null;
             count = Ui.Press(new TextBlock { Text = open.ToString(), FontSize = 10.5, FontWeight = FontWeight.SemiBold, Foreground = _ink.Secondary, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-                () => ThreadPopup(count!, section), (b, on) => b.Background = on ? _ink.Hairline : _ink.Pill, L.T("Comentarios"));
+                () => Current(section, (_, s) => ThreadPopup(count!, s)), (b, on) => b.Background = on ? _ink.Hairline : _ink.Pill, L.T("Comentarios"));
             count.Width = 22;
             count.Height = 22;
             count.CornerRadius = new CornerRadius(11);
@@ -233,6 +337,15 @@ sealed partial class CanvasPane
         };
         if (!_seen.Contains(section.Id)) Enter(host, Math.Min(index, 10) * 45);
         return host;
+    }
+
+    /// <summary>
+    /// La sección como está ahora en el canvas que se ve. Las secciones dibujadas se reusan entre versiones, así que sus
+    /// botones no confían en el documento con que se hicieron.
+    /// </summary>
+    void Current(CanvasSection section, Action<CanvasDoc, CanvasSection> action)
+    {
+        if ((_past ?? _doc) is { } doc && doc.Section(section.Id) is { } now) action(doc, now);
     }
 
     static Control Detach(Control control)
