@@ -7,16 +7,25 @@ using AvaloniaEdit.Document;
 using AvaloniaEdit.Editing;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Rendering;
+using Avalonia;
 
 /// <summary>Los colores del editor, los del diseño (Documento y Código), en claro u oscuro.</summary>
 sealed record EditorInk(IBrush Keyword, IBrush String, IBrush Function, IBrush Number, IBrush Comment, IBrush LineNumber,
-    IBrush Marks, IBrush Ghost, IBrush SelectionDoc, IBrush SelectionCode, IBrush Suggest)
+    IBrush Marks, IBrush Ghost, IBrush SelectionDoc, IBrush SelectionCode, IBrush Suggest,
+    IBrush Match, IBrush MatchCurrent, IBrush Word, IBrush CurrentLine, IBrush Groups)
 {
     public static EditorInk For(Ink ink) => ink.Dark
         ? new(B("#E8987C"), B("#A8C7A0"), B("#9DBBE0"), B("#E0C58A"), ink.Tertiary, B("#6E6C66"), B("#77756E"), B("#8C8A82"),
-            B("#477896C8"), B("#247896C8"), B("#1AD97757"))
+            B("#477896C8"), B("#247896C8"), B("#1AD97757"),
+            B("#47D97757"), B("#9CD97757"), B("#3D7896C8"), B("#0AFFFFFF"), ink.Text)
         : new(B("#B4532F"), B("#3F6B3A"), B("#2F5B8C"), B("#8A5A12"), ink.Tertiary, B("#9C9A92"), B("#A3A097"), B("#7A7871"),
-            B("#335A82C8"), B("#1F5A82C8"), B("#1AD97757"));
+            B("#335A82C8"), B("#1F5A82C8"), B("#1AD97757"),
+            B("#40D97757"), B("#85D97757"), B("#335A82C8"), B("#09000000"), ink.Text);
+
+    /// <summary>Los colores de los grupos de pestañas: los mismos tonos, más claros en oscuro y más hondos en claro.</summary>
+    public static Color[] GroupColors(bool dark) => (dark
+        ? new[] { "#9DBBE0", "#A8C7A0", "#E0C58A", "#E8987C", "#C9A0DC", "#8FD3C8", "#BFBDB5" }
+        : new[] { "#2F5B8C", "#3F6B3A", "#8A5A12", "#B4532F", "#7A4E9A", "#2B7A70", "#6B6963" }).Select(Color.Parse).ToArray();
 
     static ImmutableSolidColorBrush B(string hex) => new(Color.Parse(hex));
 }
@@ -196,6 +205,98 @@ sealed class MarkdownHider(TextArea area) : VisualLineElementGenerator
         foreach (var mark in MarksOf(CurrentContext.Document.GetLineByOffset(offset)))
             if (mark.Start == offset)
                 return mark.Bullet ? new FormattedTextElement("•", mark.Length) { } : new FormattedTextElement("", mark.Length);
+        return null;
+    }
+}
+
+/// <summary>
+/// Lo que se marca detrás del texto: lo encontrado (más fuerte el actual) y, en código, la palabra seleccionada en el
+/// resto del archivo y la llave que cierra la del cursor. Solo mira las líneas que se ven.
+/// </summary>
+sealed class EditorMarks(TextArea area) : IBackgroundRenderer
+{
+    public EditorInk Colors { get; set; } = null!;
+    /// <summary>Las marcas de código (palabra y llaves); en el modo Documento, no.</summary>
+    public bool Code { get; set; }
+    public List<(int Start, int Length)> Matches { get; set; } = [];
+    public int Current { get; set; } = -1;
+
+    public KnownLayer Layer => KnownLayer.Selection;
+
+    static readonly string Open = "([{", Close = ")]}";
+
+    public void Draw(TextView view, DrawingContext context)
+    {
+        if (view.Document is not { } document || view.VisualLines.Count == 0) return;
+        var from = view.VisualLines[0].FirstDocumentLine.Offset;
+        var to = view.VisualLines[^1].LastDocumentLine.EndOffset;
+        if (Matches.Count > 0)
+        {
+            // La primera que se ve, buscada en orden (están ordenadas).
+            int lo = 0, hi = Matches.Count;
+            while (lo < hi)
+            {
+                var mid = (lo + hi) / 2;
+                if (Matches[mid].Start + Matches[mid].Length < from) lo = mid + 1;
+                else hi = mid;
+            }
+            for (var i = lo; i < Matches.Count && Matches[i].Start <= to; i++)
+                Fill(view, context, Matches[i].Start, Matches[i].Length, i == Current ? Colors.MatchCurrent : Colors.Match);
+        }
+        if (!Code) return;
+        if (Word(document) is { } word)
+        {
+            var text = document.GetText(from, to - from);
+            var pattern = new System.Text.RegularExpressions.Regex($@"(?<![\p{{L}}\p{{N}}_]){System.Text.RegularExpressions.Regex.Escape(word)}(?![\p{{L}}\p{{N}}_])");
+            foreach (System.Text.RegularExpressions.Match m in pattern.Matches(text))
+                if (from + m.Index != area.Selection.SurroundingSegment.Offset) Fill(view, context, from + m.Index, m.Length, Colors.Word);
+        }
+        if (area.Selection.IsEmpty && Brackets(document, area.Caret.Offset) is var (a, b))
+        {
+            var pen = new Pen(Colors.Marks, 1);
+            foreach (var at in new[] { a, b })
+                foreach (var rect in BackgroundGeometryBuilder.GetRectsForSegment(view, new TextSegment { StartOffset = at, Length = 1 }))
+                    context.DrawRectangle(null, pen, rect.Deflate(0.5), 2, 2);
+        }
+    }
+
+    static void Fill(TextView view, DrawingContext context, int start, int length, IBrush brush)
+    {
+        var builder = new BackgroundGeometryBuilder { CornerRadius = 3, AlignToWholePixels = true };
+        builder.AddSegment(view, new TextSegment { StartOffset = start, Length = length });
+        if (builder.CreateGeometry() is { } geometry) context.DrawGeometry(brush, null, geometry);
+    }
+
+    /// <summary>La palabra seleccionada (letras, números o «_», en una línea); null si lo seleccionado no es una palabra.</summary>
+    string? Word(AvaloniaEdit.Document.TextDocument document)
+    {
+        if (area.Selection.IsEmpty || area.Selection.IsMultiline) return null;
+        var segment = area.Selection.SurroundingSegment;
+        if (segment.Length is 0 or > 100) return null;
+        var text = document.GetText(segment);
+        return text.All(c => char.IsLetterOrDigit(c) || c == '_') ? text : null;
+    }
+
+    /// <summary>La llave junto al cursor y la que la cierra (o abre); se busca hasta 50 000 letras.</summary>
+    internal static (int, int)? Brackets(AvaloniaEdit.Document.TextDocument document, int caret)
+    {
+        foreach (var at in new[] { caret - 1, caret })
+        {
+            if (at < 0 || at >= document.TextLength) continue;
+            var c = document.GetCharAt(at);
+            int open = Open.IndexOf(c), close = Close.IndexOf(c);
+            if (open < 0 && close < 0) continue;
+            var forward = open >= 0;
+            char self = c, other = forward ? Close[open] : Open[close];
+            var depth = 0;
+            var limit = 50000;
+            for (var i = at; i >= 0 && i < document.TextLength && limit-- > 0; i += forward ? 1 : -1)
+            {
+                var d = document.GetCharAt(i);
+                if (d == self) depth++;
+                else if (d == other && --depth == 0) return (at, i);
+            }
+        }
         return null;
     }
 }

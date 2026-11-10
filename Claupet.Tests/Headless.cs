@@ -17,7 +17,12 @@ static class Headless
 {
     sealed class App : Application
     {
-        public override void Initialize() => Styles.Add(new FluentTheme());
+        public override void Initialize()
+        {
+            Styles.Add(new FluentTheme());
+            // Como en la Console: sin esto, el editor (AvaloniaEdit) no tiene plantilla y su texto no recibe el foco ni las teclas.
+            Styles.Add(new Avalonia.Markup.Xaml.Styling.StyleInclude(new Uri("avares://Claupet.Tests/")) { Source = new Uri("avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml") });
+        }
     }
 
     public static AppBuilder BuildAvaloniaApp() =>

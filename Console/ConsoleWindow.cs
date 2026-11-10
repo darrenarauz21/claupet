@@ -207,6 +207,7 @@ sealed class ConsoleWindow : Window
         _root.Children.Add(_body);
         Content = _root;
         Render(rebuild: true);
+        _editor.RestoreSession();
         foreach (var file in ConsoleApp.Files) _editor.Open(file);
         _terminal.RestoreOpen();
         _canvas.CheckOpenRequest();
