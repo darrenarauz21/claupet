@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- cpt (también «claupet»): el comando de Claupet para la terminal. Aparte de Claupet.exe porque ese es una app de
+       ventana (WinExe) y no escribe en la consola. Solo enlaza Core/Contratos, que no depende del resto de Core.
+       dotnet publish Claupet.Cli -c Release -r win-x64 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>cpt</AssemblyName>
+    <RootNamespace>Claupet</RootNamespace>
+    <Version>2.6.3</Version>
+    <Product>Claupet</Product>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Core\Contratos\**\*.cs" Link="Contratos\%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\Core\Contratos\Paquetes\**\*.md" LogicalName="contratos/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>
