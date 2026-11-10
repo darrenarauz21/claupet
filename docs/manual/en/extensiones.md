@@ -21,6 +21,8 @@ Add voices, pets, sounds, skills and assistants made by others to Claupet, in si
 | **Speech to text** | Another engine for the microphone, instead of Whisper. |
 | **Text to speech** | Another voice to read answers, instead of Claupet's. |
 | **Assistant** | Another model for the pet and the island (DeepSeek, Ollama, LM Studio…), instead of Claude Code. |
+| **Specialists** | Ready-made agents with their role, instructions and tools, in the Console's Specialists view (experimental). |
+| **MCP tools** | MCP servers added to Claude Code, Codex and Gemini in the Console: the agent can use their tools (with your permission). |
 
 Speech to text, text to speech and assistant are **exclusive slots**: only one thing at a time can fill each
 one. Installing an extension doesn't put it in those slots; you choose when you install it and can change it

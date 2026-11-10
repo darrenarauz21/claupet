@@ -5,7 +5,8 @@ Sin extensiones, Claupet funciona igual que siempre. Una extensión es un paquet
 - **ocupar una ranura exclusiva**: voz a texto, texto a voz o el asistente. Al ocuparla, lo que trae
   Claupet para esa ranura (Whisper, Supertonic y la voz de Windows, o `claude -p`) deja de cargarse;
   así no chocan dos modelos;
-- **sumar** habilidades (comandos `/…` y eventos), mascotas, voces y estilos de sonido.
+- **sumar** habilidades (comandos `/…` y eventos), mascotas, voces, estilos de sonido y herramientas MCP
+  para los agentes de la Console.
 
 Una habilidad o un proveedor puede estar escrito en cualquier lenguaje. Hay tres formas de correrlo:
 
@@ -15,7 +16,7 @@ Una habilidad o un proveedor puede estar escrito en cualquier lenguaje. Hay tres
 | `native` | Una biblioteca con la ABI de C (`.dll`, `.so`, `.dylib`): C, C++, Rust, Go, Zig, .NET NativeAOT… | La ABI de [`claupet.h`](claupet.h), cargada en un proceso aparte |
 | `http` | Un servidor | Los formatos de OpenAI (DeepSeek, Ollama, LM Studio, OpenRouter, Groq, vLLM…) o JSON-RPC por HTTP |
 
-Hay ejemplos en [`ejemplos/`](ejemplos): [Python](ejemplos/python), [Node.js](ejemplos/node) y [C](ejemplos/c).
+Hay ejemplos en [`ejemplos/`](ejemplos): [Python](ejemplos/python), [Node.js](ejemplos/node), [C](ejemplos/c) y un [servidor MCP](ejemplos/mcp).
 
 > **Seguridad.** Un programa o una DLL corre con los permisos de Windows de la persona. Claupet
 > controla lo que la extensión le pide a la app (la mascota, los avisos, el micrófono, Claude…), pero no lo
@@ -35,6 +36,8 @@ Hay ejemplos en [`ejemplos/`](ejemplos): [Python](ejemplos/python), [Node.js](ej
 | `pet` | No (se elige una mascota) | El chibi, si la persona elige la del paquete | No |
 | `voice-style` | No | — | No |
 | `sounds` | No (se elige un estilo) | — | No |
+| `mcp` | No | — | No (el agente corre el servidor; [sección 11](#11-herramientas-para-los-agentes-mcp)) |
+| `agent` | No | — | No (especialistas, experimental; [sección 11](#especialistas-agent)) |
 
 Una extensión puede traer varias cosas a la vez (el ejemplo de Node trae `skill`, `speech-to-text`,
 `text-to-speech` y `assistant`). Que la instale no significa que ocupe las ranuras exclusivas: al instalarla
@@ -120,6 +123,8 @@ campos opcionales nuevos siga sirviendo. Se permiten comentarios y comas finales
 | `voices` | Con `voice-style` | Sección 10 |
 | `pet` | Con `pet` | Sección 10 |
 | `sounds` | Con `sounds` | Sección 10 |
+| `mcp` | Con `mcp` | Sección 11 |
+| `agents` | Con `agent` | Sección 11 |
 
 Un texto por idioma se muestra en el idioma de la app; si falta ese idioma, en inglés, y si tampoco está,
 el primero.
@@ -477,7 +482,97 @@ la persona (la carpeta `propios`) siguen teniendo prioridad.
 
 ---
 
-## 11. Firmar y publicar
+## 11. Herramientas para los agentes (MCP)
+
+La ranura `mcp` trae servidores [MCP](https://modelcontextprotocol.io). Claupet los suma a su propio servidor
+(el del canvas) en cada agente que abre la Console: Claude Code (`--mcp-config`), Codex (`-c mcp_servers…`) y
+los agentes ACP: Gemini CLI, Copilot CLI y OpenCode (`session/new`). No lleva `runtime`: el agente arranca el
+servidor y habla con él, no Claupet. Así, cualquier servidor MCP que ya exista se instala soltando un `.claupet`.
+
+```json
+{
+  "provides": ["mcp"],
+  "permissions": ["network:api.example.com"],
+  "settings": [ { "key": "token", "type": "secret", "label": "Token" } ],
+  "mcp": {
+    "notas":  { "type": "stdio", "program": "node", "args": ["{package}/server.js"] },
+    "remoto": { "type": "http", "url": "https://api.example.com/mcp", "headers": { "Authorization": "Bearer {setting:token}" } }
+  }
+}
+```
+
+| Campo | Qué es |
+|---|---|
+| nombre (la clave) | `^[a-z][a-z0-9_-]{0,31}$`; no puede empezar con `claupet`. Hasta 8 por extensión |
+| `type` | `stdio` (un programa) o `http` (Streamable HTTP). Si falta, `http` cuando hay `url` |
+| `command` | Solo `stdio`: un archivo del paquete (o uno por plataforma, como en `runtime`) |
+| `program` | Solo `stdio`: un programa del sistema por su nombre (`node`, `python`, `uvx`…). Uno de los dos con `command` |
+| `args`, `env` | Solo `stdio`. Al proceso se le suman `CLAUPET_EXTENSION_ID`, `CLAUPET_PACKAGE`, `CLAUPET_DATA` y `CLAUPET_LANGUAGE` |
+| `url`, `headers` | Solo `http`. https (o http en este equipo), a un host declarado en `permissions` |
+
+En `args`, `env`, `url` y `headers` van `{package}`, `{data}` y `{setting:clave}`. Una clave (un ajuste
+`secret`) solo puede ir en `env` o `headers`, nunca en la dirección ni en los argumentos.
+
+- El paquete se verifica la primera vez que se usa en la sesión; si sus archivos cambiaron, se apaga.
+- Si dos extensiones traen un servidor con el mismo nombre, queda el de la que se instaló primero.
+- Un servidor que no se puede armar (falta su programa, la dirección no es válida) se salta y queda en el
+  registro de errores; los demás siguen.
+- Los agentes piden permiso antes de usar herramientas de una extensión, como con cualquier MCP.
+  Las marcadas `readOnlyHint` pueden ir sin preguntar, según el agente.
+- Las claves se escriben en el archivo de configuración que lee Claude Code, en la carpeta de datos de la
+  persona (`%APPDATA%\Claupet\Canvas\mcp`).
+- A Codex no se le da un servidor con comillas, saltos de línea o `& % ^ | < >` en sus valores, porque cmd.exe
+  los rompería; los demás agentes sí lo reciben. A un agente ACP se le dan los servidores `http` solo si dice
+  que los acepta (`mcpCapabilities.http`).
+- En Windows, `npx` es un `.cmd`: para un paquete de npm, use `"program": "node"` con la ruta al script del
+  paquete, o tráigalo dentro del `.claupet`.
+
+Hay un ejemplo completo, sin dependencias, en [`ejemplos/mcp`](ejemplos/mcp).
+
+### Especialistas (`agent`)
+
+> **Experimental.** La vista Especialistas de la Console todavía puede cambiar.
+
+Un especialista es un agente con nombre, rol, instrucciones y herramientas, que se abre como una pestaña de la
+Terminal. La ranura `agent` trae especialistas listos; la persona los ve en **Especialistas › De extensiones**, de
+solo lectura, y los duplica para cambiarlos. Suelen ir junto con sus servidores (`"provides": ["mcp", "agent"]`).
+
+```json
+{
+  "provides": ["mcp", "agent"],
+  "mcp": { "github": { "url": "https://api.github.com/mcp", "headers": { "Authorization": "Bearer {setting:token}" } } },
+  "agents": [
+    {
+      "id": "revisor",
+      "name": { "es": "Revisor de PRs", "en": "PR reviewer" },
+      "role": "Revisa los cambios y deja comentarios claros",
+      "instructions": "Agrupe los comentarios por archivo, de más grave a menos grave.",
+      "agent": "claude", "model": "opus", "effort": "high",
+      "color": "#D97757", "icon": "search",
+      "tools": ["canvas", "github"]
+    }
+  ]
+}
+```
+
+| Campo | Qué es |
+|---|---|
+| `id` | `^[a-zA-Z][a-zA-Z0-9_]{0,31}$`, único en la extensión. Hasta 16 especialistas |
+| `name`, `role` | Hasta 60 y 120 caracteres; un texto o uno por idioma |
+| `instructions` | Hasta 8000 caracteres |
+| `agent` | `claude` (por defecto), `codex`, `gemini`, `copilot` u `opencode` |
+| `model`, `effort` | Solo con `claude`: un modelo de Claude Code y `low`, `medium`, `high`, `xhigh` o `max` |
+| `color` | `#D97757`, `#5BA3E0`, `#6DB283`, `#A48BE0`, `#E07CA4` o `#E0A84B` |
+| `icon` | `search`, `pen`, `bug`, `chart`, `code`, `book`, `rocket`, `flask`, `shield`, `spark`, `globe` o `heart` |
+| `tools` | `canvas` y nombres de servidores de `mcp` de la misma extensión. Piden permiso antes de usarse |
+
+Al abrirlo, Claude Code recibe las instrucciones con `--append-system-prompt-file`; Codex, como
+`developerInstructions` del hilo; un agente ACP, con el primer pedido. Cada agente recibe solo las herramientas del
+especialista.
+
+---
+
+## 12. Firmar y publicar
 
 Las herramientas vienen en la misma app. Es de ventanas, así que su salida se ve si se redirige:
 
@@ -522,7 +617,7 @@ Claupet.exe --extension-revocations C:\claves\oficial.pem 2 revocaciones.json --
 
 ---
 
-## 12. Escribir una extensión paso a paso
+## 13. Escribir una extensión paso a paso
 
 1. Copie un ejemplo de [`ejemplos/`](ejemplos) y cambie `id`, `name` y `version`.
 2. Atienda `initialize` y `shutdown`, y los métodos de lo que declara en `provides`.

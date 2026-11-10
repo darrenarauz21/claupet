@@ -487,4 +487,19 @@ public sealed class CodexDriverTests
         d.Apply(ThreadStarted, replies);
         Assert.Empty(replies);
     }
+
+    [Fact]
+    public void Un_especialista_va_como_instrucciones_del_hilo()
+    {
+        var t = new AgentTranscript();
+        var d = new CodexDriver(t);
+        var specialist = new Specialist { Id = "abcdef123456", Name = "Cazador de bugs", Instructions = "Primero la prueba que falla." };
+        var replies = new List<string>(d.Opening(new AgentOptions(@"C:\proyecto", Kind: AgentKinds.Codex, Specialist: specialist)));
+        d.Apply("""{"id":1,"result":{"userAgent":"claupet/0.164.0","codexHome":"C:\\codex","platformFamily":"windows","platformOs":"windows"}}""", replies);
+        replies.Clear();
+        d.Apply(ModelList, replies);
+        var start = Parse(Assert.Single(replies));
+        Assert.Equal("thread/start", (string?)start["method"]);
+        Assert.Equal(specialist.Prompt(), (string?)start["params"]!["developerInstructions"]);
+    }
 }

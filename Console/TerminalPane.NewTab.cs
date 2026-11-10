@@ -72,6 +72,8 @@ sealed partial class TerminalPane
         kinds.AddRange(AgentKinds.Available().Where(k => k != AgentKinds.Claude).Select(k => ("agente:" + k, AgentMark(k), AgentKinds.Label(k), (string?)null, false)));
         kinds.AddRange(shells.Select(s => (s.Id, ">_", s.Label, s == DefaultShell && shells.Count > 1 ? L.T("por defecto") : null, false)));
 
+        // Los especialistas (experimental), debajo de los agentes.
+        var specialists = Specialists.All();
         var choice = kinds.Any(k => k.Id == recents.Kind) ? recents.Kind! : kinds[0].Id;
         var account = accounts.FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, recents.Account ?? "")) ?? accounts.FirstOrDefault();
         string? model = recents.Model, effort = recents.Effort;
@@ -172,6 +174,55 @@ sealed partial class TerminalPane
             list.Children.Add(item);
         }
 
+        // Los especialistas (experimental): cada uno abre su agente con sus instrucciones y sus herramientas.
+        if (specialists.Count > 0)
+        {
+            list.Children.Add(MenuRule());
+            list.Children.Add(MenuLabel(L.T("Especialistas")));
+        }
+        foreach (var specialist in specialists)
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("26,*,Auto") };
+            var color = new SolidColorBrush(Color.Parse(specialist.Color));
+            var face = new Border
+            {
+                Width = 20,
+                Height = 20,
+                CornerRadius = new CornerRadius(7),
+                Background = Translucent(color, 0.15),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Child = Icon(SpecialistsPane.Glyphs.TryGetValue(specialist.Glyph, out var glyph) ? glyph : SpecialistsPane.Icon, color, 12, 1.9),
+            };
+            row.Children.Add(face);
+            var name = Ui.Text(specialist.Name, 13, _ink.Text);
+            name.Margin = new Thickness(6, 0, 0, 0);
+            Grid.SetColumn(name, 1);
+            row.Children.Add(name);
+            var mark = Ui.Text(SpecialistsPane.MarkOf(specialist.Agent), 11, _ink.Tertiary, family: Mono);
+            mark.Margin = new Thickness(8, 0, 2, 0);
+            Grid.SetColumn(mark, 2);
+            row.Children.Add(mark);
+            var id = "especialista:" + specialist.Id;
+            Border? item = null;
+            item = Ui.Press(row, () =>
+            {
+                if (choice == id) OpenChosen();
+                else
+                {
+                    choice = id;
+                    Paint();
+                }
+            }, (b, on) => b.Background = on || choice == id ? _ink.Pill : Brushes.Transparent, specialist.Name);
+            item.Height = 32;
+            item.Padding = new Thickness(4, 0, 8, 0);
+            item.CornerRadius = new CornerRadius(8);
+            ToolTip.SetTip(item, specialist.Role.Length > 0 ? specialist.Role : specialist.Name);
+            paints.Add(() => item.Background = choice == id ? _ink.Pill : Brushes.Transparent);
+            list.Children.Add(item);
+        }
+        // Lo que se recorre con las flechas: los agentes, las terminales y los especialistas.
+        var order = kinds.Select(k => k.Id).Concat(specialists.Select(x => "especialista:" + x.Id)).ToList();
+
         // Con Claude Code: la cuenta, el modelo y el esfuerzo. Los otros agentes los eligen en la sesión, con lo que dicen tener.
         var claudeOnly = new StackPanel { Spacing = 1 };
         claudeOnly.Children.Add(MenuRule());
@@ -254,7 +305,7 @@ sealed partial class TerminalPane
                 e.Handled = true;
                 return;
             }
-            var at = kinds.FindIndex(k => k.Id == choice);
+            var at = order.IndexOf(choice);
             switch (e.Key)
             {
                 case Key.Enter:
@@ -264,11 +315,11 @@ sealed partial class TerminalPane
                     popup.IsOpen = false;
                     break;
                 case Key.Down:
-                    choice = kinds[(at + 1) % kinds.Count].Id;
+                    choice = order[(at + 1) % order.Count];
                     Paint();
                     break;
                 case Key.Up:
-                    choice = kinds[at <= 0 ? kinds.Count - 1 : at - 1].Id;
+                    choice = order[at <= 0 ? order.Count - 1 : at - 1];
                     Paint();
                     break;
                 default:
@@ -343,6 +394,8 @@ sealed partial class TerminalPane
                 OpenAgent(choice["agente:".Length..], where, account, model, effort);
             else if (shells.FirstOrDefault(s => s.Id == choice) is { } shell)
                 OpenShell(shell, where);
+            else if (specialists.FirstOrDefault(s => "especialista:" + s.Id == choice) is { } chosen)
+                OpenSpecialist(chosen, where);
         }
 
         Paint();
@@ -449,6 +502,29 @@ sealed partial class TerminalPane
         agent.Start();
         _input.Focus();
         return tab;
+    }
+
+    /// <summary>
+    /// Abre un especialista: su agente con sus instrucciones y solo sus herramientas, en folder, en su carpeta o en la del
+    /// proyecto que se está usando. Con Claude Code, en la última cuenta elegida.
+    /// </summary>
+    internal void OpenSpecialist(Specialist specialist, string? folder = null)
+    {
+        var last = TerminalRecents.Load();
+        var where = folder is not null && Directory.Exists(folder) ? folder
+            : specialist.Folder is { } own && Directory.Exists(own) ? own
+            : _current?.Agent.Options.Folder is { } here && Directory.Exists(here) ? here
+            : last.Folders.FirstOrDefault(Directory.Exists) ?? global::Claupet.Account.Home;
+        var options = specialist.Agent == AgentKinds.Claude
+            ? NewClaudeOptions(where, last.Account, specialist.Model, specialist.Effort) with { Specialist = specialist }
+            : new AgentOptions(where, Kind: specialist.Agent, Specialist: specialist);
+        LinkProject(where);
+        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview") };
+        var tab = new Tab(agent, specialist.Name);
+        agent.Changed += changed => OnChanged(tab, changed);
+        Add(tab);
+        agent.Start();
+        _input.Focus();
     }
 
     /// <summary>La pestaña nueva pasa a ser la elegida.</summary>

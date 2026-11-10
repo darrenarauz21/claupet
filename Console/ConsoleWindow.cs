@@ -18,7 +18,7 @@ using Avalonia.Styling;
 /// </summary>
 sealed class ConsoleWindow : Window
 {
-    enum Mode { Chat, Terminal, Editor, Canvas, Projects, Settings }
+    enum Mode { Chat, Terminal, Editor, Canvas, Projects, Specialists, Settings }
 
     readonly ConsoleClient _client = new();
     readonly Grid _root = new() { RowDefinitions = new RowDefinitions("48,*") };
@@ -46,6 +46,8 @@ sealed class ConsoleWindow : Window
     readonly StackPanel _canvasList = new() { Spacing = 2 };
     /// <summary>Claupet Proyectos: los planes de las carpetas vinculadas, con sus vistas.</summary>
     readonly ProjectsPane _projects;
+    /// <summary>Especialistas (experimental): agentes con su rol, sus instrucciones y sus herramientas.</summary>
+    readonly SpecialistsPane _specialists = new();
     /// <summary>La lista de planes, a la izquierda (se oculta con el botón de su barra).</summary>
     bool _projectsList = true;
     /// <summary>La lista de canvas, a la izquierda (se oculta con el botón de la barra de Canvas).</summary>
@@ -127,6 +129,17 @@ sealed class ConsoleWindow : Window
             _canvas.Show(id);
             SetMode(Mode.Canvas);
         };
+        // Un especialista se abre como una pestaña de la Terminal.
+        _specialists.Launch += specialist =>
+        {
+            _terminal.OpenSpecialist(specialist);
+            SetMode(Mode.Terminal);
+        };
+        _specialists.ExtensionsRequested += () =>
+        {
+            SetMode(Mode.Settings);
+            Select(ExtensionsPanel.PageId);
+        };
         _projects.ListToggled += () =>
         {
             _projectsList = !_projectsList;
@@ -156,9 +169,11 @@ sealed class ConsoleWindow : Window
             if (_mode == Mode.Editor) _editor.HandleKey(e);
             else if (_mode == Mode.Canvas) _canvas.HandleKey(e);
             else if (_mode == Mode.Projects) _projects.HandleKey(e);
+            else if (_mode == Mode.Specialists) _specialists.HandleKey(e);
         };
         Closing += (_, e) =>
         {
+            _specialists.Flush();
             if (_closing || e.CloseReason == WindowCloseReason.OSShutdown) return;
             if (_terminal.WorkingCount == 0 && !_editor.HasUnsaved) return;
             e.Cancel = true;
@@ -357,6 +372,7 @@ sealed class ConsoleWindow : Window
             _terminal.SetInk(_ink);
             _canvas.SetInk(_ink);
             _projects.SetInk(_ink);
+            _specialists.SetInk(_ink);
             _body.ColumnDefinitions[1].Width = new GridLength(_mode switch
             {
                 Mode.Chat => 250,
@@ -364,14 +380,15 @@ sealed class ConsoleWindow : Window
                 Mode.Editor => _editorFiles ? 250 : 0,
                 Mode.Canvas => _canvasFiles ? 260 : 0,
                 Mode.Projects => _projectsList ? 264 : 0,
+                Mode.Specialists => 272,
                 _ => 210,
             });
             // Sin columna (el editor con los archivos ocultos), nada de ella asoma.
             _aside.IsVisible = _body.ColumnDefinitions[1].Width.Value > 0;
             _grip.IsVisible = _mode == Mode.Terminal && _terminal.ListWidth > TerminalProjects.MinWidth - 1;
             ((Border)_grip.Child!).Background = _ink.Accent;
-            _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Terminal => _terminal.Header(), Mode.Editor => FilesHeader(), Mode.Canvas => CanvasHeader(), Mode.Projects => ProjectsHeader(), _ => _heading };
-            _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Terminal => _terminal.List, Mode.Editor => _fileList, Mode.Canvas => _canvasList, Mode.Projects => _projects.List, _ => _sections };
+            _asideTop.Child = _mode switch { Mode.Chat => ChatsHeader(), Mode.Terminal => _terminal.Header(), Mode.Editor => FilesHeader(), Mode.Canvas => CanvasHeader(), Mode.Projects => ProjectsHeader(), Mode.Specialists => SpecialistsHeader(), _ => _heading };
+            _asideScroll.Content = _mode switch { Mode.Chat => _chatList, Mode.Terminal => _terminal.List, Mode.Editor => _fileList, Mode.Canvas => _canvasList, Mode.Projects => _projects.List, Mode.Specialists => _specialists.List, _ => _sections };
         }
         _heading.Text = L.T("Ajustes");
         _heading.Foreground = _ink.Text;
@@ -398,6 +415,11 @@ sealed class ConsoleWindow : Window
         if (_mode == Mode.Projects)
         {
             if (_main.Child != _projects) _main.Child = _projects;
+            return;
+        }
+        if (_mode == Mode.Specialists)
+        {
+            if (_main.Child != _specialists) _main.Child = _specialists;
             return;
         }
         if (!_connected || _pages.Count == 0)
@@ -521,6 +543,9 @@ sealed class ConsoleWindow : Window
     void SetMode(Mode mode)
     {
         if (mode == _mode) return;
+        if (_mode == Mode.Specialists) _specialists.Flush();
+        // Al entrar se vuelven a leer: pudo cambiar un archivo o instalarse una extensión.
+        if (mode == Mode.Specialists) _specialists.Reload();
         _mode = mode;
         Render(rebuild: true);
         if (mode == Mode.Chat) _chat.FocusInput();
@@ -538,6 +563,18 @@ sealed class ConsoleWindow : Window
 
     /// <summary>«Proyectos», el botón de uno nuevo y, debajo, su buscador y sus filtros.</summary>
     Control ProjectsHeader() => new StackPanel { Children = { ListHeader(L.T("Proyectos"), _projects.New, L.T("Proyecto nuevo")), _projects.ListTools() } };
+
+    /// <summary>«Especialistas» con el frasco de «Experimental» al lado, y el botón de uno nuevo.</summary>
+    Control SpecialistsHeader()
+    {
+        var header = (Grid)ListHeader(L.T("Especialistas"), _specialists.New, L.T("Especialista nuevo"));
+        var title = (TextBlock)header.Children[0];
+        header.Children.Remove(title);
+        var badge = SpecialistsPane.Badge(_ink);
+        badge.Margin = new Thickness(8, 0, 0, 0);
+        header.Children.Insert(0, new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { title, badge } });
+        return header;
+    }
 
     /// <summary>Los canvas, del más reciente al más viejo.</summary>
     void RenderCanvasList()
@@ -837,7 +874,7 @@ sealed class ConsoleWindow : Window
     const string SettingsIcon = "M15,12 A3,3 0 1 1 9,12 A3,3 0 1 1 15,12 Z M12,2.5 V5 M12,19 V21.5 M5.3,5.3 L7.1,7.1 M16.9,16.9 L18.7,18.7 M2.5,12 H5 "
         + "M19,12 H21.5 M5.3,18.7 L7.1,16.9 M16.9,7.1 L18.7,5.3";
 
-    /// <summary>El riel de la izquierda: Chat, Terminal, Editor, Canvas, Proyectos y Ajustes.</summary>
+    /// <summary>El riel de la izquierda: Chat, Terminal, Editor, Canvas, Proyectos, Especialistas y Ajustes.</summary>
     Control Rail()
     {
         var rail = new StackPanel { Spacing = 6, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
@@ -846,6 +883,7 @@ sealed class ConsoleWindow : Window
         rail.Children.Add(RailButton(EditorIcon, L.T("Editor"), _mode == Mode.Editor, () => SetMode(Mode.Editor)));
         rail.Children.Add(RailButton(CanvasIcon, "Canvas", _mode == Mode.Canvas, () => SetMode(Mode.Canvas)));
         rail.Children.Add(RailButton(ProjectsIcon, L.T("Proyectos"), _mode == Mode.Projects, () => SetMode(Mode.Projects)));
+        rail.Children.Add(RailButton(SpecialistsPane.Icon, L.T("Especialistas"), _mode == Mode.Specialists, () => SetMode(Mode.Specialists)));
         rail.Children.Add(RailButton(SettingsIcon, L.T("Ajustes"), _mode == Mode.Settings, () => SetMode(Mode.Settings)));
         return rail;
     }

@@ -34,6 +34,10 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
     long _requests;
     AgentOptions? _options;
     bool _initialized, _creating, _turn;
+    /// <summary>El agente acepta servidores MCP por HTTP (agentCapabilities.mcpCapabilities.http).</summary>
+    bool _mcpHttp;
+    /// <summary>El agente ya recibió las instrucciones del especialista (ACP no tiene instrucciones de sistema: van con el primer pedido).</summary>
+    bool _briefed;
     string? _session;
 
     // Lo que anunció la sesión: los modos (el id corto y el de ACP), los modelos y los esfuerzos, y si se cambian como
@@ -238,6 +242,9 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
         {
             case "initialize":
                 _initialized = true;
+                _mcpHttp = result.ValueKind == JsonValueKind.Object && result.TryGetProperty("agentCapabilities", out var caps)
+                    && caps.ValueKind == JsonValueKind.Object && caps.TryGetProperty("mcpCapabilities", out var mcp)
+                    && mcp.ValueKind == JsonValueKind.Object && mcp.TryGetProperty("http", out var http) && http.ValueKind == JsonValueKind.True;
                 replies.Add(NewSession());
                 break;
             case "session/new":
@@ -251,6 +258,7 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
                 break;
             case "session/prompt":
                 _turn = false;
+                _briefed = true;
                 transcript.AcpDone(result.ValueKind == JsonValueKind.Object ? Json.Str(result, "stopReason") : null, _clock.Elapsed, changed);
                 replies.AddRange(Next());
                 break;
@@ -422,17 +430,20 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
         _turn = true;
         _clock.Restart();
         transcript.AcpTurn();
+        var prompt = Content(text, images);
+        if (!_briefed && _options?.Specialist is { } specialist)
+            prompt.Insert(0, new JsonObject { ["type"] = "text", ["text"] = $"<instrucciones>\n{specialist.Prompt()}\n</instrucciones>\n\n" });
         return [Request("session/prompt", new JsonObject
         {
             ["sessionId"] = _session,
-            ["prompt"] = Content(text, images),
+            ["prompt"] = prompt,
         })];
     }
 
     string NewSession()
     {
         _creating = true;
-        return Request("session/new", new JsonObject { ["cwd"] = _options?.Folder ?? Environment.CurrentDirectory, ["mcpServers"] = CanvasMcp.AcpServers(Name, _options?.Folder) });
+        return Request("session/new", new JsonObject { ["cwd"] = _options?.Folder ?? Environment.CurrentDirectory, ["mcpServers"] = CanvasMcp.AcpServers(Name, _options?.Folder, _mcpHttp, _options?.Specialist) });
     }
 
     /// <summary>Sin modelo, vuelve al automático del agente (el «auto» de Gemini CLI) si lo tiene.</summary>
