@@ -67,4 +67,41 @@ sealed partial class TerminalPane
         _input.CaretIndex = text.Length;
         return false;
     }
+
+    /// <summary>Las sesiones de agente que corren, para el chat de la mesa de diseño de Canvas.</summary>
+    internal IReadOnlyList<CanvasSession> CanvasSessions() => _tabs
+        .Where(t => t.Shell is null && t.Agent.Running)
+        .Select(t => new CanvasSession(t.Agent, t.Agent.Driver.Name, t.Agent.Options.Folder, Title(t)))
+        .ToList();
+
+    /// <summary>Abre una sesión de Claude Code en esa carpeta para la mesa (sin pasar a la Terminal). Null si no pudo.</summary>
+    internal CanvasSession? OpenCanvasSession(string? folder)
+    {
+        var last = TerminalRecents.Load();
+        var account = Accounts().FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, last.Account ?? "")) ?? Accounts().FirstOrDefault();
+        var where = folder is not null && Directory.Exists(folder) ? folder : global::Claupet.Account.Home;
+        return OpenAgent(AgentKinds.Claude, where, account, last.Model, last.Effort) is { Agent.Running: true } tab
+            ? new CanvasSession(tab.Agent, tab.Agent.Driver.Name, tab.Agent.Options.Folder, Title(tab))
+            : null;
+    }
+
+    /// <summary>Elige en la Terminal la pestaña de esa sesión (para contestar un permiso o seguir ahí).</summary>
+    internal void Reveal(TerminalAgent agent)
+    {
+        if (_tabs.FirstOrDefault(t => t.Agent == agent) is { } tab) Select(tab);
+    }
+}
+
+/// <summary>Una sesión que corre en la Terminal, vista desde Canvas: su agente, su nombre, su carpeta y su título.</summary>
+sealed record CanvasSession(TerminalAgent Agent, string Name, string Folder, string Title);
+
+/// <summary>Lo que el chat de la mesa de diseño necesita de la Terminal (null en las pruebas: no hay chat con sesiones).</summary>
+sealed class CanvasSessions(Func<IReadOnlyList<CanvasSession>> list, Func<string?, CanvasSession?> open, Action<TerminalAgent> reveal)
+{
+    public IReadOnlyList<CanvasSession> List() => list();
+    public CanvasSession? Open(string? folder) => open(folder);
+    public void Reveal(TerminalAgent agent) => reveal(agent);
+    /// <summary>Se abrió o se cerró una sesión.</summary>
+    public event Action? Changed;
+    public void Notify() => Changed?.Invoke();
 }

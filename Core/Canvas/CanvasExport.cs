@@ -190,10 +190,10 @@ static class CanvasExport
     }
 
     /// <summary>Lo que puede el iframe de una sección: correr sus guiones, formularios, avisos y ventanas; nada de la página ni de los archivos.</summary>
-    const string Sandbox = "allow-scripts allow-forms allow-modals allow-popups";
+    internal const string Sandbox = "allow-scripts allow-forms allow-modals allow-popups";
 
     /// <summary>El documento del iframe de una sección HTML o SVG (el SVG, en una página sin márgenes).</summary>
-    static string FramePage(CanvasSection s) => s.Kind == CanvasKinds.Svg ? $"<!doctype html><body style=\"margin:0\">{s.Content}</body>" : s.Content;
+    internal static string FramePage(CanvasSection s) => s.Kind == CanvasKinds.Svg ? $"<!doctype html><body style=\"margin:0\">{s.Content}</body>" : s.Content;
 
     /// <summary>
     /// Una sección HTML o SVG para el PDF: su propia página, como la imprime el navegador (se reparte en hojas, con sus
@@ -250,7 +250,7 @@ static class CanvasExport
     /// Dentro de cada iframe: avisa a la página su alto (el del contenido), para que el marco mida eso y no deje un hueco
     /// (ni en pantalla ni en el PDF). El iframe sigue aislado: solo manda un número.
     /// </summary>
-    const string FrameHeight = "<script>(function(){function h(){var b=document.body;if(!b)return;var m=parseFloat(getComputedStyle(b).marginBottom)||0;"
+    internal const string FrameHeight = "<script>(function(){function h(){var b=document.body;if(!b)return;var m=parseFloat(getComputedStyle(b).marginBottom)||0;"
         + "parent.postMessage({claupetHeight:Math.ceil(b.getBoundingClientRect().bottom+m)},'*')}addEventListener('load',h);"
         + "if(window.ResizeObserver)addEventListener('DOMContentLoaded',function(){new ResizeObserver(h).observe(document.body)})})()</script>";
 

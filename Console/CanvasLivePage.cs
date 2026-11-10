@@ -44,13 +44,26 @@ sealed class CanvasLivePage : NativeControlHost
     /// <summary>La página que muestra: si no cambió, el canvas la reusa al redibujarse (sin volver a cargarla).</summary>
     public string Html { get; }
 
+    /// <summary>
+    /// Ocupa todo el lugar que le dan (la mesa de diseño, CanvasDesk) en vez de medir su contenido. Entonces sus
+    /// mensajes ({t:…}) llegan a Message, y Post le manda otros (los de antes de que esté lista esperan).
+    /// </summary>
+    public bool Fill { get; }
+
+    /// <summary>Un mensaje de la mesa (Fill): un objeto con «t».</summary>
+    public event Action<JsonElement>? Message;
+
+    readonly List<string> _pending = [];
+    bool _ready;
+
     /// <param name="file">La página ya escrita (CanvasExport.Live), que se carga desde el disco.</param>
     /// <param name="above">Lo que flota encima en ese momento: esa parte no se tapa.</param>
-    public CanvasLivePage(string file, string html, double height, Color background, Func<IEnumerable<Control>> above)
+    public CanvasLivePage(string file, string html, double height, Color background, Func<IEnumerable<Control>> above, bool fill = false)
     {
         _page = new Uri(file);
         Html = html;
-        Height = Math.Clamp(height, Shortest, Tallest);
+        Fill = fill;
+        if (!fill) Height = Math.Clamp(height, Shortest, Tallest);
         _background = background;
         _above = above;
         EffectiveViewportChanged += (_, e) =>
@@ -127,6 +140,7 @@ sealed class CanvasLivePage : NativeControlHost
     protected override void DestroyNativeControlCore(IPlatformHandle control)
     {
         _hwnd = _holder = IntPtr.Zero;
+        _ready = false;
         var controller = _controller;
         _controller = null;
         try { controller?.Close(); }
@@ -208,6 +222,13 @@ sealed class CanvasLivePage : NativeControlHost
             using var json = JsonDocument.Parse(e.WebMessageAsJson);
             var root = json.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return;
+            if (Fill)
+            {
+                if (!root.TryGetProperty("t", out var t) || t.ValueKind != JsonValueKind.String) return;
+                if (t.GetString() == "ready") Flush();
+                Message?.Invoke(root.Clone());
+                return;
+            }
             if (root.TryGetProperty("h", out var h) && h.ValueKind == JsonValueKind.Number && h.GetDouble() is var height && double.IsFinite(height))
             {
                 // El borde del marco (1 px arriba y abajo) va aparte del alto del contenido.
@@ -218,6 +239,33 @@ sealed class CanvasLivePage : NativeControlHost
                 Wheel?.Invoke(Math.Clamp(dy, -4000, 4000));
         }
         catch (JsonException) { }
+    }
+
+    /// <summary>Le manda un mensaje (JSON) a la mesa; si todavía no está lista, cuando lo esté.</summary>
+    public void Post(string json)
+    {
+        if (!_ready || _controller is not { } controller)
+        {
+            _pending.Add(json);
+            return;
+        }
+        try { controller.CoreWebView2.PostWebMessageAsJson(json); }
+        catch (Exception ex) when (ex is COMException or InvalidOperationException or ArgumentException) { ErrorLog.Write(ex); }
+    }
+
+    void Flush()
+    {
+        _ready = true;
+        var pending = _pending.ToList();
+        _pending.Clear();
+        foreach (var json in pending) Post(json);
+    }
+
+    /// <summary>Le pasa el foco del teclado a la página (la mesa, para que lleguen sus teclas).</summary>
+    public void FocusPage()
+    {
+        try { _controller?.MoveFocus(CoreWebView2MoveFocusReason.Programmatic); }
+        catch (Exception ex) when (ex is COMException or InvalidOperationException) { ErrorLog.Write(ex); }
     }
 
     void Fit()

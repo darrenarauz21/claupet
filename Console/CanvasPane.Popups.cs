@@ -146,10 +146,18 @@ sealed partial class CanvasPane
             Child = new Border { Padding = new Thickness(12), Child = card },
         };
         if (TopLevel.GetTopLevel(this)?.Content is not Panel host) return card;
-        popup.Closed += (_, _) => host.Children.Remove(popup);
+        // Las páginas vivas y la mesa son ventanas nativas: le dejan el hueco mientras está abierta.
+        popup.Closed += (_, _) =>
+        {
+            host.Children.Remove(popup);
+            _overlaysOn.Remove(card);
+            RefitPages();
+        };
         host.Children.Add(popup);
         _popup = popup;
         popup.IsOpen = true;
+        _overlaysOn.Add(card);
+        Dispatcher.UIThread.Post(RefitPages, DispatcherPriority.Background);
         Dispatcher.UIThread.Post(() =>
         {
             card.Opacity = 1;
