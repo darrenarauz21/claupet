@@ -25,10 +25,16 @@ static class Pty
     public static bool IsSupported =>
         OperatingSystem.IsWindows() ? PseudoConsole.IsSupported : OperatingSystem.IsLinux() || OperatingSystem.IsMacOS();
 
-    public static IPty Start(ShellLaunch launch, string cwd, int cols, int rows) =>
-        OperatingSystem.IsWindows()
+    public static IPty Start(ShellLaunch launch, string cwd, int cols, int rows)
+    {
+        // Lo que se corra en el shell (OpenCode, npm, git…) tampoco mira el proxy de Windows: va en sus variables.
+        var env = SystemProxy.Variables();
+        foreach (var (key, value) in launch.Env) env[key] = value;
+        launch = launch with { Env = env };
+        return OperatingSystem.IsWindows()
             ? PseudoConsole.Start(launch.CommandLine, cwd, cols, rows, launch.Env.ToDictionary())
             : UnixPty.Start(launch, cwd, cols, rows);
+    }
 }
 
 /// <summary>

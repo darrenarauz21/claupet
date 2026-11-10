@@ -86,6 +86,8 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
             StandardInputEncoding = new UTF8Encoding(false),
         };
         Launch(start, path);
+        // El proxy de Windows, que ninguno mira por su cuenta; Gemini y Copilot corren en Node.
+        SystemProxy.AddTo(start.Environment, node: kind != AgentKinds.OpenCode);
         // OpenCode lo abre como subcomando; los demás, con la opción.
         start.ArgumentList.Add(kind == AgentKinds.OpenCode ? "acp" : "--acp");
         // Copilot toma el esfuerzo al abrir (vale para toda la sesión); Gemini CLI no tiene esfuerzo.
