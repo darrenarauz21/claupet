@@ -44,6 +44,11 @@ sealed partial class TerminalPane
     /// </summary>
     void Resume(Tab from, PastSession past, bool replace = false, string draft = "")
     {
+        if (past.Kind != AgentKinds.Claude)
+        {
+            ResumeOther(from.Agent.Options.Folder, past);
+            return;
+        }
         if (_tabs.FirstOrDefault(t => (!replace || t != from) && t.Shell is null && (t.Agent.Transcript.SessionId == past.Id || t.Agent.Options.Resume == past.Id)) is { } open)
         {
             Select(open);
@@ -64,7 +69,37 @@ sealed partial class TerminalPane
             var last = TerminalRecents.Load();
             options = new AgentOptions(o.Folder, account?.ConfigDir, last.Model, last.Effort, null, AgentKinds.Claude, past.Id);
         }
-        var label = account?.Label ?? L.T("cuenta por defecto");
+        StartResumed(options, account?.Label ?? L.T("cuenta por defecto"), past, replace ? tab => ReplaceEnded(from, tab, draft) : null);
+    }
+
+    /// <summary>
+    /// Retoma la sesión de otro agente (Codex, Gemini CLI, Copilot CLI, OpenCode) en una pestaña nueva: el agente la abre
+    /// con lo suyo (thread/resume, session/load) y repite lo de antes. Si ya está abierta en otra pestaña, se va a esa.
+    /// </summary>
+    void ResumeOther(string folder, PastSession past)
+    {
+        if (_tabs.FirstOrDefault(t => t.Shell is null && (t.Agent.Transcript.SessionId == past.Id || t.Agent.Options.Resume == past.Id)) is { } open)
+        {
+            Select(open);
+            return;
+        }
+        if (!Directory.Exists(folder)) return;
+        OtherHistory.Forget(past.Kind, folder);
+        var agent = new TerminalAgent(new AgentOptions(folder, Kind: past.Kind, Resume: past.Id), action => Dispatcher.UIThread.Post(action))
+        {
+            AskIsland = !Program.Args.Contains("--preview"),
+            Coordinate = true,
+        };
+        var tab = new Tab(agent, AgentKinds.Label(past.Kind));
+        agent.Changed += changed => OnChanged(tab, changed);
+        Add(tab);
+        agent.Start();
+        _input.Focus();
+    }
+
+    /// <summary>Lee la conversación de antes (aparte) y abre la pestaña que la sigue con --resume.</summary>
+    void StartResumed(AgentOptions options, string label, PastSession past, Action<Tab>? placed = null)
+    {
         var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview"), Coordinate = true };
         _ = Task.Run(() =>
         {
@@ -76,8 +111,46 @@ sealed partial class TerminalPane
                 agent.Changed += changed => OnChanged(tab, changed);
                 Add(tab);
                 agent.Start();
-                if (replace) ReplaceEnded(from, tab, draft);
+                placed?.Invoke(tab);
                 _input.Focus();
+            });
+        });
+    }
+
+    /// <summary>
+    /// Lo que pidió la isla («Abrir en la terminal»): la pestaña donde ya está esa sesión o, si no está en ninguna, la
+    /// sesión retomada en una pestaña nueva, con la cuenta de la sesión y el modelo de la última pestaña. Mientras se
+    /// restauran las pestañas de antes se espera (puede ser una de ellas).
+    /// </summary>
+    public void OpenSession(SessionTarget target)
+    {
+        if (_restoring)
+        {
+            DispatcherTimer.RunOnce(() => OpenSession(target), TimeSpan.FromMilliseconds(200));
+            return;
+        }
+        if (_tabs.FirstOrDefault(t => t.Shell is null && (t.Agent.Transcript.SessionId == target.Id || t.Agent.Options.Resume == target.Id)) is { } open)
+        {
+            Select(open);
+            return;
+        }
+        var configDir = target.ConfigDir ?? global::Claupet.Account.DefaultDir;
+        _ = Task.Run(() =>
+        {
+            var past = ClaudeHistory.Find(configDir, target.Folder, target.Id);
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (past is null || !Directory.Exists(target.Folder))
+                {
+                    // No hay de dónde retomarla: una pestaña nueva en su carpeta, si sigue existiendo.
+                    if (Directory.Exists(target.Folder))
+                        OpenAgent(AgentKinds.Claude, target.Folder, Accounts().FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, configDir)), null, null);
+                    return;
+                }
+                var account = Accounts().FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, configDir));
+                var last = TerminalRecents.Load();
+                var options = new AgentOptions(target.Folder, account?.ConfigDir ?? target.ConfigDir, last.Model, last.Effort, null, AgentKinds.Claude, past.Id);
+                StartResumed(options, account?.Label ?? L.T("cuenta por defecto"), past);
             });
         });
     }

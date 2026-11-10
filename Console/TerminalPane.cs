@@ -530,6 +530,7 @@ sealed partial class TerminalPane : Grid
         var images = tab.Images.Where((_, i) => text.Contains($"[Imagen #{i + 1}]", StringComparison.Ordinal)).ToList();
         tab.Images.Clear();
         tab.Agent.Send(text, images);
+        TitleFirstAsk(tab, text);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }
 

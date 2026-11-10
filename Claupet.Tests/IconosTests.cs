@@ -37,7 +37,10 @@ public sealed class IconosTests
         typeof(TerminalPane).GetField("_confirmClearHistory", Private)!.SetValue(pane, true);
         body = History(pane, tab, dir["otra.jsonl"]);
         var question = L.T("¿Borrar todo el historial de esta carpeta? No se puede deshacer.");
-        Assert.Contains(body.Children[0].GetLogicalDescendants().OfType<TextBlock>(), t => t.Text == question);
+        // Arriba va el buscador; la pregunta, primera debajo de él.
+        Assert.Single(body.Children[0].GetLogicalDescendants().OfType<Avalonia.Controls.TextBox>());
+        var rows = Assert.IsType<StackPanel>(body.Children[1]);
+        Assert.Contains(rows.Children[0].GetLogicalDescendants().OfType<TextBlock>(), t => t.Text == question);
 
         var title = (Border)typeof(TerminalPane).GetMethod("HistoryTitle", Private)!.Invoke(pane, [tab])!;
         Assert.Equal(L.T("Opciones del historial"), AutomationProperties.GetName(title));

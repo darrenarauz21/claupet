@@ -85,11 +85,16 @@ sealed class ConsoleWindow : Window
     /// <summary>La conversación que se muestra: los mensajes de otra que lleguen tarde se ignoran.</summary>
     string _chatId = ConsoleLink.QuickChat;
     bool _connected;
+    /// <summary>La sesión que pidió la isla al abrir la Console; null si no pidió ninguna.</summary>
+    readonly SessionTarget? _openSession;
 
     public ConsoleWindow(string? section)
     {
         // Con archivos se abre en el editor; sin sección, en el chat; con una, en esa sección de Ajustes.
-        _mode = ConsoleApp.Files.Count > 0 ? Mode.Editor : section is null ? Mode.Chat : Mode.Settings;
+        // Con una sesión (la pide la isla), en la Terminal, con esa sesión.
+        _openSession = SessionTarget.Parse(section);
+        if (_openSession is not null) section = null;
+        _mode = ConsoleApp.Files.Count > 0 ? Mode.Editor : _openSession is not null ? Mode.Terminal : section is null ? Mode.Chat : Mode.Settings;
         _section = section ?? "general";
         Title = "Claupet Console";
         Icon = Ui.LogoIcon();
@@ -203,6 +208,13 @@ sealed class ConsoleWindow : Window
             else Render(rebuild: true);
         };
         _client.Received += OnMessage;
+        // Los títulos cortos del historial los escribe el asistente de la bandeja (sin ella, se ve el pedido recortado).
+        _terminal.AskTitle = (id, prompt) =>
+        {
+            if (!_connected) return false;
+            _client.Send(new ConsoleMessage { Type = ConsoleLink.SessionTitle, Key = id, Value = prompt });
+            return true;
+        };
         // El esqueleto se arma una vez; al cambiar el tema o el idioma se rehacen la barra y el contenido.
         _root.Children.Add(_header);
         Grid.SetRow(_body, 1);
@@ -225,6 +237,7 @@ sealed class ConsoleWindow : Window
         Render(rebuild: true);
         foreach (var file in ConsoleApp.Files) _editor.Open(file);
         _terminal.RestoreOpen();
+        if (_openSession is { } asked) _terminal.OpenSession(asked);
         _canvas.CheckOpenRequest();
         _client.Start();
 
@@ -321,7 +334,12 @@ sealed class ConsoleWindow : Window
                 Ui.ShowOptions(message, anchor, _ink, value => _client.Send(new ConsoleMessage { Type = ConsoleLink.Pick, Token = message.Token, Value = value }));
                 break;
             case ConsoleLink.Show:
-                if (message.Key is { Length: > 0 } section && _pages.Any(p => p.Id == section))
+                if (SessionTarget.Parse(message.Key) is { } target)
+                {
+                    SetMode(Mode.Terminal);
+                    _terminal.OpenSession(target);
+                }
+                else if (message.Key is { Length: > 0 } section && _pages.Any(p => p.Id == section))
                 {
                     var moved = section != _section;
                     _mode = Mode.Settings;
@@ -351,6 +369,9 @@ sealed class ConsoleWindow : Window
                 break;
             case ConsoleLink.Chat when message.Chat is { } chat && chat.Id == _chatId:
                 _chat.Show(chat);
+                break;
+            case ConsoleLink.SessionTitle when message.Key is { Length: > 0 } session:
+                _terminal.TitleArrived(session, message.Value);
                 break;
         }
     }
