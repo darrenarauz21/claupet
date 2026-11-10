@@ -32,6 +32,8 @@
     <EmbeddedResource Include="..\Core\Terminos\*.txt" LogicalName="terminos/%(Filename)%(Extension)" />
     <!-- Las skills de Claude Code que trae Claupet (ClaudeSkills): se instalan desde Ajustes › Skills. -->
     <EmbeddedResource Include="..\Core\Skills\*\SKILL.md" LogicalName="skills/%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Los paquetes de Contratos Claupet que vienen dentro del motor (los mismos que lleva cpt). -->
+    <EmbeddedResource Include="..\Core\Contratos\Paquetes\**\*.md" LogicalName="contratos/%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Las pruebas (Claupet.Tests) ven lo interno de la app. -->
     <InternalsVisibleTo Include="Claupet.Tests" />
   </ItemGroup>

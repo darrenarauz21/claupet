@@ -10,7 +10,8 @@ namespace Claupet.Tests;
 /// </summary>
 public sealed class OpenCodeTests
 {
-    static readonly DateTimeOffset Now = DateTimeOffset.Now;
+    // Mediodía de hoy: así «hace 30 minutos» cae siempre en el mismo día, aunque las pruebas corran pasada la medianoche.
+    static readonly DateTimeOffset Now = new(DateTime.Today.AddHours(12));
 
     static AgentAccount Agent(string folder) => new() { Kind = Agents.OpenCode, Label = Agents.Name(Agents.OpenCode), Folder = folder };
 
@@ -127,7 +128,7 @@ public sealed class OpenCodeTests
     {
         using var dir = new TempDir();
         var recent = Now.AddMinutes(-5);
-        var earlier = Now.Date == Now.AddMinutes(-30).Date ? Now.AddMinutes(-30) : recent;
+        var earlier = Now.AddMinutes(-30);
         var old = Now.AddDays(-3);
         var path = dir["opencode/opencode.db"];
         CreateDbV2(path,
@@ -178,7 +179,7 @@ public sealed class OpenCodeTests
     {
         using var dir = new TempDir();
         var recent = Now.AddMinutes(-5);
-        var earlier = Now.Date == Now.AddMinutes(-30).Date ? Now.AddMinutes(-30) : recent;
+        var earlier = Now.AddMinutes(-30);
         var old = Now.AddDays(-3);
         var path = dir["opencode/opencode.db"];
         CreateDb(path,
