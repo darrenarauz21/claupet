@@ -474,15 +474,15 @@ sealed partial class TerminalPane
         ShowOnHover(row, copy);
         if (block.Open)
         {
-            // Mientras llega, texto plano (barato de cambiar); al terminar, con el código en su bloque.
+            // Mientras llega, texto plano (barato de cambiar); al terminar, con su formato.
             var live = Selectable(block.Text, Ink.Sans, 13.5, _ink.Text);
             _live[block] = live;
             column.Children.Add(live);
             return row;
         }
         _live.Remove(block);
-        foreach (var segment in Conversations.Split(block.Text))
-            column.Children.Add(segment.Code ? Code(segment.Text) : Paragraph(segment.Text));
+        // Terminada, con su Markdown: **negrita**, listas, títulos, `código`, bloques de código y enlaces.
+        column.Children.Add(ReplyView(block.Text, _current?.Agent.Options.Folder));
         return row;
     }
 
