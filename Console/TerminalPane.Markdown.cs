@@ -27,6 +27,25 @@ sealed partial class TerminalPane
     static MarkdownPipeline MarkdownPipeline => _markdownPipeline ??= new MarkdownPipelineBuilder()
         .UsePipeTables().UseGridTables().UseTaskLists().UseAutoLinks().UseEmphasisExtras().UseYamlFrontMatter().Build();
 
+    /// <summary>
+    /// Se está dibujando la respuesta de un agente (ReplyView), no un .md: títulos más chicos, el código en el bloque de
+    /// la Terminal (con copiar) y los archivos y URL que nombra en el texto, en azul como en el resto de la Terminal.
+    /// </summary>
+    bool _mdReply;
+
+    /// <summary>La respuesta de un agente con su Markdown (negrita, cursiva, listas, títulos, citas, tablas, código).</summary>
+    internal StackPanel ReplyView(string text, string? folder)
+    {
+        _mdReply = true;
+        try
+        {
+            var page = MarkdownPage(text, folder ?? "");
+            page.Spacing = 8;
+            return page;
+        }
+        finally { _mdReply = false; }
+    }
+
     /// <summary>El estilo de un pedazo de texto mientras se recorre un párrafo.</summary>
     readonly record struct MdStyle(bool Bold = false, bool Italic = false, bool Strike = false, bool Code = false, bool Dim = false, TextLink? Link = null);
 
@@ -57,7 +76,7 @@ sealed partial class TerminalPane
         QuoteBlock quote => MdQuote(quote, folder, depth),
         Table table => MdTable(table, folder),
         YamlFrontMatterBlock => null, // los datos del principio (---): no son para leer
-        CodeBlock code => MdCode(code.Lines.ToString(), dim: false),
+        CodeBlock code => _mdReply ? Code(code.Lines.ToString().TrimEnd('\n', '\r')) : MdCode(code.Lines.ToString(), dim: false),
         HtmlBlock html => MdCode(html.Lines.ToString(), dim: true),
         ThematicBreakBlock => new Border { Height = 1, Background = _ink.Hairline, Margin = new Thickness(0, 8) },
         LinkReferenceDefinitionGroup => null,
@@ -76,12 +95,15 @@ sealed partial class TerminalPane
 
     Control MdHeading(HeadingBlock heading, string folder)
     {
-        var (size, display) = heading.Level switch { 1 => (23.0, true), 2 => (19.0, true), 3 => (16.0, false), 4 => (14.5, false), _ => (13.5, false) };
+        var (size, display) = _mdReply
+            ? heading.Level switch { 1 => (17.0, true), 2 => (15.5, true), _ => (14.0, false) }
+            : heading.Level switch { 1 => (23.0, true), 2 => (19.0, true), 3 => (16.0, false), 4 => (14.5, false), _ => (13.5, false) };
         var text = MdText(heading.Inline, folder, size, FontWeight.SemiBold, display ? Ink.Display : null);
         text.LineHeight = size * 1.3;
         var margin = new Thickness(0, heading.Level <= 2 ? 12 : 6, 0, 0);
-        if (heading.Level > 2)
+        if (heading.Level > 2 || _mdReply)
         {
+            if (_mdReply) margin = new Thickness(0, 6, 0, 0);
             text.Margin = margin;
             return text;
         }
@@ -195,7 +217,23 @@ sealed partial class TerminalPane
         void Walk(MdInline? node, MdStyle style)
         {
             if (node is not ContainerInline container) return;
-            for (var child = container.FirstChild; child is not null; child = child.NextSibling) Visit(child, style);
+            for (var child = container.FirstChild; child is not null; child = child.NextSibling)
+            {
+                // Markdig corta el texto en los _ y * que no son énfasis: se junta de nuevo para que una ruta
+                // como «mi_archivo.cs» se reconozca entera como enlace.
+                if (child is LiteralInline && child.NextSibling is LiteralInline)
+                {
+                    var joined = new System.Text.StringBuilder();
+                    for (; child is LiteralInline piece; child = child.NextSibling!)
+                    {
+                        joined.Append(piece.Content.ToString());
+                        if (child.NextSibling is not LiteralInline) break;
+                    }
+                    Linked(joined.ToString(), style);
+                    continue;
+                }
+                Visit(child, style);
+            }
         }
 
         void Visit(MdInline node, MdStyle style)
@@ -203,10 +241,10 @@ sealed partial class TerminalPane
             switch (node)
             {
                 case LiteralInline literal:
-                    Add(literal.Content.ToString(), style);
+                    Linked(literal.Content.ToString(), style);
                     break;
                 case CodeInline code:
-                    Add(code.Content, style with { Code = true });
+                    Linked(code.Content, style with { Code = true });
                     break;
                 case EmphasisInline emphasis:
                     Walk(emphasis, emphasis.DelimiterChar == '~' ? style with { Strike = true }
@@ -224,7 +262,8 @@ sealed partial class TerminalPane
                     Add(auto.Url, style with { Link = MdLink(auto.IsEmail ? "mailto:" + auto.Url : auto.Url, folder) });
                     break;
                 case LineBreakInline lineBreak:
-                    Add(lineBreak.IsHard ? "\n" : " ", style);
+                    // En una respuesta, cada salto de línea se respeta (como antes); en un .md, no.
+                    Add(lineBreak.IsHard || _mdReply ? "\n" : " ", style);
                     break;
                 case HtmlEntityInline entity:
                     Add(entity.Transcoded.ToString(), style);
@@ -239,6 +278,25 @@ sealed partial class TerminalPane
                     Walk(container, style);
                     break;
             }
+        }
+
+        // En una respuesta, los archivos y URL que se nombran sin enlace de Markdown también se abren con un clic.
+        void Linked(string text, MdStyle style)
+        {
+            if (!_mdReply || style.Link is not null)
+            {
+                Add(text, style);
+                return;
+            }
+            var cut = 0;
+            foreach (var link in TextLinks.Find(text, folder.Length > 0 ? folder : null).OrderBy(l => l.Start))
+            {
+                if (link.Start < cut) continue;
+                Add(text[cut..link.Start], style);
+                Add(text.Substring(link.Start, link.Length), style with { Link = link });
+                cut = link.Start + link.Length;
+            }
+            Add(text[cut..], style);
         }
 
         void Add(string text, MdStyle style)

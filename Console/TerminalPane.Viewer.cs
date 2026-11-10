@@ -109,21 +109,37 @@ sealed partial class TerminalPane
         var titles = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 6, 0) };
         titles.Children.Add(name);
         titles.Children.Add(where);
-        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto"), Height = 46, Background = Brushes.Transparent, Margin = new Thickness(12, 0, 8, 0) };
+        var head = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto,Auto,Auto"), Height = 46, Background = Brushes.Transparent, Margin = new Thickness(12, 0, 8, 0) };
         head.Children.Add(Icon(IsImage(preview.Path) ? ImageFileIcon : FileIcon, LinkBrush, 15, 1.7));
         Grid.SetColumn(titles, 1);
         head.Children.Add(titles);
         if (canDock)
         {
             var pin = Round(PinIcon, L.T("Fijar a la derecha (o arrástrela hacia allá)"), () => Dock(preview.Path));
-            Grid.SetColumn(pin, 2);
+            Grid.SetColumn(pin, 3);
             head.Children.Add(pin);
         }
+        if (!IsImage(preview.Path))
+        {
+            // Copiar todo el archivo de una vez; el ícono pasa a ✓ un momento para confirmar.
+            Border? copy = null;
+            copy = Round(CopyIcon, L.T("Copiar el contenido"), () =>
+            {
+                string text;
+                try { text = File.ReadAllText(preview.Path); }
+                catch (Exception) { return; }
+                CopyToClipboard(text);
+                copy!.Child = Icon(CheckIcon, _ink.Accent, 14, 2);
+                DispatcherTimer.RunOnce(() => copy.Child = Icon(CopyIcon, _ink.Secondary, 14, 1.8), TimeSpan.FromSeconds(1.5));
+            });
+            Grid.SetColumn(copy, 2);
+            head.Children.Add(copy);
+        }
         var external = Round(ExternalIcon, L.T("Abrir con el programa del sistema"), () => Shell.Open(preview.Path));
-        Grid.SetColumn(external, 3);
+        Grid.SetColumn(external, 4);
         head.Children.Add(external);
         var close = Round(CloseIcon, L.T("Cerrar (Esc)"), ClosePreview);
-        Grid.SetColumn(close, 4);
+        Grid.SetColumn(close, 5);
         head.Children.Add(close);
         ToolTip.SetTip(titles, preview.Path);
 

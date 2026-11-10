@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Headless;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 // El proyecto de pruebas también trae WinForms (nombres iguales a los de Avalonia).
@@ -23,7 +24,7 @@ public sealed class TerminalViewerTests
         var (pane, window) = Open(dir.Path);
 
         const string answer = "Escribí el plan en `docs/plan.md`.\nMás en https://claupet.dev/docs y en otro.md.";
-        var block = pane.Paragraph(answer);
+        var block = Reply(pane, answer, dir.Path);
         var runs = block.Inlines!.OfType<Run>().ToList();
 
         // Lo que se ve es el texto sin las comillas invertidas, con su salto de línea.
@@ -78,7 +79,7 @@ public sealed class TerminalViewerTests
         try
         {
             const string text = "Vea https://claupet.dev/docs para más.";
-            var block = pane.Paragraph(text);
+            var block = Reply(pane, text, dir.Path);
             var host = new Window { Width = 600, Height = 200, Content = block };
             host.Show();
             Headless.Frame(host);
@@ -109,7 +110,7 @@ public sealed class TerminalViewerTests
         {
             const string url = "https://claupet.dev/docs/una/direccion/bastante/larga/que/ocupa/varios/renglones/de/este/parrafo";
             var text = "Primera línea\n" + url + "\nfin";
-            var block = pane.Paragraph(text);
+            var block = Reply(pane, text, dir.Path);
             var host = new Window { Width = 220, Height = 400, Content = block };
             host.Show();
             Headless.Frame(host);
@@ -292,13 +293,38 @@ public sealed class TerminalViewerTests
 
     static IEnumerable<string?> Texts(Avalonia.Visual root) => root.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text);
 
+    /// <summary>El primer párrafo de una respuesta dibujada (suelto, para ponerlo en otra ventana).</summary>
+    static SelectableTextBlock Reply(TerminalPane pane, string text, string folder)
+    {
+        var page = pane.ReplyView(text, folder);
+        var block = page.Children.OfType<SelectableTextBlock>().First();
+        page.Children.Remove(block);
+        return block;
+    }
+
+    [Fact]
+    public void UnaRespuestaMuestraSuMarkdownSinLosAsteriscos() => Headless.Run(() =>
+    {
+        using var dir = new TempDir();
+        var (pane, window) = Open(dir.Path);
+        var page = pane.ReplyView("El prototipo está en **«Editor»**.\n\n- **Buscar** y *reemplazar*\n- Otra\n\n```cs\nvar x = 1;\n```", dir.Path);
+        var texts = page.GetLogicalDescendants().OfType<SelectableTextBlock>().ToList();
+        var runs = texts.SelectMany(t => t.Inlines?.OfType<Run>() ?? []).ToList();
+        var all = string.Concat(runs.Select(r => r.Text)) + string.Concat(texts.Select(t => t.Text));
+        Assert.DoesNotContain("**", all);
+        Assert.Contains(runs, r => r.Text == "«Editor»" && r.FontWeight == FontWeight.Bold);
+        Assert.Contains(runs, r => r.Text == "reemplazar" && r.FontStyle == Avalonia.Media.FontStyle.Italic);
+        Assert.Contains(page.GetLogicalDescendants().OfType<TextBlock>(), t => t.Text == "•");
+        Assert.Contains("var x = 1;", all);
+        Close(pane, window);
+    });
+
     static (TerminalPane Pane, Window Window) Open(string folder)
     {
         var pane = new TerminalPane();
         var window = new Window { Width = 1400, Height = 900, Content = pane };
         window.Show();
         Headless.Frame(window);
-        // Paragraph busca los archivos en la carpeta de la pestaña elegida.
         pane.Add(new TerminalPane.Tab(new TerminalAgent(new AgentOptions(folder), a => a()), "cuenta-de-prueba"));
         Headless.Frame(window);
         return (pane, window);

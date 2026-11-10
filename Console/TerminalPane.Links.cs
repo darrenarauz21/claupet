@@ -18,46 +18,6 @@ sealed partial class TerminalPane
 
     static Cursor HandCursor => LinkClicks.Hand;
 
-    /// <summary>Un párrafo de una respuesta: su `código` con fondo y sus enlaces (URL y archivos que existen) en azul.</summary>
-    internal SelectableTextBlock Paragraph(string text)
-    {
-        var folder = _current?.Agent.Options.Folder;
-        var inlines = new InlineCollection();
-        var links = new List<(int Start, int End, TextLink Link)>();
-        var at = 0;
-        var lines = text.Replace("\r\n", "\n").Split('\n');
-        for (var i = 0; i < lines.Length; i++)
-        {
-            // Los saltos van dentro del texto (y no como LineBreak): así cada carácter tiene su posición y el clic se ubica.
-            if (i > 0) Add("\n", false, null);
-            foreach (var (piece, code, link) in LinkClicks.Pieces(lines[i], TextLinks.Find(lines[i], folder))) Add(piece, code, link);
-        }
-        var block = Selectable(null, Ink.Sans, 13.5, _ink.Text);
-        block.Inlines = inlines;
-        if (links.Count > 0) LinkClicks.Attach(block, links, OpenLink);
-        return block;
-
-        void Add(string piece, bool code, TextLink? link)
-        {
-            if (piece.Length == 0) return;
-            var run = new Run(piece);
-            if (code)
-            {
-                run.FontFamily = Mono;
-                run.FontSize = 12.5;
-                run.Background = _ink.Pill;
-            }
-            if (link is not null)
-            {
-                run.Foreground = LinkBrush;
-                run.TextDecorations = TextDecorations.Underline;
-                links.Add((at, at + piece.Length, link));
-            }
-            inlines.Add(run);
-            at += piece.Length;
-        }
-    }
-
     /// <summary>La salida de un comando, en letra fija: sus URL, archivos y carpetas en azul, relativos a donde corrió.</summary>
     internal SelectableTextBlock OutputText(IReadOnlyList<string> lines, string? folder, IBrush brush)
     {
