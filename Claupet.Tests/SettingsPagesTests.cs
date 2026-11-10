@@ -142,8 +142,9 @@ public sealed class SettingsPagesTests
         for (var i = 0; i < pages.Count; i++)
         {
             Assert.Equal(pages[i] with { Rows = [] }, back.Pages[i] with { Rows = [] });
-            Assert.Equal(pages[i].Rows.Select(r => r with { Links = null }), back.Pages[i].Rows.Select(r => r with { Links = null }));
+            Assert.Equal(pages[i].Rows.Select(r => r with { Links = null, Icons = null }), back.Pages[i].Rows.Select(r => r with { Links = null, Icons = null }));
             Assert.Equal(pages[i].Rows.SelectMany(r => r.Links ?? []), back.Pages[i].Rows.SelectMany(r => r.Links ?? []));
+            Assert.Equal(pages[i].Rows.SelectMany(r => r.Icons ?? []), back.Pages[i].Rows.SelectMany(r => r.Icons ?? []));
         }
     }
 

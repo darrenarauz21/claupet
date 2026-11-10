@@ -328,11 +328,67 @@ sealed class RowView
                 border.Child = Ui.Press(grid, () => _actions.Navigate(Row.Key), (_, on) => label.Foreground = on ? ink.Accent : ink.Text, row.Text);
                 break;
         }
+        if (row.Icons is { Count: > 0 } icons)
+        {
+            // Los botones de ícono van antes de lo de siempre (el interruptor, el dato): refrescar junto a su interruptor.
+            var both = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+            foreach (var icon in icons) both.Children.Add(IconButton(icon, ink));
+            if (right is not null)
+            {
+                right.VerticalAlignment = VerticalAlignment.Center;
+                if (right is TextBlock { Text.Length: 0 }) right.IsVisible = false;
+                else right.Margin = new Thickness(6, 0, 0, 0);
+                both.Children.Add(right);
+            }
+            right = both;
+        }
         if (right is null) return;
         right.Margin = new Thickness(12, 0, 0, 0);
         right.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(right, 1);
         grid.Children.Add(right);
+    }
+
+    /// <summary>Los íconos de los botones de fila, en un cuadro de 24 (como los del resto de la Console).</summary>
+    static string IconPath(RowIconKind icon) => icon switch
+    {
+        RowIconKind.Refresh => "M19.5,12 A7.5,7.5 0 1 1 17.3,6.7 M17.5,3 V7 H13.5",
+        RowIconKind.Add => "M12,5 V19 M5,12 H19",
+        RowIconKind.Folder => "M3.5,7 A1.5,1.5 0 0 1 5,5.5 H9.5 L11.5,7.5 H19 A1.5,1.5 0 0 1 20.5,9 V17.5 A1.5,1.5 0 0 1 19,19 H5 A1.5,1.5 0 0 1 3.5,17.5 Z",
+        _ => "M4.5,7 H19.5 M9.5,7 V4.5 H14.5 V7 M6.5,7 L7.5,20 H16.5 L17.5,7 M10.5,11 V16 M13.5,11 V16",
+    };
+
+    /// <summary>Un botón redondo de solo ícono, con su descripción al pasar el mouse; con File, pide antes el archivo.</summary>
+    Border IconButton(RowIcon icon, Ink ink)
+    {
+        var brush = icon.Tone == RowTone.Normal ? ink.Secondary : ink.For(icon.Tone);
+        var glyph = new Viewbox
+        {
+            Width = 17,
+            Height = 17,
+            Child = new Path
+            {
+                Data = Geometry.Parse(IconPath(icon.Icon)),
+                Stroke = brush,
+                StrokeThickness = 1.7,
+                StrokeLineCap = PenLineCap.Round,
+                StrokeJoin = PenLineJoin.Round,
+                Width = 24,
+                Height = 24,
+            },
+        };
+        var key = icon.Key;
+        var button = Ui.Press(glyph, () =>
+        {
+            if (icon.File is { } pattern) _ = PickFileAsync(pattern, key, icon.Name);
+            else _actions.Act(key, null);
+        }, (b, on) => b.Background = on ? ink.Pill : Brushes.Transparent, icon.Name);
+        button.Width = 34;
+        button.Height = 34;
+        button.CornerRadius = new CornerRadius(17);
+        button.Background = Brushes.Transparent;
+        ToolTip.SetTip(button, icon.Name);
+        return button;
     }
 
     static TextBlock Small(string text, IBrush brush) => new()
@@ -428,7 +484,7 @@ sealed class RowView
     void OnLink()
     {
         if (Row.Copy is { } copy) _ = CopyAsync(copy);
-        else if (Row.File is { } pattern) _ = PickFileAsync(pattern);
+        else if (Row.File is { } pattern) _ = PickFileAsync(pattern, Row.Key, Row.Value.TrimEnd('…'));
         else _actions.Act(Row.Key, null);
     }
 
@@ -443,17 +499,17 @@ sealed class RowView
         _value.Text = Row.Value;
     }
 
-    /// <summary>Primero el archivo (en la Console, con el selector del sistema); la acción lleva su ruta.</summary>
-    async Task PickFileAsync(string pattern)
+    /// <summary>Primero el archivo (en la Console, con el selector del sistema); la acción lleva su ruta. pattern: «*.md;*.zip».</summary>
+    async Task PickFileAsync(string pattern, string key, string title)
     {
         if (TopLevel.GetTopLevel(Root)?.StorageProvider is not { CanOpen: true } storage) return;
         var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = Row.Value.TrimEnd('…'),
+            Title = title,
             AllowMultiple = false,
-            FileTypeFilter = [new FilePickerFileType(Row.Text) { Patterns = [pattern] }],
+            FileTypeFilter = [new FilePickerFileType(Row.Text) { Patterns = pattern.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) }],
         });
-        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) _actions.Act(Row.Key, path);
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { } path) _actions.Act(key, path);
     }
 
     public void AddHint(int index, SettingsRow row, Ink ink)

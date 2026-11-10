@@ -21,8 +21,8 @@
 ---
 
 Claude Code does the work. Claupet keeps you in the loop: how much of your plan is left, which
-session needs you and what each one is up to, without opening a terminal. Using Codex, Gemini or
-Copilot too? Claupet follows them as well.
+session needs you and what each one is up to, without opening a terminal. Using Codex, Gemini,
+Copilot or OpenCode too? Claupet follows them as well.
 
 ## What it does
 
@@ -32,9 +32,9 @@ Copilot too? Claupet follows them as well.
   start a new one with the account, folder and model you want.
 - 🎬 **Activity.** Follow each session step by step, live. It all comes from local files: zero
   tokens.
-- 🤖 **Codex, Gemini and Copilot too.** If you also use Codex CLI, Gemini CLI or GitHub Copilot CLI,
-  their sessions show up in Usage and Activity (with Codex's limits and Gemini's tokens too), read from their own
-  files.
+- 🤖 **Codex, Gemini, Copilot and OpenCode too.** If you also use Codex CLI, Gemini CLI, GitHub Copilot CLI or OpenCode,
+  their sessions show up in Usage and Activity (with Codex's limits and the tokens of Gemini and OpenCode too), read
+  from their own files.
 - 🔔 **Friendly heads-ups.** A little note, with sound, when a session finishes, asks something,
   needs permission, fails, or you're close to a limit.
 - 🐾 **Desktop pets with personality.** Chibi, Dokki, Gemma or Ciel (or the classic critter) read,
@@ -187,6 +187,8 @@ Spanish) are in [DETALLES.md](DETALLES.md#personajes).
 Useful flags while developing: `--preview` opens a second window, `--mascota <chibi|dokki|gemma|ciel>`
 shows that pet just for that run, `--dump` prints a full usage check and `--preguntar "<text>"` asks
 the pet from the console. The full technical notes (in Spanish) are in [DETALLES.md](DETALLES.md).
+
+If you like Claupet, consider giving it a ⭐ to help more people find it!
 
 ## License
 

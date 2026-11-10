@@ -17,6 +17,7 @@ sealed partial class TrayController
 
     bool IConsoleApp.Typed(string key, string value)
     {
+        if (SkillTyped(key, value)) return true;
         switch (key)
         {
             case SettingsPages.ThemeCreateKey: _ = CreateThemeAsync(value.Trim()); return true;

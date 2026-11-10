@@ -6,13 +6,14 @@ namespace Claupet;
 /// <summary>Los agentes que la Terminal abre en bloques.</summary>
 static class AgentKinds
 {
-    public const string Claude = "claude", Codex = "codex", Gemini = "gemini", Copilot = "copilot";
+    public const string Claude = "claude", Codex = "codex", Gemini = "gemini", Copilot = "copilot", OpenCode = "opencode";
 
     public static string Label(string kind) => kind switch
     {
         Codex => "Codex",
         Gemini => "Gemini CLI",
         Copilot => "Copilot CLI",
+        OpenCode => "OpenCode",
         _ => "Claude Code",
     };
 
@@ -24,6 +25,7 @@ static class AgentKinds
         if (CodexDriver.Find() is not null) list.Add(Codex);
         if (AcpDriver.Find(Gemini) is not null) list.Add(Gemini);
         if (AcpDriver.Find(Copilot) is not null) list.Add(Copilot);
+        if (AcpDriver.Find(OpenCode) is not null) list.Add(OpenCode);
         return list;
     }
 
@@ -31,7 +33,7 @@ static class AgentKinds
     public static IAgentDriver Driver(string kind, AgentTranscript transcript) => kind switch
     {
         Codex => new CodexDriver(transcript),
-        Gemini or Copilot => new AcpDriver(kind, transcript),
+        Gemini or Copilot or OpenCode => new AcpDriver(kind, transcript),
         _ => new ClaudeDriver(transcript),
     };
 }

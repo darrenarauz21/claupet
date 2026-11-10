@@ -37,7 +37,7 @@ sealed partial class TerminalPane
 
     // ── La pestaña ──────────────────────────────────────────────────────────────────────────
 
-    /// <summary>La marca de la pestaña: la del agente (✻ Claude Code, cx Codex, ✦ Gemini, gh Copilot) o «>_» para una terminal.</summary>
+    /// <summary>La marca de la pestaña: la del agente (✻ Claude Code, cx Codex, ✦ Gemini, gh Copilot, oc OpenCode) o «>_» para una terminal.</summary>
     static string KindMark(Tab tab) => tab.Shell is not null ? ">_" : AgentMark(tab.Agent.Options.Kind);
 
     /// <summary>Trabajando: Claude Code en un turno o el shell con un comando corriendo.</summary>

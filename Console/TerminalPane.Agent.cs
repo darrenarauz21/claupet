@@ -733,6 +733,30 @@ sealed partial class TerminalPane
             code.TextTrimming = TextTrimming.CharacterEllipsis;
             panel.Children.Add(new Border { Background = _ink.Window, CornerRadius = new CornerRadius(9), Padding = new Thickness(10, 6), Margin = new Thickness(24, 0, 0, 0), Child = code });
         }
+        // El freno (Workspace): el comando puede llevarse o pisar trabajo de otra sesión. Se dice antes de responder.
+        if (block.Warning is { } warning && block.Answer is null)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(24, 0, 0, 0) };
+            row.Children.Add(new Viewbox
+            {
+                Width = 15,
+                Height = 15,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 1, 0, 0),
+                Child = new Avalonia.Controls.Shapes.Path
+                {
+                    Data = Geometry.Parse(CanvasIcons.Warn),
+                    Stroke = _ink.Warn,
+                    StrokeThickness = 1.8,
+                    StrokeLineCap = PenLineCap.Round,
+                    StrokeJoin = PenLineJoin.Round,
+                    Width = 24,
+                    Height = 24,
+                },
+            });
+            row.Children.Add(Wrapped(warning, 12.5, _ink.Warn, FontWeight.Medium));
+            panel.Children.Add(row);
+        }
         if (block.Answer is null)
         {
             var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), Height = 34 };
@@ -743,7 +767,8 @@ sealed partial class TerminalPane
             var allow = TextButton(L.T("Permitir"), () => Answer(block, PermissionAnswer.Allow), accent: true);
             Grid.SetColumn(allow, 1);
             bar.Children.Add(allow);
-            if (block.Suggestions is System.Text.Json.Nodes.JsonArray { Count: > 0 })
+            // Con el aviso del freno no se ofrece «Siempre aquí»: ese comando se decide cada vez.
+            if (block.Suggestions is System.Text.Json.Nodes.JsonArray { Count: > 0 } && block.Warning is null)
             {
                 var always = TextButton(L.T("Siempre aquí"), () => Answer(block, PermissionAnswer.AllowAlways));
                 Grid.SetColumn(always, 2);

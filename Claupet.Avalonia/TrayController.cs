@@ -114,11 +114,16 @@ sealed partial class TrayController
         WatchMascotScreens(); // también sin mascota: con la sesión bloqueada se pausa la isla
         StartConsole();
         StartUpdates();
+        StartSkills();
         _ = StartExtensionsAsync();
         PushSettings();
         _toasts.Clicked += OpenNotice;
         _bubble.Clicked += OpenNotice;
-        _toasts.Shown += () => _noticesShown++;
+        _toasts.Shown += () =>
+        {
+            _noticesShown++;
+            TuneSessionTimer();
+        };
 
         // Sesiones: cada 1,5 s con la ventana abierta y cada 3 s cerrada (solo con notificaciones).
         _sessionTimer.Tick += (_, _) => _ = ScanSessionsAsync();
@@ -126,7 +131,7 @@ sealed partial class TrayController
         _popup.PropertyChanged += (_, e) =>
         {
             if (e.Property != Visual.IsVisibleProperty) return;
-            _sessionTimer.Interval = TimeSpan.FromMilliseconds(_popup.IsVisible ? 1500 : 3000);
+            TuneSessionTimer();
             if (_popup.IsVisible) _ = ScanSessionsAsync();
         };
 
@@ -287,10 +292,29 @@ sealed partial class TrayController
             if (_settings.Notifications)
             {
                 _detector.Sessions(sessions).ForEach(ShowNotice);
-                _detector.HookEvents().ForEach(ShowNotice);
+                _detector.HookEvents().Where(n => !AlreadyAsked(n)).ToList().ForEach(ShowNotice);
             }
         }
-        finally { _scanning = false; }
+        finally
+        {
+            _scanning = false;
+            TuneSessionTimer();
+        }
+    }
+
+    /// <summary>
+    /// Un «Necesita su permiso» del hook Notification de una sesión que ya pidió por el hook PermissionRequest (hace
+    /// menos de 2 min): ese aviso ya salió, al instante, y este llegaría tarde y repetido.
+    /// </summary>
+    bool AlreadyAsked(Notice notice) =>
+        notice is { Kind: NoticeKind.Permission, SessionId: { } id }
+        && _permissionAsked.TryGetValue(id, out var at) && Environment.TickCount64 - at < 120_000;
+
+    /// <summary>Cada 1,5 s con la ventana abierta y cada 3 s cerrada; cada segundo si un aviso espera que se responda.</summary>
+    void TuneSessionTimer()
+    {
+        var ms = _toasts.Waiting ? 1000 : _popup.IsVisible ? 1500 : 3000;
+        if (_sessionTimer.Interval.TotalMilliseconds != ms) _sessionTimer.Interval = TimeSpan.FromMilliseconds(ms);
     }
 
     int _sessionsKey;
@@ -428,6 +452,7 @@ sealed partial class TrayController
                 case "setup": await ShowSetupAsync(); break;
                 case "diag": await CopyDiagnosticsAsync(); break;
                 case "updates": ToggleUpdates(); break;
+                case SettingsPages.UpdatesNowKey: _ = _updates?.CheckNowAsync(); break;
                 case "update": await OnUpdateAsync(); break;
                 case "unsetup":
                     _popup.HoldOpen = true;

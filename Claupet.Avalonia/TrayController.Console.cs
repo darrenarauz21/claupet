@@ -125,6 +125,9 @@ sealed partial class TrayController : IConsoleApp
             CheckUpdates = s.CheckUpdates,
             UpdateStatus = _updates?.Row().Status ?? "",
             UpdateAction = _updates?.Row().Action ?? "",
+            Skills = SkillList(),
+            SkillStatus = _skillStatus,
+            SkillProblem = _skillProblem,
         };
     }
 
@@ -162,6 +165,7 @@ sealed partial class TrayController : IConsoleApp
             return;
         }
         if (ThemeAction(key)) return;
+        if (SkillAction(key)) return;
         if (key.StartsWith("topic:", StringComparison.Ordinal))
         {
             var topic = AnswerTopics.Find(key["topic:".Length..]);
@@ -287,15 +291,17 @@ sealed partial class TrayController : IConsoleApp
     {
         WeatherService.ByCity when !string.IsNullOrWhiteSpace(_settings.WeatherCity) => _settings.WeatherCity,
         WeatherService.ByWindows => L.T("Ubicación de Windows"),
+        WeatherService.Off => L.T("Ubicación desactivada"),
         _ => L.T("Automática (por la IP)"),
     };
 
-    /// <summary>Mi ciudad: por la IP, la ubicación de Windows (solo ahí) o una escrita.</summary>
+    /// <summary>Mi ciudad: por la IP, la ubicación de Windows (solo ahí), una escrita o desactivada (se pregunta la ciudad).</summary>
     void PickCity()
     {
         List<(string, string)> choices = [(WeatherService.ByIp, L.T("Automática (por la IP)"))];
         if (OperatingSystem.IsWindows()) choices.Add((WeatherService.ByWindows, L.T("Ubicación de Windows")));
         choices.Add((WeatherService.ByCity, L.T("Escribir una ciudad…")));
+        choices.Add((WeatherService.Off, L.T("Ubicación desactivada")));
         Choose(choices, _settings.WeatherPlace, id => _ = SetCityAsync(id));
     }
 
@@ -326,7 +332,7 @@ sealed partial class TrayController : IConsoleApp
             }
             _settings.WeatherPlace = WeatherService.ByWindows;
         }
-        else _settings.WeatherPlace = WeatherService.ByIp;
+        else _settings.WeatherPlace = id == WeatherService.Off ? WeatherService.Off : WeatherService.ByIp;
         SettingsStore.Save(_settings);
         PushSettings();
     }

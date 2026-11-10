@@ -145,8 +145,9 @@ creates a plan or opens one from another folder.
 and **Ctrl+K** searches all of them. The funnel filters by overdue, blocked, ready or in progress. Keys 1 to 6 switch views.
 
 **A task.** Tapping it opens its details: its status (saved to the file), hours, what it needs and what's waiting on it.
-**Work on this** opens a Claude Code session in the project's folder with the task already typed, for you to send. The bar at
-the bottom asks a session in that same folder for a change.
+**Work on this** sets the task in progress and opens a Claude Code session in the project's folder that starts working right
+away: with the plan, the stage, the notes and what's already done, and the instruction to mark the task when it's finished. The
+bar at the bottom asks a session in that same folder for a change (if there's none, it opens one that starts with your request).
 
 **The plan's canvases.** The canvas button in the bar opens the ones linked to this plan or creates a new one, already linked.
 

@@ -9,10 +9,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Claupet</AssemblyName>
     <RootNamespace>Claupet</RootNamespace>
-    <Version>2.6.1</Version>
+    <Version>2.6.3</Version>
     <AssemblyTitle>Claupet</AssemblyTitle>
     <Product>Claupet</Product>
     <ApplicationIcon>..\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <InvariantGlobalization>false</InvariantGlobalization>
     <PortaPtyStageConPtyHost>false</PortaPtyStageConPtyHost>
@@ -29,6 +30,8 @@
     <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
     <!-- Los términos y condiciones del asistente (Terms), en cada idioma. -->
     <EmbeddedResource Include="..\Core\Terminos\*.txt" LogicalName="terminos/%(Filename)%(Extension)" />
+    <!-- Las skills de Claude Code que trae Claupet (ClaudeSkills): se instalan desde Ajustes › Skills. -->
+    <EmbeddedResource Include="..\Core\Skills\*\SKILL.md" LogicalName="skills/%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Las pruebas (Claupet.Tests) ven lo interno de la app. -->
     <InternalsVisibleTo Include="Claupet.Tests" />
   </ItemGroup>
@@ -45,6 +48,10 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.3.0" />
+    <!-- SQLite (Core/Db.cs) con la biblioteca que ya trae cada sistema (winsqlite3, libsqlite3): sin binarios nativos en
+         el paquete. Hoy lee la base de OpenCode; luego, métricas e índices de Claupet. -->
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.14" />
+    <PackageReference Include="SQLitePCLRaw.provider.dynamic_cdecl" Version="2.1.13" />
     <!-- La pantalla completa de los shells de Claupet Terminal (vim, less, claude…): interpreta las secuencias VT. -->
     <PackageReference Include="XTerm.NET" Version="3.0.0" />
     <!-- Los .md de la vista de archivos de Claupet Terminal, dibujados como documento (títulos, listas, tablas…). -->

@@ -190,6 +190,8 @@ sealed class Updates : IDisposable
     public ReleaseInfo? Latest { get; private set; }
     public int Percent { get; private set; }
     public string? Problem { get; private set; }
+    /// <summary>Lo que salió de la última búsqueda pedida a mano (CheckNowAsync), para su fila; null, nada que decir.</summary>
+    public string? Answer { get; private set; }
     /// <summary>Lo bajado y comprobado, listo para cambiarlo al reiniciar (un archivo o, en macOS, el .app).</summary>
     public string? Staged { get; private set; }
 
@@ -229,13 +231,21 @@ sealed class Updates : IDisposable
         if (known || Due(_settings.UpdatesChecked, DateTimeOffset.UtcNow)) _ = CheckAsync();
     }
 
+    /// <summary>
+    /// El botón de refrescar: busca ya, aunque «Buscar actualizaciones» esté apagado o no toque, y dice cómo terminó (la
+    /// versión es la más nueva o no se pudo buscar), cosa que la búsqueda de cada día calla.
+    /// </summary>
+    public Task CheckNowAsync(HttpClient? client = null, CancellationToken cancel = default) => CheckAsync(client, cancel, manual: true);
+
     /// <summary>Lee la última Release (sin sesión). Sin conexión no dice nada: vuelve a intentarlo en la hora siguiente.</summary>
-    public async Task CheckAsync(HttpClient? client = null, CancellationToken cancel = default)
+    public Task CheckAsync(HttpClient? client = null, CancellationToken cancel = default) => CheckAsync(client, cancel, manual: false);
+
+    async Task CheckAsync(HttpClient? client, CancellationToken cancel, bool manual)
     {
         if (_checking || Step is UpdateStep.Downloading or UpdateStep.Ready) return;
         _checking = true;
         var before = Step;
-        Set(() => Step = UpdateStep.Checking);
+        Set(() => { Step = UpdateStep.Checking; Answer = null; });
         ReleaseInfo? release = null;
         var ok = false;
         try
@@ -268,6 +278,7 @@ sealed class Updates : IDisposable
             if (!ok)
             {
                 Step = before == UpdateStep.Checking ? UpdateStep.None : before;
+                if (manual) Answer = L.T("No se pudo buscar: revise la conexión");
                 return;
             }
             _settings.UpdatesChecked = DateTimeOffset.UtcNow;
@@ -285,6 +296,7 @@ sealed class Updates : IDisposable
             {
                 Latest = null;
                 Step = UpdateStep.None;
+                if (manual) Answer = L.T("Claupet {0} es la versión más nueva", Current);
             }
             _save();
         });
@@ -323,7 +335,7 @@ sealed class Updates : IDisposable
         UpdateStep.Downloading => (L.T("Descargando Claupet {0}… {1} %", Latest!.Version, Percent), L.T("Cancelar")),
         UpdateStep.Ready => (L.T("Claupet {0} está lista: se instala al reiniciar", Latest!.Version), L.T("Reiniciar ahora")),
         UpdateStep.Failed => (L.T("No se pudo instalar ({0})", Problem ?? ""), L.T("Ver la versión nueva")),
-        _ => ("", ""),
+        _ => (Answer ?? "", ""),
     };
 
     /// <summary>

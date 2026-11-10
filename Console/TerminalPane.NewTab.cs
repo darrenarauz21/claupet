@@ -23,12 +23,13 @@ sealed partial class TerminalPane
     /// <summary>El menú abierto (otro toque al + lo cierra).</summary>
     Popup? _newMenu;
 
-    /// <summary>La marca de cada agente, como en la lista: ✻ Claude Code, cx Codex, ✦ Gemini, gh Copilot.</summary>
+    /// <summary>La marca de cada agente, como en la lista: ✻ Claude Code, cx Codex, ✦ Gemini, gh Copilot, oc OpenCode.</summary>
     static string AgentMark(string kind) => kind switch
     {
         AgentKinds.Codex => "cx",
         AgentKinds.Gemini => "✦",
         AgentKinds.Copilot => "gh",
+        AgentKinds.OpenCode => "oc",
         _ => "✻",
     };
 
@@ -483,10 +484,10 @@ sealed partial class TerminalPane
     internal static AgentOptions NewClaudeOptions(string folder, string? configDir, string? model, string? effort) =>
         new(folder, configDir, model, effort);
 
-    /// <summary>Abre un agente en bloques (Claude Code con su cuenta, su modelo y su esfuerzo; los otros, con lo suyo).</summary>
-    void OpenAgent(string kind, string folder, Account? account, string? model, string? effort)
+    /// <summary>Abre un agente en bloques (Claude Code con su cuenta, su modelo y su esfuerzo; los otros, con lo suyo). Null si la carpeta no existe.</summary>
+    Tab? OpenAgent(string kind, string folder, Account? account, string? model, string? effort)
     {
-        if (!Directory.Exists(folder)) return;
+        if (!Directory.Exists(folder)) return null;
         var claude = kind == AgentKinds.Claude;
         var last = TerminalRecents.Load();
         var options = claude ? NewClaudeOptions(folder, account?.ConfigDir, model, effort) : new AgentOptions(folder, Kind: kind);
@@ -494,12 +495,13 @@ sealed partial class TerminalPane
         TerminalRecents.Remember(claude ? options : new AgentOptions(folder, last.Account, last.Model, last.Effort, last.Mode), "agente:" + kind);
         LinkProject(folder);
         // Una copia de prueba (--preview) no le pasa los permisos a la isla de la app de siempre.
-        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview") };
+        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview"), Coordinate = true };
         var tab = new Tab(agent, claude ? account?.Label ?? L.T("cuenta por defecto") : AgentKinds.Label(kind));
         agent.Changed += changed => OnChanged(tab, changed);
         Add(tab);
         agent.Start();
         _input.Focus();
+        return tab;
     }
 
     /// <summary>

@@ -7,7 +7,8 @@ using System.Text.RegularExpressions;
 namespace Claupet;
 
 /// <summary>
-/// Gemini CLI y Copilot CLI por Agent Client Protocol: JSON-RPC 2.0 por la entrada y la salida («--acp»). Abre con
+/// Gemini CLI, Copilot CLI y OpenCode por Agent Client Protocol: JSON-RPC 2.0 por la entrada y la salida («--acp»;
+/// OpenCode, «opencode acp»). Abre con
 /// initialize y, con su respuesta, pide la sesión (session/new). Los pedidos que llegan antes de la sesión, o durante un
 /// turno, se guardan y salen al terminar el turno: un session/prompt nuevo cancelaría el que corre. Lo que el agente
 /// cuenta (session/update) y los permisos que pide (session/request_permission) los vuelve bloques la transcripción.
@@ -54,17 +55,19 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
         _effortConfig is not null ? _efforts : kind == AgentKinds.Copilot && _session is null ? CopilotEfforts : [];
 
     /// <summary>
-    /// El ejecutable de ese agente (AgentKinds.Gemini o Copilot), o null si no está: en el PATH y, si no, donde npm deja
-    /// los globales (en Windows, gemini.cmd y copilot.cmd en %APPDATA%\npm).
+    /// El ejecutable de ese agente (AgentKinds.Gemini, Copilot u OpenCode), o null si no está: en el PATH y, si no, donde
+    /// npm deja los globales (en Windows, gemini.cmd y copilot.cmd en %APPDATA%\npm) o, el de OpenCode, donde lo deja su
+    /// instalador (~/.opencode/bin).
     /// </summary>
     public static string? Find(string kind)
     {
-        var name = kind switch { AgentKinds.Gemini => "gemini", AgentKinds.Copilot => "copilot", _ => null };
+        var name = kind switch { AgentKinds.Gemini => "gemini", AgentKinds.Copilot => "copilot", AgentKinds.OpenCode => "opencode", _ => null };
         if (name is null) return null;
         if (AgentDriver.OnPath(name) is { } found) return found;
+        var own = Path.Combine(Account.Home, "." + name, "bin", OperatingSystem.IsWindows() ? name + ".exe" : name);
         string[] candidates = OperatingSystem.IsWindows()
-            ? [Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm", name + ".cmd")]
-            : [Path.Combine("/opt/homebrew/bin", name), Path.Combine("/usr/local/bin", name), Path.Combine(Account.Home, ".npm-global", "bin", name)];
+            ? [Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm", name + ".cmd"), own]
+            : [Path.Combine("/opt/homebrew/bin", name), Path.Combine("/usr/local/bin", name), Path.Combine(Account.Home, ".npm-global", "bin", name), own];
         return candidates.FirstOrDefault(File.Exists);
     }
 
@@ -83,7 +86,8 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
             StandardInputEncoding = new UTF8Encoding(false),
         };
         Launch(start, path);
-        start.ArgumentList.Add("--acp");
+        // OpenCode lo abre como subcomando; los demás, con la opción.
+        start.ArgumentList.Add(kind == AgentKinds.OpenCode ? "acp" : "--acp");
         // Copilot toma el esfuerzo al abrir (vale para toda la sesión); Gemini CLI no tiene esfuerzo.
         if (kind == AgentKinds.Copilot && options.Effort is { } effort && CopilotEfforts.Contains(effort))
         {
@@ -298,7 +302,7 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
         }
     }
 
-    string LoginCommand => kind == AgentKinds.Copilot ? "copilot login" : "gemini";
+    string LoginCommand => kind switch { AgentKinds.Copilot => "copilot login", AgentKinds.OpenCode => "opencode auth login", _ => "gemini" };
 
     /// <summary>El texto del error: el detalle si lo trae (Gemini lo pone en data.details), si no el mensaje.</summary>
     internal static string ErrorMessage(JsonElement error)
