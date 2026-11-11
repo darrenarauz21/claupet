@@ -495,7 +495,7 @@ sealed partial class TerminalPane
         TerminalRecents.Remember(claude ? options : new AgentOptions(folder, last.Account, last.Model, last.Effort, last.Mode), "agente:" + kind);
         LinkProject(folder);
         // Una copia de prueba (--preview) no le pasa los permisos a la isla de la app de siempre.
-        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview"), Coordinate = true };
+        var agent = NewAgent(options);
         var tab = new Tab(agent, claude ? account?.Label ?? L.T("cuenta por defecto") : AgentKinds.Label(kind));
         agent.Changed += changed => OnChanged(tab, changed);
         Add(tab);
@@ -519,13 +519,24 @@ sealed partial class TerminalPane
             ? NewClaudeOptions(where, last.Account, specialist.Model, specialist.Effort) with { Specialist = specialist }
             : new AgentOptions(where, Kind: specialist.Agent, Specialist: specialist);
         LinkProject(where);
-        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = !Program.Args.Contains("--preview") };
+        var agent = NewAgent(options);
         var tab = new Tab(agent, specialist.Name);
         agent.Changed += changed => OnChanged(tab, changed);
         Add(tab);
         agent.Start();
         _input.Focus();
     }
+
+    /// <summary>
+    /// El agente de una pestaña, abierta de la forma que sea (nueva, especialista, del historial o al reabrir Claupet): todas
+    /// se coordinan con las otras sesiones de su carpeta. Una copia de prueba (--preview) no le pasa los permisos a la isla.
+    /// </summary>
+    internal static TerminalAgent NewAgent(AgentOptions options, bool? askIsland = null) =>
+        new(options, action => Dispatcher.UIThread.Post(action))
+        {
+            AskIsland = askIsland ?? !Program.Args.Contains("--preview"),
+            Coordinate = true,
+        };
 
     /// <summary>La pestaña nueva pasa a ser la elegida.</summary>
     internal void Add(Tab tab)

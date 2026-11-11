@@ -92,7 +92,7 @@ sealed partial class TerminalPane
         var options = claude
             ? new AgentOptions(saved.Folder, saved.ConfigDir, saved.Model, saved.Effort, saved.Mode, AgentKinds.Claude, resume ? saved.Session : null)
             : new AgentOptions(saved.Folder, Kind: saved.Kind);
-        var agent = new TerminalAgent(options, action => Dispatcher.UIThread.Post(action)) { AskIsland = true };
+        var agent = NewAgent(options, askIsland: true);
         if (resume)
         {
             try { ClaudeHistory.Replay(path!, agent.Transcript); }
