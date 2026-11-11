@@ -63,6 +63,35 @@ static partial class ClaudeHistory
         return new PastSession(id, title, file.LastWriteTime, file.FullName, prompt ?? "", named is not null);
     }
 
+    /// <summary>
+    /// Pasa una conversación a otra cuenta, para seguirla ahí (por ejemplo, cuando esta llegó a su límite): copia su .jsonl
+    /// y su carpeta (subagentes, resultados grandes) a la carpeta de proyecto de la otra cuenta, encima de una copia de
+    /// antes si ya se había pasado. La de esta cuenta queda igual. Devuelve la sesión en la otra cuenta; null si no está.
+    /// </summary>
+    public static PastSession? CopySession(string fromConfigDir, string toConfigDir, string folder, string id)
+    {
+        if (!Guid.TryParse(id, out _)) return null;
+        var from = ProjectDir(fromConfigDir, folder);
+        var to = ProjectDir(toConfigDir, folder);
+        var file = System.IO.Path.Combine(from, id + ".jsonl");
+        if (!File.Exists(file)) return null;
+        try
+        {
+            Directory.CreateDirectory(to);
+            File.Copy(file, System.IO.Path.Combine(to, id + ".jsonl"), overwrite: true);
+            if (Directory.Exists(System.IO.Path.Combine(from, id))) CopyFolder(System.IO.Path.Combine(from, id), System.IO.Path.Combine(to, id));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+        return Find(toConfigDir, folder, id);
+    }
+
+    static void CopyFolder(string from, string to)
+    {
+        Directory.CreateDirectory(to);
+        foreach (var file in Directory.EnumerateFiles(from)) File.Copy(file, System.IO.Path.Combine(to, System.IO.Path.GetFileName(file)), overwrite: true);
+        foreach (var dir in Directory.EnumerateDirectories(from)) CopyFolder(dir, System.IO.Path.Combine(to, System.IO.Path.GetFileName(dir)));
+    }
+
     /// <summary>La búsqueda está en el título o en el pedido (sin mayúsculas ni tildes).</summary>
     internal static bool Matches(PastSession past, string query)
     {

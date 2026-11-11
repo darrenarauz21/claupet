@@ -18,7 +18,10 @@ static class GitRepo
     const int MaxBranches = 30;
 
     /// <summary>Corre git en esa carpeta y devuelve lo que escribió; null si falló, tardó más de 5 s o git no está.</summary>
-    public static async Task<string?> RunAsync(string folder, params string[] args)
+    public static Task<string?> RunAsync(string folder, params string[] args) => RunAsync(TimeSpan.FromSeconds(5), folder, args);
+
+    /// <summary>Lo mismo con otro tiempo máximo (fetch, worktree add, pull). Nunca pide usuario ni contraseña en la consola.</summary>
+    public static async Task<string?> RunAsync(TimeSpan limit, string folder, params string[] args)
     {
         try
         {
@@ -37,11 +40,12 @@ static class GitRepo
             start.ArgumentList.Add("core.quotepath=false");
             foreach (var arg in args) start.ArgumentList.Add(arg);
             start.Environment["GIT_OPTIONAL_LOCKS"] = "0";
+            start.Environment["GIT_TERMINAL_PROMPT"] = "0";
             using var process = Process.Start(start);
             if (process is null) return null;
             var output = process.StandardOutput.ReadToEndAsync();
             _ = process.StandardError.ReadToEndAsync();
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var timeout = new CancellationTokenSource(limit);
             try { await process.WaitForExitAsync(timeout.Token); }
             catch (OperationCanceledException)
             {

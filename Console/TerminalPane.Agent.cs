@@ -59,13 +59,30 @@ sealed partial class TerminalPane
             Grid.SetColumn(name, 4);
             where.Children.Add(name);
         }
+        var after = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(after, 5);
+        where.Children.Add(after);
+        if (tab.OwnWorktree)
+        {
+            // Trabaja en su propio worktree, desde la rama principal: su carpeta no es la del proyecto.
+            var mark = new Border
+            {
+                Background = _ink.Pill,
+                CornerRadius = new CornerRadius(999),
+                Padding = new Thickness(7, 1),
+                Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = Ui.Text(L.T("worktree"), 11, _ink.Tertiary),
+            };
+            ToolTip.SetTip(mark, L.T("Su propio worktree, desde la rama principal: {0}", tab.Agent.Options.Folder));
+            after.Children.Add(mark);
+        }
         if (_git.TryGetValue(tab.Agent.Options.Folder, out var git) && git.Status is { } status)
         {
             var summary = Ui.Text(status.Summary, 11.5, _ink.Tertiary, family: Mono);
             summary.Margin = new Thickness(6, 0, 0, 0);
             summary.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(summary, 5);
-            where.Children.Add(summary);
+            after.Children.Add(summary);
         }
         ToolTip.SetTip(where, tab.Agent.Options.Folder);
         bar.Children.Add(where);
@@ -150,14 +167,14 @@ sealed partial class TerminalPane
         _input.MinWidth = 160;
         line.Children.Add(_input);
 
-        // La cuenta (cambiarla abre otra pestaña), el modelo con el esfuerzo y los permisos: se tocan para cambiarlos.
+        // La cuenta (cambiarla sigue la conversación con esa cuenta), el modelo con el esfuerzo y los permisos: se tocan para cambiarlos.
         var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0, VerticalAlignment = VerticalAlignment.Center };
         if (claude)
         {
             var dot = new Border { Width = 6, Height = 6, CornerRadius = new CornerRadius(3), Background = Added, VerticalAlignment = VerticalAlignment.Center };
             Border? account = null;
             account = Pick(tab.Account, () => AccountMenu(account!, tab), dot);
-            ToolTip.SetTip(account, L.T("La cuenta de esta pestaña. Cambiarla abre una pestaña nueva con esa cuenta."));
+            ToolTip.SetTip(account, L.T("La cuenta de esta pestaña. Elija otra para seguir esta misma conversación con ella."));
             chips.Children.Add(account);
         }
         else chips.Children.Add(Pick(AgentKinds.Label(agent.Options.Kind), null));
@@ -293,7 +310,10 @@ sealed partial class TerminalPane
         return chip;
     }
 
-    /// <summary>La cuenta de la pestaña: elegir otra abre una pestaña nueva con esa cuenta (la de ahora sigue).</summary>
+    /// <summary>
+    /// La cuenta de la pestaña: con otra, la misma conversación sigue con esa cuenta (se pasa a su carpeta y se retoma en
+    /// esta misma pestaña), por ejemplo cuando esta llegó a su límite. Sin conversación todavía, abre una pestaña nueva.
+    /// </summary>
     void AccountMenu(Control anchor, Tab tab)
     {
         var accounts = Accounts();
@@ -305,8 +325,38 @@ sealed partial class TerminalPane
             {
                 if (picked is null || global::Claupet.Account.SamePath(picked, current ?? "")) return;
                 var account = accounts.First(a => a.ConfigDir == picked);
-                OpenAgent(AgentKinds.Claude, tab.Agent.Options.Folder, account, tab.Agent.Options.Model, tab.Agent.Effort);
+                if ((tab.Agent.Transcript.SessionId ?? tab.Agent.Options.Resume) is not { } id)
+                {
+                    OpenAgent(AgentKinds.Claude, tab.Agent.Options.Folder, account, tab.Agent.Options.Model, tab.Agent.Effort);
+                    return;
+                }
+                ContinueWith(tab, account, id);
             });
+    }
+
+    /// <summary>Sigue la conversación de la pestaña con otra cuenta, en su lugar. Mientras trabaja, no: se cortaría a medias.</summary>
+    void ContinueWith(Tab tab, global::Claupet.Account account, string id)
+    {
+        var t = tab.Agent.Transcript;
+        if (t.Busy && tab.Agent.Running)
+        {
+            t.Notice(L.T("Espere a que termine este turno (o interrúmpalo) para seguir con «{0}».", account.Label));
+            return;
+        }
+        var o = tab.Agent.Options;
+        if (ClaudeHistory.CopySession(o.ConfigDir ?? global::Claupet.Account.DefaultDir, account.ConfigDir, o.Folder, id) is not { } past)
+        {
+            t.Notice(L.T("No se pudo pasar la conversación a «{0}».", account.Label));
+            return;
+        }
+        var options = new AgentOptions(o.Folder, account.ConfigDir, o.Model, tab.Agent.Effort ?? o.Effort,
+            tab.FollowsSession ? null : t.PermissionMode ?? o.PermissionMode, AgentKinds.Claude, id, o.Specialist);
+        var draft = _input.Text ?? "";
+        StartResumed(options, account.Label, past, opened =>
+        {
+            ReplaceEnded(tab, opened, draft);
+            opened.Agent.Transcript.Notice(L.T("Sigue con la cuenta «{0}»: es la misma conversación.", account.Label));
+        });
     }
 
     /// <summary>El modelo y el esfuerzo de la pestaña, en botones; valen desde el turno siguiente.</summary>

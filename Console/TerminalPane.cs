@@ -41,7 +41,11 @@ sealed partial class TerminalPane : Grid
         public TerminalAgent Agent { get; } = agent;
         public string Account { get; } = account;
         public string? Branch { get; set; } = GitBranch.Of(agent.Options.Folder);
-        public string Project => Path.GetFileName(Agent.Options.Folder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : Agent.Options.Folder;
+        /// <summary>La carpeta del proyecto: la de la pestaña o, si trabaja en su propio worktree de sesión, la del repositorio principal.</summary>
+        public string ProjectFolder { get; } = SessionWorktrees.ProjectOf(agent.Options.Folder);
+        /// <summary>Trabaja en su propio worktree (SessionWorktrees), desde la rama principal.</summary>
+        public bool OwnWorktree => !string.Equals(ProjectFolder, Agent.Options.Folder, StringComparison.OrdinalIgnoreCase);
+        public string Project => Path.GetFileName(ProjectFolder.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : ProjectFolder;
         public string Draft { get; set; } = "";
         /// <summary>Ya se pidió retomarla: un segundo Intro no abre otra.</summary>
         public bool Reopening { get; set; }
@@ -341,6 +345,14 @@ sealed partial class TerminalPane : Grid
     {
         tab.Agent.Dispose();
         tab.Shell?.Dispose();
+        // Su worktree de sesión, si no dejó nada y ninguna otra pestaña lo usa, se borra (con lo hecho, queda).
+        var folder = tab.Agent.Options.Folder;
+        if (tab.OwnWorktree && !_tabs.Any(t => t != tab && string.Equals(t.Agent.Options.Folder, folder, StringComparison.OrdinalIgnoreCase)))
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(1500); // que el agente suelte la carpeta
+                await SessionWorktrees.RemoveIfUnusedAsync(folder);
+            });
         var index = _tabs.IndexOf(tab);
         _tabs.Remove(tab);
         _tabState.Remove(tab);

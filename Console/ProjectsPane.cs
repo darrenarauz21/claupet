@@ -567,13 +567,18 @@ sealed class ProjectsPane : Panel
             _barTitle = title;
             Grid.SetColumn(title, 1);
             bar.Children.Add(title);
-            if (GitBranch.Of(entry.Folder) is { } branch)
+            // El proyecto es el repositorio: su rama principal. Si su carpeta quedó en otra, un aviso con el botón para volver.
+            var now = GitBranch.Of(entry.Folder);
+            if ((SessionWorktrees.Default(entry.Folder) ?? now) is { } branch)
             {
+                var branches = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
                 var pill = new Border { Background = _ink.Pill, CornerRadius = new CornerRadius(999), Padding = new Thickness(9, 2), VerticalAlignment = VerticalAlignment.Center, Child = Ui.Text(branch, 12, _ink.Tertiary, FontWeight.Normal, Ink.Mono), MaxWidth = 190 };
-                ToolTip.SetTip(pill, L.T("La rama de este proyecto"));
-                _barBranch = pill;
-                Grid.SetColumn(pill, 2);
-                bar.Children.Add(pill);
+                ToolTip.SetTip(pill, L.T("La rama principal de este proyecto"));
+                branches.Children.Add(pill);
+                if (now is not null && now != branch) branches.Children.Add(OffBranch(entry.Folder, now, branch));
+                _barBranch = branches;
+                Grid.SetColumn(branches, 2);
+                bar.Children.Add(branches);
             }
             if (entry.Plan is { } plan)
             {
@@ -1169,6 +1174,54 @@ sealed class ProjectsPane : Panel
 
     /// <summary>Para las pruebas: lo que ve la paleta.</summary>
     internal TextBox? PaletteQuery => _paletteQuery;
+
+    const string ReturnIcon = "M9,14 L4,9 L9,4 M4,9 H14 A6,6 0 0 1 14,21 H11";
+
+    /// <summary>
+    /// La carpeta del proyecto quedó en otra rama: cuál, si ya está en la principal (se averigua aparte) y un botón para
+    /// volver a la principal al día. No descarta nada: con cambios sin commit u otra sesión ahí, dice por qué no.
+    /// </summary>
+    Control OffBranch(string folder, string now, string main)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        var name = Ui.Text(now, 12, _ink.Warn, FontWeight.Normal, Ink.Mono);
+        name.TextTrimming = TextTrimming.CharacterEllipsis;
+        name.MaxWidth = 200;
+        name.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(name);
+        var merged = Ui.Text("", 12, _ink.Warn);
+        merged.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(merged);
+        var back = Ui.Press(PlanPanel.Icon(ReturnIcon, _ink.Warn, 13, 1.9), async () =>
+        {
+            var error = await SessionWorktrees.SwitchToDefaultAsync(folder, [global::Claupet.Account.DefaultDir]);
+            Dispatcher.UIThread.Post(() =>
+            {
+                Toast(error ?? L.T("La carpeta volvió a {0} y está al día.", main), ReturnIcon);
+                if (error is null) RenderBar();
+            });
+        }, (b, on) => b.Background = on ? PlanPanel.Translucent(_ink.Warn, 0.18) : Brushes.Transparent, L.T("Volver a {0}", main));
+        back.Width = 24;
+        back.Height = 24;
+        back.CornerRadius = new CornerRadius(999);
+        ToolTip.SetTip(back, L.T("Volver a {0} y ponerla al día", main));
+        row.Children.Add(back);
+        var box = new Border
+        {
+            Background = PlanPanel.Translucent(_ink.Warn, 0.1),
+            CornerRadius = new CornerRadius(999),
+            Padding = new Thickness(10, 1, 2, 1),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = row,
+        };
+        ToolTip.SetTip(box, L.T("La carpeta del proyecto quedó en la rama {0}", now));
+        _ = Task.Run(async () =>
+        {
+            if (await SessionWorktrees.IsMergedAsync(folder, now, main))
+                Dispatcher.UIThread.Post(() => merged.Text = L.T("· ya está en {0}", main));
+        });
+        return box;
+    }
 
     void Toast(string text, string icon)
     {
