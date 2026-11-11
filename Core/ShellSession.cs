@@ -369,7 +369,17 @@ sealed class ShellSession : IDisposable
         if (_console is not { } console || !Running) return;
         if (!Transcript.Busy && command.Trim().Length > 0) Raise([Transcript.Begin(command)]);
         // Varias líneas van como varios Intro: el shell las ejecuta una tras otra (las siguientes, en sus bloques).
-        console.Write(command.ReplaceLineEndings("\r") + "\r");
+        var text = command.ReplaceLineEndings("\r");
+        if (Transcript.Busy && text.Length > 1 && !text.Contains('\r'))
+        {
+            // A un programa que ya corre (Gemini CLI, claude…) el texto y el Intro no le llegan en un solo bloque: los
+            // programas con interfaz Ink toman el bloque como un pegado y el Intro pegado no envía. Primero el texto y,
+            // un instante después, el Intro, como si se tecleara.
+            console.Write(text);
+            _ = Task.Delay(80).ContinueWith(_ => { if (Running) console.Write("\r"); });
+            return;
+        }
+        console.Write(text + "\r");
     }
 
     /// <summary>Ctrl+C: corta el comando que corre (o borra lo escrito en el prompt).</summary>
