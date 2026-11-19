@@ -614,7 +614,9 @@ sealed class SpecialistsPane : Panel
 
     void PickModel(Control anchor, Specialist s)
     {
-        string[] models = ["", "haiku", "sonnet", "opus", "fable"];
+        // Los mismos de la pestaña nueva: los que ofrece Claude Code (ClaudeModels) y el que ya tenía, si es otro.
+        string[] offered = ["", .. ClaudeModels.Featured(ClaudeModels.Known)];
+        string[] models = s.Model is { Length: > 0 } mine && !offered.Contains(mine) ? [.. offered, mine] : offered;
         DropList.Show(anchor, _ink, [.. models.Select(m => new DropList.Entry(m, m.Length == 0 ? L.T("Por defecto") : Format.ModelChoice(m), (s.Model ?? "") == m))], picked =>
         {
             if (picked is null) return;

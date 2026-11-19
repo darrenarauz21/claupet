@@ -359,59 +359,179 @@ sealed partial class TerminalPane
         });
     }
 
-    /// <summary>El modelo y el esfuerzo de la pestaña, en botones; valen desde el turno siguiente.</summary>
+    /// <summary>Desde cuántos modelos el menú lleva buscador (OpenCode anuncia decenas).</summary>
+    const int ModelSearchFrom = 12;
+
+    /// <summary>
+    /// El modelo y el esfuerzo de la pestaña, en botones; valen desde el turno siguiente. Los modelos van agrupados por su
+    /// proveedor («opencode/…», sin repetirlo en cada botón) y se desplazan dentro del menú, que nunca pasa del borde de
+    /// la ventana; si son muchos, llevan buscador. El esfuerzo queda siempre a la vista, abajo.
+    /// </summary>
     void ModelMenu(Control anchor, Tab tab, Action changed)
     {
         var agent = tab.Agent;
         var driver = agent.Driver;
-        if (driver.Models.Count == 0 && driver.Efforts.Count == 0) return;
-        var list = new StackPanel { Spacing = 1 };
+        var choices = driver.Models;
+        if (choices.Count == 0 && driver.Efforts.Count == 0) return;
+        var menu = new DockPanel();
         var paints = new List<Action>();
-        string? model = agent.Transcript.Model?.Replace("claude-", "") is { } shown && driver.Models.Contains(shown) ? shown : agent.Options.Model;
-        if (driver.Models.Count > 0)
+        Control? focus = null;
+        Border? current = null;
+        // Los de ACP traen el ID tal cual («opencode/claude-opus-5-5»); Claude Code, el modelo al que fue el alias elegido.
+        string? model = ClaudeModels.ChoiceFor(agent.Transcript.Model, choices, agent.Options.Model, agent.Transcript.Offered ?? ClaudeModels.Known);
+
+        void Paint()
         {
-            list.Children.Add(MenuLabel(L.T("Modelo")));
-            var row = MenuChips();
-            foreach (var m in driver.Models.Prepend(""))
-            {
-                var value = m.Length == 0 ? null : m;
-                var chip = ChoiceChip(value is null ? L.T("por defecto") : Format.ModelChoice(value), () =>
-                {
-                    model = value;
-                    agent.SetModel(value);
-                    foreach (var paint in paints) paint();
-                    changed();
-                });
-                paints.Add(() => PaintChip(chip, model == value));
-                row.Children.Add(chip);
-            }
-            list.Children.Add(row);
+            foreach (var paint in paints) paint();
+            changed();
         }
-        if (driver.Efforts.Count > 0)
+
+        void Choose(string? value)
         {
-            list.Children.Add(MenuLabel(L.T("Esfuerzo")));
-            var row = MenuChips();
-            foreach (var e in driver.Efforts)
-            {
-                var chip = ChoiceChip(EffortLabel(e), () =>
-                {
-                    agent.SetEffort(e);
-                    foreach (var paint in paints) paint();
-                    changed();
-                });
-                paints.Add(() => PaintChip(chip, agent.Effort == e));
-                row.Children.Add(chip);
-            }
-            list.Children.Add(row);
+            model = value;
+            agent.SetModel(value);
+            Paint();
         }
+
+        if (choices.Count > 0)
+        {
+            var head = new StackPanel { Spacing = 1 };
+            head.Children.Add(MenuLabel(L.T("Modelo")));
+            DockPanel.SetDock(head, Avalonia.Controls.Dock.Top);
+            menu.Children.Add(head);
+
+            var list = new StackPanel { Spacing = 1 };
+            var chips = new List<(Border Chip, string Value, string Label)>();
+            var groups = new List<(Control Group, WrapPanel Row)>();
+            foreach (var (provider, ids) in ModelGroups(choices.Prepend("")))
+            {
+                var group = new StackPanel { Spacing = 1 };
+                if (provider is not null) group.Children.Add(MenuLabel(provider));
+                var row = MenuChips();
+                foreach (var id in ids)
+                {
+                    var value = id.Length == 0 ? null : id;
+                    var label = value is null ? L.T("por defecto")
+                        : Format.ModelChoice(provider is null ? value : value[(provider.Length + 1)..]);
+                    var chip = ChoiceChip(label, () => Choose(value));
+                    if (value is not null && label != value) ToolTip.SetTip(chip, value);
+                    paints.Add(() => PaintChip(chip, model == value));
+                    if (model == value) current = chip;
+                    chips.Add((chip, id, label));
+                    row.Children.Add(chip);
+                }
+                group.Children.Add(row);
+                groups.Add((group, row));
+                list.Children.Add(group);
+            }
+            var none = Ui.Text(L.T("Ningún modelo coincide"), 12.5, _ink.Tertiary);
+            none.Margin = new Thickness(10, 2, 10, 8);
+            none.IsVisible = false;
+            list.Children.Add(none);
+
+            if (choices.Count > ModelSearchFrom)
+            {
+                var box = new TextBox { Watermark = L.T("Buscar modelo"), MinHeight = 0 };
+                Plain(box);
+                box.FontFamily = Ink.Sans;
+                box.FontSize = 12.5;
+                box.Padding = new Thickness(30, 6, 8, 6);
+                Ui.AutomationName(box, L.T("Buscar modelo"));
+                var field = new Panel { Margin = new Thickness(6, 0, 6, 6) };
+                field.Children.Add(new Border { Background = _ink.Pill, CornerRadius = new CornerRadius(9) });
+                field.Children.Add(box);
+                var lens = Icon(SearchIcon, _ink.Tertiary, 13, 1.8);
+                lens.HorizontalAlignment = HorizontalAlignment.Left;
+                lens.Margin = new Thickness(10, 0, 0, 0);
+                lens.IsHitTestVisible = false;
+                field.Children.Add(lens);
+                head.Children.Add(field);
+                // Cada palabra tiene que estar en el ID o en el nombre que se ve: «gpt 5.5», «claude opus».
+                box.TextChanged += (_, _) =>
+                {
+                    var words = (box.Text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var (chip, value, label) in chips)
+                        chip.IsVisible = words.All(w => value.Contains(w, StringComparison.OrdinalIgnoreCase)
+                            || label.Contains(w, StringComparison.OrdinalIgnoreCase));
+                    foreach (var (group, row) in groups) group.IsVisible = row.Children.Any(c => c.IsVisible);
+                    none.IsVisible = !chips.Any(c => c.Chip.IsVisible);
+                };
+                // Intro elige el primero que queda.
+                box.AddHandler(KeyDownEvent, (_, e) =>
+                {
+                    if (e.Key != Key.Enter || chips.FirstOrDefault(c => c.Chip.IsVisible) is not { Chip: not null } first) return;
+                    e.Handled = true;
+                    Choose(first.Value.Length == 0 ? null : first.Value);
+                }, RoutingStrategies.Tunnel);
+                focus = box;
+            }
+
+            // Lo que no cabe se desplaza aquí: el título, el buscador y el esfuerzo no se mueven.
+            var scroll = new ScrollViewer
+            {
+                Content = list,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            };
+            if (driver.Efforts.Count > 0) menu.Children.Add(EffortChoices(agent, paints, Paint));
+            menu.Children.Add(scroll);
+        }
+        else menu.Children.Add(EffortChoices(agent, paints, Paint));
+
         foreach (var paint in paints) paint();
-        Floating(anchor, list, 300);
+        Floating(anchor, menu, choices.Count > ModelSearchFrom ? 360 : 300, focus);
+        if (current is not null) Dispatcher.UIThread.Post(() => current.BringIntoView(), DispatcherPriority.Loaded);
     }
 
-    /// <summary>Una tarjeta flotante bajo anchor (en la capa de arriba de la ventana); se cierra al tocar afuera o con Esc.</summary>
-    void Floating(Control anchor, Control content, double width)
+    /// <summary>Los esfuerzos del agente, abajo del menú del modelo.</summary>
+    Control EffortChoices(TerminalAgent agent, List<Action> paints, Action changed)
     {
-        if (TopLevel.GetTopLevel(anchor)?.Content is not Panel host) return;
+        var section = new StackPanel { Spacing = 1 };
+        section.Children.Add(MenuLabel(L.T("Esfuerzo")));
+        var row = MenuChips();
+        foreach (var e in agent.Driver.Efforts)
+        {
+            var chip = ChoiceChip(EffortLabel(e), () =>
+            {
+                agent.SetEffort(e);
+                changed();
+            });
+            paints.Add(() => PaintChip(chip, agent.Effort == e));
+            row.Children.Add(chip);
+        }
+        section.Children.Add(row);
+        DockPanel.SetDock(section, Avalonia.Controls.Dock.Bottom);
+        return section;
+    }
+
+    /// <summary>
+    /// Los modelos por proveedor, en el orden en que llegan: «opencode/gpt-5.5» va con los de «opencode» y los que no
+    /// llevan proveedor (los alias de Claude Code, «por defecto»), en un grupo sin título.
+    /// </summary>
+    internal static IReadOnlyList<(string? Provider, IReadOnlyList<string> Models)> ModelGroups(IEnumerable<string> models)
+    {
+        var groups = new List<(string? Provider, List<string> Models)>();
+        foreach (var id in models)
+        {
+            var slash = id.IndexOf('/');
+            var provider = slash > 0 && slash < id.Length - 1 ? id[..slash] : null;
+            var index = groups.FindIndex(g => g.Provider == provider);
+            if (index < 0) groups.Add((provider, [id]));
+            else groups[index].Models.Add(id);
+        }
+        return [.. groups.Select(g => (g.Provider, (IReadOnlyList<string>)g.Models))];
+    }
+
+    /// <summary>Lo que se deja libre entre la tarjeta flotante y el borde de arriba de la ventana.</summary>
+    const double FloatingMargin = 12;
+
+    /// <summary>
+    /// Una tarjeta flotante sobre anchor (en la capa de arriba de la ventana); se cierra al tocar afuera o con Esc. Su alto
+    /// llega hasta el borde de arriba de la ventana y no más: lo que lleva adentro tiene que desplazarse si no cabe.
+    /// </summary>
+    void Floating(Control anchor, Control content, double width, Control? focus = null)
+    {
+        if (TopLevel.GetTopLevel(anchor) is not { Content: Panel host } top) return;
         var popup = new Popup
         {
             PlacementTarget = anchor,
@@ -432,6 +552,10 @@ sealed partial class TerminalPane
             BoxShadow = BoxShadows.Parse(_ink.Dark ? "0 14 34 0 #40000000" : "0 14 34 0 #24000000"),
             Focusable = true,
         };
+        // Va encima de anchor: su alto es lo que queda hasta el borde de arriba (antes, con decenas de modelos, la tarjeta
+        // pasaba de la ventana y tapaba la caja de abajo).
+        var above = anchor.TranslatePoint(default, top)?.Y ?? top.Bounds.Height;
+        card.MaxHeight = Math.Max(160, above + popup.VerticalOffset - FloatingMargin);
         card.KeyDown += (_, e) =>
         {
             if (e.Key != Key.Escape) return;
@@ -442,7 +566,7 @@ sealed partial class TerminalPane
         popup.Closed += (_, _) => host.Children.Remove(popup);
         host.Children.Add(popup);
         popup.IsOpen = true;
-        Dispatcher.UIThread.Post(() => card.Focus(), DispatcherPriority.Loaded);
+        Dispatcher.UIThread.Post(() => (focus ?? card).Focus(), DispatcherPriority.Loaded);
     }
 
     // ── Bloques ─────────────────────────────────────────────────────────────────────────────

@@ -37,7 +37,7 @@ coding agents and shells in tabs and shows each thing in its own block:
    | **Project** | At the top: where it opens. Tap **Change** to choose another: linked projects, recent ones, **Browse for a folder…** or **Browse for a file in the project…** (opens the root of its git repository or, without one, its folder). |
    | **Open with** | Claude Code, another installed agent (Codex, Gemini CLI, Copilot CLI, OpenCode) or one of your computer's terminals. |
    | **With the account** | *(Claude Code)* This tab's account; the green dot means it's signed in. |
-   | **Model and effort** | *(Claude Code)* `haiku`, `sonnet`, `opus`, `fable` or "default", and the effort: low, medium, high, very high or max. The variants (`opus[1m]`, `sonnet[1m]`, `opusplan`) are chosen inside the session. |
+   | **Model and effort** | *(Claude Code)* `haiku`, `sonnet`, `opus`, `fable` or "default", with the version each one points to, and the effort: low, medium, high, very high or max. If a model is newer than its alias (for example, Fable 5.2 while `fable` is still on 5.1), it shows up too. Claude Code provides the list: Claupet takes it from each session, so a new model appears on its own. Older models and `opusplan` are chosen inside the session. |
 
 3. Press **Open** (or **Enter**). Tapping the item that's already selected also opens it.
 

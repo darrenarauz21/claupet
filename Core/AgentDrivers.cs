@@ -131,9 +131,11 @@ static class AgentDriver
 sealed class ClaudeDriver(AgentTranscript transcript) : IAgentDriver
 {
     int _requests;
+    IReadOnlyList<ClaudeModel>? _learned;
 
     public string Name => "Claude Code";
-    public IReadOnlyList<string> Models => Launcher.Models;
+    /// <summary>Los que ofrece esta sesión; antes de que Claude Code responda, los últimos que dijo.</summary>
+    public IReadOnlyList<string> Models => ClaudeModels.Choices(transcript.Offered ?? ClaudeModels.Known);
     public IReadOnlyList<string> Efforts => Launcher.Efforts;
     public IReadOnlyList<string> Modes => TerminalAgent.Modes;
 
@@ -148,7 +150,18 @@ sealed class ClaudeDriver(AgentTranscript transcript) : IAgentDriver
     }
 
     public IEnumerable<string> Opening(AgentOptions options) => [AgentProtocol.Initialize(NextId())];
-    public IReadOnlyList<AgentBlock> Apply(string line, List<string> replies) => transcript.Apply(line);
+    public IReadOnlyList<AgentBlock> Apply(string line, List<string> replies)
+    {
+        var changed = transcript.Apply(line);
+        // Lo que ofrece Claude Code queda para los menús de toda la app (y para la próxima vez que se abra).
+        if (transcript.Offered is { } offered && !ReferenceEquals(offered, _learned))
+        {
+            _learned = offered;
+            ClaudeModels.Learn(offered);
+        }
+        return changed;
+    }
+
     public IEnumerable<string> Prompt(string text, IReadOnlyList<AgentImage>? images = null) => [AgentProtocol.UserMessage(text, images)];
 
     public IEnumerable<string> SetModel(string? model) =>
