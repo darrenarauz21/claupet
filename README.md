@@ -140,8 +140,9 @@ them all.
 
 ### Run it from source
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and Claude Code signed
-in. Python 3 is only needed to build the release packages.
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), 10.0.404 or later (`global.json`
+asks for it: earlier ones bundle a runtime with known vulnerabilities), and Claude Code signed in. Python 3 is only
+needed to build the release packages.
 
 ```powershell
 git clone https://github.com/darrenarauz21/claupet.git

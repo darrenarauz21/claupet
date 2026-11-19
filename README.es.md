@@ -143,8 +143,9 @@ ofrece configurar los avisos de permisos, el inicio con el sistema y las notific
 
 ### Correrla desde el código
 
-Necesita el [SDK de .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0) y Claude Code con la
-sesión iniciada. Python 3 solo hace falta para armar los paquetes.
+Necesita el [SDK de .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0), el 10.0.404 o uno posterior
+(lo pide `global.json`: los anteriores traen un runtime con vulnerabilidades conocidas), y Claude Code con la sesión
+iniciada. Python 3 solo hace falta para armar los paquetes.
 
 ```powershell
 git clone https://github.com/darrenarauz21/claupet.git
