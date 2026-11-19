@@ -1,0 +1,317 @@
+{
+  "titulo": "Canvas más potente",
+  "descripcion": "Mejorar el diseño de Claupet Canvas, corregir sus errores y darle más herramientas a las IA (MCP) y a la persona. La etapa 1 ya está hecha en la rama feature/canvas-lista; lo demás es una propuesta sacada del código actual y se empieza cuando usted elija.",
+  "inicio": "2026-11-19",
+  "etapas": [
+    {
+      "id": "e1",
+      "nombre": "Lista y autoría"
+    },
+    {
+      "id": "e2",
+      "nombre": "Errores y solidez"
+    },
+    {
+      "id": "e3",
+      "nombre": "Diseño"
+    },
+    {
+      "id": "e4",
+      "nombre": "Herramientas para las IA"
+    },
+    {
+      "id": "e5",
+      "nombre": "Herramientas para usted"
+    },
+    {
+      "id": "e6",
+      "nombre": "Publicar"
+    }
+  ],
+  "tareas": [
+    {
+      "id": "t1",
+      "titulo": "Agrupar la lista por proyecto",
+      "etapa": "e1",
+      "estado": "revision",
+      "inicio": "2026-11-19",
+      "dias": 1,
+      "responsable": "Claude Code",
+      "notas": "Hecho en feature/canvas-lista: grupos por la carpeta del canvas (CanvasDoc.Folder, el repositorio principal si fue en un worktree de sesión), plegables, el más reciente primero y «Sin proyecto» al final. Buscar también por proyecto y por autor. Hoy los 38 canvas son de Documents\\ecarcheck: se ve un solo grupo."
+    },
+    {
+      "id": "t2",
+      "titulo": "Mostrar todos los que trabajaron en cada canvas",
+      "etapa": "e1",
+      "estado": "revision",
+      "inicio": "2026-11-19",
+      "dias": 1,
+      "responsable": "Claude Code",
+      "notas": "Hecho en feature/canvas-lista: un punto de color y el nombre de cada uno (agentes primero, usted al final), sacado de los cambios y las secciones. Antes solo salía el último."
+    },
+    {
+      "id": "t3",
+      "titulo": "Registrar el modelo en cada cambio, no solo el agente",
+      "etapa": "e1",
+      "estado": "revision",
+      "dias": 1,
+      "depende": [
+        "t2"
+      ],
+      "notas": "Hecho en feature/canvas-lista: cada sesión tiene una clave (CLAUPET_CANVAS_SESSION) y la Console anota su modelo en Canvas\\sesiones\\<clave> cuando cambia; el servidor MCP lo lee al guardar. CanvasChange.Model y CanvasSection.Model. La lista muestra los modelos de cada agente juntos («Opus 5.5, Fable 5.2»); versiones y secciones dicen «Claude Code · Opus 5.5». Los cambios de antes no tienen modelo: muestran el agente.",
+      "inicio": "2026-11-19",
+      "responsable": "Claude Code",
+      "por": "Claude Code"
+    },
+    {
+      "id": "t4",
+      "titulo": "Agrupar más fino dentro de un proyecto, fijar y archivar de verdad",
+      "etapa": "e1",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t1"
+      ],
+      "notas": "Un tema o subproyecto («Permisos REV», «PIO») que el agente pone al crear (canvas_create) y la persona cambia. Archivar como estado, no como «[Archivada]» en el título (hoy es solo texto), y fijar arriba."
+    },
+    {
+      "id": "t5",
+      "titulo": "Borrar sin romper la Console y poder deshacerlo",
+      "etapa": "e2",
+      "estado": "revision",
+      "dias": 1,
+      "notas": "Hecho en feature/canvas-lista: borrar va a Canvas\\papelera con su historial; el aviso trae Deshacer; pasados 30 días se borra. Si el canvas está ocupado, se avisa y no se pierde nada.",
+      "inicio": "2026-11-19",
+      "responsable": "Claude Code",
+      "por": "Claude Code"
+    },
+    {
+      "id": "t6",
+      "titulo": "«hace N min» al día en la lista",
+      "etapa": "e2",
+      "estado": "revision",
+      "dias": 1,
+      "notas": "Hecho en feature/canvas-lista: cada 30 s, mientras la lista se ve, se reescriben los «hace cuánto» sin rehacer la lista.",
+      "inicio": "2026-11-19",
+      "responsable": "Claude Code",
+      "por": "Claude Code"
+    },
+    {
+      "id": "t7",
+      "titulo": "Pedir a la IA en una sesión del proyecto del canvas",
+      "etapa": "e2",
+      "estado": "revision",
+      "dias": 1,
+      "notas": "Hecho en feature/canvas-lista: Ctrl+J y la mesa de diseño van a una sesión del proyecto del canvas (también en un worktree de sesión del mismo proyecto), nunca a la de otro; sin ninguna, se abre una en su carpeta.",
+      "inicio": "2026-11-19",
+      "responsable": "Claude Code",
+      "por": "Claude Code"
+    },
+    {
+      "id": "t8",
+      "titulo": "Un candado por canvas y una cola para abrir",
+      "etapa": "e2",
+      "estado": "por-hacer",
+      "dias": 2,
+      "notas": "Hoy hay un candado para todos con 5 s de espera (CanvasStore.cs:217-230), y abrir.txt tiene un solo lugar sin candado (CanvasStore.cs:159-163): dos pedidos a la vez se pisan."
+    },
+    {
+      "id": "t9",
+      "titulo": "Historial más liviano y restaurable entero",
+      "etapa": "e2",
+      "estado": "por-hacer",
+      "dias": 2,
+      "notas": "Cada cambio copia el documento entero (hasta 60 × 4 MB, CanvasStore.cs:120-135). Guardar diferencias o comprimir, e igualar los topes (Changes 100, versiones 60) para que todo punto de la línea de tiempo se pueda restaurar."
+    },
+    {
+      "id": "t10",
+      "titulo": "Prototipo del nuevo diseño de Canvas",
+      "etapa": "e3",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t1",
+        "t2"
+      ],
+      "notas": "En un canvas, para aprobarlo antes del código: lista con miniaturas reales y avatares, barra con filtros, vista de tarjetas, menú de acciones por canvas."
+    },
+    {
+      "id": "t11",
+      "titulo": "Comparar versiones e historial por sección",
+      "etapa": "e3",
+      "estado": "por-hacer",
+      "dias": 3,
+      "depende": [
+        "t10"
+      ],
+      "notas": "Hoy Versiones solo muestra los últimos 24 cambios y restaura entero (CanvasPane.cs:637, CanvasStore.cs:109-118); no hay vista de diferencias."
+    },
+    {
+      "id": "t12",
+      "titulo": "Que la página viva no tape lo que flota",
+      "etapa": "e3",
+      "estado": "por-hacer",
+      "dias": 2,
+      "notas": "Limitación conocida de WebView2 (DETALLES.md:388-389): menús y avisos quedan debajo de una sección HTML viva."
+    },
+    {
+      "id": "t13",
+      "titulo": "IA: canvas_list por proyecto y canvas_search",
+      "etapa": "e4",
+      "estado": "por-hacer",
+      "dias": 1,
+      "notas": "canvas_list devuelve los de todos los proyectos, sin carpeta (CanvasMcp.cs:224-229). Filtrar por el proyecto de la sesión y buscar por contenido."
+    },
+    {
+      "id": "t14",
+      "titulo": "IA: leer por partes",
+      "etapa": "e4",
+      "estado": "por-hacer",
+      "dias": 1,
+      "notas": "canvas_read devuelve el documento entero (muchos tokens). Un índice de secciones primero y leer una sección o un rango."
+    },
+    {
+      "id": "t15",
+      "titulo": "IA: versiones, diferencias y restaurar",
+      "etapa": "e4",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t9"
+      ],
+      "notas": "canvas_versions, canvas_diff y canvas_restore (hoy solo lo hace la persona)."
+    },
+    {
+      "id": "t16",
+      "titulo": "IA: duplicar, archivar y borrar (con permiso)",
+      "etapa": "e4",
+      "estado": "por-hacer",
+      "dias": 1,
+      "depende": [
+        "t4",
+        "t5"
+      ],
+      "notas": "Borrar pide permiso como canvas_export (fuera de SafeTools, CanvasMcp.cs:25)."
+    },
+    {
+      "id": "t17",
+      "titulo": "IA: plantillas y prompts MCP",
+      "etapa": "e4",
+      "estado": "por-hacer",
+      "dias": 2,
+      "notas": "Prompts MCP para informe, prototipo, comparación y plan; las instrucciones del servidor no mencionan el tipo «plan» (CanvasMcp.cs:30)."
+    },
+    {
+      "id": "t18",
+      "titulo": "Secciones interactivas: preguntas y botones que la IA lee",
+      "etapa": "e4",
+      "estado": "por-hacer",
+      "dias": 3,
+      "depende": [
+        "t10"
+      ],
+      "notas": "Un tipo de sección con opciones o un formulario: la persona responde en el canvas y el agente lee la respuesta (canvas_read o un aviso)."
+    },
+    {
+      "id": "t19",
+      "titulo": "Acciones desde la lista",
+      "etapa": "e5",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t10",
+        "t4"
+      ],
+      "notas": "Menú por canvas: renombrar, duplicar, archivar, fijar, mover de proyecto y borrar."
+    },
+    {
+      "id": "t20",
+      "titulo": "Buscar en el contenido y filtrar",
+      "etapa": "e5",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t10"
+      ],
+      "notas": "Hoy se busca en título, proyecto y autor. Sumar contenido y filtros por tipo de sección y fecha."
+    },
+    {
+      "id": "t21",
+      "titulo": "Deshacer, copiar secciones entre canvas y arrastrar para ordenar",
+      "etapa": "e5",
+      "estado": "por-hacer",
+      "dias": 3,
+      "depende": [
+        "t10"
+      ]
+    },
+    {
+      "id": "t22",
+      "titulo": "Exportar mejor",
+      "etapa": "e5",
+      "estado": "por-hacer",
+      "dias": 2,
+      "notas": "Mermaid sin internet en el HTML exportado (CanvasExport.cs:121); diagramas y HTML como imagen en Word (hoy van como texto)."
+    },
+    {
+      "id": "t23",
+      "titulo": "Probar en la app real y preparar la 2.7.1",
+      "etapa": "e6",
+      "estado": "por-hacer",
+      "dias": 1,
+      "depende": [
+        "t1",
+        "t2",
+        "t3",
+        "t5",
+        "t6",
+        "t7"
+      ],
+      "notas": "Claupet --console --preview, con la bandeja instalada abierta. La 2.7.1 junta fix/menu-modelos, fix/sdk-seguro y feature/canvas-lista en release/2.7.1, con PR a main.",
+      "por": "Claude Code"
+    },
+    {
+      "id": "t24",
+      "titulo": "Release con las mejoras",
+      "etapa": "e6",
+      "estado": "por-hacer",
+      "dias": 1,
+      "depende": [
+        "t3",
+        "t5",
+        "t6",
+        "t7",
+        "t8",
+        "t11",
+        "t13",
+        "t14",
+        "t15",
+        "t16",
+        "t17",
+        "t18",
+        "t19",
+        "t20",
+        "t21",
+        "t22",
+        "t12"
+      ]
+    }
+  ],
+  "hitos": [
+    {
+      "id": "h1",
+      "titulo": "Lista agrupada en main",
+      "depende": [
+        "t23"
+      ]
+    },
+    {
+      "id": "h2",
+      "titulo": "Canvas más potente publicado",
+      "depende": [
+        "t24"
+      ]
+    }
+  ],
+  "claupet": "plan/1"
+}

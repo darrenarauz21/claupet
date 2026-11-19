@@ -404,7 +404,13 @@ sealed partial class CanvasPane
     [
         (CanvasIcons.Trash, L.T("Sí, borrar «{0}»", doc.Title), () =>
         {
-            _store.Delete(doc.Id);
+            // Si otro (un agente) lo tiene ocupado o el archivo no se deja mover, se avisa y no se pierde nada.
+            try { _store.Delete(doc.Id); }
+            catch (Exception ex) when (ex is CanvasException or IOException or UnauthorizedAccessException)
+            {
+                Toast(ex is CanvasException ? ex.Message : L.T("No se pudo borrar: {0}", ex.Message), CanvasIcons.Warn);
+                return;
+            }
             CancelEditing();
             LeavePast();
             Reload();
@@ -412,8 +418,30 @@ sealed partial class CanvasPane
             _seen.Clear();
             Render();
             ListChanged?.Invoke();
+            var id = doc.Id;
+            Toast(L.T("«{0}» va a la papelera", doc.Title), CanvasIcons.Trash, (L.T("Deshacer"), () => Undelete(id)));
         }, true),
     ]);
+
+    /// <summary>Devuelve el canvas que se acaba de borrar (con su historial) y lo muestra.</summary>
+    void Undelete(string id)
+    {
+        try
+        {
+            if (!_store.Undelete(id))
+            {
+                Toast(L.T("Ya no se puede deshacer"), CanvasIcons.Warn);
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is CanvasException or IOException or UnauthorizedAccessException)
+        {
+            Toast(ex is CanvasException ? ex.Message : L.T("No se pudo deshacer: {0}", ex.Message), CanvasIcons.Warn);
+            return;
+        }
+        Show(id);
+        Toast(L.T("Canvas recuperado"), CanvasIcons.Undo);
+    }
 
     // ── Ctrl+K ──────────────────────────────────────────────────────────────────────────
 

@@ -85,6 +85,7 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
     }
 
     public string Name => "Codex";
+    public string CanvasKey { get; } = CanvasAgentModel.NewKey();
     public IReadOnlyList<string> Models => [.. _models.Select(m => m.Id)];
     public IReadOnlyList<string> Modes => CodexModes;
 
@@ -115,7 +116,7 @@ sealed class CodexDriver(AgentTranscript transcript) : IAgentDriver
         // Codex no mira el proxy de Windows, solo HTTPS_PROXY.
         SystemProxy.AddTo(start.Environment);
         // Claupet Canvas (MCP), con «-c» antes del subcomando: así no se toca el config.toml de la persona.
-        foreach (var arg in CanvasMcp.CodexArguments(options.Folder, options.Specialist)) start.ArgumentList.Add(arg);
+        foreach (var arg in CanvasMcp.CodexArguments(options.Folder, options.Specialist, CanvasKey)) start.ArgumentList.Add(arg);
         start.ArgumentList.Add("app-server");
         return start;
     }
