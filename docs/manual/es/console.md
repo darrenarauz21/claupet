@@ -102,6 +102,11 @@ CLI y Copilot reciben Claupet Canvas al abrirse (es un servidor MCP), con el mod
 Console y se actualiza mientras el agente lo edita; lo que acaba de cambiar se marca un momento. El agente no reescribe
 todo: cambia el pedazo que hace falta, así que puede seguir escribiendo usted en otra sección.
 
+**La lista.** Los canvas se agrupan por el proyecto (la carpeta) en que se hicieron, como las sesiones de la Terminal:
+primero el que tiene el canvas más reciente y, al final, los que no son de ningún proyecto. El título de cada proyecto se
+pliega al tocarlo. Cada canvas muestra un punto de color y el nombre de cada uno que trabajó en él (los agentes primero y
+usted al final) y hace cuánto cambió. **Buscar** encuentra por título, por proyecto o por quién trabajó.
+
 **Comentarios.** El botón de comentario de cada sección deja una nota (para la IA o para usted). Los agentes los leen,
 los responden y los marcan como resueltos.
 

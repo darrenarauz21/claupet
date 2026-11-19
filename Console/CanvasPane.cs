@@ -743,15 +743,73 @@ sealed partial class CanvasPane : Grid
         var filter = _search.Text?.Trim() ?? "";
         var i = 0;
         var shown = new HashSet<string>();
-        foreach (var summary in _list.Where(s => filter.Length == 0 || s.Title.Contains(filter, StringComparison.CurrentCultureIgnoreCase)))
+        // Por proyecto, como las sesiones de la Terminal: primero el del canvas más reciente (la lista ya viene así) y los
+        // que no son de ningún proyecto, al final. Con un solo grupo sin proyecto no hace falta título.
+        var groups = _list.Where(s => Matches(s, filter)).GroupBy(s => s.Project ?? "", PathComparer)
+            .OrderBy(g => g.Key.Length == 0 ? 1 : 0).ToList();
+        var headed = groups.Count > 1 || groups is [{ Key.Length: > 0 }];
+        foreach (var group in groups)
         {
-            var row = ListRow(summary);
-            if (!_listIds.Contains(summary.Id)) Enter(row, i++ * 30, distance: 6);
-            shown.Add(summary.Id);
-            _listView.Children.Add(row);
+            // Al buscar se ve todo lo que coincide, aunque su grupo esté plegado.
+            var folded = filter.Length == 0 && _folded.Contains(group.Key);
+            if (headed) _listView.Children.Add(GroupHead(group.Key, group.Count(), folded));
+            if (folded) continue;
+            foreach (var summary in group)
+            {
+                var row = ListRow(summary);
+                if (!_listIds.Contains(summary.Id)) Enter(row, i++ * 30, distance: 6);
+                shown.Add(summary.Id);
+                _listView.Children.Add(row);
+            }
         }
         _listIds.Clear();
         _listIds.UnionWith(shown);
+    }
+
+    static readonly StringComparer PathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    /// <summary>Los proyectos plegados en la lista (su carpeta; «» el grupo de los que no son de ninguno).</summary>
+    readonly HashSet<string> _folded = new(PathComparer);
+
+    /// <summary>El nombre de un proyecto en la lista: el de su carpeta; sin proyecto, «Sin proyecto».</summary>
+    static string ProjectName(string? project) => project is not { Length: > 0 } ? L.T("Sin proyecto")
+        : Path.GetFileName(Path.TrimEndingDirectorySeparator(project)) is { Length: > 0 } name ? name : project;
+
+    /// <summary>Lo buscado está en el título, en el nombre del proyecto o en quién trabajó en el canvas.</summary>
+    static bool Matches(CanvasSummary s, string filter) =>
+        filter.Length == 0
+        || s.Title.Contains(filter, StringComparison.CurrentCultureIgnoreCase)
+        || ProjectName(s.Project).Contains(filter, StringComparison.CurrentCultureIgnoreCase)
+        || s.AuthorList.Any(a => CanvasJson.AuthorLabel(a).Contains(filter, StringComparison.CurrentCultureIgnoreCase));
+
+    /// <summary>El título de un proyecto: la flecha, su nombre (la carpeta, en el tooltip) y cuántos canvas tiene; se pliega al tocarlo.</summary>
+    Border GroupHead(string project, int count, bool folded)
+    {
+        var name = ProjectName(project);
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Height = 26 };
+        var chevron = Glyph(folded ? CanvasIcons.Folded : CanvasIcons.Unfolded, _ink.Tertiary, 10, 2);
+        chevron.Margin = new Thickness(0, 0, 7, 0);
+        row.Children.Add(chevron);
+        var label = Ui.Text(name, 12, _ink.Secondary, FontWeight.SemiBold);
+        label.TextTrimming = TextTrimming.CharacterEllipsis;
+        label.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(label, 1);
+        row.Children.Add(label);
+        var number = Ui.Text(count.ToString(), 11.5, _ink.Tertiary);
+        number.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(number, 2);
+        row.Children.Add(number);
+        var head = Ui.Press(row, () =>
+        {
+            if (!_folded.Add(project)) _folded.Remove(project);
+            RenderList(force: true);
+        }, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, folded ? L.T("Mostrar {0}", name) : L.T("Plegar {0}", name));
+        head.Padding = new Thickness(8, 0);
+        head.CornerRadius = new CornerRadius(8);
+        // El primero va pegado a la búsqueda; los demás, separados del grupo de arriba.
+        head.Margin = new Thickness(0, _listView.Children.Count > 1 ? 8 : 0, 0, 2);
+        if (project.Length > 0) ToolTip.SetTip(head, project);
+        return head;
     }
 
     Border ListRow(CanvasSummary summary)
@@ -771,13 +829,7 @@ sealed partial class CanvasPane : Grid
         grid.Children.Add(sheet);
         var text = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(Ui.Text(summary.Title, 14, _ink.Text, FontWeight.Medium));
-        var meta = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
-        var live = summary.LastAuthor is { } a && a != CanvasJson.User && DateTimeOffset.Now - summary.Updated < TimeSpan.FromSeconds(30);
-        var dot = new Border { Width = 7, Height = 7, CornerRadius = new CornerRadius(4), Background = AuthorColor(summary.LastAuthor), VerticalAlignment = VerticalAlignment.Center };
-        if (live) Pulse(dot, AuthorColor(summary.LastAuthor));
-        meta.Children.Add(dot);
-        meta.Children.Add(Ui.Text(CanvasJson.AuthorLabel(summary.LastAuthor) + " · " + Format.Ago(summary.Updated), 12, _ink.Tertiary));
-        text.Children.Add(meta);
+        text.Children.Add(Authors(summary));
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
         var id = summary.Id;
@@ -786,6 +838,48 @@ sealed partial class CanvasPane : Grid
         row.CornerRadius = new CornerRadius(12);
         if (current) row.Background = _ink.Pill;
         return row;
+    }
+
+    /// <summary>
+    /// Quiénes trabajaron en el canvas, no solo el último: un punto de su color por cada uno (los agentes del más reciente
+    /// al más viejo, usted al final), sus nombres y hace cuánto. El de quien acaba de editar late.
+    /// </summary>
+    internal static IReadOnlyList<string> AuthorsOf(CanvasSummary summary)
+    {
+        var all = summary.AuthorList.Count > 0 ? summary.AuthorList : [summary.LastAuthor ?? CanvasJson.User];
+        return [.. all.Where(a => a != CanvasJson.User), .. all.Where(a => a == CanvasJson.User)];
+    }
+
+    Control Authors(CanvasSummary summary)
+    {
+        var authors = AuthorsOf(summary);
+        // Los nombres se recortan con «…» si no caben; hace cuánto va justo después y siempre se ve.
+        var meta = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,*") };
+        var dots = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, Margin = new Thickness(0, 0, 5, 0), VerticalAlignment = VerticalAlignment.Center };
+        var live = summary.LastAuthor is { } last && last != CanvasJson.User && DateTimeOffset.Now - summary.Updated < TimeSpan.FromSeconds(30);
+        foreach (var author in authors)
+        {
+            var dot = new Border { Width = 7, Height = 7, CornerRadius = new CornerRadius(4), Background = AuthorColor(author), VerticalAlignment = VerticalAlignment.Center };
+            if (live && author == summary.LastAuthor) Pulse(dot, AuthorColor(author));
+            dots.Children.Add(dot);
+        }
+        meta.Children.Add(dots);
+        var names = Ui.Text(string.Join(", ", authors.Select(CanvasJson.AuthorLabel)), 12, _ink.Tertiary);
+        names.TextTrimming = TextTrimming.CharacterEllipsis;
+        names.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(names, 1);
+        meta.Children.Add(names);
+        var when = Ui.Text(" · " + Format.Ago(summary.Updated), 12, _ink.Tertiary);
+        when.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(when, 2);
+        meta.Children.Add(when);
+        meta.SizeChanged += (_, e) =>
+        {
+            when.Measure(Size.Infinity);
+            names.MaxWidth = Math.Max(0, e.NewSize.Width - dots.Bounds.Width - dots.Margin.Right - when.DesiredSize.Width);
+        };
+        ToolTip.SetTip(meta, L.T("Trabajaron en él: {0}", string.Join(", ", authors.Select(CanvasJson.AuthorLabel))));
+        return meta;
     }
 
     // ── Exportar, vista previa, configuración ───────────────────────────────────────────

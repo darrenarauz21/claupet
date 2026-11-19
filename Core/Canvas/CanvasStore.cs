@@ -4,8 +4,24 @@ using System.Text.Json;
 
 namespace Claupet;
 
-/// <summary>Lo que se muestra de un canvas en la lista, sin cargar su contenido.</summary>
-sealed record CanvasSummary(string Id, string Title, DateTimeOffset Updated, int Version, int Sections, string? LastAuthor, string? Plan = null);
+/// <summary>
+/// Lo que se muestra de un canvas en la lista, sin cargar su contenido. Project: la carpeta del proyecto con que se hizo
+/// (la del repositorio principal si fue en un worktree de sesión), o null. Authors: quiénes trabajaron en él, del más
+/// reciente al más viejo, en un solo texto (una línea cada uno) para que dos resúmenes iguales sigan siendo iguales.
+/// </summary>
+sealed record CanvasSummary(string Id, string Title, DateTimeOffset Updated, int Version, int Sections, string? LastAuthor, string? Plan = null,
+    string? Project = null, string Authors = "")
+{
+    public IReadOnlyList<string> AuthorList => Authors.Length == 0 ? [] : Authors.Split('\n');
+
+    /// <summary>Del documento: los autores de sus cambios (del último al primero) y los de sus secciones, sin repetir.</summary>
+    public static CanvasSummary Of(CanvasDoc doc) => new(doc.Id, doc.Title, doc.Updated, doc.Version, doc.Sections.Count,
+        doc.Changes.LastOrDefault()?.Author, doc.Plan,
+        doc.Folder is { Length: > 0 } folder ? Path.TrimEndingDirectorySeparator(SessionWorktrees.ProjectOf(folder)) : null,
+        string.Join('\n', doc.Changes.AsEnumerable().Reverse().Select(c => c.Author)
+            .Concat(doc.Sections.OrderByDescending(s => s.Updated).Select(s => s.Author))
+            .Select(a => a ?? CanvasJson.User).Distinct()));
+}
 
 /// <summary>
 /// Los canvas en disco: «Canvas\&lt;id&gt;.json» en la carpeta de datos de Claupet, y en «Canvas\historial\&lt;id&gt;\» una copia
@@ -53,7 +69,7 @@ sealed class CanvasStore(string root)
                     continue;
                 }
                 if (Read(info.FullName) is not { } doc) continue; // a medio escribir o dañado: no se guarda, se lee la próxima vez
-                var summary = new CanvasSummary(doc.Id, doc.Title, doc.Updated, doc.Version, doc.Sections.Count, doc.Changes.LastOrDefault()?.Author, doc.Plan);
+                var summary = CanvasSummary.Of(doc);
                 _summaries[info.FullName] = (info.LastWriteTimeUtc, info.Length, summary);
                 list.Add(summary);
             }

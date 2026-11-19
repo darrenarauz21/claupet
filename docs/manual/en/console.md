@@ -102,6 +102,11 @@ Copilot get Claupet Canvas when they start (it's an MCP server), whatever model 
 Console and updates while the agent edits it; what just changed is highlighted for a moment. The agent doesn't rewrite
 everything: it changes the piece it needs, so you can keep writing in another section.
 
+**The list.** Canvases are grouped by the project (the folder) they were made in, like the Terminal's sessions: first
+the one with the most recent canvas and, at the end, those that belong to no project. Tap a project's title to fold it.
+Each canvas shows a colored dot and the name of everyone who worked on it (agents first, you last) and how long ago it
+changed. **Search** finds by title, by project or by who worked on it.
+
 **Comments.** Each section's comment button leaves a note (for the AI or for yourself). Agents read them, reply and mark
 them resolved.
 

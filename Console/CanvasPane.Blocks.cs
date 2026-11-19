@@ -56,6 +56,9 @@ static class CanvasIcons
     public const string Down = "M12,5 V19 M6,13 L12,19 L18,13";
     public const string Link = "M10,14 A4,4 0 0 0 15.7,14 L18.5,11.2 A4,4 0 0 0 12.8,5.5 L11.5,6.8 M14,10 A4,4 0 0 0 8.3,10 L5.5,12.8 A4,4 0 0 0 11.2,18.5 L12.5,17.2";
     public const string Folder = "M3.5,7 A1.5,1.5 0 0 1 5,5.5 H9.5 L11.5,7.5 H19 A1.5,1.5 0 0 1 20.5,9 V17.5 A1.5,1.5 0 0 1 19,19 H5 A1.5,1.5 0 0 1 3.5,17.5 Z";
+    /// <summary>La flecha de un grupo de la lista: abierto (hacia abajo) y plegado (hacia la derecha).</summary>
+    public const string Unfolded = "M6,9 L12,15 L18,9";
+    public const string Folded = "M9,6 L15,12 L9,18";
     public const string Warn = "M12,4 L21,19.5 H3 Z M12,10 V14 M12,17 H12.01";
     /// <summary>Una hoja con la esquina doblada y una línea gruesa (PDF).</summary>
     public const string Pdf = "M14,3 H6.5 V21 H17.5 V6.5 Z M14,3 V6.5 H17.5 M9,12 H15 M9,15.5 H13";
