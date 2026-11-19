@@ -291,8 +291,9 @@ sealed partial class TerminalPane
         }
         claudeOnly.Children.Add(MenuLabel(L.T("Modelo y esfuerzo")));
         var models = MenuChips();
-        // Los de siempre; las variantes (opus[1m], sonnet[1m], opusplan) se eligen en la sesión, con su etiqueta.
-        string[] main = ["", "haiku", "sonnet", "opus", "fable"];
+        // Los alias de Claude Code y lo más nuevo que todavía no tiene alias (ClaudeModels); los anteriores y opusplan se
+        // eligen en la sesión, con su etiqueta.
+        string[] main = ["", .. ClaudeModels.Featured(ClaudeModels.Known)];
         foreach (var m in model is { Length: > 0 } last && !main.Contains(last) ? [.. main, last] : main)
         {
             var value = m.Length == 0 ? null : m;

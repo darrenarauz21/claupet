@@ -26,7 +26,8 @@ static class Launcher
     /// <summary>Asesor apagado: --advisor no lo acepta, se apaga con CLAUDE_CODE_DISABLE_ADVISOR_TOOL.</summary>
     public const string NoAdvisor = "none";
 
-    public static readonly string[] Models = ["opus", "opus[1m]", "sonnet", "sonnet[1m]", "fable", "haiku", "opusplan"];
+    /// <summary>Los que ofrece Claude Code (los últimos que dijo; ver ClaudeModels) y opusplan.</summary>
+    public static IReadOnlyList<string> Models => ClaudeModels.Choices(ClaudeModels.Known);
     public static readonly string[] Efforts = ["low", "medium", "high", "xhigh", "max"];
     public static readonly string[] Advisors = ["opus", "sonnet", "fable"];
 

@@ -58,27 +58,18 @@ static class Format
     }
 
     /// <summary>
-    /// A qué modelo apunta hoy cada alias de Claude Code. Al salir una versión nueva, se cambia solo aquí.
-    /// </summary>
-    static readonly Dictionary<string, string> Aliases = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["opus"] = "claude-opus-5-5",
-        ["sonnet"] = "claude-sonnet-5-5",
-        ["haiku"] = "claude-haiku-5-5",
-        ["fable"] = "claude-fable-5-1",
-    };
-
-    /// <summary>
-    /// Lo que se elige (alias o ID) con su nombre de verdad: «opus» → «Opus 5.5», «sonnet[1m]» → «Sonnet 5.5 (1M)»,
-    /// «opusplan» → «Opus 5.5 + Sonnet 5.5 (plan)», «claude-opus-5-5» → «Opus 5.5». Lo que no se reconoce queda igual.
+    /// Lo que se elige (alias o ID) con su nombre de verdad, el que le da Claude Code (ClaudeModels): «opus» → «Opus 5.5»,
+    /// «opusplan» → «Opus 5.5 + Sonnet 5.5 (plan)», «claude-opus-5-5» → «Opus 5.5». Los «[1m]» de sesiones de antes siguen
+    /// con su nombre: «sonnet[1m]» → «Sonnet 5.5 (1M)». Lo que no se reconoce queda igual.
     /// </summary>
     public static string ModelChoice(string choice)
     {
-        if (choice.Equals("opusplan", StringComparison.OrdinalIgnoreCase))
-            return $"{Model(Aliases["opus"])} + {Model(Aliases["sonnet"])} (plan)";
-        var oneMillion = choice.EndsWith("[1m]", StringComparison.OrdinalIgnoreCase);
-        var bare = oneMillion ? choice[..^4] : choice;
-        if (Aliases.TryGetValue(bare, out var id)) return Model(oneMillion ? id + "[1m]" : id);
+        if (ClaudeModels.Label(choice) is { } label) return label;
+        if (choice.Equals(ClaudeModels.OpusPlan, StringComparison.OrdinalIgnoreCase)
+            && ClaudeModels.Resolve("opus") is { } opus && ClaudeModels.Resolve("sonnet") is { } sonnet)
+            return $"{Model(opus)} + {Model(sonnet)} (plan)";
+        if (choice.EndsWith("[1m]", StringComparison.OrdinalIgnoreCase) && ClaudeModels.Resolve(choice[..^4]) is { } id)
+            return Model(id + "[1m]");
         // Los de otros agentes (Codex, ACP) se muestran tal cual.
         return choice.StartsWith("claude-", StringComparison.OrdinalIgnoreCase) ? Model(choice) : choice;
     }

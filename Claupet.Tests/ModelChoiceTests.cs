@@ -8,6 +8,7 @@ public class ModelChoiceTests
     [InlineData("sonnet", "Sonnet 5.5")]
     [InlineData("sonnet[1m]", "Sonnet 5.5 (1M)")]
     [InlineData("fable", "Fable 5.1")]
+    [InlineData("claude-fable-5-2", "Fable 5.2")]
     [InlineData("haiku", "Haiku 5.5")]
     [InlineData("opusplan", "Opus 5.5 + Sonnet 5.5 (plan)")]
     [InlineData("claude-opus-5-5", "Opus 5.5")]
