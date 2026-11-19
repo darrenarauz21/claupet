@@ -45,6 +45,12 @@ sealed partial class CanvasPane : Grid
     readonly Border _viewing = new();
     readonly Border _toast = new();
     readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(1.8) };
+    /// <summary>
+    /// Los «hace cuánto» de la lista, con su fecha y cómo reacomodar su fila: se rehacen solos mientras la lista se ve (antes
+    /// quedaban viejos hasta el siguiente cambio).
+    /// </summary>
+    readonly List<(TextBlock Label, DateTimeOffset Updated, Action Fit)> _agoLabels = [];
+    readonly DispatcherTimer _agoTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     readonly TextBox _search = new();
     readonly StackPanel _listView = new() { Spacing = 2 };
     Ink _ink = Ink.For(false);
@@ -108,6 +114,9 @@ sealed partial class CanvasPane : Grid
         _busyTimer.Tick += (_, _) => Rest();
         _bumpTimer.Tick += (_, _) => { _bumpTimer.Stop(); if (_versionPill is not null) _versionPill.RenderTransform = TransformOperations.Parse("scale(1)"); };
         _search.TextChanged += (_, _) => RenderList();
+        _agoTimer.Tick += (_, _) => RefreshAgo();
+        _listView.AttachedToVisualTree += (_, _) => _agoTimer.Start();
+        _listView.DetachedFromVisualTree += (_, _) => _agoTimer.Stop();
         // Al volver a Canvas, el avance del plan ligado puede ser otro.
         AttachedToVisualTree += (_, _) => _bar.Child = Bar();
         _bar.SizeChanged += (_, _) => FitPlanChip();
@@ -296,6 +305,7 @@ sealed partial class CanvasPane : Grid
         _glowTimer.Stop();
         _busyTimer.Stop();
         _toastTimer.Stop();
+        _agoTimer.Stop();
         _bumpTimer.Stop();
         _chatTimer.Stop();
         Watch(null);
@@ -529,7 +539,7 @@ sealed partial class CanvasPane : Grid
             RenderTransformOrigin = RelativePoint.Center,
             Child = Ui.Text("v" + doc.Version, 11.5, _ink.Tertiary),
         };
-        ToolTip.SetTip(_versionPill, doc.Changes.LastOrDefault() is { } last ? $"{CanvasJson.AuthorLabel(last.Author)} · {last.Summary} · {Format.Ago(last.Time)}" : null);
+        ToolTip.SetTip(_versionPill, doc.Changes.LastOrDefault() is { } last ? $"{CanvasJson.AuthorLabel(last.Author, last.Model)} · {last.Summary} · {Format.Ago(last.Time)}" : null);
         left.Children.Add(_versionPill);
         Grid.SetColumn(left, 1);
         bar.Children.Add(left);
@@ -650,7 +660,7 @@ sealed partial class CanvasPane : Grid
                 Cursor = new Cursor(StandardCursorType.Hand),
                 Opacity = version == doc.Version || available.Contains(version) ? 1 : 0.35,
             };
-            ToolTip.SetTip(dot, $"v{version} · {CanvasJson.AuthorLabel(change.Author)} · {change.Summary} · {Format.Ago(change.Time)}");
+            ToolTip.SetTip(dot, $"v{version} · {CanvasJson.AuthorLabel(change.Author, change.Model)} · {change.Summary} · {Format.Ago(change.Time)}");
             dot.PointerEntered += (_, _) => dot.RenderTransform = TransformOperations.Parse("scale(1.35)");
             dot.PointerExited += (_, _) => dot.RenderTransform = TransformOperations.Parse(current ? "scale(1.3)" : "scale(1)");
             dot.PointerPressed += (_, e) =>
@@ -724,6 +734,7 @@ sealed partial class CanvasPane : Grid
             return;
         _listState = state;
         _listView.Children.Clear();
+        _agoLabels.Clear();
         _search.Watermark = L.T("Buscar");
         Plain(_search);
         _search.Background = _ink.Pill;
@@ -775,12 +786,13 @@ sealed partial class CanvasPane : Grid
     static string ProjectName(string? project) => project is not { Length: > 0 } ? L.T("Sin proyecto")
         : Path.GetFileName(Path.TrimEndingDirectorySeparator(project)) is { Length: > 0 } name ? name : project;
 
-    /// <summary>Lo buscado está en el título, en el nombre del proyecto o en quién trabajó en el canvas.</summary>
+    /// <summary>Lo buscado está en el título, en el nombre del proyecto o en quién trabajó en el canvas (el agente o el modelo).</summary>
     static bool Matches(CanvasSummary s, string filter) =>
         filter.Length == 0
         || s.Title.Contains(filter, StringComparison.CurrentCultureIgnoreCase)
         || ProjectName(s.Project).Contains(filter, StringComparison.CurrentCultureIgnoreCase)
-        || s.AuthorList.Any(a => CanvasJson.AuthorLabel(a).Contains(filter, StringComparison.CurrentCultureIgnoreCase));
+        || s.Entries.Any(e => CanvasJson.AuthorLabel(e.Author).Contains(filter, StringComparison.CurrentCultureIgnoreCase)
+            || e.Model is { } model && CanvasJson.ModelLabel(model).Contains(filter, StringComparison.CurrentCultureIgnoreCase));
 
     /// <summary>El título de un proyecto: la flecha, su nombre (la carpeta, en el tooltip) y cuántos canvas tiene; se pliega al tocarlo.</summary>
     Border GroupHead(string project, int count, bool folded)
@@ -842,13 +854,26 @@ sealed partial class CanvasPane : Grid
 
     /// <summary>
     /// Quiénes trabajaron en el canvas, no solo el último: un punto de su color por cada uno (los agentes del más reciente
-    /// al más viejo, usted al final), sus nombres y hace cuánto. El de quien acaba de editar late.
+    /// al más viejo, usted al final), sus modelos (o su nombre, si no se saben) y hace cuánto. El de quien acaba de editar late.
     /// </summary>
     internal static IReadOnlyList<string> AuthorsOf(CanvasSummary summary)
     {
         var all = summary.AuthorList.Count > 0 ? summary.AuthorList : [summary.LastAuthor ?? CanvasJson.User];
         return [.. all.Where(a => a != CanvasJson.User), .. all.Where(a => a == CanvasJson.User)];
     }
+
+    /// <summary>
+    /// Cómo se nombra a cada uno en la fila: por los modelos con que trabajó, juntos («Opus 5.5, Fable 5.2»); si no se
+    /// saben (cambios de antes, otras apps), por el agente («Claude Code»); la persona, «Usted».
+    /// </summary>
+    internal static string WhoLabel(CanvasSummary summary, string author) =>
+        summary.ModelsOf(author) is { Count: > 0 } models
+            ? string.Join(", ", models.Select(CanvasJson.ModelLabel).Distinct())
+            : CanvasJson.AuthorLabel(author);
+
+    /// <summary>Lo del tooltip: una línea por agente con sus modelos («Claude Code: Opus 5.5, Fable 5.2») y «Usted».</summary>
+    internal static string WhoDetail(CanvasSummary summary, string author) =>
+        summary.ModelsOf(author) is { Count: > 0 } ? $"{CanvasJson.AuthorLabel(author)}: {WhoLabel(summary, author)}" : CanvasJson.AuthorLabel(author);
 
     Control Authors(CanvasSummary summary)
     {
@@ -864,7 +889,7 @@ sealed partial class CanvasPane : Grid
             dots.Children.Add(dot);
         }
         meta.Children.Add(dots);
-        var names = Ui.Text(string.Join(", ", authors.Select(CanvasJson.AuthorLabel)), 12, _ink.Tertiary);
+        var names = Ui.Text(string.Join(", ", authors.Select(a => WhoLabel(summary, a))), 12, _ink.Tertiary);
         names.TextTrimming = TextTrimming.CharacterEllipsis;
         names.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(names, 1);
@@ -873,13 +898,27 @@ sealed partial class CanvasPane : Grid
         when.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(when, 2);
         meta.Children.Add(when);
-        meta.SizeChanged += (_, e) =>
+        void Fit()
         {
             when.Measure(Size.Infinity);
-            names.MaxWidth = Math.Max(0, e.NewSize.Width - dots.Bounds.Width - dots.Margin.Right - when.DesiredSize.Width);
-        };
-        ToolTip.SetTip(meta, L.T("Trabajaron en él: {0}", string.Join(", ", authors.Select(CanvasJson.AuthorLabel))));
+            names.MaxWidth = Math.Max(0, meta.Bounds.Width - dots.Bounds.Width - dots.Margin.Right - when.DesiredSize.Width);
+        }
+        meta.SizeChanged += (_, _) => Fit();
+        _agoLabels.Add((when, summary.Updated, Fit));
+        ToolTip.SetTip(meta, L.T("Trabajaron en él:") + "\n" + string.Join("\n", authors.Select(a => WhoDetail(summary, a))));
         return meta;
+    }
+
+    /// <summary>Vuelve a escribir los «hace cuánto» de la lista (y reacomoda los nombres si la hora cambió de largo).</summary>
+    void RefreshAgo()
+    {
+        foreach (var (label, updated, fit) in _agoLabels)
+        {
+            var text = " · " + Format.Ago(updated);
+            if (label.Text == text) continue;
+            label.Text = text;
+            fit();
+        }
     }
 
     // ── Exportar, vista previa, configuración ───────────────────────────────────────────
@@ -948,18 +987,36 @@ sealed partial class CanvasPane : Grid
 
     // ── Avisos ──────────────────────────────────────────────────────────────────────────
 
-    void Toast(string text, string icon)
+    /// <summary>Un aviso abajo, un momento. Con action lleva un botón (Deshacer) y dura más, para alcanzar a tocarlo.</summary>
+    void Toast(string text, string icon, (string Label, Action Run)? action = null)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         row.Children.Add(Glyph(icon, _ink.Window, 14));
-        row.Children.Add(Ui.Text(text, 13, _ink.Window));
+        var message = Ui.Text(text, 13, _ink.Window);
+        message.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(message);
+        if (action is { } act)
+        {
+            var label = Ui.Text(act.Label, 13, _ink.Window, FontWeight.SemiBold);
+            label.TextDecorations = TextDecorations.Underline;
+            var button = Ui.Press(label, () =>
+            {
+                _toastTimer.Stop();
+                ShowOverlay(_toast, false);
+                act.Run();
+            }, (b, on) => b.Opacity = on ? 0.8 : 1, act.Label);
+            button.Padding = new Thickness(6, 0, 0, 0);
+            button.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(button);
+        }
         _toast.Child = new Border { Background = _ink.Text, CornerRadius = new CornerRadius(999), Padding = new Thickness(14, 8), Child = row, MaxWidth = 520 };
         _toast.HorizontalAlignment = HorizontalAlignment.Center;
         _toast.VerticalAlignment = VerticalAlignment.Bottom;
         _toast.Margin = new Thickness(0, 0, 0, _history ? 74 : 22);
-        _toast.IsHitTestVisible = false;
+        _toast.IsHitTestVisible = action is not null;
         ShowOverlay(_toast, true);
         _toastTimer.Stop();
+        _toastTimer.Interval = TimeSpan.FromSeconds(action is null ? 1.8 : 7);
         _toastTimer.Start();
     }
 

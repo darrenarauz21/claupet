@@ -965,11 +965,26 @@ sealed class TerminalAgent : IDisposable
             foreach (var block in _driver.Apply(line, replies))
                 if (!changed.Contains(block)) changed.Add(block);
         Write(replies);
+        NoteModel();
         foreach (var permission in changed.Where(b => b.Kind == AgentBlockKind.Permission && b.Answer is null)) CheckRisky(permission);
         if (AskIsland)
             foreach (var permission in changed.Where(b => b.Kind == AgentBlockKind.Permission && b.Answer is null && !_island.ContainsKey(b)))
                 _ = AskIslandAsync(permission);
         Changed?.Invoke(changed);
+    }
+
+    /// <summary>El último modelo que se le anotó a Claupet Canvas para esta sesión.</summary>
+    string? _modelNoted;
+
+    /// <summary>
+    /// Si cambió el modelo de la sesión (al abrir, con /model o al elegir otro en el menú), se le anota a Claupet Canvas:
+    /// así cada cambio que hace este agente en un canvas lleva el modelo con que lo hizo.
+    /// </summary>
+    void NoteModel()
+    {
+        if (Transcript.Model is not { Length: > 0 } model || model == _modelNoted) return;
+        _modelNoted = model;
+        CanvasAgentModel.Write(_driver.CanvasKey, model);
     }
 
     /// <summary>Detiene el proceso (y lo que abrió); la pestaña queda, con el aviso de que la sesión terminó.</summary>
@@ -1001,6 +1016,7 @@ sealed class TerminalAgent : IDisposable
     public void Dispose()
     {
         Unregister();
+        if (_modelNoted is not null) CanvasAgentModel.Forget(_driver.CanvasKey);
         foreach (var permission in _island.Keys.ToList()) StopIsland(permission);
         var process = _process;
         _process = null;

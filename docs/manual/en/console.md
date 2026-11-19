@@ -100,12 +100,19 @@ Live documents you and any AI edit together, canvas style. A canvas is a list of
 **With agents.** Ask an agent in the [Terminal](terminal.md) to "do it in a canvas": Claude Code, Codex, Gemini CLI and
 Copilot get Claupet Canvas when they start (it's an MCP server), whatever model they use. The canvas shows up in the
 Console and updates while the agent edits it; what just changed is highlighted for a moment. The agent doesn't rewrite
-everything: it changes the piece it needs, so you can keep writing in another section.
+everything: it changes the piece it needs, so you can keep writing in another section. What you ask from the canvas
+(Ctrl+J or the design desk's chat) goes to a session of the canvas's project, never to another project's; if there is
+none, one opens in its folder.
 
 **The list.** Canvases are grouped by the project (the folder) they were made in, like the Terminal's sessions: first
 the one with the most recent canvas and, at the end, those that belong to no project. Tap a project's title to fold it.
-Each canvas shows a colored dot and the name of everyone who worked on it (agents first, you last) and how long ago it
-changed. **Search** finds by title, by project or by who worked on it.
+Each canvas shows a colored dot for each agent that worked on it and the models it used, together (for example, "Opus
+5.5, Fable 5.2"; changes made before 2.7.1 didn't record the model and show the agent), you last, and how long ago it
+changed, which updates on its own. Hover to see each agent with its models; versions and sections also say which model
+made them. **Search** finds by title, by project, by agent or by model.
+
+**Delete.** A deleted canvas goes to the trash: **Undo**, in the notice, brings it back with its whole history. After 30
+days it's deleted for good.
 
 **Comments.** Each section's comment button leaves a note (for the AI or for yourself). Agents read them, reply and mark
 them resolved.

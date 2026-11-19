@@ -100,12 +100,20 @@ cada una con su tipo:
 **Con los agentes.** Pídale a un agente de la [Terminal](terminal.md) «hazlo en un canvas»: Claude Code, Codex, Gemini
 CLI y Copilot reciben Claupet Canvas al abrirse (es un servidor MCP), con el modelo que usen. El canvas aparece en la
 Console y se actualiza mientras el agente lo edita; lo que acaba de cambiar se marca un momento. El agente no reescribe
-todo: cambia el pedazo que hace falta, así que puede seguir escribiendo usted en otra sección.
+todo: cambia el pedazo que hace falta, así que puede seguir escribiendo usted en otra sección. Lo que usted le pide desde
+el canvas (Ctrl+J o el chat de la mesa de diseño) va a una sesión del proyecto del canvas, nunca a la de otro; si no hay
+ninguna, se abre una en su carpeta.
 
 **La lista.** Los canvas se agrupan por el proyecto (la carpeta) en que se hicieron, como las sesiones de la Terminal:
 primero el que tiene el canvas más reciente y, al final, los que no son de ningún proyecto. El título de cada proyecto se
-pliega al tocarlo. Cada canvas muestra un punto de color y el nombre de cada uno que trabajó en él (los agentes primero y
-usted al final) y hace cuánto cambió. **Buscar** encuentra por título, por proyecto o por quién trabajó.
+pliega al tocarlo. Cada canvas muestra un punto de color por cada agente que trabajó en él y los modelos con que lo hizo,
+juntos (por ejemplo, «Opus 5.5, Fable 5.2»; los cambios hechos antes de la 2.7.1 no guardaban el modelo y muestran el
+agente), usted al final, y hace cuánto cambió, que se actualiza solo. Al pasar el mouse se ve cada agente con sus modelos;
+las versiones y las secciones también dicen con qué modelo se hicieron. **Buscar** encuentra por título, por proyecto, por
+agente o por modelo.
+
+**Borrar.** Un canvas borrado va a la papelera: **Deshacer**, en el aviso, lo devuelve con todo su historial. Pasados 30
+días se borra del todo.
 
 **Comentarios.** El botón de comentario de cada sección deja una nota (para la IA o para usted). Los agentes los leen,
 los responden y los marcan como resueltos.

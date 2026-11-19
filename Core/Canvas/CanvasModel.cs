@@ -57,6 +57,8 @@ sealed class CanvasSection
     public string Content { get; set; } = "";
     /// <summary>Quién la cambió por última vez («user» es la persona; si no, el agente: «Claude Code», «Codex»…).</summary>
     public string? Author { get; set; }
+    /// <summary>El modelo con que la cambió el agente («claude-opus-5-5»), si se sabe; null si fue la persona.</summary>
+    public string? Model { get; set; }
     public DateTimeOffset Updated { get; set; }
 }
 
@@ -79,6 +81,8 @@ sealed class CanvasChange
 {
     public int Version { get; set; }
     public string? Author { get; set; }
+    /// <summary>El modelo con que trabajaba el agente («claude-opus-5-5», «opencode/gpt-5.5»), si se sabe.</summary>
+    public string? Model { get; set; }
     public DateTimeOffset Time { get; set; }
     public string Summary { get; set; } = "";
     public List<string> Sections { get; set; } = [];
@@ -126,4 +130,12 @@ static class CanvasJson
     public const string User = "user";
 
     public static string AuthorLabel(string? author) => author is null or User ? L.T("Usted") : author;
+
+    /// <summary>El nombre del modelo: «claude-opus-5-5» → «Opus 5.5»; «opencode/gpt-5.5» → «gpt-5.5» (sin el proveedor).</summary>
+    public static string ModelLabel(string model) =>
+        Format.ModelChoice(model.LastIndexOf('/') is var slash and >= 0 && slash < model.Length - 1 ? model[(slash + 1)..] : model);
+
+    /// <summary>Quién y con qué modelo, si se sabe: «Claude Code · Opus 5.5».</summary>
+    public static string AuthorLabel(string? author, string? model) =>
+        model is { Length: > 0 } && author is not (null or User) ? $"{AuthorLabel(author)} · {ModelLabel(model)}" : AuthorLabel(author);
 }

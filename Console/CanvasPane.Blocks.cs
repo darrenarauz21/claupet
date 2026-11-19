@@ -304,8 +304,8 @@ sealed partial class CanvasPane
         var who = new StackPanel { Spacing = 6, Margin = new Thickness(0, 10, -40, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top };
         var avatar = Avatar(section.Author, 22);
         // El «hace cuánto» se calcula al pasar el mouse: la sección puede seguir en pantalla (reusada) por mucho rato.
-        ToolTip.SetTip(avatar, $"{CanvasJson.AuthorLabel(section.Author)} · {Format.Ago(section.Updated)}");
-        avatar.PointerEntered += (_, _) => ToolTip.SetTip(avatar, $"{CanvasJson.AuthorLabel(section.Author)} · {Format.Ago(section.Updated)}");
+        ToolTip.SetTip(avatar, $"{CanvasJson.AuthorLabel(section.Author, section.Model)} · {Format.Ago(section.Updated)}");
+        avatar.PointerEntered += (_, _) => ToolTip.SetTip(avatar, $"{CanvasJson.AuthorLabel(section.Author, section.Model)} · {Format.Ago(section.Updated)}");
         who.Children.Add(avatar);
         var open = doc.Comments.Count(c => c.SectionId == section.Id && !c.Resolved);
         if (open > 0)

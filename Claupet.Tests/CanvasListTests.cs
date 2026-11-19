@@ -66,7 +66,7 @@ public sealed class CanvasListTests
         var informe = store.Create("Informe A", "Claude Code", [Text("uno")], folder: alfa);
         store.Apply(informe.Id, [Text("dos")], "OpenCode");
         store.Create("Plan A", "Claude Code", [Text("x")], folder: alfa);
-        store.Create("Informe B", "Codex", [Text("x")], folder: beta);
+        store.Create("Informe B", "Codex", [Text("x")], folder: beta, model: "gpt-5.5-codex");
         store.Create("Suelto", CanvasJson.User, [Text("x")]);
 
         var terminal = new TerminalPane();
@@ -95,6 +95,8 @@ public sealed class CanvasListTests
             Assert.Equal(1, Math.Abs(titles.IndexOf("Informe A") - titles.IndexOf("Plan A")));
             Assert.Equal("Suelto", titles[^1]);
             Assert.Contains("OpenCode, Claude Code", Texts(list));
+            // Con el modelo anotado, la fila dice el modelo (y el agente, en el tooltip).
+            Assert.Contains("gpt-5.5-codex", Texts(list));
 
             // Plegar «alfa» esconde sus canvas; su título queda.
             Click(window, Head(list, "alfa"));

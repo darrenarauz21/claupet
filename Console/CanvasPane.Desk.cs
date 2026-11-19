@@ -416,13 +416,16 @@ sealed partial class CanvasPane
         _desk?.Refit();
     }
 
-    /// <summary>La sesión ligada al canvas: la elegida, o la de su carpeta, o la primera que corre.</summary>
+    /// <summary>
+    /// La sesión ligada al canvas: la elegida, o una de su proyecto (no la de otro: el pedido le llegaría a quien trabaja en
+    /// otra cosa). Un canvas sin proyecto toma la primera que corre. Sin ninguna, al enviar se abre una en su carpeta.
+    /// </summary>
     CanvasSession? Linked()
     {
         if (_sessions is null || _doc is not { } doc) return null;
         var all = _sessions.List();
         if (_linkedSession.TryGetValue(doc.Id, out var agent) && all.FirstOrDefault(s => s.Agent == agent) is { } chosen) return chosen;
-        var pick = all.FirstOrDefault(s => doc.Folder is { } f && global::Claupet.Account.SamePath(s.Folder, f)) ?? all.FirstOrDefault();
+        var pick = doc.Folder is { Length: > 0 } f ? all.FirstOrDefault(s => TerminalPane.SameProject(s.Folder, f)) : all.FirstOrDefault();
         if (pick is not null) _linkedSession[doc.Id] = pick.Agent;
         return pick;
     }

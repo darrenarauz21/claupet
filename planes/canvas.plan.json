@@ -53,12 +53,15 @@
       "id": "t3",
       "titulo": "Registrar el modelo en cada cambio, no solo el agente",
       "etapa": "e1",
-      "estado": "por-hacer",
-      "dias": 2,
+      "estado": "revision",
+      "dias": 1,
       "depende": [
         "t2"
       ],
-      "notas": "Hoy CanvasChange.Author guarda solo «Claude Code» u «OpenCode» (CanvasMcp.cs:383, AcpDriver.cs:484). El modelo cambia a mitad de sesión, así que debe tomarse al editar: que la Console le diga al servidor MCP el modelo vigente de esa sesión. Mostrar «Claude Code · Opus 5.5» en la lista, en Versiones y en cada sección."
+      "notas": "Hecho en feature/canvas-lista: cada sesión tiene una clave (CLAUPET_CANVAS_SESSION) y la Console anota su modelo en Canvas\\sesiones\\<clave> cuando cambia; el servidor MCP lo lee al guardar. CanvasChange.Model y CanvasSection.Model. La lista muestra los modelos de cada agente juntos («Opus 5.5, Fable 5.2»); versiones y secciones dicen «Claude Code · Opus 5.5». Los cambios de antes no tienen modelo: muestran el agente.",
+      "inicio": "2026-11-19",
+      "responsable": "Claude Code",
+      "por": "Claude Code"
     },
     {
       "id": "t4",
@@ -75,25 +78,34 @@
       "id": "t5",
       "titulo": "Borrar sin romper la Console y poder deshacerlo",
       "etapa": "e2",
-      "estado": "por-hacer",
+      "estado": "revision",
       "dias": 1,
-      "notas": "ConfirmDelete llama a _store.Delete sin try/catch (CanvasPane.Popups.cs:407) y el candado puede lanzar «El canvas está ocupado» (CanvasStore.cs:227). Papelera con deshacer."
+      "notas": "Hecho en feature/canvas-lista: borrar va a Canvas\\papelera con su historial; el aviso trae Deshacer; pasados 30 días se borra. Si el canvas está ocupado, se avisa y no se pierde nada.",
+      "inicio": "2026-11-19",
+      "responsable": "Claude Code",
+      "por": "Claude Code"
     },
     {
       "id": "t6",
       "titulo": "«hace N min» al día en la lista",
       "etapa": "e2",
-      "estado": "por-hacer",
+      "estado": "revision",
       "dias": 1,
-      "notas": "Solo se refresca cuando llega un cambio (CanvasPane.cs:262-289): un temporizador de un minuto mientras la lista se ve."
+      "notas": "Hecho en feature/canvas-lista: cada 30 s, mientras la lista se ve, se reescriben los «hace cuánto» sin rehacer la lista.",
+      "inicio": "2026-11-19",
+      "responsable": "Claude Code",
+      "por": "Claude Code"
     },
     {
       "id": "t7",
       "titulo": "Pedir a la IA en una sesión del proyecto del canvas",
       "etapa": "e2",
-      "estado": "por-hacer",
+      "estado": "revision",
       "dias": 1,
-      "notas": "Hoy va a la pestaña actual aunque sea de otro proyecto (TerminalPane.Canvas.cs:54-56), y la mesa de diseño elige cualquier sesión abierta (CanvasPane.Desk.cs:420-428). Hacerlo como Proyectos: la del mismo proyecto o una nueva ahí."
+      "notas": "Hecho en feature/canvas-lista: Ctrl+J y la mesa de diseño van a una sesión del proyecto del canvas (también en un worktree de sesión del mismo proyecto), nunca a la de otro; sin ninguna, se abre una en su carpeta.",
+      "inicio": "2026-11-19",
+      "responsable": "Claude Code",
+      "por": "Claude Code"
     },
     {
       "id": "t8",
@@ -243,15 +255,20 @@
     },
     {
       "id": "t23",
-      "titulo": "Probar la lista en la app real y abrir el PR",
+      "titulo": "Probar en la app real y preparar la 2.7.1",
       "etapa": "e6",
       "estado": "por-hacer",
       "dias": 1,
       "depende": [
         "t1",
-        "t2"
+        "t2",
+        "t3",
+        "t5",
+        "t6",
+        "t7"
       ],
-      "notas": "Claupet --console --preview, con la bandeja instalada abierta. PR de feature/canvas-lista a main."
+      "notas": "Claupet --console --preview, con la bandeja instalada abierta. La 2.7.1 junta fix/menu-modelos, fix/sdk-seguro y feature/canvas-lista en release/2.7.1, con PR a main.",
+      "por": "Claude Code"
     },
     {
       "id": "t24",

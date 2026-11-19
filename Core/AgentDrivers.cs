@@ -91,6 +91,9 @@ interface IAgentDriver
     IReadOnlyList<string> Models { get; }
     IReadOnlyList<string> Efforts { get; }
     IReadOnlyList<string> Modes { get; }
+
+    /// <summary>La clave de esta sesión para Claupet Canvas (CanvasAgentModel): con ella cada cambio lleva el modelo.</summary>
+    string CanvasKey { get; }
 }
 
 /// <summary>Lo que comparten los agentes que no son Claude Code.</summary>
@@ -133,6 +136,7 @@ sealed class ClaudeDriver(AgentTranscript transcript) : IAgentDriver
     int _requests;
 
     public string Name => "Claude Code";
+    public string CanvasKey { get; } = CanvasAgentModel.NewKey();
     public IReadOnlyList<string> Models => Launcher.Models;
     public IReadOnlyList<string> Efforts => Launcher.Efforts;
     public IReadOnlyList<string> Modes => TerminalAgent.Modes;
@@ -141,7 +145,7 @@ sealed class ClaudeDriver(AgentTranscript transcript) : IAgentDriver
     {
         if (Assistant.FindClaude() is not { } claude) return null;
         // Con Claupet Canvas (MCP): la sesión puede crear y editar canvas que se ven en vivo en la Console.
-        var start = Assistant.ClaudeStart(claude, options.ConfigDir, [.. TerminalAgent.Arguments(options), .. CanvasMcp.ClaudeArguments(options.Folder, options.Specialist)]);
+        var start = Assistant.ClaudeStart(claude, options.ConfigDir, [.. TerminalAgent.Arguments(options), .. CanvasMcp.ClaudeArguments(options.Folder, options.Specialist, CanvasKey)]);
         // El hook de permisos de Claupet se aparta: la sesión pregunta en su bloque (y en la isla).
         start.Environment[Approvals.TerminalVariable] = "1";
         return start;
