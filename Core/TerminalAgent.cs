@@ -78,6 +78,8 @@ sealed partial class AgentTranscript
     public IReadOnlyList<AgentBlock> Blocks => _blocks;
     public string? SessionId { get; private set; }
     public string? Model { get; private set; }
+    /// <summary>Los modelos que ofrece Claude Code en esta sesión (la respuesta a initialize); null hasta que responde.</summary>
+    public IReadOnlyList<ClaudeModel>? Offered { get; private set; }
     public string? Cwd { get; private set; }
     public string? PermissionMode { get; private set; }
     /// <summary>El modo con el que abrió la sesión: el configurado en Claude Code si Claupet no le pidió otro.</summary>
@@ -347,6 +349,7 @@ sealed partial class AgentTranscript
         if (!response.TryGetProperty("response", out var body) || body.ValueKind != JsonValueKind.Object) return;
         Model = Json.Str(body, "model") ?? Model;
         PermissionMode = Json.Str(body, "mode") ?? PermissionMode;
+        if (body.TryGetProperty("models", out var models) && ClaudeModels.Parse(models) is { Count: > 0 } offered) Offered = offered;
     }
 
     void Result(JsonElement r, List<AgentBlock> changed)

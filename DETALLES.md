@@ -998,7 +998,10 @@ donde un `.wav` o `.mp3` con el mismo nombre (`terminado`, `pregunta`, `permiso`
 
 ## Compilar
 
-Requiere el SDK de .NET 10.
+Requiere el SDK de .NET 10, el 10.0.404 o uno posterior: lo fija `global.json` (con `rollForward: latestFeature`).
+Los anteriores traen el runtime 10.0.12 o uno más viejo, con vulnerabilidades conocidas (entre ellas la del
+descompresor Brotli, GHSA-p3jp-9v83-76w9), y Claupet.exe se publica con el runtime adentro. Al salir un parche de
+seguridad de .NET, se sube aquí la versión mínima.
 
 La app vive todo el día en la bandeja, así que cuida la memoria: lee las conversaciones de Claude Code línea por
 línea y en UTF-8 (`Core/JsonLines.cs`), sin cargar un archivo entero (al abrirse las recorre todas para Actividad y el

@@ -219,6 +219,8 @@
   "Carpeta del proyecto": "Project folder",
   "Carpeta": "Folder",
   "Modelo": "Model",
+  "Buscar modelo": "Search models",
+  "Ningún modelo coincide": "No model matches",
   "Esfuerzo": "Effort",
   "Asesor": "Advisor",
   "El modelo también acepta un ID completo, como claude-opus-5-5. El asesor predeterminado es el que fijó /advisor en esa cuenta.": "The model also accepts a full ID, like claude-opus-5-5. The default advisor is the one set with /advisor in that account.",
