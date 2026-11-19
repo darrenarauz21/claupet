@@ -8,7 +8,7 @@ Whether you are fixing a bug, adding support for a new AI CLI tool, creating a n
 ## 🚀 Quick Start (Development Environment)
 
 ### Prerequisites
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), 10.0.404 or later (pinned in `global.json`: earlier SDKs bundle a runtime with known vulnerabilities)
 - Any supported AI CLI tool configured on your system (Claude Code, Gemini CLI, Codex CLI, GitHub Copilot CLI, OpenCode, etc.)
 - Python 3 (optional, only required for building release packages)
 
