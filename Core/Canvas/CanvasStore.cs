@@ -4,8 +4,35 @@ using System.Text.Json;
 
 namespace Claupet;
 
-/// <summary>Lo que se muestra de un canvas en la lista, sin cargar su contenido.</summary>
-sealed record CanvasSummary(string Id, string Title, DateTimeOffset Updated, int Version, int Sections, string? LastAuthor, string? Plan = null);
+/// <summary>
+/// Lo que se muestra de un canvas en la lista, sin cargar su contenido. Project: la carpeta del proyecto con que se hizo
+/// (la del repositorio principal si fue en un worktree de sesión), o null. Authors: quiénes trabajaron en él y con qué
+/// modelo, del más reciente al más viejo: una línea cada uno, «autor» o «autor⇥modelo», en un solo texto para que dos
+/// resúmenes iguales sigan siendo iguales.
+/// </summary>
+sealed record CanvasSummary(string Id, string Title, DateTimeOffset Updated, int Version, int Sections, string? LastAuthor, string? Plan = null,
+    string? Project = null, string Authors = "")
+{
+    /// <summary>Cada autor con un modelo (o sin él, si no se sabe), del más reciente al más viejo.</summary>
+    public IReadOnlyList<(string Author, string? Model)> Entries => Authors.Length == 0 ? []
+        : [.. Authors.Split('\n').Select(line => line.IndexOf('\t') is var tab and >= 0 ? (line[..tab], (string?)line[(tab + 1)..]) : (line, null))];
+
+    /// <summary>Quiénes trabajaron en él, sin repetir, del más reciente al más viejo.</summary>
+    public IReadOnlyList<string> AuthorList => [.. Entries.Select(e => e.Author).Distinct()];
+
+    /// <summary>Los modelos con que trabajó ese autor, del más reciente al más viejo (vacío si no se sabe).</summary>
+    public IReadOnlyList<string> ModelsOf(string author) =>
+        [.. Entries.Where(e => e.Author == author && e.Model is not null).Select(e => e.Model!).Distinct()];
+
+    /// <summary>Del documento: los autores (con su modelo) de sus cambios, del último al primero, y los de sus secciones.</summary>
+    public static CanvasSummary Of(CanvasDoc doc) => new(doc.Id, doc.Title, doc.Updated, doc.Version, doc.Sections.Count,
+        doc.Changes.LastOrDefault()?.Author, doc.Plan,
+        doc.Folder is { Length: > 0 } folder ? Path.TrimEndingDirectorySeparator(SessionWorktrees.ProjectOf(folder)) : null,
+        string.Join('\n', doc.Changes.AsEnumerable().Reverse().Select(c => (c.Author, c.Model))
+            .Concat(doc.Sections.OrderByDescending(s => s.Updated).Select(s => (s.Author, s.Model)))
+            .Select(e => (e.Author ?? CanvasJson.User) + (e.Model is { Length: > 0 } m ? "\t" + m : ""))
+            .Distinct()));
+}
 
 /// <summary>
 /// Los canvas en disco: «Canvas\&lt;id&gt;.json» en la carpeta de datos de Claupet, y en «Canvas\historial\&lt;id&gt;\» una copia
@@ -53,7 +80,7 @@ sealed class CanvasStore(string root)
                     continue;
                 }
                 if (Read(info.FullName) is not { } doc) continue; // a medio escribir o dañado: no se guarda, se lee la próxima vez
-                var summary = new CanvasSummary(doc.Id, doc.Title, doc.Updated, doc.Version, doc.Sections.Count, doc.Changes.LastOrDefault()?.Author, doc.Plan);
+                var summary = CanvasSummary.Of(doc);
                 _summaries[info.FullName] = (info.LastWriteTimeUtc, info.Length, summary);
                 list.Add(summary);
             }
@@ -64,8 +91,11 @@ sealed class CanvasStore(string root)
 
     public CanvasDoc? Load(string id) => Read(FileOf(id));
 
-    /// <summary>Un canvas nuevo, vacío o con sus primeras secciones (las de un modelo: se validan como cualquier insert).</summary>
-    public CanvasDoc Create(string? title, string? author, IReadOnlyList<CanvasOp>? sections = null, string? folder = null)
+    /// <summary>
+    /// Un canvas nuevo, vacío o con sus primeras secciones (las de un modelo: se validan como cualquier insert). model: con
+    /// qué modelo trabajaba el agente, si se sabe; queda en el cambio y en las secciones que hizo.
+    /// </summary>
+    public CanvasDoc Create(string? title, string? author, IReadOnlyList<CanvasOp>? sections = null, string? folder = null, string? model = null)
     {
         var now = DateTimeOffset.Now;
         var doc = new CanvasDoc
@@ -84,9 +114,17 @@ sealed class CanvasStore(string root)
             touched.AddRange(applied.Sections);
         }
         doc.Version = 1;
-        doc.Changes.Add(new CanvasChange { Version = 1, Author = author, Time = now, Summary = L.T("creó el canvas"), Sections = touched });
+        StampModel(doc, touched, model);
+        doc.Changes.Add(new CanvasChange { Version = 1, Author = author, Model = model, Time = now, Summary = L.T("creó el canvas"), Sections = touched });
         WithLock(() => Write(doc));
         return doc;
+    }
+
+    /// <summary>Las secciones que tocó un cambio llevan el modelo de quien las cambió (null si fue la persona o no se sabe).</summary>
+    static void StampModel(CanvasDoc doc, IEnumerable<string> touched, string? model)
+    {
+        foreach (var id in touched)
+            if (doc.Section(id) is { } section) section.Model = model;
     }
 
     /// <summary>
@@ -94,14 +132,15 @@ sealed class CanvasStore(string root)
     /// entonces, las operaciones que dependen de posiciones podrían caer mal, así que se rechazan (las de «edit» buscan
     /// el texto y siguen valiendo: con baseVersion null no se compara).
     /// </summary>
-    public CanvasApplied Apply(string id, IReadOnlyList<CanvasOp> ops, string? author, int? baseVersion = null) => WithLock(() =>
+    public CanvasApplied Apply(string id, IReadOnlyList<CanvasOp> ops, string? author, int? baseVersion = null, string? model = null) => WithLock(() =>
     {
         var current = Load(id) ?? throw new CanvasException(L.T("No hay un canvas {0}.", id));
         if (baseVersion is { } expected && expected != current.Version)
             throw new CanvasException(L.T("El canvas cambió (va en la versión {0}, usted leyó la {1}): léalo otra vez y vuelva a intentar.", current.Version, expected));
         var now = DateTimeOffset.Now;
         var applied = CanvasEngine.Apply(current, ops, author, now);
-        Save(current, applied.Doc, author, now, applied.Summary, applied.Sections);
+        StampModel(applied.Doc, applied.Sections, model);
+        Save(current, applied.Doc, author, now, applied.Summary, applied.Sections, model);
         return applied;
     });
 
@@ -117,7 +156,7 @@ sealed class CanvasStore(string root)
         return doc;
     });
 
-    void Save(CanvasDoc previous, CanvasDoc doc, string? author, DateTimeOffset now, string summary, IReadOnlyList<string> sections)
+    void Save(CanvasDoc previous, CanvasDoc doc, string? author, DateTimeOffset now, string summary, IReadOnlyList<string> sections, string? model = null)
     {
         // La anterior, al historial (las más viejas se borran).
         var history = Path.Combine(HistoryRoot, SafeId(previous.Id));
@@ -129,7 +168,7 @@ sealed class CanvasStore(string root)
         doc.Created = previous.Created;
         doc.Version = previous.Version + 1;
         doc.Updated = now;
-        doc.Changes.Add(new CanvasChange { Version = doc.Version, Author = author, Time = now, Summary = summary, Sections = [.. sections] });
+        doc.Changes.Add(new CanvasChange { Version = doc.Version, Author = author, Model = model, Time = now, Summary = summary, Sections = [.. sections] });
         if (doc.Changes.Count > CanvasDoc.MaxChanges) doc.Changes.RemoveRange(0, doc.Changes.Count - CanvasDoc.MaxChanges);
         Write(doc);
     }
@@ -147,13 +186,65 @@ sealed class CanvasStore(string root)
     public CanvasDoc? LoadVersion(string id, int version) =>
         Load(id) is { } current && current.Version == version ? current : Read(Path.Combine(HistoryRoot, SafeId(id), version + Extension));
 
+    /// <summary>Lo borrado queda aquí, con su historial, para poder deshacerlo; pasado TrashKeep se borra de verdad.</summary>
+    string TrashRoot => Path.Combine(Root, "papelera");
+    public static readonly TimeSpan TrashKeep = TimeSpan.FromDays(30);
+
+    /// <summary>Lo pasa a la papelera con su historial (Undelete lo devuelve) y vacía lo que lleva más de TrashKeep ahí.</summary>
     public void Delete(string id) => WithLock(() =>
     {
-        TryDelete(FileOf(id));
-        try { Directory.Delete(Path.Combine(HistoryRoot, SafeId(id)), recursive: true); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        var safe = SafeId(id);
+        var file = FileOf(id);
+        if (File.Exists(file))
+        {
+            Directory.CreateDirectory(TrashRoot);
+            var trashed = Path.Combine(TrashRoot, safe + Extension);
+            File.Move(file, trashed, overwrite: true);
+            // La fecha del archivo pasa a ser la de cuando se borró: con ella se vacía la papelera.
+            File.SetLastWriteTimeUtc(trashed, DateTime.UtcNow);
+        }
+        MoveFolder(Path.Combine(HistoryRoot, safe), Path.Combine(TrashRoot, "historial", safe));
+        EmptyTrash(DateTime.UtcNow - TrashKeep);
         return 0;
     });
+
+    /// <summary>Devuelve de la papelera un canvas borrado, con su historial. False si ya no está ahí o si hay otro con su id.</summary>
+    public bool Undelete(string id) => WithLock(() =>
+    {
+        var safe = SafeId(id);
+        var trashed = Path.Combine(TrashRoot, safe + Extension);
+        var file = FileOf(id);
+        if (!File.Exists(trashed) || File.Exists(file)) return false;
+        File.Move(trashed, file);
+        MoveFolder(Path.Combine(TrashRoot, "historial", safe), Path.Combine(HistoryRoot, safe));
+        return true;
+    });
+
+    /// <summary>Borra de la papelera lo que se borró antes de esa fecha (UTC).</summary>
+    void EmptyTrash(DateTime before)
+    {
+        if (!Directory.Exists(TrashRoot)) return;
+        foreach (var old in new DirectoryInfo(TrashRoot).EnumerateFiles("*" + Extension).Where(f => f.LastWriteTimeUtc < before).ToList())
+        {
+            var id = Path.GetFileNameWithoutExtension(old.Name);
+            TryDelete(old.FullName);
+            try { Directory.Delete(Path.Combine(TrashRoot, "historial", id), recursive: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>Mueve una carpeta (pisando la de destino); si no está o no se puede, se deja como está.</summary>
+    static void MoveFolder(string from, string to)
+    {
+        try
+        {
+            if (!Directory.Exists(from)) return;
+            if (Directory.Exists(to)) Directory.Delete(to, recursive: true);
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            Directory.Move(from, to);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
 
     /// <summary>Que la Console muestre este canvas (lo pide un agente; si la Console no está abierta, lo verá al abrirla).</summary>
     public void RequestOpen(string id)

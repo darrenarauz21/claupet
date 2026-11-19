@@ -44,16 +44,16 @@ sealed partial class TerminalPane
     }
 
     /// <summary>
-    /// Manda el pedido a un agente que esté corriendo: el de la pestaña elegida, o el primero de esa carpeta, o el primero.
-    /// Si no hay ninguno, abre uno de Claude Code en la carpeta y deja el pedido escrito en la caja (devuelve false: hay
-    /// que mirar la Terminal para enviarlo cuando arranque).
+    /// Manda el pedido a un agente que esté corriendo en el proyecto de esa carpeta (también en un worktree de sesión del
+    /// mismo proyecto): el de la pestaña elegida si es de ahí, o el primero de ahí. Nunca a uno de otro proyecto (antes iba
+    /// a la pestaña elegida aunque fuera de otro). Sin carpeta, el elegido o el primero. Si no hay, abre uno de Claude Code
+    /// en la carpeta y deja el pedido escrito en la caja (devuelve false: hay que mirar la Terminal para enviarlo cuando arranque).
     /// </summary>
     internal bool AskAgent(string text, string? folder)
     {
         var agents = _tabs.Where(t => t.Shell is null && t.Agent.Running).ToList();
-        var tab = _current is { Shell: null } current && current.Agent.Running ? current
-            : agents.FirstOrDefault(t => folder is not null && global::Claupet.Account.SamePath(t.Agent.Options.Folder, folder))
-            ?? agents.FirstOrDefault();
+        bool Here(Tab t) => folder is null || SameProject(t.Agent.Options.Folder, folder);
+        var tab = _current is { Shell: null } current && current.Agent.Running && Here(current) ? current : agents.FirstOrDefault(Here);
         if (tab is not null)
         {
             tab.Agent.Send(text);
@@ -61,12 +61,18 @@ sealed partial class TerminalPane
         }
         var last = TerminalRecents.Load();
         var account = Accounts().FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, last.Account ?? "")) ?? Accounts().FirstOrDefault();
-        var where = folder is not null && Directory.Exists(folder) ? folder : global::Claupet.Account.Home;
+        var project = folder is null ? null : SessionWorktrees.ProjectOf(folder);
+        var where = folder is not null && Directory.Exists(folder) ? folder
+            : project is not null && Directory.Exists(project) ? project : global::Claupet.Account.Home;
         OpenAgent(AgentKinds.Claude, where, account, last.Model, last.Effort);
         _input.Text = text;
         _input.CaretIndex = text.Length;
         return false;
     }
+
+    /// <summary>Si dos carpetas son del mismo proyecto (un worktree de sesión cuenta como el repositorio principal).</summary>
+    internal static bool SameProject(string a, string b) =>
+        global::Claupet.Account.SamePath(SessionWorktrees.ProjectOf(a), SessionWorktrees.ProjectOf(b));
 
     /// <summary>Las sesiones de agente que corren, para el chat de la mesa de diseño de Canvas.</summary>
     internal IReadOnlyList<CanvasSession> CanvasSessions() => _tabs

@@ -51,6 +51,7 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
     string? _modeConfig, _modelConfig, _effortConfig;
 
     public string Name => AgentKinds.Label(kind);
+    public string CanvasKey { get; } = CanvasAgentModel.NewKey();
     public IReadOnlyList<string> Models => _models;
     public IReadOnlyList<string> Modes => _modes;
 
@@ -481,10 +482,10 @@ sealed class AcpDriver(string kind, AgentTranscript transcript) : IAgentDriver
             {
                 ["sessionId"] = resume,
                 ["cwd"] = _options.Folder,
-                ["mcpServers"] = CanvasMcp.AcpServers(Name, _options.Folder, _mcpHttp, _options.Specialist),
+                ["mcpServers"] = CanvasMcp.AcpServers(Name, _options.Folder, _mcpHttp, _options.Specialist, CanvasKey),
             });
         }
-        return Request("session/new", new JsonObject { ["cwd"] = _options?.Folder ?? Environment.CurrentDirectory, ["mcpServers"] = CanvasMcp.AcpServers(Name, _options?.Folder, _mcpHttp, _options?.Specialist) });
+        return Request("session/new", new JsonObject { ["cwd"] = _options?.Folder ?? Environment.CurrentDirectory, ["mcpServers"] = CanvasMcp.AcpServers(Name, _options?.Folder, _mcpHttp, _options?.Specialist, CanvasKey) });
     }
 
     /// <summary>Sin modelo, vuelve al automático del agente (el «auto» de Gemini CLI) si lo tiene.</summary>

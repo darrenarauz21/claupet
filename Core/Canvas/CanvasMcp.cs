@@ -40,7 +40,8 @@ static class CanvasMcp
         var store = CanvasStore.Default;
         var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
         var output = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
-        var server = new Server(store, Environment.GetEnvironmentVariable(AuthorVariable), Environment.GetEnvironmentVariable(FolderVariable) ?? Environment.CurrentDirectory);
+        var server = new Server(store, Environment.GetEnvironmentVariable(AuthorVariable), Environment.GetEnvironmentVariable(FolderVariable) ?? Environment.CurrentDirectory,
+            Environment.GetEnvironmentVariable(CanvasAgentModel.Variable));
         while (input.ReadLine() is { } line)
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
@@ -50,11 +51,14 @@ static class CanvasMcp
     }
 
     /// <summary>La lógica del servidor sin la entrada y la salida (las pruebas le hablan directo).</summary>
-    internal sealed class Server(CanvasStore store, string? author, string? folder)
+    internal sealed class Server(CanvasStore store, string? author, string? folder, string? session = null)
     {
         string? _author = author;
 
         public string? Author => _author;
+
+        /// <summary>El modelo con que trabaja ahora la sesión que abrió este servidor (lo anota la Console), o null.</summary>
+        string? Model => CanvasAgentModel.Read(session);
 
         /// <summary>Atiende una línea; devuelve la respuesta, o null si era una notificación.</summary>
         public string? Handle(string line)
@@ -231,8 +235,9 @@ static class CanvasMcp
                 {
                     var sections = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("sections", out var s) && s.ValueKind == JsonValueKind.Array
                         ? CanvasOp.ParseAll(s).Select(op => op with { Op = "insert" }).ToList() : null;
-                    var doc = store.Create(Arg(args, "title"), _author, sections, folder);
-                    if (Arg(args, "plan") is { } plan) doc = store.Apply(doc.Id, [new CanvasOp("plan", Content: plan)], _author).Doc;
+                    var model = Model;
+                    var doc = store.Create(Arg(args, "title"), _author, sections, folder, model);
+                    if (Arg(args, "plan") is { } plan) doc = store.Apply(doc.Id, [new CanvasOp("plan", Content: plan)], _author, model: model).Doc;
                     if (!(args.ValueKind == JsonValueKind.Object && args.TryGetProperty("open", out var open) && open.ValueKind == JsonValueKind.False))
                         store.RequestOpen(doc.Id);
                     return $"Created canvas {doc.Id} (shown to the user in Claupet Console).\n\n" + CanvasExport.ForAgent(doc);
@@ -254,7 +259,7 @@ static class CanvasMcp
                     using var parsed = opsElement.ValueKind == JsonValueKind.String ? JsonDocument.Parse(opsElement.GetString()!) : null;
                     var ops = CanvasOp.ParseAll(parsed?.RootElement ?? opsElement);
                     int? baseVersion = args.TryGetProperty("base_version", out var b) && b.TryGetInt32(out var bv) ? bv : null;
-                    var applied = store.Apply(id, ops, _author, baseVersion);
+                    var applied = store.Apply(id, ops, _author, baseVersion, Model);
                     return $"OK: {applied.Summary}. Canvas {id} is now version {applied.Doc.Version}. Sections: " +
                         string.Join(", ", applied.Doc.Sections.Select(x => $"{x.Id} ({x.Kind}{(x.Title is { } t ? $": {t}" : "")})"));
                 }
@@ -337,9 +342,11 @@ static class CanvasMcp
     /// <summary>
     /// extra: los servidores de las extensiones (la ranura «mcp»); sus claves quedan en este archivo, en la carpeta de datos
     /// de la persona. canvas: si va el de Claupet (un especialista puede quitarlo). tag: lo que distingue el archivo de un
-    /// especialista del de una sesión común. Null si no hay servidores o no se pudo escribir.
+    /// especialista del de una sesión común. session: la clave de la sesión (CanvasAgentModel), para que cada cambio lleve
+    /// su modelo; con ella el archivo es de esa sesión (los de hace más de una semana se borran). Null si no hay servidores
+    /// o no se pudo escribir.
     /// </summary>
-    internal static string? ClaudeConfigFile(string author, string? folder, IReadOnlyList<McpServer> extra, bool canvas = true, string? tag = null)
+    internal static string? ClaudeConfigFile(string author, string? folder, IReadOnlyList<McpServer> extra, bool canvas = true, string? tag = null, string? session = null)
     {
         if (Command is not { } command) return null;
         var servers = new JsonObject();
@@ -349,7 +356,7 @@ static class CanvasMcp
                 ["type"] = "stdio",
                 ["command"] = command,
                 ["args"] = new JsonArray(Flag),
-                ["env"] = Env(author, folder),
+                ["env"] = Env(author, folder, session),
             };
         foreach (var server in extra)
             servers[server.Name] = server.Type == McpServerSpec.Http
@@ -361,8 +368,12 @@ static class CanvasMcp
         {
             var dir = DataFolder.In("Canvas", "mcp");
             Directory.CreateDirectory(dir);
-            var file = Path.Combine(dir, "claude-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(author + "|" + folder + "|" + tag)))[..10].ToLowerInvariant() + ".json");
+            var file = Path.Combine(dir, "claude-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(author + "|" + folder + "|" + tag + "|" + session)))[..10].ToLowerInvariant() + ".json");
             File.WriteAllText(file, config.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+            // Con una clave por sesión, cada sesión deja su archivo: los viejos (Claude Code ya los leyó al abrir) se borran.
+            if (session is not null)
+                foreach (var old in new DirectoryInfo(dir).EnumerateFiles("claude-*.json").Where(f => DateTime.UtcNow - f.LastWriteTimeUtc > TimeSpan.FromDays(7)).ToList())
+                    old.Delete();
             return file;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ErrorLog.Write(ex); return null; }
@@ -372,15 +383,15 @@ static class CanvasMcp
     /// Lo que se le agrega a Claude Code: los servidores, las herramientas que van sin preguntar (las seguras del canvas y
     /// los servidores que un especialista marcó así) y, con un especialista, sus instrucciones.
     /// </summary>
-    public static IEnumerable<string> ClaudeArguments(string? folder, Specialist? specialist = null) =>
-        ClaudeArguments(folder, specialist, ExtensionMcp.Servers());
+    public static IEnumerable<string> ClaudeArguments(string? folder, Specialist? specialist = null, string? session = null) =>
+        ClaudeArguments(folder, specialist, ExtensionMcp.Servers(), session);
 
-    internal static IEnumerable<string> ClaudeArguments(string? folder, Specialist? specialist, IReadOnlyList<McpServer> all)
+    internal static IEnumerable<string> ClaudeArguments(string? folder, Specialist? specialist, IReadOnlyList<McpServer> all, string? session = null)
     {
         var servers = Specialists.ServersFor(specialist, all);
         var canvas = Specialists.UsesCanvas(specialist);
         var args = new List<string>();
-        if (ClaudeConfigFile("Claude Code", folder, servers, canvas, specialist?.Id) is { } file)
+        if (ClaudeConfigFile("Claude Code", folder, servers, canvas, specialist?.Id, session) is { } file)
         {
             args.AddRange(["--mcp-config", file]);
             var allowed = (canvas ? SafeTools.Select(t => $"mcp__{Name}__{t}") : [])
@@ -395,14 +406,16 @@ static class CanvasMcp
     /// Lo que va antes de «app-server» en Codex: «-c» con la tabla del servidor en TOML. Comillas simples (cadenas
     /// literales de TOML): la ruta de Windows no necesita escapes y no hay comillas dobles que cmd.exe rompa.
     /// </summary>
-    public static IEnumerable<string> CodexArguments(string? folder, Specialist? specialist = null) =>
-        CodexArguments(folder, Specialists.ServersFor(specialist, ExtensionMcp.Servers()), Specialists.UsesCanvas(specialist));
+    public static IEnumerable<string> CodexArguments(string? folder, Specialist? specialist = null, string? session = null) =>
+        CodexArguments(folder, Specialists.ServersFor(specialist, ExtensionMcp.Servers()), Specialists.UsesCanvas(specialist), session);
 
-    internal static IEnumerable<string> CodexArguments(string? folder, IReadOnlyList<McpServer> extra, bool canvas = true)
+    internal static IEnumerable<string> CodexArguments(string? folder, IReadOnlyList<McpServer> extra, bool canvas = true, string? session = null)
     {
         if (Command is not { } command || command.Contains('\'') || (folder?.Contains('\'') ?? false)) return [];
         var key = "mcp_servers.claupet_canvas";
-        var env = $"{{{AuthorVariable}='Codex'" + (folder is null ? "" : $",{FolderVariable}='{folder}'") + "}";
+        // La clave de la sesión es hexadecimal (CanvasAgentModel.NewKey): va tal cual en la cadena literal.
+        var env = $"{{{AuthorVariable}='Codex'" + (folder is null ? "" : $",{FolderVariable}='{folder}'")
+            + (session is { } s && s.All(char.IsAsciiHexDigit) ? $",{CanvasAgentModel.Variable}='{s}'" : "") + "}";
         List<string> args = canvas ? ["-c", $"{key}.command='{command}'", "-c", $"{key}.args=['{Flag}']", "-c", $"{key}.env={env}"] : [];
         foreach (var server in extra) args.AddRange(CodexServer(server));
         return args;
@@ -429,14 +442,15 @@ static class CanvasMcp
     /// Los servidores para «session/new» de ACP (Gemini CLI, Copilot CLI…): el de Claupet y los de las extensiones.
     /// http: el agente dijo que acepta servidores por HTTP (mcpCapabilities.http); si no, solo van los stdio.
     /// </summary>
-    public static JsonArray AcpServers(string author, string? folder, bool http = false, Specialist? specialist = null) =>
-        AcpServers(author, folder, http, Specialists.ServersFor(specialist, ExtensionMcp.Servers()), Specialists.UsesCanvas(specialist));
+    public static JsonArray AcpServers(string author, string? folder, bool http = false, Specialist? specialist = null, string? session = null) =>
+        AcpServers(author, folder, http, Specialists.ServersFor(specialist, ExtensionMcp.Servers()), Specialists.UsesCanvas(specialist), session);
 
-    internal static JsonArray AcpServers(string author, string? folder, bool http, IReadOnlyList<McpServer> extra, bool canvas = true)
+    internal static JsonArray AcpServers(string author, string? folder, bool http, IReadOnlyList<McpServer> extra, bool canvas = true, string? session = null)
     {
         if (Command is not { } command) return [];
         var env = new JsonArray(new JsonObject { ["name"] = AuthorVariable, ["value"] = author });
         if (folder is not null) env.Add(new JsonObject { ["name"] = FolderVariable, ["value"] = folder });
+        if (session is not null) env.Add(new JsonObject { ["name"] = CanvasAgentModel.Variable, ["value"] = session });
         var list = canvas ? new JsonArray(new JsonObject { ["name"] = Name, ["command"] = command, ["args"] = new JsonArray(Flag), ["env"] = env }) : [];
         foreach (var server in extra)
             if (server.Type != McpServerSpec.Http)
@@ -452,10 +466,11 @@ static class CanvasMcp
 
     static JsonArray Pairs(IReadOnlyDictionary<string, string> map) => [.. map.Select(p => (JsonNode)new JsonObject { ["name"] = p.Key, ["value"] = p.Value })];
 
-    static JsonObject Env(string author, string? folder)
+    static JsonObject Env(string author, string? folder, string? session = null)
     {
         var env = new JsonObject { [AuthorVariable] = author };
         if (folder is not null) env[FolderVariable] = folder;
+        if (session is not null) env[CanvasAgentModel.Variable] = session;
         return env;
     }
 
