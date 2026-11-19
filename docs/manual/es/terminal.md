@@ -37,7 +37,7 @@ agentes de código y shells en pestañas y muestra cada cosa en su bloque:
    | **Proyecto** | Arriba: dónde se abre. Toque **Cambiar** para elegir otro: los proyectos vinculados, los recientes, **Buscar una carpeta…** o **Buscar un archivo del proyecto…** (se abre la raíz de su repositorio de git o, sin repositorio, su carpeta). |
    | **Abrir con** | Claude Code, otro agente instalado (Codex, Gemini CLI, Copilot CLI, OpenCode) o una de las terminales de su equipo. |
    | **Con la cuenta** | *(Claude Code)* La cuenta de esta pestaña; el punto verde dice que tiene la sesión iniciada. |
-   | **Modelo y esfuerzo** | *(Claude Code)* `haiku`, `sonnet`, `opus`, `fable` o «por defecto», y el esfuerzo: bajo, medio, alto, muy alto o máximo. Las variantes (`opus[1m]`, `sonnet[1m]`, `opusplan`) se eligen dentro de la sesión. |
+   | **Modelo y esfuerzo** | *(Claude Code)* `haiku`, `sonnet`, `opus`, `fable` o «por defecto», con la versión a la que va cada uno, y el esfuerzo: bajo, medio, alto, muy alto o máximo. Si sale un modelo más nuevo que su alias (por ejemplo, Fable 5.2 mientras `fable` siga en la 5.1), aparece también. La lista la da Claude Code: Claupet la toma de cada sesión, así que un modelo nuevo aparece solo. Los modelos anteriores y `opusplan` se eligen dentro de la sesión. |
 
 3. Pulse **Abrir** (o **Intro**). Tocar de nuevo lo que ya está elegido también lo abre.
 
