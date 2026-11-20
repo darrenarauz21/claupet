@@ -61,6 +61,15 @@ sealed partial class TerminalPane : Grid
         public string? SideFile { get; set; }
         /// <summary>Una terminal de comandos (TerminalPane.Shell.cs). Entonces Agent no se abre: solo lleva la carpeta.</summary>
         public ShellSession? Shell { get; init; }
+        /// <summary>
+        /// Lo que se le trajo de otras sesiones para su próximo pedido («Enviar a…» o mensajes que no se mandaron solos): de
+        /// quién y qué. Se ve arriba de la caja y va con el pedido siguiente (TerminalPane.Sessions.cs).
+        /// </summary>
+        public List<(string From, string Text)> Context { get; } = [];
+        /// <summary>Mensajes de otras sesiones que esperan a que termine su turno.</summary>
+        public Queue<SessionMessage> Waiting { get; } = new();
+        /// <summary>Cuántos mensajes de otras sesiones se le mandaron solos desde el último pedido de la persona.</summary>
+        public int AutoMessages { get; set; }
     }
 
     /// <summary>
@@ -559,8 +568,10 @@ sealed partial class TerminalPane : Grid
         _input.Text = "";
         var images = tab.Images.Where((_, i) => text.Contains($"[Imagen #{i + 1}]", StringComparison.Ordinal)).ToList();
         tab.Images.Clear();
-        // Con @especialista, el agente de la pestaña recibe además la nota de delegarle la tarea (la persona no la ve).
-        tab.Agent.Send(text, images, MentionDirective(text));
+        // Con @especialista, el agente de la pestaña recibe además la nota de delegarle la tarea; con #sesión o lo que se le
+        // trajo con «Enviar a…», el contexto de esas sesiones (la persona no ve las notas, sí lo que escribió).
+        tab.Agent.Send(text, images, MentionDirective(text) + SessionContext(tab, text));
+        tab.AutoMessages = 0; // la persona habló: los mensajes de otras sesiones pueden volver a entrar solos
         TitleFirstAsk(tab, text);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }
@@ -576,6 +587,8 @@ sealed partial class TerminalPane : Grid
         {
             RefreshGit(tab.Agent.Options.Folder, force: true);
             if (tab == _current && !_creating && _projects.PanelOpen && _projects.PanelTab != "procesos") LoadSide(tab);
+            // Terminó su turno: el mensaje de otra sesión que esperaba, ahora (TerminalPane.Sessions.cs).
+            Dispatcher.UIThread.Post(() => Pump(tab), DispatcherPriority.Background);
         }
         // La lista se rehace solo si cambió lo que muestra de la pestaña: con cada pedazo de texto la rehacía entera.
         var listChanged = ListStateChanged(tab);
