@@ -221,7 +221,7 @@ public sealed class CanvasTests : IDisposable
 
         var tools = Ask(server, 2, "tools/list").GetProperty("result").GetProperty("tools").EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToList();
         Assert.Equal(["canvas_list", "canvas_create", "canvas_read", "canvas_edit", "canvas_export", "canvas_open", "plan_list", "plan_read", "plan_create", "plan_update",
-            "especialistas", "pedir_a_especialista", "ver_corrida"], tools);
+            "especialistas", "pedir_a_especialista", "ver_corrida", "sesiones", "leer_sesion", "escribir_a_sesion", "pizarra", "anotar"], tools);
         Assert.Equal(JsonRpcException.MethodNotFound, Ask(server, 3, "nada").GetProperty("error").GetProperty("code").GetInt32());
     }
 

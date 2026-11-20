@@ -1,0 +1,34 @@
+{
+  "formato": 1,
+  "selector": {
+    "limite": null
+  },
+  "flujo": {
+    "propuestaDesde": "mediano"
+  },
+  "pruebas": {
+    "esfuerzo": "auto"
+  },
+  "checks": {
+    "alFallar": "avisar",
+    "comandos": []
+  },
+  "feedback": {
+    "compartir": false
+  },
+  "riesgo": {
+    "auth": [
+      "**/Auth/**",
+      "**/*Login*",
+      "**/*Password*"
+    ],
+    "bd": [
+      "**/*.sql",
+      "**/Migrations/**"
+    ],
+    "secretos": [
+      "**/.env*",
+      "**/*secret*"
+    ]
+  }
+}

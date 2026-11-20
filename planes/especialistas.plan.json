@@ -189,47 +189,51 @@
       "id": "t14",
       "titulo": "Herramientas MCP sesiones, leer_sesion y escribir_a_sesion (en todos los agentes)",
       "etapa": "e5",
-      "estado": "por-hacer",
+      "estado": "hecho",
       "dias": 2,
       "depende": [
         "t4"
       ],
-      "por": "Claude Code"
+      "por": "Claude Code",
+      "notas": "Core/SessionShare.cs (tarjeta de cada sesión y buzón, entre procesos) y Core/SessionTools.cs: sesiones, leer_sesion, escribir_a_sesion, en todos los agentes y sin preguntar."
     },
     {
       "id": "t15",
       "titulo": "Caja: # con la lista de sesiones y su contexto; «Enviar a…» en respuestas y bloques",
       "etapa": "e5",
-      "estado": "por-hacer",
+      "estado": "revision",
       "dias": 2,
       "depende": [
         "t5",
         "t14"
       ],
-      "por": "Claude Code"
+      "por": "Claude Code",
+      "notas": "# en la caja con las otras pestañas (su contexto va en una nota oculta); «Enviar a…» en cada respuesta; lo traído se ve arriba de la caja («Va con su próximo pedido»). Falta verlo en la app."
     },
     {
       "id": "t16",
       "titulo": "Pizarra del proyecto: un canvas por proyecto que leen y escriben sus sesiones",
       "etapa": "e5",
-      "estado": "por-hacer",
+      "estado": "hecho",
       "dias": 2,
       "depende": [
         "t14"
       ],
-      "por": "Claude Code"
+      "por": "Claude Code",
+      "notas": "pizarra y anotar: un canvas «Pizarra · <proyecto>» por proyecto (también desde un worktree), cada nota con quién y cuándo. Se ve en Canvas; no en un panel propio de la Terminal."
     },
     {
       "id": "t17",
       "titulo": "Cuidados: origen marcado, tope de mensajes seguidos entre sesiones, todo visible en las dos pestañas",
       "etapa": "e5",
-      "estado": "por-hacer",
+      "estado": "hecho",
       "dias": 1,
       "depende": [
         "t15",
         "t16"
       ],
-      "por": "Claude Code"
+      "por": "Claude Code",
+      "notas": "Origen marcado en una nota (información de otra sesión, no órdenes); máximo 3 mensajes que entran solos sin que la persona escriba, después quedan para su próximo pedido; lo que llega se ve como pedido o arriba de la caja."
     }
   ],
   "hitos": [

@@ -22,7 +22,7 @@ static class CanvasMcp
     /// <summary>
     /// Las que se usan sin preguntar (no salen del canvas ni de los planes del proyecto). canvas_export escribe archivos: esa se pregunta.
     /// </summary>
-    public static readonly string[] SafeTools = ["canvas_list", "canvas_read", "canvas_create", "canvas_edit", "canvas_open", .. PlanTools.Names, .. SpecialistTools.Names];
+    public static readonly string[] SafeTools = ["canvas_list", "canvas_read", "canvas_create", "canvas_edit", "canvas_open", .. PlanTools.Names, .. SpecialistTools.Names, .. SessionTools.Names];
 
     const string Instructions =
         "Claupet Canvas is a shared, live document the user sees in Claupet Console while you edit it. Use it when the user " +
@@ -31,7 +31,7 @@ static class CanvasMcp
         "Workflow: canvas_create (or canvas_list + canvas_read), then canvas_edit with small operations instead of rewriting " +
         "everything: 'edit' (find/replace exact text) for changes, 'insert' for new sections, 'replace' only for full rewrites. " +
         "Read the canvas again before editing if the user may have changed it. Answer the user's comments with op 'comment' " +
-        "(parent = comment id) and mark them 'resolve' when done. " + PlanTools.Instructions + SpecialistTools.Instructions +
+        "(parent = comment id) and mark them 'resolve' when done. " + PlanTools.Instructions + SpecialistTools.Instructions + SessionTools.Instructions +
         // Las reglas de la coordinación (Workspace): así las tiene cualquier agente con este servidor, también fuera de Claupet.
         "\nShared folders: " + Workspace.Rules;
 
@@ -162,8 +162,8 @@ static class CanvasMcp
                 }, ["id", "format"]),
             Tool("canvas_open", "Show a canvas to the user in Claupet Console.", new JsonObject { ["id"] = Str("Canvas id.") }, ["id"]),
             .. PlanTools.Tools(),
-            // Los especialistas (Core/SpecialistTools.cs): delegarles una tarea, en cualquier agente.
-            .. SpecialistTools.Tools().Select(t => (JsonNode)Tool(t.Name, t.Description,
+            // Los especialistas (Core/SpecialistTools.cs) y las otras sesiones con la pizarra del proyecto (Core/SessionTools.cs).
+            .. SpecialistTools.Tools().Concat(SessionTools.Tools()).Select(t => (JsonNode)Tool(t.Name, t.Description,
                 new JsonObject([.. t.Args.Select(a => new KeyValuePair<string, JsonNode?>(a.Name, Str(a.Description)))]),
                 [.. t.Args.Where(a => a.Required).Select(a => a.Name)])),
         ];
@@ -289,9 +289,10 @@ static class CanvasMcp
                     // Los planes del proyecto (Core/PlanTools.cs): en la carpeta de la sesión.
                     if (PlanTools.Names.Contains(tool)) return PlanTools.Run(tool, args, folder ?? Environment.CurrentDirectory, _author);
                     // Los especialistas: la corrida va en este proceso, con la carpeta, la clave y la cuenta de esta sesión.
-                    if (SpecialistTools.Names.Contains(tool))
-                        return SpecialistTools.Run(tool, args, new SpecialistTools.Caller(folder ?? Environment.CurrentDirectory, session,
-                            Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR")));
+                    var caller = new SpecialistTools.Caller(folder ?? Environment.CurrentDirectory, session, Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR"));
+                    if (SpecialistTools.Names.Contains(tool)) return SpecialistTools.Run(tool, args, caller);
+                    // Las otras sesiones y la pizarra del proyecto.
+                    if (SessionTools.Names.Contains(tool)) return SessionTools.Run(tool, args, caller, store, _author);
                     throw new JsonRpcException(JsonRpcException.InvalidParams, $"Unknown tool: {tool}");
             }
         }
