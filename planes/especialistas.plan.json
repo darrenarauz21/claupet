@@ -1,0 +1,244 @@
+{
+  "titulo": "Especialistas como dots",
+  "descripcion": "Especialistas persistentes que cualquier agente o la persona llaman desde la Terminal de Claupet: delegar, memoria propia, siempre activos y en equipo. Los días son estimaciones para ordenar el trabajo, no compromisos.",
+  "inicio": "2026-11-23",
+  "etapas": [
+    {
+      "id": "e1",
+      "nombre": "1 · Delegar desde la Terminal",
+      "color": "azul"
+    },
+    {
+      "id": "e2",
+      "nombre": "2 · Memoria propia",
+      "color": "verde"
+    },
+    {
+      "id": "e3",
+      "nombre": "3 · Siempre activos",
+      "color": "naranja"
+    },
+    {
+      "id": "e4",
+      "nombre": "4 · Equipo e integración",
+      "color": "morado"
+    },
+    {
+      "id": "e5",
+      "nombre": "1b · Sesiones que comparten contexto",
+      "color": "rosa"
+    }
+  ],
+  "tareas": [
+    {
+      "id": "t0",
+      "titulo": "Aprobar el diseño y cerrar las decisiones abiertas",
+      "etapa": "e1",
+      "estado": "hecho",
+      "dias": 1,
+      "notas": "Aprobado el 2026-11-20: todas las decisiones recomendadas, y se suma compartir contexto entre sesiones.",
+      "por": "Claude Code"
+    },
+    {
+      "id": "t1",
+      "titulo": "Modelo: «cuándo usarlo», límites y política de permisos; los .json de hoy siguen sirviendo",
+      "etapa": "e1",
+      "estado": "hecho",
+      "dias": 1,
+      "depende": [
+        "t0"
+      ],
+      "notas": "Specialist: When («cuándo usarlo»), EditsFiles (worktree propio, D4), Account (D3), Limits (minutos y turnos, D5). Los .json de antes siguen sirviendo; las extensiones pueden traer «when».",
+      "por": "Claude Code"
+    },
+    {
+      "id": "t2",
+      "titulo": "SpecialistRunner (Core): corre un especialista sin interfaz sobre TerminalAgent y escribe su diario de corrida",
+      "etapa": "e1",
+      "estado": "revision",
+      "dias": 3,
+      "depende": [
+        "t1"
+      ],
+      "notas": "Core/SpecialistRunner.cs: corre el especialista sobre TerminalAgent (los cinco agentes), worktree si edita, permisos por la isla, tope de minutos, diario en especialistas/corridas. Probado con una sesión de mentira (7 pruebas); falta probarlo con agentes de verdad (t7). El tope de turnos se guarda pero todavía no se aplica.",
+      "por": "Claude Code"
+    },
+    {
+      "id": "t3",
+      "titulo": "Anfitrión y pipe «Claupet-especialistas»: la Console si está abierta; si no, la bandeja",
+      "etapa": "e1",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t2"
+      ]
+    },
+    {
+      "id": "t4",
+      "titulo": "Herramientas MCP en todos los agentes: especialistas, pedir_a_especialista, ver_corrida",
+      "etapa": "e1",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t3"
+      ]
+    },
+    {
+      "id": "t5",
+      "titulo": "Terminal: @ con autocompletado, bloque del especialista, pestaña hija, detener y seguir",
+      "etapa": "e1",
+      "estado": "por-hacer",
+      "dias": 3,
+      "depende": [
+        "t3"
+      ]
+    },
+    {
+      "id": "t6",
+      "titulo": "Permisos en el bloque y en la isla; sin ciclos y con profundidad máxima",
+      "etapa": "e1",
+      "estado": "por-hacer",
+      "dias": 1,
+      "depende": [
+        "t4",
+        "t5"
+      ]
+    },
+    {
+      "id": "t7",
+      "titulo": "Pruebas con Claude Code, Codex, Gemini, Copilot y OpenCode; manual",
+      "etapa": "e1",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t6",
+        "t17"
+      ],
+      "por": "Claude Code"
+    },
+    {
+      "id": "t8",
+      "titulo": "Memoria por especialista: se lee al empezar, herramienta recordar, vista para leerla y editarla",
+      "etapa": "e2",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t7"
+      ]
+    },
+    {
+      "id": "t9",
+      "titulo": "Corridas en segundo plano desde la bandeja, con aviso de Windows y la isla",
+      "etapa": "e3",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t8"
+      ]
+    },
+    {
+      "id": "t10",
+      "titulo": "Tareas programadas y disparadores (al terminar una sesión, al cambiar un plan, al llegar un archivo)",
+      "etapa": "e3",
+      "estado": "por-hacer",
+      "dias": 3,
+      "depende": [
+        "t9"
+      ]
+    },
+    {
+      "id": "t11",
+      "titulo": "Topes de costo y de corridas a la vez; Actividad por especialista",
+      "etapa": "e3",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t9"
+      ]
+    },
+    {
+      "id": "t12",
+      "titulo": "Coordinador: reparte una meta entre especialistas; pase de trabajo; worktree por especialista",
+      "etapa": "e4",
+      "estado": "por-hacer",
+      "dias": 4,
+      "depende": [
+        "t10",
+        "t11"
+      ]
+    },
+    {
+      "id": "t13",
+      "titulo": "Desde el Chat y la voz de Claupet, Proyectos («Trabajar en esto») y la API local",
+      "etapa": "e4",
+      "estado": "por-hacer",
+      "dias": 3,
+      "depende": [
+        "t12"
+      ]
+    },
+    {
+      "id": "t14",
+      "titulo": "Herramientas MCP sesiones, leer_sesion y escribir_a_sesion (en todos los agentes)",
+      "etapa": "e5",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t4"
+      ],
+      "por": "Claude Code"
+    },
+    {
+      "id": "t15",
+      "titulo": "Caja: # con la lista de sesiones y su contexto; «Enviar a…» en respuestas y bloques",
+      "etapa": "e5",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t5",
+        "t14"
+      ],
+      "por": "Claude Code"
+    },
+    {
+      "id": "t16",
+      "titulo": "Pizarra del proyecto: un canvas por proyecto que leen y escriben sus sesiones",
+      "etapa": "e5",
+      "estado": "por-hacer",
+      "dias": 2,
+      "depende": [
+        "t14"
+      ],
+      "por": "Claude Code"
+    },
+    {
+      "id": "t17",
+      "titulo": "Cuidados: origen marcado, tope de mensajes seguidos entre sesiones, todo visible en las dos pestañas",
+      "etapa": "e5",
+      "estado": "por-hacer",
+      "dias": 1,
+      "depende": [
+        "t15",
+        "t16"
+      ],
+      "por": "Claude Code"
+    }
+  ],
+  "hitos": [
+    {
+      "id": "h1",
+      "titulo": "Delegar en especialistas desde la Terminal, en todos los agentes",
+      "depende": [
+        "t7"
+      ]
+    },
+    {
+      "id": "h2",
+      "titulo": "Especialistas como dots: memoria, siempre activos y en equipo",
+      "depende": [
+        "t13"
+      ]
+    }
+  ],
+  "claupet": "plan/1"
+}

@@ -2353,5 +2353,14 @@
   "Los proyectos y planes que quitó de la lista. Elija uno para volver a verlo.": "The projects and plans you removed from the list. Pick one to show it again.",
   "Los proyectos que quitó de la lista. Elija uno para volver a verlo.": "The projects you removed from the list. Pick one to show it again.",
   "Proyecto {0}": "Project {0}",
-  "Plan {0}": "Plan {0}"
+  "Plan {0}": "Plan {0}",
+  "(Trabaja como especialista: esta tarea te la delegaron. Al terminar, tu última respuesta es el resultado que recibe quien te la pidió: que sea completa y concreta.)": "(You are working as a specialist: this task was delegated to you. When you finish, your last reply is the result the requester receives: make it complete and concrete.)",
+  "Un especialista al que le delegaron una tarea no puede delegar otra vez.": "A specialist working on a delegated task can't delegate again.",
+  "La tarea está vacía.": "The task is empty.",
+  "No se pudo abrir {0}.": "{0} couldn't be opened.",
+  "El agente se cerró antes de terminar.": "The agent closed before finishing.",
+  "Pasó su tope de {0} minutos y se detuvo. Lo que alcanzó a hacer: {1}": "It reached its {0}-minute limit and stopped. What it managed to do: {1}",
+  "nada todavía": "nothing yet",
+  "Se detuvo antes de terminar.": "It stopped before finishing.",
+  "Terminó sin decir nada.": "It finished without saying anything."
 }

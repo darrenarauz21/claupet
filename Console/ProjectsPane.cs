@@ -65,8 +65,6 @@ sealed class ProjectsPane : Panel
     IReadOnlyList<PlanEntry> _entries = [];
     IReadOnlyList<PlanEvent> _events = [];
     string? _selected;
-    /// <summary>El plan que pidió otra sección y todavía se está buscando.</summary>
-    string? _pending;
     string _view;
     string _query = "", _taskQuery = "";
     string? _filter;
@@ -75,8 +73,6 @@ sealed class ProjectsPane : Panel
     double? _zoom;
     PlanPanel? _panel;
     bool _scanning, _scanned;
-    /// <summary>Cuántas veces cambió lo desvinculado: un recorrido que empezó antes no pisa la lista.</summary>
-    int _round;
     IReadOnlyList<CanvasSummary> _allCanvases = [];
     int _ticks;
     IDisposable? _settle;
@@ -165,13 +161,22 @@ sealed class ProjectsPane : Panel
 
     // ── Datos ───────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Sube con cada búsqueda que se pidió para mostrar un plan (ShowPlanAsync): la búsqueda de fondo que empezó antes llega
+    /// vieja (sin ese plan) y no se aplica; si no, cambiaba la lista y lo elegido justo después de mostrarlo.
+    /// </summary>
+    int _scanVersion;
+
+    /// <summary>Cuántos ShowPlanAsync están buscando: mientras tanto no arranca otra búsqueda de fondo.</summary>
+    int _showing;
+
     /// <summary>Vuelve a buscar los planes aparte, sin trabar la ventana.</summary>
     void Rescan()
     {
-        if (_scanning) return;
+        if (_scanning || _showing > 0) return; // mientras se muestra un plan, su búsqueda es la que vale
         _scanning = true;
         var folders = _folders();
-        var round = _round;
+        var version = _scanVersion;
         _ = Task.Run(() =>
         {
             IReadOnlyList<PlanEntry> found = [];
@@ -186,9 +191,9 @@ sealed class ProjectsPane : Panel
                 Dispatcher.UIThread.Post(() =>
                 {
                     _scanning = false;
-                    // Si mientras tanto cambió lo desvinculado, lo encontrado ya es viejo: se vuelve a recorrer.
-                    if (round != _round)
+                    if (version != _scanVersion)
                     {
+                        // Llegó vieja. Si fue por mostrar un plan, esa búsqueda trae lo de ahora; si cambió lo desvinculado, se recorre otra vez.
                         Rescan();
                         return;
                     }
@@ -236,30 +241,33 @@ sealed class ProjectsPane : Panel
         if (Path.GetDirectoryName(path) is { } dir)
             foreach (var folder in _index.HiddenFolders.Where(f => (dir + Path.DirectorySeparatorChar).StartsWith(PlanIndex.Key(f) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
                 _index.Unhide(folder);
+        var version = ++_scanVersion;
         _selected = path;
         var opened = Selected is not null;
         if (opened) Open(Selected!);
-        // Mientras llega, otro recorrido no elige por su cuenta el primero de la lista (el pedido aún no estaba en ella).
-        else _pending = path;
         var folders = _folders();
-        var (found, canvases) = await Task.Run(() =>
+        IReadOnlyList<PlanEntry> found;
+        IReadOnlyList<CanvasSummary> canvases;
+        _showing++;
+        try
         {
-            var scan = ScanAndRecord(folders);
-            if (!scan.Any(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)))
+            (found, canvases) = await Task.Run(() =>
             {
-                _index.Add(path);
-                scan = ScanAndRecord(folders);
-            }
-            return (scan, _canvases.List());
-        });
+                var scan = ScanAndRecord(folders);
+                if (!scan.Any(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _index.Add(path);
+                    scan = ScanAndRecord(folders);
+                }
+                return (scan, _canvases.List());
+            });
+        }
+        finally { _showing--; }
+        if (version != _scanVersion) return; // se pidió mostrar otro plan mientras tanto: esa búsqueda manda
         Apply(found);
         SetCanvases(canvases);
         // Mientras se buscaba, la persona pudo elegir otro plan: entonces no se le cambia.
-        if (!opened && string.Equals(_pending, path, StringComparison.OrdinalIgnoreCase))
-        {
-            _pending = null;
-            if (Selected is { } entry) Open(entry);
-        }
+        if (!opened && string.Equals(_selected, path, StringComparison.OrdinalIgnoreCase) && Selected is { } entry) Open(entry);
     }
 
     /// <summary>El botón de los canvas del plan: los ligados y uno nuevo.</summary>
@@ -308,7 +316,7 @@ sealed class ProjectsPane : Panel
         var changed = !_scanned || found.Count != _entries.Count || !found.Zip(_entries).All(p => p.First.Path == p.Second.Path && p.First.Modified == p.Second.Modified && p.First.Error == p.Second.Error);
         _scanned = true;
         _entries = found;
-        if (Selected is null && _pending is null) _selected = found.FirstOrDefault(e => e.Plan is not null)?.Path ?? found.FirstOrDefault()?.Path;
+        if (Selected is null) _selected = found.FirstOrDefault(e => e.Plan is not null)?.Path ?? found.FirstOrDefault()?.Path;
         if (changed)
         {
             var now = Selected;
@@ -577,7 +585,7 @@ sealed class ProjectsPane : Panel
     /// <summary>Cambió lo desvinculado (aquí o en Canvas): lo que se ocultó sale ya; lo que vuelve aparece al recorrer.</summary>
     void OnHiddenChanged()
     {
-        _round++;
+        _scanVersion++; // una búsqueda que empezó antes trae lo de antes: se descarta y se recorre otra vez
         var plans = _index.HiddenPlans;
         Drop(e => !_index.IsHidden(e.Folder) && !plans.Contains(e.Path, StringComparer.OrdinalIgnoreCase));
         RenderList();
@@ -661,7 +669,6 @@ sealed class ProjectsPane : Panel
     void Open(PlanEntry entry, string? task = null)
     {
         _selected = entry.Path;
-        _pending = null;
         _taskId = task;
         _filter = null;
         _taskQuery = "";

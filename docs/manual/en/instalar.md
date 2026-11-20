@@ -102,6 +102,10 @@ Since version 2.3.0, Claupet looks for new versions on its own.
    that file and that version. If anything doesn't match, it deletes it and installs nothing.
 5. When it says "Claupet X is ready: it's installed on restart", press **Restart now** or just quit the
    app: the new version takes the old one's place.
+6. If Claupet Console was open, it also restarts with the new version and, if it was in Settings, goes
+   back to that section. If a Terminal tab is still working or something in the editor isn't saved,
+   it asks first, as when you close it; if you choose to keep going, you'll see the new version when you
+   close it and open it again.
 
 > [!TIP]
 > If you'd rather update by hand, turn off **Check for updates** in **Settings › System** (in Claupet

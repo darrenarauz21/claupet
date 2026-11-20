@@ -87,6 +87,11 @@ sealed partial class ConsoleWindow : Window
     /// <summary>La conversación que se muestra: los mensajes de otra que lleguen tarde se ignoran.</summary>
     string _chatId = ConsoleLink.QuickChat;
     bool _connected;
+    /// <summary>
+    /// La bandeja ya es una versión nueva (se actualizó): esta Console se cierra y se vuelve a abrir con el ejecutable nuevo.
+    /// _restartAsked: ya se intentó (una vez por proceso); _reopen: al cerrarse, se abre la nueva; _shut: ya se cerró.
+    /// </summary>
+    bool _restartAsked, _reopen, _shut;
     /// <summary>La sesión que pidió la isla al abrir la Console; null si no pidió ninguna.</summary>
     readonly SessionTarget? _openSession;
 
@@ -281,7 +286,23 @@ sealed partial class ConsoleWindow : Window
             _terminal.CloseAll();
             _canvas.Close();
             _client.Dispose();
+            _shut = true;
+            // Se cerró para actualizarse: la nueva espera a que este proceso termine (--reiniciar) y abre donde estaba.
+            if (_reopen) ConsoleApp.Reopen(_mode == Mode.Settings ? _sectionParent ?? _section : null);
         };
+    }
+
+    /// <summary>
+    /// La bandeja ya es la versión nueva y esta Console sigue con el código de antes: antes había que cerrarla a mano para
+    /// ver todos los cambios. Se cierra como si la cerrara la persona (si algo trabaja o falta guardar, pregunta primero) y
+    /// se vuelve a abrir con el ejecutable nuevo. Una sola vez por proceso, y nunca en la que ya se reabrió (sin bucles).
+    /// </summary>
+    void RestartForUpdate()
+    {
+        if (_restartAsked || ConsoleApp.Restarted) return;
+        _restartAsked = true;
+        _reopen = true;
+        Close();
     }
 
     /// <summary>
@@ -295,7 +316,12 @@ sealed partial class ConsoleWindow : Window
             var (title, text) = working == 1
                 ? (L.T("Una pestaña sigue trabajando"), L.T("Si cierra Claupet Console, se detiene y lo que estaba haciendo queda a medias."))
                 : (L.T("{0} pestañas siguen trabajando", working), L.T("Si cierra Claupet Console, se detienen y lo que estaban haciendo queda a medias."));
-            if (!await ConfirmCard.Ask(_terminal, _ink, title, text, L.T("Detener y salir"), L.T("Seguir trabajando"))) return;
+            if (!await ConfirmCard.Ask(_terminal, _ink, title, text, L.T("Detener y salir"), L.T("Seguir trabajando")))
+            {
+                // Si era el reinicio por la versión nueva, queda para cuando se cierre a mano (sin reabrirse sola).
+                _reopen = false;
+                return;
+            }
         }
         void Exit()
         {
@@ -333,6 +359,11 @@ sealed partial class ConsoleWindow : Window
         switch (message.Type)
         {
             case ConsoleLink.State:
+                if (ConsoleLink.Outdated(message.AppVersion, message.AppPath, ConsoleLink.AppVersion, ConsoleApp.ExePath))
+                {
+                    RestartForUpdate();
+                    if (_shut) return;
+                }
                 var rebuild = false;
                 if (message.Language is { } language && language != L.Language)
                 {
