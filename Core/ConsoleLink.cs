@@ -30,6 +30,9 @@ sealed record ConsoleMessage
     public IReadOnlyList<ConsoleOption>? Options { get; init; }
     public IReadOnlyList<ChatSummary>? Chats { get; init; }
     public ChatView? Chat { get; init; }
+    /// <summary>Con «estado»: la versión de la bandeja (con su commit) y su ejecutable, para que la Console note que se actualizó.</summary>
+    public string? AppVersion { get; init; }
+    public string? AppPath { get; init; }
 }
 
 /// <summary>
@@ -77,6 +80,20 @@ static class ConsoleLink
 
     /// <summary>Una tubería por usuario: con otra sesión abierta en el equipo, cada una tiene la suya.</summary>
     public static string PipeName => "Claupet.Console." + Environment.UserName;
+
+    /// <summary>La versión de este ejecutable, con su commit («2.7.1+35814fe…»): dos compilaciones distintas no se confunden.</summary>
+    public static string AppVersion { get; } =
+        typeof(ConsoleLink).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion
+        ?? SemVersion.App.ToString();
+
+    /// <summary>
+    /// La Console quedó vieja: la bandeja corre desde el mismo ejecutable pero ya es otra versión (se actualizó y se
+    /// reinició mientras la Console seguía abierta con el código de antes). Una copia de prueba, en otra carpeta, no cuenta.
+    /// </summary>
+    public static bool Outdated(string? trayVersion, string? trayPath, string myVersion, string? myPath) =>
+        trayVersion is { Length: > 0 } && trayPath is { Length: > 0 } && myPath is { Length: > 0 }
+        && trayVersion != myVersion && Account.SamePath(trayPath, myPath);
 
     static readonly JsonSerializerOptions Json = new()
     {

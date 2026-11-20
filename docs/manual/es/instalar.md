@@ -101,6 +101,10 @@ Desde la versión 2.3.0, Claupet busca versiones nuevas por su cuenta.
    archivo y de esa versión. Si algo no coincide, lo borra y no instala nada.
 5. Cuando dice «Claupet X está lista: se instala al reiniciar», pulse **Reiniciar ahora** o simplemente
    salga de la app: la versión nueva toma el lugar de la anterior.
+6. Si Claupet Console estaba abierta, también se reinicia con la versión nueva y, si estaba en Ajustes,
+   vuelve a esa sección. Si una pestaña de la Terminal sigue trabajando o falta guardar
+   algo en el editor, pregunta primero, como al cerrarla; si elige seguir, la versión nueva se ve al
+   cerrarla y abrirla otra vez.
 
 > [!TIP]
 > Si prefiere actualizar a mano, apague **Buscar actualizaciones** en **Ajustes › Sistema** (en Claupet

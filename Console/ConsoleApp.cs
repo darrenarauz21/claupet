@@ -31,8 +31,25 @@ static class ConsoleApp
     /// </summary>
     static string WakePipe => "Claupet.ConsoleWake." + Environment.UserName;
 
+    /// <summary>
+    /// El ejecutable de esta Console, tomado al abrir: al actualizarse, el archivo se reemplaza, y en Linux la ruta del
+    /// proceso pasaría a ser la del archivo viejo («(deleted)»). Con ella se reabre con el nuevo.
+    /// </summary>
+    public static string? ExePath { get; private set; }
+
+    /// <summary>La abrió otra Console que se cerró para reabrirse con la versión nueva: no vuelve a reiniciarse (sin bucles).</summary>
+    public static bool Restarted { get; private set; }
+
+    static bool _preview;
+
+    /// <summary>La abre la Console que se reinicia: espera a que esa termine de cerrarse (como la bandeja).</summary>
+    public const string RestartFlag = "--reiniciar";
+
     public static int Run(string[] args)
     {
+        ExePath = Environment.ProcessPath;
+        Restarted = args.Contains(RestartFlag);
+        _preview = args.Contains(PreviewFlag);
         // --seccion=<id>: con qué sección de Ajustes se abre (la manda la bandeja).
         Section = args.FirstOrDefault(a => a.StartsWith("--seccion=", StringComparison.Ordinal))?["--seccion=".Length..];
         Files = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal) && File.Exists(a)).Select(Path.GetFullPath).ToList();
@@ -40,8 +57,10 @@ static class ConsoleApp
         L.Use(settings.Language);
         Claupet.Theme.SelectedPalette = settings.Palette;
 
-        // Una sola ventana: si ya hay una abierta, se le pide que venga al frente (con los archivos) y esta se cierra.
+        // Una sola ventana: si ya hay una abierta, se le pide que venga al frente (con los archivos) y esta se cierra. La
+        // que se reinicia, en cambio, espera a que la anterior termine de cerrarse.
         using var mutex = new Mutex(true, ConsoleLink.ConsoleMutex, out var created);
+        if (!created && Restarted) created = WaitFor(mutex);
         if (!created)
         {
             Native.AllowForeground();
@@ -52,6 +71,29 @@ static class ConsoleApp
         StartTrayIfClosed(args.Contains(PreviewFlag));
 
         return AppBuilder.Configure<ConsoleApplication>().UsePlatformDetect().LogToTrace().StartWithClassicDesktopLifetime(args);
+    }
+
+    /// <summary>Espera el candado de la Console que se cierra; si se cerró sin soltarlo, igual queda tomado.</summary>
+    static bool WaitFor(Mutex mutex)
+    {
+        try { return mutex.WaitOne(TimeSpan.FromSeconds(15)); }
+        catch (AbandonedMutexException) { return true; }
+    }
+
+    /// <summary>
+    /// Abre otra Console con el ejecutable de ahora (el nuevo, después de actualizar), que espera a que esta termine
+    /// (--reiniciar). section: la sección de Ajustes en que estaba, si estaba en una.
+    /// </summary>
+    public static void Reopen(string? section)
+    {
+        if (ExePath is not { } exe) return;
+        var start = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = AppContext.BaseDirectory };
+        start.ArgumentList.Add(Flag);
+        start.ArgumentList.Add(RestartFlag);
+        if (_preview) start.ArgumentList.Add(PreviewFlag);
+        if (section is not null) start.ArgumentList.Add("--seccion=" + section);
+        try { Process.Start(start)?.Dispose(); }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException) { ErrorLog.Write(ex); }
     }
 
     /// <summary>Le pide a la Console abierta que venga al frente, con estos archivos.</summary>

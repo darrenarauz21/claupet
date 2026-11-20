@@ -203,6 +203,8 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
             Palette = app.Palette,
             CustomTheme = app.CustomTheme,
             Pages = _extensions is { } extensions ? extensions.Merge(pages) : pages,
+            AppVersion = ConsoleLink.AppVersion,
+            AppPath = Environment.ProcessPath,
         });
         // El modelo y «leer en voz alta» también están en la cabecera del chat.
         PushChat(_chatId);

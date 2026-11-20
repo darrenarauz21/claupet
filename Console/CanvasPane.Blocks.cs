@@ -720,6 +720,13 @@ sealed partial class CanvasPane
 
     static readonly Regex Node = new(@"^\s*([A-Za-z0-9_\-]+)\s*(?:\(\((.+?)\)\)|\[\[(.+?)\]\]|\[(.+?)\]|\((.+?)\)|\{(.+?)\}|>(.+?)\])?\s*$");
     static readonly Regex Arrow = new(@"\s*(?:-->|---|-\.->|==>|--\s*[^-]+?\s*-->)\s*(?:\|[^|]*\|\s*)?");
+    static readonly Regex LineBreak = new(@"\s*<br\s*/?>\s*", RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// El texto de un nodo como lo muestra Mermaid: sin las comillas de afuera, y cada «&lt;br&gt;» (o «&lt;br/&gt;»,
+    /// «&lt;br /&gt;») es un salto de línea. Antes se veía escrito y el nodo se cortaba con «…».
+    /// </summary>
+    internal static string NodeText(string label) => LineBreak.Replace(label.Trim().Trim('"'), "\n").Trim();
 
     /// <summary>
     /// Un «graph»/«flowchart» de Mermaid: nodos por capas (de izquierda a derecha, o de arriba abajo con TD/TB) y flechas
@@ -738,7 +745,7 @@ sealed partial class CanvasPane
             var m = Node.Match(part);
             if (!m.Success) return null;
             var id = m.Groups[1].Value;
-            var label = Enumerable.Range(2, 6).Select(g => m.Groups[g]).FirstOrDefault(g => g.Success)?.Value.Trim('"');
+            var label = Enumerable.Range(2, 6).Select(g => m.Groups[g]).FirstOrDefault(g => g.Success)?.Value is { } raw ? NodeText(raw) : null;
             if (!labels.ContainsKey(id)) { labels[id] = id; order.Add(id); }
             if (label is not null) labels[id] = label;
             return id;
@@ -763,22 +770,38 @@ sealed partial class CanvasPane
             if (!moved) break;
         }
         var layers = order.GroupBy(id => layer[id]).OrderBy(g => g.Key).Select(g => g.ToList()).ToList();
-        const double H = 40, GapMain = 56, GapCross = 16;
-        double Width(string id) => Math.Clamp(labels[id].Length * 7.4 + 30, 84, 220);
+        // Cada nodo mide lo que su texto: hasta MaxText de ancho (lo más largo pasa a la línea siguiente) y el alto de sus
+        // líneas. Antes el ancho se estimaba por la cantidad de letras, el alto era fijo y lo que no cabía se cortaba.
+        const double H = 40, MaxText = 220, PadX = 12, PadY = 9, GapMain = 56, GapCross = 16;
+        var texts = order.ToDictionary(id => id, id => new TextBlock
+        {
+            Text = labels[id], FontFamily = Ink.Sans, FontSize = 13, FontWeight = FontWeight.Medium, Foreground = _ink.Text,
+            TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = MaxText,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+        });
+        var sizes = texts.ToDictionary(p => p.Key, p =>
+        {
+            p.Value.Measure(new Size(MaxText, double.PositiveInfinity));
+            var text = p.Value.DesiredSize;
+            // + 6: el borde (1,5 por lado) se redondea a 2 al dibujar, y con medida justa la última línea se cortaba.
+            return new Size(Math.Max(84, Math.Ceiling(text.Width) + 2 * PadX + 6), Math.Max(H, Math.Ceiling(text.Height) + 2 * PadY + 6));
+        });
+        double Width(string id) => sizes[id].Width;
+        double Height(string id) => sizes[id].Height;
         var boxes = new Dictionary<string, Rect>();
         var main = 0.0;
-        var crossSizes = layers.Select(l => vertical ? l.Sum(Width) + (l.Count - 1) * GapCross : l.Count * H + (l.Count - 1) * GapCross).ToList();
+        var crossSizes = layers.Select(l => (vertical ? l.Sum(Width) : l.Sum(Height)) + (l.Count - 1) * GapCross).ToList();
         var crossMax = crossSizes.Max();
         for (var li = 0; li < layers.Count; li++)
         {
             var l = layers[li];
-            var thickness = vertical ? H : l.Max(Width);
+            var thickness = vertical ? l.Max(Height) : l.Max(Width);
             var cross = (crossMax - crossSizes[li]) / 2;
             foreach (var id in l)
             {
-                var w = Width(id);
-                boxes[id] = vertical ? new Rect(cross, main, w, H) : new Rect(main + (thickness - w) / 2, cross, w, H);
-                cross += (vertical ? w : H) + GapCross;
+                var (w, h) = (Width(id), Height(id));
+                boxes[id] = vertical ? new Rect(cross, main + (thickness - h) / 2, w, h) : new Rect(main + (thickness - w) / 2, cross, w, h);
+                cross += (vertical ? w : h) + GapCross;
             }
             main += thickness + GapMain;
         }
@@ -814,8 +837,8 @@ sealed partial class CanvasPane
             var box = new Border
             {
                 Width = r.Width, Height = r.Height, CornerRadius = new CornerRadius(12), Background = _ink.Raised, BorderBrush = _ink.Hairline,
-                BorderThickness = new Thickness(1.5), BoxShadow = Shadow(soft: true),
-                Child = new TextBlock { Text = labels[id], FontSize = 13, FontWeight = FontWeight.Medium, Foreground = _ink.Text, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(10, 0) },
+                BorderThickness = new Thickness(1.5), BoxShadow = Shadow(soft: true), Padding = new Thickness(PadX, PadY),
+                Child = texts[id],
             };
             Canvas.SetLeft(box, r.X);
             Canvas.SetTop(box, r.Y);
