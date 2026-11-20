@@ -8,6 +8,7 @@ using Window = Avalonia.Controls.Window;
 namespace Claupet.Tests;
 
 /// <summary>Especialistas (experimental): se guardan, vienen de extensiones y cada agente recibe sus instrucciones y solo sus herramientas.</summary>
+[Collection("Especialistas")] // cambian la carpeta y los de las extensiones, que son de todos: de a una clase por vez
 public sealed class SpecialistsTests : IDisposable
 {
     readonly TempDir _dir = new();
