@@ -111,6 +111,8 @@ sealed partial class TerminalPane : Grid
         _zoom.Child = _blocks;
         _scroll.Content = new Border { Child = _zoom, Padding = new Thickness(20, 12, 20, 16) };
         _input.AddHandler(KeyDownEvent, OnInputKey, RoutingStrategies.Tunnel);
+        // La caja de un agente se acomoda según lo escrito: una línea, o el texto arriba y los botones abajo.
+        _input.TextChanged += (_, _) => _arrangeComposer?.Invoke();
         // Ctrl+T: la pestaña nueva, desde cualquier lado de la Terminal (la pantalla completa se lo pasa al programa).
         AddHandler(KeyDownEvent, (_, e) =>
         {
