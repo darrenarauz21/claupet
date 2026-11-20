@@ -432,7 +432,7 @@ sealed partial class EditorPane : Grid
             case Key.F3 when open: FindNext(!shift); break;
             case Key.Escape when _findBar.IsVisible || _goToBar.IsVisible: HideBars(); break;
             case Key.D when ctrl && !shift && inText: EditLines(EditorLines.Duplicate); break;
-            case Key.K when ctrl && shift && inText: EditLines(EditorLines.Delete); break;
+            // Ctrl+Mayús+K ya no borra la línea: es la búsqueda de toda la Console (ConsoleWindow.Search.cs).
             case Key.Up or Key.Down when alt && !ctrl && inText: EditLines((d, s, l) => EditorLines.Move(d, s, l, e.Key == Key.Up)); break;
             // Ctrl+/ con el teclado de EE. UU.; Ctrl+Q (como en Notepad++) con cualquiera: en español «/» es Mayús+7.
             case Key.OemQuestion or Key.Divide or Key.Q when ctrl && inText: ToggleComment(); break;

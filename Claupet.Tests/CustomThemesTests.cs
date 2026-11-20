@@ -156,6 +156,28 @@ public sealed class CustomThemesTests
     }
 
     [Fact]
+    public void ElTemaElegidoNoSeLeeDelDiscoEnCadaTexto()
+    {
+        using var dir = new TempDir();
+        var (folder, custom) = (CustomThemes.Folder, Theme.SelectedCustom);
+        CustomThemes.Folder = dir.Path;
+        try
+        {
+            var saved = CustomThemes.Save(CustomThemes.Parse(Beach)!);
+            Theme.SelectedCustom = saved.Id;
+            Assert.Equal(saved.Name, CustomThemes.Selected?.Name);
+            // Cada texto que se dibuja lo pide: enseguida después, sale de la memoria aunque el archivo haya cambiado.
+            var path = CustomThemes.PathFor(saved.Id);
+            File.WriteAllText(path, File.ReadAllText(path).Replace(saved.Name, "Playa cambiada"));
+            Assert.Equal(saved.Name, CustomThemes.Selected?.Name);
+            // Guardar (o borrar) un tema desde Claupet lo renueva en el acto.
+            CustomThemes.Save(CustomThemes.Parse(Beach)! with { Id = "otro" });
+            Assert.Equal("Playa cambiada", CustomThemes.Selected?.Name);
+        }
+        finally { (CustomThemes.Folder, Theme.SelectedCustom) = (folder, custom); }
+    }
+
+    [Fact]
     public void ElColorYaNoOfreceLosTemasPeroLaMascotaSi()
     {
         using var dir = new TempDir();

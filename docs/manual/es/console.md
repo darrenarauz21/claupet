@@ -36,6 +36,14 @@ A la izquierda, un riel con siete botones:
 | 🧑‍🔬 **Especialistas** | Agentes con su rol, sus instrucciones y sus herramientas (experimental). |
 | ⚙️ **Ajustes** | Todas las opciones de Claupet, por secciones. |
 
+### Buscar en toda la Console
+
+**Ctrl+Mayús+K**, desde cualquier sección, busca en toda la Console: las secciones, las opciones de Ajustes, las
+pestañas de la Terminal, los archivos del editor (abiertos y recientes), los canvas, los planes y los chats. Se
+escribe sin preocuparse por tildes ni mayúsculas; las flechas eligen, **Intro** lleva a lo elegido y **Esc** cierra.
+
+Dentro de una sección, **Ctrl+K** busca solo en ella: en Ajustes, en Canvas y en Proyectos.
+
 ## Chat
 
 A la izquierda, la lista de conversaciones; a la derecha, la abierta.
@@ -195,6 +203,8 @@ ajustes rápidos del ícono traen solo lo de todos los días; aquí está todo.
 
 Las listas para elegir se manejan también con el teclado: flechas, **Intro** para elegir y **Esc** para
 cerrar.
+
+**Ctrl+K** busca entre todas las opciones, de cualquier sección: lleva a la opción elegida y la marca un momento.
 
 Cada opción está explicada en [Ajustes](ajustes.md).
 

@@ -75,6 +75,8 @@ sealed class SpecialistsPane : Panel
     public static string MarkOf(string kind) => Agents.FirstOrDefault(a => a.Kind == kind).Mark ?? "✻";
 
     Ink _ink = Ink.For(true);
+    /// <summary>Ya se dibujó con algún color (SetInk): con los mismos, no se rehace.</summary>
+    bool _painted;
     List<Specialist> _all = [];
     IReadOnlyList<McpServer> _servers = [];
     string? _selected;
@@ -119,6 +121,9 @@ sealed class SpecialistsPane : Panel
 
     public void SetInk(Ink ink)
     {
+        // La Console lo llama en cada cambio de pestaña: con los mismos colores, no se rehace todo.
+        if (_painted && ReferenceEquals(ink, _ink)) return;
+        _painted = true;
         _ink = ink;
         RenderSearch();
         RenderList();

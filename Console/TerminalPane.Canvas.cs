@@ -96,6 +96,10 @@ sealed partial class TerminalPane
     {
         if (_tabs.FirstOrDefault(t => t.Agent == agent) is { } tab) Select(tab);
     }
+
+    /// <summary>Las pestañas abiertas, para la búsqueda de la Console (Ctrl+Shift+K): su título, su proyecto, de qué es y cómo mostrarla.</summary>
+    internal IReadOnlyList<(string Title, string Project, string Detail, Action Show)> SearchTabs() =>
+        [.. _tabs.Select(t => (Title(t), t.Project, Describe(t), (Action)(() => Select(t))))];
 }
 
 /// <summary>Una sesión que corre en la Terminal, vista desde Canvas: su agente, su nombre, su carpeta y su título.</summary>

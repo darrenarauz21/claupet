@@ -110,6 +110,7 @@ sealed partial class CanvasPane
     /// <summary>Abre la mesa con las pantallas del canvas que se ve.</summary>
     public void EnterMesa()
     {
+        EnsureLoaded();
         if (_doc is not { } doc || !CanvasDesk.HasScreens(doc) || !DeskAvailable || _liveOff) return;
         SaveEditing();
         LeavePast();

@@ -130,8 +130,31 @@ static class CustomThemes
     /// <summary>Las familias de letra instaladas, para que Claude elija una que exista; null: no se le dice.</summary>
     public static Func<IReadOnlyList<string>>? InstalledFonts { get; set; }
 
-    /// <summary>El tema propio elegido en Ajustes (Theme.SelectedCustom), o null si no hay o el archivo falta o está roto.</summary>
-    public static CustomTheme? Selected => Theme.SelectedCustom is { } id ? Load(id) : null;
+    /// <summary>
+    /// El tema propio elegido en Ajustes (Theme.SelectedCustom), o null si no hay o el archivo falta o está roto. Se pide por
+    /// cada texto que se dibuja (Ink.Sans): el disco se mira a lo sumo una vez por SelectedRecheck, no cada vez (antes, una
+    /// lista de canvas hacía cientos de lecturas del archivo en el hilo de la interfaz). Guardar o borrar un tema lo renueva enseguida.
+    /// </summary>
+    public static CustomTheme? Selected
+    {
+        get
+        {
+            if (Theme.SelectedCustom is not { } id) return null;
+            var now = Environment.TickCount64;
+            if (_selected is { } cached && cached.Id == id && cached.Folder == _folder && now - cached.At < SelectedRecheck) return cached.Theme;
+            var theme = Load(id);
+            _selected = new SelectedCache(_folder, id, now, theme);
+            return theme;
+        }
+    }
+
+    /// <summary>Cada cuánto (ms) se vuelve a mirar en el disco el tema elegido: si lo cambió otro proceso, se ve en ese tiempo.</summary>
+    const long SelectedRecheck = 1000;
+
+    /// <summary>El último tema elegido que se leyó: con qué carpeta (la de las pruebas, o null), su id y cuándo se miró.</summary>
+    sealed record SelectedCache(string? Folder, string Id, long At, CustomTheme? Theme);
+
+    static volatile SelectedCache? _selected;
 
     /// <summary>El id del tema si la elección es «tema:&lt;id&gt;»; si no, null.</summary>
     public static string? IdOf(string? palette) =>
@@ -196,6 +219,7 @@ static class CustomThemes
         for (var n = 2; names.Contains(name); n++) name = $"{theme.Name} {n}";
         var saved = theme with { Id = id, Name = name };
         File.WriteAllText(PathFor(id), ToJson(saved), new UTF8Encoding(false));
+        _selected = null;
         return saved;
     }
 
@@ -208,6 +232,7 @@ static class CustomThemes
             if (!File.Exists(path)) return false;
             File.Delete(path);
             lock (Cache) Cache.Remove(path);
+            _selected = null;
             return true;
         }
         catch (Exception) { return false; }

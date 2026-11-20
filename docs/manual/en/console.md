@@ -37,6 +37,14 @@ On the left, a rail with seven buttons:
 | 🧑‍🔬 **Specialists** | Agents with their role, instructions and tools (experimental). |
 | ⚙️ **Settings** | All of Claupet's options, by section. |
 
+### Search the whole Console
+
+**Ctrl+Shift+K**, from any section, searches the whole Console: the sections, the Settings options, the Terminal
+tabs, the editor's files (open and recent), the canvases, the plans and the chats. Accents and capitals don't matter;
+the arrows choose, **Enter** goes to the result and **Esc** closes.
+
+Inside a section, **Ctrl+K** searches only that section: in Settings, Canvas and Projects.
+
 ## Chat
 
 On the left, the list of conversations; on the right, the open one.
@@ -193,6 +201,8 @@ All of Claupet's options, in sections: **General**, **Alerts**, **Appearance**, 
 settings only have the everyday ones; everything is here.
 
 Dropdown lists work with the keyboard too: the arrows, **Enter** to choose and **Esc** to close.
+
+**Ctrl+K** searches every option, in any section: it goes to the option you pick and highlights it for a moment.
 
 Every option is explained in [Settings](ajustes.md).
 

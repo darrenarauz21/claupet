@@ -108,6 +108,7 @@ sealed partial class CanvasPane
     /// <summary>Liga el canvas a ese plan (null: lo desliga). Es un cambio más: queda en las versiones.</summary>
     internal void LinkPlan(string? path)
     {
+        EnsureLoaded();
         if (_doc is { } doc && !string.Equals(doc.Plan, path, StringComparison.OrdinalIgnoreCase) && Apply(new CanvasOp("plan", Content: path))) Render(keepScroll: true);
     }
 

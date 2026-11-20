@@ -117,8 +117,12 @@ sealed partial class CanvasPane : Grid
         _agoTimer.Tick += (_, _) => RefreshAgo();
         _listView.AttachedToVisualTree += (_, _) => _agoTimer.Start();
         _listView.DetachedFromVisualTree += (_, _) => _agoTimer.Stop();
-        // Al volver a Canvas, el avance del plan ligado puede ser otro.
-        AttachedToVisualTree += (_, _) => _bar.Child = Bar();
+        // Al volver a Canvas, el avance del plan ligado puede ser otro. La primera vez, aquí se lee y se dibuja.
+        AttachedToVisualTree += (_, _) =>
+        {
+            if (EnsureLoaded()) return;
+            _bar.Child = Bar();
+        };
         _bar.SizeChanged += (_, _) => FitPlanChip();
         try
         {
@@ -127,16 +131,71 @@ sealed partial class CanvasPane : Grid
             _watcher.OpenRequested += () => Dispatcher.UIThread.Post(CheckOpenRequest);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException) { ErrorLog.Write(ex); }
-        Reload();
-        _doc = _list.Count > 0 ? _store.Load(_list[0].Id) : null;
-        Render();
+        // Al abrir la Console no se lee ni se dibuja nada de Canvas (antes, todos los canvas y el último entero, aunque se
+        // abriera la Terminal): la lista se lee aparte, y el documento se dibuja la primera vez que se ve (EnsureLoaded).
+        var listed = _store;
+        _ = Task.Run(() =>
+        {
+            try { listed.List(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        });
     }
 
-    public IReadOnlyList<CanvasSummary> List => _list;
-    public string? CurrentId => _doc?.Id;
+    /// <summary>Todavía no se leyó la lista ni se dibujó el documento: se hace al verse o al pedirse algo de Canvas.</summary>
+    bool _pending = true;
+
+    /// <summary>
+    /// La primera vez que se necesita: lee la lista (ya leída aparte al abrir, así que es de la memoria) y dibuja el canvas
+    /// pedido o el más reciente. Devuelve si lo hizo ahora (el dibujo ya incluye la barra).
+    /// </summary>
+    bool EnsureLoaded(string? id = null)
+    {
+        if (!_pending) return false;
+        _pending = false;
+        Reload();
+        var first = id ?? (_list.Count > 0 ? _list[0].Id : null);
+        _doc = first is null ? null : _store.Load(first);
+        Render();
+        return true;
+    }
+
+    /// <summary>Para las pruebas: si ya se leyó y se dibujó Canvas.</summary>
+    internal bool Loaded => !_pending;
+
+    /// <summary>
+    /// Lo deja dibujado sin que se vea (la Console lo pide un rato después de abrir, con la ventana quieta): así entrar a
+    /// Canvas la primera vez es tan rápido como las demás, y abrir la Console no lo espera.
+    /// </summary>
+    public void Preload() => EnsureLoaded();
+
+    public IReadOnlyList<CanvasSummary> List
+    {
+        get
+        {
+            EnsureLoaded();
+            return _list;
+        }
+    }
+
+    public string? CurrentId
+    {
+        get
+        {
+            EnsureLoaded();
+            return _doc?.Id;
+        }
+    }
 
     public void SetInk(Ink ink)
     {
+        // Se llama al cambiar de pestaña aunque los colores sean los mismos: sin esto, cada cambio volvía a dibujar el
+        // canvas abierto entero. Antes de la primera vez, solo se guardan los colores (EnsureLoaded dibuja con ellos).
+        if (ReferenceEquals(ink, _ink)) return;
+        if (_pending)
+        {
+            _ink = ink;
+            return;
+        }
         var before = DeskTheme();
         _ink = ink;
         // La mesa lleva los colores en su página: con otro tema se vuelve a hacer (conservando la pantalla elegida).
@@ -153,7 +212,7 @@ sealed partial class CanvasPane : Grid
     public void CheckOpenRequest()
     {
         if (_store.TakeOpenRequest() is not { } id) return;
-        Reload();
+        if (!EnsureLoaded(id)) Reload();
         Select(id);
         OpenRequested?.Invoke();
     }
@@ -161,13 +220,18 @@ sealed partial class CanvasPane : Grid
     /// <summary>Muestra un canvas que puede ser nuevo (lo creó Proyectos): primero vuelve a leer la lista.</summary>
     public void Show(string id)
     {
-        Reload();
+        if (!EnsureLoaded(id)) Reload();
         Select(id);
         ListChanged?.Invoke();
     }
 
     public void Select(string id)
     {
+        if (EnsureLoaded(id))
+        {
+            ListChanged?.Invoke();
+            return;
+        }
         if (_doc?.Id == id) return;
         SaveEditing(); // lo que se estaba escribiendo se guarda: el clic en la lista no pasa por el documento
         LeavePast();
@@ -182,6 +246,7 @@ sealed partial class CanvasPane : Grid
     /// <summary>Un canvas nuevo, con una sección de texto lista para escribir.</summary>
     public void New()
     {
+        _pending = false; // el nuevo se dibuja abajo: no hace falta dibujar antes el último
         try
         {
             var doc = _store.Create(L.T("Canvas sin título"), CanvasJson.User, [new CanvasOp("insert", Kind: CanvasKinds.Markdown, Content: "")]);
@@ -232,6 +297,8 @@ sealed partial class CanvasPane : Grid
 
     void OnDiskChanged(string id)
     {
+        // Antes de verse Canvas no hay nada dibujado que poner al día: se lee todo al verse.
+        if (_pending) return;
         var before = _list;
         Reload();
         if (_doc is { } doc && doc.Id == id)
@@ -718,6 +785,7 @@ sealed partial class CanvasPane : Grid
     public Control ListView()
     {
         if (_listView.Parent is Panel old) old.Children.Remove(_listView);
+        if (EnsureLoaded()) return _listView; // el dibujo del documento ya hizo la lista
         RenderList(force: true);
         return _listView;
     }

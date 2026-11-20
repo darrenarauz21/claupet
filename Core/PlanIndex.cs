@@ -51,12 +51,18 @@ sealed class PlanIndex(string? file = null)
         Save();
     }
 
+    /// <summary>Lo agregado a mano se lee y se cambia desde varios hilos (las búsquedas van aparte de la interfaz).</summary>
+    readonly object _extraLock = new();
+
     /// <summary>Suma un plan que no está en una carpeta vinculada.</summary>
     public void Add(string path)
     {
-        if (Data.Extra.Contains(path, StringComparer.OrdinalIgnoreCase)) return;
-        Data.Extra.Add(path);
-        Save();
+        lock (_extraLock)
+        {
+            if (Data.Extra.Contains(path, StringComparer.OrdinalIgnoreCase)) return;
+            Data.Extra.Add(path);
+            Save();
+        }
     }
 
     void Save()
@@ -64,7 +70,9 @@ sealed class PlanIndex(string? file = null)
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_file)!);
-            File.WriteAllText(_file, JsonSerializer.Serialize(Data));
+            string json;
+            lock (_extraLock) json = JsonSerializer.Serialize(Data);
+            File.WriteAllText(_file, json);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
@@ -113,7 +121,9 @@ sealed class PlanIndex(string? file = null)
         foreach (var folder in folders)
             foreach (var path in Find(folder))
                 if (seen.Add(path)) entries.Add(Read(path, folder));
-        foreach (var path in Data.Extra.ToList())
+        List<string> extra;
+        lock (_extraLock) extra = [.. Data.Extra];
+        foreach (var path in extra)
             if (File.Exists(path) && seen.Add(path)) entries.Add(Read(path, Path.GetDirectoryName(path)!));
         return entries;
     }

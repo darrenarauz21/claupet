@@ -259,23 +259,28 @@ static partial class ChibiSprite
             yield return S(at with { Stage = next }, 200);
         }
 
-        // Una tanda de frente o de espaldas; (gx, gy) es el agarre, en casillas del lienzo.
+        // Una tanda de frente o de espaldas; (gx, gy) es el agarre, en casillas del lienzo. De frente, el puño y el mazo
+        // van delante del cuerpo. De espaldas (at.Back), el chibi mira hacia lo que golpea: la mano y el mango quedan
+        // delante de él y su cuerpo los tapa, así que van detrás (en Behind, sobre la casita) y solo asoma lo que sale
+        // por el costado, la cabeza del mazo al levantarlo y al golpear.
         IEnumerable<Frame> PoseHits(Pose at, int gx, int gy, int taps, Func<Pose, bool, Pose> next)
         {
-            (string[], int, int)[] Held(double angle)
+            Pose Held(Pose p, double angle)
             {
                 var lift = angle > 50 ? 2 : angle > 0 ? 1 : 0;
                 var (rows, px, py) = Build.Mallet(angle);
-                return [(rows, gx - px - Ox - at.Dx, gy - lift - py - Oy), (Art.Fist, gx - 2 - Ox - at.Dx, gy - lift - 2 - Oy)];
+                if (p.Back)
+                    return p with { Behind = [.. p.Behind, (rows, gx - px, gy - lift - py), (Art.Fist, gx - 2, gy - lift - 2)] };
+                return p with { Props = [(rows, gx - px - Ox - p.Dx, gy - lift - py - Oy), (Art.Fist, gx - 2 - Ox - p.Dx, gy - lift - 2 - Oy)] };
             }
             for (var i = 0; i < taps - 1; i++)
             {
-                yield return P(at with { Props = Held(45) }, 120);
-                yield return P(at with { Props = Held(0), Fx = [(Spark, gx + 7 - Ox, gy + 3 - Oy)] }, 120);
+                yield return P(Held(at, 45), 120);
+                yield return P(Held(at, 0) with { Fx = [(Spark, gx + 7 - Ox, gy + 3 - Oy)] }, 120);
             }
-            yield return P(at with { Props = Held(60) }, 160);
-            yield return P(next(at, true) with { Props = Held(0), Fx = [(Star, gx + 9 - Ox, gy - 3 - Oy), (SmallSteam, gx + 3 - Ox, gy + 3 - Oy)] }, 200);
-            yield return P(next(at, false) with { Props = Held(0) }, 200);
+            yield return P(Held(at, 60), 160);
+            yield return P(Held(next(at, true), 0) with { Fx = [(Star, gx + 9 - Ox, gy - 3 - Oy), (SmallSteam, gx + 3 - Ox, gy + 3 - Oy)] }, 200);
+            yield return P(Held(next(at, false), 0), 200);
         }
         (string[], int, int)[] House(int n) => [(Build.House(n), 26, HouseY)];
 
@@ -293,10 +298,12 @@ static partial class ChibiSprite
         frames.AddRange([S(stand with { Stage = 2, Eyes = SideEyes.Closed }, 120), S(stand with { Stage = 2 }, 160)]);
         frames.AddRange(SideHits(stand with { Stage = 2 }, 4, 3));
 
-        // 3. De espaldas, con la casita detrás a la derecha: el techo.
-        var back = new Pose { Back = true, Dx = -4, Right = Arm.Front, Behind = House(3) };
+        // 3. De espaldas, con la casita delante de él a la derecha: el techo. El brazo se estira hacia la casita y de él
+        // solo asoma la manga por el costado; el mazo, tapado por el cuerpo, sale por la derecha al golpear.
+        var back = new Pose { Back = true, Dx = -4, Right = Arm.Reach, Behind = House(3) };
         frames.Add(P(back with { Dy = -2, Right = Arm.Down, Fx = Dust(44, 4, 17) }, 160));
-        frames.AddRange(PoseHits(back, 26, 39, 3, (p, _) => p with { Behind = House(4) }));
+        // El agarre, al borde de la espalda: la mano asoma bajo el codo, y el mazo sale de ella.
+        frames.AddRange(PoseHits(back, 28, 39, 3, (p, _) => p with { Behind = House(4) }));
 
         // 4. Del otro lado, de perfil: la puerta y la ventana.
         var other = new SideShot { Left = true, Stage = 4 };

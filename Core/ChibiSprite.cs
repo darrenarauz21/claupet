@@ -226,7 +226,7 @@ static partial class ChibiSprite
         "...KoOOOOoOOOOOO",
     ];
 
-    enum Arm { Down, Up, Wave, Out, Think, Angry, Hold, Front, Type, Write }
+    enum Arm { Down, Up, Wave, Out, Think, Angry, Hold, Front, Type, Write, Reach }
     enum Eyes { Open, Closed, Happy, Sleep, Up, Dizzy, Squeeze, Annoyed, AnnoyedRight, LookLeft, LookRight, Down, DownLeft, DownRight, Glow }
     enum Mouth { Smile, Open, Small, Oh, Wavy, Cat, Pout, Tongue }
 
@@ -291,6 +291,17 @@ static partial class ChibiSprite
             "KSSKoOOOO",
             "KSSKoOOOO",
             ".KKKKKKKK",
+        ]),
+        // De espaldas, el brazo que se estira hacia adelante (hacia lo que tiene enfrente): la manga sale de debajo de la
+        // capucha, pegada a la espalda del buzo (sin contorno entre los dos), y baja hasta el codo; el antebrazo queda
+        // tapado y la mano asoma debajo (va detrás del cuerpo, con lo que lleva).
+        [Arm.Reach] = (0, 29,
+        [
+            ".KOOO",
+            "KOOOO",
+            "KoOOO",
+            ".KoOK",
+            "..KK.",
         ]),
         // Sosteniendo la caja por el costado: la manga baja junto al cuerpo y la mano entra hasta la caja.
         [Arm.Hold] = (1, 31,
@@ -605,6 +616,15 @@ static partial class ChibiSprite
 
     /// <summary>Cuánto dura una vuelta del movimiento, en ms.</summary>
     public static int Length(ChibiMove move, ChibiSkin? skin = null) => Of(skin).Moves[move].Sum(f => f.Ms);
+
+    /// <summary>
+    /// Para las pruebas: los cuadros de espaldas de un movimiento (su número), cuántas cosas llevan delante del cuerpo,
+    /// cuántas detrás y el brazo derecho. De espaldas, lo que tiene en las manos queda tapado por el cuerpo: va detrás.
+    /// </summary>
+    internal static IReadOnlyList<(int Index, int Front, int Behind, string Right)> BackPoses(ChibiMove move, ChibiSkin? skin = null) =>
+        [.. Of(skin).Moves[move].Select((frame, index) => (frame.Pose, index))
+            .Where(x => x.Pose is { Back: true })
+            .Select(x => (x.index, x.Pose!.Props.Length, x.Pose.Behind.Length, x.Pose.Right.ToString()))];
 
     /// <summary>
     /// La cabeza sola en un cuadro de la animación al actualizar: la grande (32 × 32) o la chica (16 × 16). Sin

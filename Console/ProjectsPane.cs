@@ -208,13 +208,31 @@ sealed class ProjectsPane : Panel
         return Task.Run(() => _index.Scan(folders));
     }
 
-    /// <summary>Muestra un plan que pide otra sección. Si no está en una carpeta vinculada, se suma a la lista.</summary>
-    public void ShowPlan(string path)
+    /// <summary>
+    /// Muestra un plan que pide otra sección. Si no está en una carpeta vinculada, se suma a la lista. Si ya estaba en la
+    /// lista se abre enseguida; la búsqueda de los planes (recorre las carpetas vinculadas, puede tardar segundos) va aparte,
+    /// sin trabar la ventana, y al terminar pone la lista al día (antes se hacía dos veces en el hilo de la interfaz).
+    /// </summary>
+    public async Task ShowPlanAsync(string path)
     {
-        if (!_index.Scan(_folders()).Any(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase))) _index.Add(path);
         _selected = path;
-        RefreshNow();
-        if (Selected is { } entry) Open(entry);
+        var opened = Selected is not null;
+        if (opened) Open(Selected!);
+        var folders = _folders();
+        var (found, canvases) = await Task.Run(() =>
+        {
+            var scan = ScanAndRecord(folders);
+            if (!scan.Any(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)))
+            {
+                _index.Add(path);
+                scan = ScanAndRecord(folders);
+            }
+            return (scan, _canvases.List());
+        });
+        Apply(found);
+        SetCanvases(canvases);
+        // Mientras se buscaba, la persona pudo elegir otro plan: entonces no se le cambia.
+        if (!opened && string.Equals(_selected, path, StringComparison.OrdinalIgnoreCase) && Selected is { } entry) Open(entry);
     }
 
     /// <summary>El botón de los canvas del plan: los ligados y uno nuevo.</summary>

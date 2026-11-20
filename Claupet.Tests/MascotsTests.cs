@@ -84,6 +84,21 @@ public sealed class MascotsTests
         Assert.True(cells > 1000);
     }
 
+    [Fact]
+    public void DeEspaldasLaManoYElMazoQuedanTapadosPorElCuerpo()
+    {
+        // Al poner el techo de la casita, de espaldas: nada delante del cuerpo (antes, el puño y el mazo se dibujaban
+        // sobre la espalda, como si se viera de frente) y del brazo solo la manga que asoma por el costado.
+        var back = ChibiSprite.BackPoses(ChibiMove.Tool);
+        Assert.NotEmpty(back);
+        Assert.All(back, pose => Assert.Equal(0, pose.Front));
+        var hitting = back.Where(p => p.Right != "Down").ToList();
+        Assert.NotEmpty(hitting);
+        Assert.All(hitting, pose => Assert.Equal("Reach", pose.Right));
+        // El mazo y el puño van detrás, junto con la casita.
+        Assert.All(hitting, pose => Assert.True(pose.Behind >= 3, $"cuadro {pose.Index}: el mazo y el puño, detrás"));
+    }
+
     [Theory]
     [InlineData("dokki")]
     [InlineData("gemma")]
