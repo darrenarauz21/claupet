@@ -2362,5 +2362,12 @@
   "Pasó su tope de {0} minutos y se detuvo. Lo que alcanzó a hacer: {1}": "It reached its {0}-minute limit and stopped. What it managed to do: {1}",
   "nada todavía": "nothing yet",
   "Se detuvo antes de terminar.": "It stopped before finishing.",
-  "Terminó sin decir nada.": "It finished without saying anything."
+  "Terminó sin decir nada.": "It finished without saying anything.",
+  "Intro o Tab elige · Esc cierra · el agente de esta pestaña le delega la tarea": "Enter or Tab picks · Esc closes · this tab's agent delegates the task to it",
+  "trabajando": "working",
+  "no pudo": "couldn't",
+  "detenido": "stopped",
+  "pasó su tope": "hit its limit",
+  "Empezando…": "Starting…",
+  "Ver su sesión": "Open its session"
 }
