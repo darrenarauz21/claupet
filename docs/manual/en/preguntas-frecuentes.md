@@ -137,7 +137,9 @@ going, leave the Console open (you can minimize it).
 
 ### I can't choose a shell
 
-Shells in blocks need Windows 10 (1809) or newer. They're not available on macOS and Linux yet.
+On Windows, shells in blocks need Windows 10 (1809) or newer. On macOS and Linux, Claupet offers zsh, bash and
+PowerShell 7, whichever it finds: zsh and bash in `/bin` or on the PATH, and PowerShell 7 (`pwsh`) on the PATH. If one
+is missing, check that it's installed.
 
 ## Updates
 

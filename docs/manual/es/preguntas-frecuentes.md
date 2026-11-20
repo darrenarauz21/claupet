@@ -137,7 +137,9 @@ deje la Console abierta (puede minimizarla).
 
 ### No puedo elegir un shell
 
-Los shells en bloques necesitan Windows 10 (1809) o más nuevo. En macOS y Linux todavía no están.
+En Windows, los shells en bloques necesitan Windows 10 (1809) o más nuevo. En macOS y Linux, Claupet ofrece zsh,
+bash y PowerShell 7, los que encuentre: zsh y bash en `/bin` o en el PATH, y PowerShell 7 (`pwsh`) en el PATH. Si
+falta uno, revise que esté instalado.
 
 ## Actualizaciones
 

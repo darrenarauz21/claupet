@@ -43,7 +43,7 @@ cada parte y qué hace cada ajuste. Si es su primera vez, empiece por
 | Uso, Actividad, Historial y avisos | ✅ | ✅ | ✅ |
 | Claupet Console, chat, isla y mascotas | ✅ | ✅ | ✅ |
 | Claupet Terminal con agentes | ✅ | ✅ | ✅ |
-| Shells en bloques (PowerShell, Git Bash, WSL) | ✅ | — | — |
+| Shells en bloques (en Windows, PowerShell, Git Bash y WSL; en macOS y Linux, zsh, bash y PowerShell 7) | ✅ | ✅ | ✅ |
 | Voz (micrófono y leer en voz alta) | ✅ | ✅ | ✅ |
 | Acciones en el equipo | ✅ | ✅ | ✅ |
 | Modelo local, extensiones y atajos de teclado | ✅ | — | — |

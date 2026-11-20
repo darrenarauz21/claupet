@@ -43,7 +43,7 @@ how each part works and what every setting does. If it's your first time, start 
 | Usage, Activity, History and notifications | ✅ | ✅ | ✅ |
 | Claupet Console, chat, island and pets | ✅ | ✅ | ✅ |
 | Claupet Terminal with agents | ✅ | ✅ | ✅ |
-| Shells in blocks (PowerShell, Git Bash, WSL) | ✅ | — | — |
+| Shells in blocks (on Windows, PowerShell, Git Bash and WSL; on macOS and Linux, zsh, bash and PowerShell 7) | ✅ | ✅ | ✅ |
 | Voice (microphone and reading aloud) | ✅ | ✅ | ✅ |
 | Actions on your computer | ✅ | ✅ | ✅ |
 | Local model, extensions and keyboard shortcuts | ✅ | — | — |
