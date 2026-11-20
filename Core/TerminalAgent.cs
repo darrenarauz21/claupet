@@ -747,21 +747,26 @@ sealed class TerminalAgent : IDisposable
         _ = Task.Run(() => ReadAsync(process));
     }
 
-    /// <summary>Envía un pedido. Si el agente está en un turno, lo encola (Claude Code) o lo toma al terminar.</summary>
-    public void Send(string text, IReadOnlyList<AgentImage>? images = null)
+    /// <summary>
+    /// Envía un pedido. Si el agente está en un turno, lo encola (Claude Code) o lo toma al terminar. hidden: una nota de
+    /// Claupet para el agente (con la etiqueta de Workspace.Tag, para que el historial la quite) que va después del pedido
+    /// pero no en su bloque: la persona ve lo que escribió.
+    /// </summary>
+    public void Send(string text, IReadOnlyList<AgentImage>? images = null, string? hidden = null)
     {
         if (string.IsNullOrWhiteSpace(text) || !Running) return;
         // El bloque se crea aunque nadie escuche (una prueba): Changed solo avisa.
         var ask = Transcript.Ask(text);
         Changed?.Invoke([ask]);
+        var prompt = hidden is { Length: > 0 } ? text + hidden : text;
         if (!Coordinate)
         {
-            Write(_driver.Prompt(text, images));
+            Write(_driver.Prompt(prompt, images));
             return;
         }
         var touched = Touched();
         var sessionId = Transcript.SessionId;
-        _sending = _sending.ContinueWith(_ => SendWithNoteAsync(text, images, touched, sessionId), TaskScheduler.Default).Unwrap();
+        _sending = _sending.ContinueWith(_ => SendWithNoteAsync(text, prompt, images, touched, sessionId), TaskScheduler.Default).Unwrap();
     }
 
     // ── La coordinación con las otras sesiones de la carpeta (Workspace) ────────────────────
@@ -781,7 +786,7 @@ sealed class TerminalAgent : IDisposable
     /// El pedido con la nota de Claupet al final: las reglas con el primero y, después, solo si cambió quién más trabaja
     /// en la carpeta o qué cambios no son suyos. Si algo falla, el pedido sale igual, sin nota.
     /// </summary>
-    async Task SendWithNoteAsync(string text, IReadOnlyList<AgentImage>? images, IReadOnlyList<string> touched, string? sessionId)
+    async Task SendWithNoteAsync(string text, string prompt, IReadOnlyList<AgentImage>? images, IReadOnlyList<string> touched, string? sessionId)
     {
         string? note = null;
         try
@@ -800,7 +805,7 @@ sealed class TerminalAgent : IDisposable
             }
         }
         catch (Exception ex) { ErrorLog.Write(ex); }
-        Write(_driver.Prompt(note is null ? text : text + note, images));
+        Write(_driver.Prompt(note is null ? prompt : prompt + note, images));
     }
 
     static string Short(string text)

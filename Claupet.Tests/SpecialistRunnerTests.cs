@@ -4,6 +4,7 @@ namespace Claupet.Tests;
 /// SpecialistRunner: un especialista trabaja en una tarea delegada, sin interfaz, y devuelve su resultado. La sesión del
 /// agente es de mentira: responde con las mismas líneas que Claude Code (el runner no distingue agentes).
 /// </summary>
+[Collection("Especialistas")]
 public sealed class SpecialistRunnerTests : IDisposable
 {
     readonly TempDir _dir = new();
@@ -27,6 +28,7 @@ public sealed class SpecialistRunnerTests : IDisposable
     sealed class FakeSession(AgentOptions options, Action<FakeSession>? script, bool fails = false) : ISpecialistSession
     {
         public AgentOptions Options { get; } = options;
+        public string Key { get; } = Guid.NewGuid().ToString("N")[..16];
         public AgentTranscript Transcript { get; } = new();
         public bool Ended { get; private set; }
         public bool Stopped { get; private set; }

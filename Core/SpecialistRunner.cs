@@ -44,11 +44,15 @@ sealed class SpecialistRun
     public int? Turns { get; set; }
     /// <summary>La sesión del agente, para retomar su conversación (la pestaña hija).</summary>
     public string? SessionId { get; set; }
+    /// <summary>La clave de la sesión del especialista (la de su servidor MCP): si delega, se sabe que ya es un delegado.</summary>
+    public string? SessionKey { get; set; }
 }
 
 /// <summary>Una sesión de agente vista desde el runner (en la app, TerminalAgent; las pruebas ponen otra).</summary>
 interface ISpecialistSession : IDisposable
 {
+    /// <summary>La clave de la sesión para el servidor MCP de Claupet (la que reciben sus herramientas).</summary>
+    string Key { get; }
     AgentTranscript Transcript { get; }
     bool Ended { get; }
     event Action<IReadOnlyList<AgentBlock>>? Changed;
@@ -96,6 +100,7 @@ static class SpecialistRunner
             Id = NewId(), Specialist = s.Id, Name = s.Name, Agent = s.Agent, Task = request.Task.Trim(), Folder = s.Folder ?? request.Folder,
             From = request.From, Depth = request.Depth, Started = DateTimeOffset.Now,
         };
+        Save(run, progress); // enseguida: quien la pidió ya tiene su id, aunque crear el worktree tarde
         if (request.Depth > MaxDepth) return Finish(run, RunStates.Failed, L.T("Un especialista al que le delegaron una tarea no puede delegar otra vez."), progress);
         if (request.Task.Trim().Length == 0) return Finish(run, RunStates.Failed, L.T("La tarea está vacía."), progress);
 
@@ -109,6 +114,7 @@ static class SpecialistRunner
 
         var options = new AgentOptions(run.Folder, s.Account ?? request.ConfigDir, s.Model, s.Effort, Kind: s.Agent, Specialist: s);
         using var session = Open(options);
+        run.SessionKey = session.Key;
         var gate = new object();
         var finished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         AgentBlock? asked = null;
@@ -152,11 +158,28 @@ static class SpecialistRunner
             asked = session.Transcript.Blocks.LastOrDefault(b => b.Kind == AgentBlockKind.Ask);
         }
 
+        // Hasta que termine, pase su tope, se cancele o la persona toque «Detener» (un aviso en el diario: puede venir de otro proceso).
         var limit = Limit(s);
         var stop = RunStates.TimedOut;
-        try { await finished.Task.WaitAsync(limit, cancel); }
-        catch (TimeoutException) { }
+        var until = DateTimeOffset.Now + limit;
+        var stopFile = StopFile(run.Id);
+        try
+        {
+            while (!finished.Task.IsCompleted)
+            {
+                var left = until - DateTimeOffset.Now;
+                if (left <= TimeSpan.Zero) break;
+                await Task.WhenAny(finished.Task, Task.Delay(left < TimeSpan.FromMilliseconds(500) ? left : TimeSpan.FromMilliseconds(500), cancel));
+                cancel.ThrowIfCancellationRequested();
+                if (File.Exists(stopFile))
+                {
+                    stop = RunStates.Stopped;
+                    break;
+                }
+            }
+        }
         catch (OperationCanceledException) { stop = RunStates.Stopped; }
+        TryDelete(stopFile);
 
         session.Changed -= Changed;
         lock (gate)
@@ -169,6 +192,26 @@ static class SpecialistRunner
         }
     }
 
+    /// <summary>«Detener»: deja el aviso junto al diario; quien la corre (aunque sea otro proceso) la detiene en menos de un segundo.</summary>
+    public static void RequestStop(string id)
+    {
+        if (!IsId(id)) return;
+        try
+        {
+            Directory.CreateDirectory(Folder);
+            File.WriteAllText(StopFile(id), DateTimeOffset.Now.ToString("O"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ErrorLog.Write(ex); }
+    }
+
+    static string StopFile(string id) => Path.Combine(Folder, id + ".detener");
+
+    static void TryDelete(string file)
+    {
+        try { File.Delete(file); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>Lee el diario de una corrida; null si no está o no se entiende.</summary>
     public static SpecialistRun? Read(string id)
     {
@@ -179,6 +222,24 @@ static class SpecialistRunner
             return File.Exists(file) ? JsonSerializer.Deserialize<SpecialistRun>(File.ReadAllText(file), Options) : null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return null; }
+    }
+
+    /// <summary>
+    /// La corrida en curso cuyo especialista trabaja en la sesión de esa clave: la sesión es la de un delegado. Mira solo
+    /// los diarios de las últimas horas (los de antes ya terminaron).
+    /// </summary>
+    public static SpecialistRun? ActiveFor(string sessionKey)
+    {
+        try
+        {
+            if (!Directory.Exists(Folder)) return null;
+            var since = DateTime.UtcNow.AddHours(-(SpecialistLimits.MaxMinutes / 60.0 + 1));
+            foreach (var file in new DirectoryInfo(Folder).EnumerateFiles("*.json").Where(f => f.LastWriteTimeUtc > since))
+                if (Read(Path.GetFileNameWithoutExtension(file.Name)) is { } run && run.SessionKey == sessionKey && !RunStates.Finished(run.State))
+                    return run;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return null;
     }
 
     static SpecialistRun Finish(SpecialistRun run, string state, string? result, Action<SpecialistRun>? progress)
@@ -236,6 +297,7 @@ static class SpecialistRunner
 
         TerminalAgent Agent => _agent ??= new TerminalAgent(options, action => { lock (_post) action(); }) { AskIsland = true, Coordinate = true };
 
+        public string Key => Agent.Driver.CanvasKey;
         public AgentTranscript Transcript => Agent.Transcript;
         public bool Ended => Agent.Ended;
 

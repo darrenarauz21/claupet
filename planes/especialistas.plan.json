@@ -65,44 +65,52 @@
     },
     {
       "id": "t3",
-      "titulo": "Anfitrión y pipe «Claupet-especialistas»: la Console si está abierta; si no, la bandeja",
+      "titulo": "Dónde corre: en el proceso que lo pide (el servidor MCP de la sesión o la Console)",
       "etapa": "e1",
-      "estado": "por-hacer",
+      "estado": "hecho",
       "dias": 2,
       "depende": [
         "t2"
-      ]
+      ],
+      "notas": "Cambio de enfoque: sin pipe ni anfitrión aparte. La corrida va en el proceso que la pide (funciona con la Console cerrada, como pedía D1); la bandeja queda para el segundo plano (etapa 3). «Detener» llega por un aviso junto al diario.",
+      "por": "Claude Code"
     },
     {
       "id": "t4",
       "titulo": "Herramientas MCP en todos los agentes: especialistas, pedir_a_especialista, ver_corrida",
       "etapa": "e1",
-      "estado": "por-hacer",
+      "estado": "hecho",
       "dias": 2,
       "depende": [
         "t3"
-      ]
+      ],
+      "notas": "Core/SpecialistTools.cs: especialistas, pedir_a_especialista (espera hasta 50 s y si no devuelve el id), ver_corrida. En todas las sesiones y sin preguntar. Probado con sesiones de mentira.",
+      "por": "Claude Code"
     },
     {
       "id": "t5",
       "titulo": "Terminal: @ con autocompletado, bloque del especialista, pestaña hija, detener y seguir",
       "etapa": "e1",
-      "estado": "por-hacer",
+      "estado": "revision",
       "dias": 3,
       "depende": [
         "t3"
-      ]
+      ],
+      "notas": "@ abre la lista (flechas, Intro/Tab, Esc); el pedido va con una nota oculta para que el agente de la pestaña delegue. Arriba de la caja, las corridas de esa pestaña con su estado, último paso, Ver su sesión y Detener. «Ver su sesión» abre una pestaña normal (no anidada bajo la que lo llamó).",
+      "por": "Claude Code"
     },
     {
       "id": "t6",
       "titulo": "Permisos en el bloque y en la isla; sin ciclos y con profundidad máxima",
       "etapa": "e1",
-      "estado": "por-hacer",
+      "estado": "revision",
       "dias": 1,
       "depende": [
         "t4",
         "t5"
-      ]
+      ],
+      "notas": "Profundidad máxima y nunca a sí mismo: hechos. Permisos del especialista: en la isla (la corrida va en otro proceso, no se responden en el bloque de la pestaña).",
+      "por": "Claude Code"
     },
     {
       "id": "t7",
