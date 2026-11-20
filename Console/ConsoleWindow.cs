@@ -135,6 +135,8 @@ sealed partial class ConsoleWindow : Window
             work: (text, folder) => { _terminal.WorkOn(text, folder); SetMode(Mode.Terminal); });
         // Un canvas y su plan se llevan el uno al otro.
         _canvas.FindPlans = _projects.FindPlansAsync;
+        // Un proyecto desvinculado deja de verse en las dos listas.
+        _canvas.Hidden = _projects.Index;
         _canvas.PlanOpened += path =>
         {
             _ = _projects.ShowPlanAsync(path);

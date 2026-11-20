@@ -23,6 +23,10 @@ sealed class PlanIndex(string? file = null)
         public List<string> Extra { get; set; } = [];
         public string? Last { get; set; }
         public string? View { get; set; }
+        /// <summary>Los proyectos desvinculados (su carpeta): no se ven ni en Proyectos ni en Canvas.</summary>
+        public List<string> Hidden { get; set; } = [];
+        /// <summary>Los planes desvinculados uno por uno.</summary>
+        public List<string> HiddenPlans { get; set; } = [];
     }
 
     readonly string _file = file ?? DataFolder.In("proyectos.json");
@@ -54,15 +58,77 @@ sealed class PlanIndex(string? file = null)
     /// <summary>Lo agregado a mano se lee y se cambia desde varios hilos (las búsquedas van aparte de la interfaz).</summary>
     readonly object _extraLock = new();
 
-    /// <summary>Suma un plan que no está en una carpeta vinculada.</summary>
+    /// <summary>Suma un plan que no está en una carpeta vinculada (si estaba desvinculado, vuelve a verse).</summary>
     public void Add(string path)
     {
+        bool shown;
         lock (_extraLock)
         {
-            if (Data.Extra.Contains(path, StringComparer.OrdinalIgnoreCase)) return;
-            Data.Extra.Add(path);
-            Save();
+            shown = Data.HiddenPlans.RemoveAll(p => Same(p, path)) > 0;
+            var added = !Data.Extra.Contains(path, StringComparer.OrdinalIgnoreCase);
+            if (added) Data.Extra.Add(path);
+            if (added || shown) Save();
         }
+        if (shown) HiddenChanged?.Invoke();
+    }
+
+    /// <summary>Lo desvinculado cambió: Proyectos y Canvas vuelven a dibujar su lista.</summary>
+    public event Action? HiddenChanged;
+
+    /// <summary>La clave de un proyecto: su carpeta, sin la barra del final.</summary>
+    public static string Key(string folder) => Path.TrimEndingDirectorySeparator(folder);
+
+    static bool Same(string a, string b) => string.Equals(Key(a), Key(b), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Si el proyecto de esa carpeta está desvinculado.</summary>
+    public bool IsHidden(string? folder)
+    {
+        if (folder is not { Length: > 0 }) return false;
+        lock (_extraLock) return Data.Hidden.Any(f => Same(f, folder));
+    }
+
+    public IReadOnlyList<string> HiddenFolders
+    {
+        get { lock (_extraLock) return [.. Data.Hidden]; }
+    }
+
+    public IReadOnlyList<string> HiddenPlans
+    {
+        get { lock (_extraLock) return [.. Data.HiddenPlans]; }
+    }
+
+    /// <summary>Desvincula un proyecto: deja de verse en Proyectos y en Canvas. La carpeta no se toca.</summary>
+    public void Hide(string folder) => ChangeHidden(() =>
+    {
+        if (Data.Hidden.Any(f => Same(f, folder))) return false;
+        Data.Hidden.Add(Key(folder));
+        return true;
+    });
+
+    /// <summary>Desvincula un solo plan: deja de verse en la lista. El archivo no se toca.</summary>
+    public void HidePlan(string path) => ChangeHidden(() =>
+    {
+        var changed = Data.Extra.RemoveAll(p => Same(p, path)) > 0;
+        if (Data.HiddenPlans.Any(p => Same(p, path))) return changed;
+        Data.HiddenPlans.Add(path);
+        return true;
+    });
+
+    /// <summary>Vuelve a mostrar un proyecto o un plan desvinculado.</summary>
+    public void Unhide(string path) => ChangeHidden(() => Data.Hidden.RemoveAll(f => Same(f, path)) + Data.HiddenPlans.RemoveAll(p => Same(p, path)) > 0);
+
+    /// <summary>Un plan que se borró: sale de lo agregado a mano y de lo desvinculado.</summary>
+    public void Forget(string path) => ChangeHidden(() => Data.Extra.RemoveAll(p => Same(p, path)) + Data.HiddenPlans.RemoveAll(p => Same(p, path)) > 0);
+
+    void ChangeHidden(Func<bool> change)
+    {
+        bool changed;
+        lock (_extraLock)
+        {
+            changed = change();
+            if (changed) Save();
+        }
+        if (changed) HiddenChanged?.Invoke();
     }
 
     void Save()
@@ -118,13 +184,21 @@ sealed class PlanIndex(string? file = null)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var entries = new List<PlanEntry>();
+        List<string> extra, hidden, hiddenPlans;
+        lock (_extraLock)
+        {
+            extra = [.. Data.Extra];
+            hidden = [.. Data.Hidden];
+            hiddenPlans = [.. Data.HiddenPlans];
+        }
+        // Lo desvinculado no se lee: ni el proyecto entero ni el plan suelto.
+        foreach (var path in hiddenPlans) seen.Add(path);
         foreach (var folder in folders)
-            foreach (var path in Find(folder))
-                if (seen.Add(path)) entries.Add(Read(path, folder));
-        List<string> extra;
-        lock (_extraLock) extra = [.. Data.Extra];
+            if (!hidden.Any(f => Same(f, folder)))
+                foreach (var path in Find(folder))
+                    if (seen.Add(path)) entries.Add(Read(path, folder));
         foreach (var path in extra)
-            if (File.Exists(path) && seen.Add(path)) entries.Add(Read(path, Path.GetDirectoryName(path)!));
+            if (File.Exists(path) && !hidden.Any(f => Same(f, Path.GetDirectoryName(path)!)) && seen.Add(path)) entries.Add(Read(path, Path.GetDirectoryName(path)!));
         return entries;
     }
 }
