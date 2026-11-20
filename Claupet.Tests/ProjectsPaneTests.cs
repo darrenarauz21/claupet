@@ -83,6 +83,19 @@ public sealed class ProjectsPaneTests
             Window.MouseUp(at, MouseButton.Left);
             Headless.Frame(Window);
         }
+
+        /// <summary>Espera algo que corre aparte y vuelve al hilo de la interfaz (atendiendo lo que ese hilo tenga pendiente).</summary>
+        public void Wait(Task task)
+        {
+            var until = DateTime.UtcNow.AddSeconds(10);
+            while (!task.IsCompleted && DateTime.UtcNow < until)
+            {
+                Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+                Thread.Sleep(5);
+            }
+            task.GetAwaiter().GetResult();
+            Headless.Frame(Window);
+        }
     }
 
     static Scene Two() => new(dir =>
@@ -180,7 +193,7 @@ public sealed class ProjectsPaneTests
         Assert.Equal(doc.Id, Assert.Single(scene.Pane.LinkedCanvases).Id);
 
         // Solo de ese plan: en otro no aparece.
-        scene.Pane.ShowPlan(scene.Dir["dos/notas.plan.json"]);
+        scene.Wait(scene.Pane.ShowPlanAsync(scene.Dir["dos/notas.plan.json"]));
         Assert.Empty(scene.Pane.LinkedCanvases);
     });
 
@@ -189,9 +202,22 @@ public sealed class ProjectsPaneTests
     {
         using var scene = Two();
         scene.Dir.Write("otro/aparte.plan.json", Sample("Aparte"));
-        scene.Pane.ShowPlan(scene.Dir["otro/aparte.plan.json"]);
+        scene.Wait(scene.Pane.ShowPlanAsync(scene.Dir["otro/aparte.plan.json"]));
         Assert.Equal(scene.Dir["otro/aparte.plan.json"], scene.Pane.SelectedPath);
         Assert.Contains("Aparte", scene.ListTexts());
+    });
+
+    [Fact]
+    public void UnPlanQueYaEstaEnLaListaSeAbreSinEsperarLaBusqueda() => Headless.Run(() =>
+    {
+        using var scene = Two();
+        var notas = scene.Dir["dos/notas.plan.json"];
+        // Se abre en la misma llamada: la búsqueda de los planes (que recorre las carpetas) sigue aparte.
+        var showing = scene.Pane.ShowPlanAsync(notas);
+        Assert.Equal(notas, scene.Pane.SelectedPath);
+        scene.Wait(showing);
+        Assert.Equal(notas, scene.Pane.SelectedPath);
+        Assert.Equal(["Tienda", "Notas"], scene.Pane.Entries.Select(e => e.Name));
     });
 
     [Fact]

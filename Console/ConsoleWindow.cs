@@ -135,7 +135,7 @@ sealed class ConsoleWindow : Window
         _canvas.FindPlans = _projects.FindPlansAsync;
         _canvas.PlanOpened += path =>
         {
-            _projects.ShowPlan(path);
+            _ = _projects.ShowPlanAsync(path);
             SetMode(Mode.Projects);
         };
         _projects.CanvasOpened += id =>
@@ -241,6 +241,10 @@ sealed class ConsoleWindow : Window
         if (_openSession is { } asked) _terminal.OpenSession(asked);
         _canvas.CheckOpenRequest();
         _client.Start();
+        // Canvas no se dibuja al abrir (eso trababa la apertura): un rato después, con la ventana quieta, queda listo.
+        Avalonia.Threading.DispatcherTimer.RunOnce(
+            () => Avalonia.Threading.Dispatcher.UIThread.Post(_canvas.Preload, Avalonia.Threading.DispatcherPriority.ApplicationIdle),
+            TimeSpan.FromSeconds(3));
 
         PropertyChanged += (_, e) =>
         {

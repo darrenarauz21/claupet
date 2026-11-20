@@ -71,14 +71,26 @@ sealed record Ink(bool Dark, IBrush Window, IBrush Surface, IBrush Raised, IBrus
             C(c.Secondary), C(c.Tertiary), C(c.Track), C(c.Accent), C(c.Warn), C(c.Danger), C(c.Accent), C(c.Success));
     }
 
-    /// <summary>Las letras del tema elegido, si trae una familia instalada; se arman una vez por familia.</summary>
+    /// <summary>
+    /// Las letras del tema elegido, si trae una familia instalada; se arman una vez por familia. Se pide por cada texto:
+    /// si está instalada se mira una vez por familia (antes, cada texto recorría todas las letras del sistema).
+    /// </summary>
     static (string Font, FontFamily Sans, FontFamily Display)? Themed()
     {
-        if (CustomThemes.Selected?.Font is not { } font || !Installed(font)) return null;
+        if (CustomThemes.Selected?.Font is not { } font) return null;
         if (_themed is { } cached && cached.Font == font) return cached;
+        if (_missing == font) return null;
+        if (!Installed(font))
+        {
+            _missing = font;
+            return null;
+        }
         _themed = (font, new FontFamily(font + ", " + SansChain), new FontFamily(font + ", " + DisplayChain));
         return _themed;
     }
+
+    /// <summary>La última familia que se buscó y no estaba instalada (no se vuelve a buscar mientras sea la del tema).</summary>
+    static string? _missing;
 
     /// <summary>La letra de los títulos con esa familia delante (la vista previa de un tema); sin familia, la de siempre.</summary>
     public static FontFamily DisplayWith(string? font) =>
