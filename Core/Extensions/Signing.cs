@@ -184,8 +184,7 @@ sealed class TrustStore
     /// </summary>
     public static readonly string[] OfficialKeys =
     [
-        // claupet-extensiones (4721 5FF6 1F44 C702), creada el 2026-11-20: la privada está en ~/.claupet-firma del
-        // responsable. Reemplaza a la 2F0A 01CF 1379 7CF2, cuya privada se perdió; esa va revocada en el catálogo.
+        // Clave oficial actual (4721 5FF6 1F44 C702). Reemplaza a la 2F0A 01CF 1379 7CF2, revocada en el catálogo.
         "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEp4GIXIGVSEvOjQWbMtlbQYy8Fu2ieKFcuHomqy3bS4WQRSA8p80FGowCJAWROGHGd8KP13rZmdigBunnWaq+OQ==",
     ];
 
