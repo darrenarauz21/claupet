@@ -66,9 +66,20 @@ static class ContractProject
     public sealed record Step(string Path, string What);
 
     /// <summary>
+    /// Los archivos que lee cada agente al empezar, para que todos sigan los contratos: AGENTS.md (Codex, OpenCode y
+    /// Copilot), CLAUDE.md (Claude Code), GEMINI.md (Gemini CLI) y las instrucciones de Copilot en .github. Create: si
+    /// falta, se crea (las de Copilot no: AGENTS.md ya le llega).
+    /// </summary>
+    static readonly (string File, bool Create)[] AgentFiles =
+        [("AGENTS.md", true), ("CLAUDE.md", true), ("GEMINI.md", true), (Path.Combine(".github", "copilot-instructions.md"), false)];
+
+    /// <summary>La línea con que CLAUDE.md trae AGENTS.md (y su puntero): la importación de Claude Code.</summary>
+    public const string ClaudeImport = "@AGENTS.md";
+
+    /// <summary>
     /// Prepara un proyecto: .claupet/contratos con base.md (con el stack que encuentre), ajustes.json y el .gitignore de
-    /// .generado, y el puntero en AGENTS.md y CLAUDE.md (los que existan; si no hay ninguno, crea AGENTS.md). Lo que ya
-    /// existe no se pisa.
+    /// .generado, y el puntero en el archivo de cada agente (AgentFiles). Un CLAUDE.md nuevo importa AGENTS.md; uno que ya
+    /// lo importa no necesita el puntero. Lo que ya existe no se pisa: el puntero se agrega al final.
     /// </summary>
     public static List<Step> Init(string projectRoot, bool spanish, bool dryRun, DateOnly today)
     {
@@ -86,24 +97,42 @@ static class ContractProject
         Write(Path.Combine(folder, "ajustes.json"), SettingsTemplate(), spanish ? "ajustes creados" : "settings created");
         Write(Path.Combine(folder, ".gitignore"), ContractStore.Generated + "/\n", spanish ? ".generado fuera de git" : ".generado kept out of git");
 
-        var targets = new[] { "AGENTS.md", "CLAUDE.md" }.Select(n => Path.Combine(projectRoot, n)).Where(File.Exists).ToList();
-        if (targets.Count == 0) targets.Add(Path.Combine(projectRoot, "AGENTS.md"));
-        foreach (var target in targets)
+        foreach (var (name, create) in AgentFiles)
         {
+            var target = Path.Combine(projectRoot, name);
             var exists = File.Exists(target);
+            if (!exists && !create) continue;
+            var claude = name == "CLAUDE.md";
+            if (!exists && claude)
+            {
+                // Claude Code lee CLAUDE.md, no AGENTS.md: el nuevo lo importa, y con él el puntero y lo demás que tenga.
+                steps.Add(new(target, spanish ? "creado: importa AGENTS.md" : "created: imports AGENTS.md"));
+                if (!dryRun) File.WriteAllText(target, ClaudeImport + "\n", new UTF8Encoding(false));
+                continue;
+            }
             var text = exists ? File.ReadAllText(target) : "";
             if (text.Contains(PointerStart, StringComparison.Ordinal))
             {
                 steps.Add(new(target, spanish ? "ya tiene el puntero" : "pointer already there"));
                 continue;
             }
+            if (claude && Imports(text))
+            {
+                steps.Add(new(target, spanish ? "ya importa AGENTS.md" : "already imports AGENTS.md"));
+                continue;
+            }
             steps.Add(new(target, exists ? (spanish ? "puntero agregado" : "pointer added") : (spanish ? "creado con el puntero" : "created with the pointer")));
             if (dryRun) continue;
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             var separator = text.Length == 0 ? "" : text.EndsWith('\n') ? "\n" : "\n\n";
             File.WriteAllText(target, text + separator + Pointer(spanish) + "\n", new UTF8Encoding(false));
         }
         return steps;
     }
+
+    /// <summary>Un CLAUDE.md que ya trae AGENTS.md con la importación de Claude Code («@AGENTS.md» en su propia línea).</summary>
+    static bool Imports(string claudeMd) =>
+        claudeMd.Split('\n').Any(line => line.Trim().Equals(ClaudeImport, StringComparison.OrdinalIgnoreCase) || line.Trim() == "@./AGENTS.md");
 
     public static string Pointer(bool spanish) => PointerStart + (spanish
         ? "Este proyecto usa Contratos Claupet: lee .claupet/contratos/base.md antes de empezar."

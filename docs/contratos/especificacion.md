@@ -304,10 +304,20 @@ Las herramientas del modelo que proponen solo escriben en `propuestas/`. **Aprob
 
 **Skill `claupet-contratos`** (formato Agent Skills): un `SKILL.md` que explica el método en pocas líneas y le dice al agente que use el motor. Si el motor no está, el **modo simple** lee `base.md` y el índice directamente de los archivos. Se instala con `cpt skill install --agent claude|codex|gemini`.
 
-**Puntero**: una sola línea, entre marcas, en `AGENTS.md` y `CLAUDE.md`:
+**Puntero**: una sola línea, entre marcas, en el archivo que lee cada agente al empezar, para que todos sigan los
+contratos:
 ```
 <!-- claupet-contratos -->Este proyecto usa Contratos Claupet: lee .claupet/contratos/base.md antes de empezar.<!-- /claupet-contratos -->
 ```
+
+| Archivo | Agentes | Si falta |
+|---|---|---|
+| `AGENTS.md` | Codex, OpenCode y Copilot | Se crea con el puntero |
+| `CLAUDE.md` | Claude Code | Se crea con `@AGENTS.md` (la importación de Claude Code): trae el puntero y lo demás de `AGENTS.md`. Uno que ya importa `AGENTS.md` no necesita el puntero |
+| `GEMINI.md` | Gemini CLI | Se crea con el puntero |
+| `.github/copilot-instructions.md` | Copilot | No se crea (le llega `AGENTS.md`); si existe, se le suma el puntero |
+
+Lo que ya existe no se pisa: el puntero se agrega al final.
 
 **Hooks**, opcionales, con `cpt hooks install`:
 - `pre-commit` y `commit-msg` de git: corren `check` sobre lo que se va a commitear.

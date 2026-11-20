@@ -143,15 +143,19 @@ public class ContractsTests : IDisposable
         File.WriteAllText(Path.Combine(project, "package.json"), "{}");
 
         var dry = ContractProject.Init(project, true, true, new DateOnly(2026, 11, 10));
-        Assert.Equal(4, dry.Count);
+        // base.md, ajustes.json, .gitignore y el archivo de cada agente: AGENTS.md, CLAUDE.md y GEMINI.md.
+        Assert.Equal(6, dry.Count);
         Assert.False(Directory.Exists(Path.Combine(project, ".claupet")));
+        Assert.False(File.Exists(Path.Combine(project, "AGENTS.md")));
 
         ContractProject.Init(project, true, false, new DateOnly(2026, 11, 10));
         var base_ = File.ReadAllText(Path.Combine(project, ".claupet", "contratos", "base.md"));
         Assert.Contains("Node.js", base_);
         Assert.Contains("`npm test`", base_);
         Assert.Empty(Doc(base_).Issues);
-        Assert.False(File.Exists(Path.Combine(project, "AGENTS.md")));
+        // Todos los agentes leen el puntero: Codex, OpenCode y Copilot en AGENTS.md, Gemini CLI en GEMINI.md.
+        Assert.StartsWith(ContractProject.PointerStart, File.ReadAllText(Path.Combine(project, "AGENTS.md")));
+        Assert.StartsWith(ContractProject.PointerStart, File.ReadAllText(Path.Combine(project, "GEMINI.md")));
         var claude = File.ReadAllText(Path.Combine(project, "CLAUDE.md"));
         Assert.StartsWith("# Mío\n\n" + ContractProject.PointerStart, claude);
 
@@ -159,6 +163,33 @@ public class ContractsTests : IDisposable
         Assert.Equal(claude, File.ReadAllText(Path.Combine(project, "CLAUDE.md")));
         Assert.Contains(again, s => s.What.Contains("ya tiene el puntero"));
         Assert.Contains(again, s => s.What.Contains("ya existe"));
+    }
+
+    [Fact]
+    public void Init_deja_el_puntero_donde_lo_lee_cada_agente()
+    {
+        var project = Path.Combine(_root, "q");
+        Directory.CreateDirectory(Path.Combine(project, ".github"));
+        File.WriteAllText(Path.Combine(project, ".github", "copilot-instructions.md"), "Usa tabs.\n");
+
+        ContractProject.Init(project, true, false, new DateOnly(2026, 11, 20));
+
+        // Claude Code no lee AGENTS.md: el CLAUDE.md nuevo lo importa (y con él el puntero).
+        Assert.Equal(ContractProject.ClaudeImport + "\n", File.ReadAllText(Path.Combine(project, "CLAUDE.md")));
+        Assert.Contains(ContractProject.PointerStart, File.ReadAllText(Path.Combine(project, "AGENTS.md")));
+        Assert.Contains(ContractProject.PointerStart, File.ReadAllText(Path.Combine(project, "GEMINI.md")));
+        // Las instrucciones de Copilot que ya había: se les suma el puntero, sin pisar lo suyo.
+        Assert.StartsWith("Usa tabs.\n\n" + ContractProject.PointerStart, File.ReadAllText(Path.Combine(project, ".github", "copilot-instructions.md")));
+
+        var again = ContractProject.Init(project, true, false, new DateOnly(2026, 11, 20));
+        Assert.Contains(again, s => s.Path.EndsWith("CLAUDE.md") && s.What.Contains("ya importa AGENTS.md"));
+        Assert.Equal(ContractProject.ClaudeImport + "\n", File.ReadAllText(Path.Combine(project, "CLAUDE.md")));
+
+        // Sin instrucciones de Copilot, no se crean: le llega AGENTS.md.
+        var other = Path.Combine(_root, "r");
+        Directory.CreateDirectory(other);
+        ContractProject.Init(other, true, false, new DateOnly(2026, 11, 20));
+        Assert.False(File.Exists(Path.Combine(other, ".github", "copilot-instructions.md")));
     }
 
     [Fact]
