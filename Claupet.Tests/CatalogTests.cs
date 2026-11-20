@@ -19,7 +19,8 @@ public class CatalogTests
     {
         using var dir = new TempDir();
         var trust = new TrustStore(dir["confianza.json"]);
-        Assert.Contains("2f0a01cf13797cf2a233c84187b864a39514c031cca91d87c85350133341c410", trust.OfficialKeyIds);
+        // La clave creada el 2026-11-20 (4721 5FF6 1F44 C702); la anterior (2F0A 01CF…) perdió su privada y ya no vale.
+        Assert.Equal(["47215ff61f44c702b88565f0756eb2ae5e359d8a930c258652b5370b528ca011"], trust.OfficialKeyIds);
     }
 
     [Fact]

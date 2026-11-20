@@ -184,8 +184,9 @@ sealed class TrustStore
     /// </summary>
     public static readonly string[] OfficialKeys =
     [
-        // claupet-extensiones (2F0A 01CF 1379 7CF2): la privada está en ~/.claupet-firma del responsable.
-        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOtT9L/a9KlZo5MH64sSpfpCfzVXbMNBbKSsxuYC2EYBGsnwVbHu33DVa9e+KdFxK8+WVoOIB57FkphT4GYQM2Q==",
+        // claupet-extensiones (4721 5FF6 1F44 C702), creada el 2026-11-20: la privada está en ~/.claupet-firma del
+        // responsable. Reemplaza a la 2F0A 01CF 1379 7CF2, cuya privada se perdió; esa va revocada en el catálogo.
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEp4GIXIGVSEvOjQWbMtlbQYy8Fu2ieKFcuHomqy3bS4WQRSA8p80FGowCJAWROGHGd8KP13rZmdigBunnWaq+OQ==",
     ];
 
     sealed class Data
