@@ -586,4 +586,79 @@ public sealed class ProjectsPaneTests
             dark = false;
         }
     });
+
+    [Fact]
+    public void LaListaVaPorProyectoYCadaUnoSePliega() => Headless.Run(() =>
+    {
+        using var scene = Two();
+        var texts = scene.ListTexts().ToList();
+        Assert.True(texts.IndexOf("uno") < texts.IndexOf("Tienda") && texts.IndexOf("Tienda") < texts.IndexOf("dos"));
+
+        scene.Click(scene.Pane.List.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "uno"));
+        Assert.DoesNotContain("Tienda", scene.ListTexts());
+        Assert.Contains("Notas", scene.ListTexts());
+
+        // Al buscar se ve lo que coincide aunque su proyecto esté plegado.
+        scene.Pane.SearchList("tienda");
+        Assert.Contains("Tienda", scene.ListTexts());
+    });
+
+    [Fact]
+    public void ConClicDerechoSeAbreElMenuDelProyectoYDelPlan() => Headless.Run(() =>
+    {
+        using var scene = Two();
+        var head = scene.Pane.List.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "uno").GetVisualAncestors().OfType<Border>().First(b => b.Cursor is not null);
+        head.RaiseEvent(new ContextRequestedEventArgs());
+        Headless.Frame(scene.Window);
+        Assert.Contains(L.T("Desvincular el proyecto"), scene.Window.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text));
+    });
+
+    [Fact]
+    public void UnProyectoDesvinculadoNoSeVeHastaQueSeVuelveAMostrar() => Headless.Run(() =>
+    {
+        using var scene = Two();
+        scene.Pane.HideProject(scene.Dir["uno"]);
+        Headless.Frame(scene.Window);
+        Assert.Equal(["Notas"], scene.Pane.Entries.Select(e => e.Name));
+        Assert.Contains(L.T("Desvinculados ({0})", 1), scene.ListTexts());
+
+        // Queda guardado: otra lectura tampoco lo trae, y Canvas lo sabe.
+        var index = new PlanIndex(scene.Dir["datos/proyectos.json"]);
+        Assert.True(index.IsHidden(scene.Dir["uno"] + Path.DirectorySeparatorChar));
+        Assert.Equal(["Notas"], index.Scan([scene.Dir["uno"], scene.Dir["dos"]]).Select(e => e.Name));
+
+        scene.Pane.Index.Unhide(scene.Dir["uno"]);
+        scene.Pane.RefreshNow();
+        Assert.Equal(["Tienda", "Notas"], scene.Pane.Entries.Select(e => e.Name));
+    });
+
+    [Fact]
+    public void UnPlanDesvinculadoSaleDeLaListaYVuelveSiSePideVerlo() => Headless.Run(() =>
+    {
+        using var scene = Two();
+        var path = scene.Dir["dos/notas.plan.json"];
+        scene.Pane.HidePlan(scene.Pane.Entries.First(e => e.Name == "Notas"));
+        Assert.Equal(["Tienda"], scene.Pane.Entries.Select(e => e.Name));
+        Assert.True(File.Exists(path));
+
+        scene.Wait(scene.Pane.ShowPlanAsync(path));
+        Assert.Equal(path, scene.Pane.SelectedPath);
+        Assert.Contains("Notas", scene.Pane.Entries.Select(e => e.Name));
+    });
+
+    [Fact]
+    public void EliminarUnPlanPreguntaYLoMandaALaPapelera() => Headless.Run(() =>
+    {
+        using var scene = Two();
+        var path = scene.Dir["dos/notas.plan.json"];
+        var entry = scene.Pane.Entries.First(e => e.Name == "Notas");
+        var deleting = scene.Pane.DeleteAsync(scene.Pane.List, entry);
+        Headless.Frame(scene.Window);
+        Assert.False(deleting.IsCompleted); // espera la respuesta
+        scene.Click(scene.Window.GetVisualDescendants().OfType<TextBlock>().Last(t => t.Text == L.T("Eliminar")));
+        scene.Wait(deleting);
+        Assert.False(File.Exists(path));
+        Assert.Contains(Directory.GetFiles(DataFolder.In("papelera-planes")), f => f.EndsWith("-notas.plan.json", StringComparison.Ordinal));
+        Assert.Equal(["Tienda"], scene.Pane.Entries.Select(e => e.Name));
+    });
 }

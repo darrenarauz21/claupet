@@ -34,6 +34,28 @@ sealed partial class CanvasPane : Grid
     /// <summary>Los planes que se pueden ligar. Sin esto (las pruebas), solo se ofrece abrir un archivo.</summary>
     public Func<Task<IReadOnlyList<PlanEntry>>>? FindPlans { get; set; }
 
+    /// <summary>
+    /// Los proyectos desvinculados, los mismos de Proyectos: sus canvas no se ven en la lista (siguen guardados y se
+    /// encuentran con Ctrl+K). Sin esto (las pruebas), se ven todos.
+    /// </summary>
+    public PlanIndex? Hidden
+    {
+        get => _hidden;
+        set
+        {
+            if (_hidden is not null) _hidden.HiddenChanged -= RefreshList;
+            _hidden = value;
+            if (_hidden is not null) _hidden.HiddenChanged += RefreshList;
+            RefreshList();
+        }
+    }
+    PlanIndex? _hidden;
+
+    void RefreshList()
+    {
+        if (_listView.Children.Count > 0) RenderList(force: true);
+    }
+
     readonly CanvasStore _store;
     readonly CanvasWatcher? _watcher;
     readonly Func<string, string, Control> _markdown;
@@ -824,7 +846,7 @@ sealed partial class CanvasPane : Grid
         var shown = new HashSet<string>();
         // Por proyecto, como las sesiones de la Terminal: primero el del canvas más reciente (la lista ya viene así) y los
         // que no son de ningún proyecto, al final. Con un solo grupo sin proyecto no hace falta título.
-        var groups = _list.Where(s => Matches(s, filter)).GroupBy(s => s.Project ?? "", PathComparer)
+        var groups = _list.Where(s => Matches(s, filter) && _hidden?.IsHidden(s.Project) != true).GroupBy(s => s.Project ?? "", PathComparer)
             .OrderBy(g => g.Key.Length == 0 ? 1 : 0).ToList();
         var headed = groups.Count > 1 || groups is [{ Key.Length: > 0 }];
         foreach (var group in groups)
@@ -843,6 +865,23 @@ sealed partial class CanvasPane : Grid
         }
         _listIds.Clear();
         _listIds.UnionWith(shown);
+        // Al pie, los proyectos desvinculados que tienen canvas: elegir uno lo vuelve a mostrar (aquí y en Proyectos).
+        var away = _hidden?.HiddenFolders.Where(f => _list.Any(s => s.Project is { } p && PathComparer.Equals(PlanIndex.Key(p), PlanIndex.Key(f)))).ToList() ?? [];
+        if (away.Count > 0)
+        {
+            Border? more = null;
+            more = Ui.Press(Ui.Text(L.T("Desvinculados ({0})", away.Count), 12, _ink.Tertiary), () =>
+                DropList.Show(more!, _ink, [.. away.Select(f => new DropList.Entry(f, L.T("Proyecto {0}", ProjectName(f))))], id =>
+                {
+                    if (id is not null) _hidden!.Unhide(id);
+                }), (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Desvinculados"));
+            more.Padding = new Thickness(8, 5);
+            more.Margin = new Thickness(0, 10, 0, 0);
+            more.CornerRadius = new CornerRadius(8);
+            more.HorizontalAlignment = HorizontalAlignment.Left;
+            ToolTip.SetTip(more, L.T("Los proyectos que quitó de la lista. Elija uno para volver a verlo."));
+            _listView.Children.Add(more);
+        }
     }
 
     static readonly StringComparer PathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -889,6 +928,23 @@ sealed partial class CanvasPane : Grid
         // El primero va pegado a la búsqueda; los demás, separados del grupo de arriba.
         head.Margin = new Thickness(0, _listView.Children.Count > 1 ? 8 : 0, 0, 2);
         if (project.Length > 0) ToolTip.SetTip(head, project);
+        // Con clic derecho, lo mismo que en Proyectos: abrir la carpeta o desvincularlo (deja de verse en las dos listas).
+        if (project.Length > 0 && _hidden is { } hidden)
+            head.ContextRequested += (_, e) =>
+            {
+                e.Handled = true;
+                DropList.Show(head, _ink,
+                [
+                    new DropList.Entry("carpeta", L.T("Abrir la carpeta"), Action: true),
+                    new DropList.Entry("desvincular", L.T("Desvincular el proyecto"), Danger: true),
+                ], id =>
+                {
+                    if (id == "carpeta") Shell.Open(project);
+                    if (id != "desvincular") return;
+                    hidden.Hide(project);
+                    Toast(L.T("«{0}» ya no se ve en Proyectos ni en Canvas", name), CanvasIcons.Check, (L.T("Deshacer"), () => hidden.Unhide(project)));
+                });
+            };
         return head;
     }
 

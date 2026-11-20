@@ -127,16 +127,21 @@ sealed class ProjectsPane : Panel
         AttachedToVisualTree += (_, _) =>
         {
             _timer.Start();
+            _index.HiddenChanged += OnHiddenChanged;
             Rescan();
         };
         DetachedFromVisualTree += (_, _) =>
         {
             _timer.Stop();
+            _index.HiddenChanged -= OnHiddenChanged;
             _settle?.Dispose();
         };
     }
 
     public StackPanel List => _list;
+
+    /// <summary>Lo que se guarda de la lista; Canvas lo usa para no mostrar los proyectos desvinculados.</summary>
+    internal PlanIndex Index => _index;
 
     PlanEntry? Selected => _entries.FirstOrDefault(e => string.Equals(e.Path, _selected, StringComparison.OrdinalIgnoreCase));
 
@@ -156,12 +161,22 @@ sealed class ProjectsPane : Panel
 
     // ── Datos ───────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Sube con cada búsqueda que se pidió para mostrar un plan (ShowPlanAsync): la búsqueda de fondo que empezó antes llega
+    /// vieja (sin ese plan) y no se aplica; si no, cambiaba la lista y lo elegido justo después de mostrarlo.
+    /// </summary>
+    int _scanVersion;
+
+    /// <summary>Cuántos ShowPlanAsync están buscando: mientras tanto no arranca otra búsqueda de fondo.</summary>
+    int _showing;
+
     /// <summary>Vuelve a buscar los planes aparte, sin trabar la ventana.</summary>
     void Rescan()
     {
-        if (_scanning) return;
+        if (_scanning || _showing > 0) return; // mientras se muestra un plan, su búsqueda es la que vale
         _scanning = true;
         var folders = _folders();
+        var version = _scanVersion;
         _ = Task.Run(() =>
         {
             IReadOnlyList<PlanEntry> found = [];
@@ -176,6 +191,12 @@ sealed class ProjectsPane : Panel
                 Dispatcher.UIThread.Post(() =>
                 {
                     _scanning = false;
+                    if (version != _scanVersion)
+                    {
+                        // Llegó vieja. Si fue por mostrar un plan, esa búsqueda trae lo de ahora; si cambió lo desvinculado, se recorre otra vez.
+                        Rescan();
+                        return;
+                    }
                     Apply(found);
                     SetCanvases(canvases);
                 });
@@ -215,20 +236,34 @@ sealed class ProjectsPane : Panel
     /// </summary>
     public async Task ShowPlanAsync(string path)
     {
+        // Se pidió verlo: si estaba desvinculado (él o su proyecto), vuelve a la lista.
+        _index.Unhide(path);
+        if (Path.GetDirectoryName(path) is { } dir)
+            foreach (var folder in _index.HiddenFolders.Where(f => (dir + Path.DirectorySeparatorChar).StartsWith(PlanIndex.Key(f) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+                _index.Unhide(folder);
+        var version = ++_scanVersion;
         _selected = path;
         var opened = Selected is not null;
         if (opened) Open(Selected!);
         var folders = _folders();
-        var (found, canvases) = await Task.Run(() =>
+        IReadOnlyList<PlanEntry> found;
+        IReadOnlyList<CanvasSummary> canvases;
+        _showing++;
+        try
         {
-            var scan = ScanAndRecord(folders);
-            if (!scan.Any(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)))
+            (found, canvases) = await Task.Run(() =>
             {
-                _index.Add(path);
-                scan = ScanAndRecord(folders);
-            }
-            return (scan, _canvases.List());
-        });
+                var scan = ScanAndRecord(folders);
+                if (!scan.Any(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _index.Add(path);
+                    scan = ScanAndRecord(folders);
+                }
+                return (scan, _canvases.List());
+            });
+        }
+        finally { _showing--; }
+        if (version != _scanVersion) return; // se pidió mostrar otro plan mientras tanto: esa búsqueda manda
         Apply(found);
         SetCanvases(canvases);
         // Mientras se buscaba, la persona pudo elegir otro plan: entonces no se le cambia.
@@ -414,15 +449,172 @@ sealed class ProjectsPane : Panel
             "risk" => e.Plan is { } plan && AtRisk(plan),
             "nearly" => e.Plan is { } plan && Plan.Progress(plan.Tasks) >= 0.7,
             _ => true,
-        }).Where(e => Hit(e.Name, _query) || (e.Plan?.Tasks.Any(t => Hit(t.Title, _query)) ?? false)).ToList();
-        foreach (var entry in shown) _list.Children.Add(ListItem(entry));
+        }).Where(e => Hit(e.Name, _query) || Hit(ProjectName(e.Folder), _query) || (e.Plan?.Tasks.Any(t => Hit(t.Title, _query)) ?? false)).ToList();
+        // Por proyecto, como en Canvas: cada carpeta con su flecha y cuántos planes tiene; se pliega al tocarla.
+        foreach (var group in shown.GroupBy(e => PlanIndex.Key(e.Folder), StringComparer.OrdinalIgnoreCase))
+        {
+            // Al buscar se ve todo lo que coincide, aunque su grupo esté plegado.
+            var folded = _query.Length == 0 && _folded.Contains(group.Key);
+            _list.Children.Add(GroupHead(group.Key, group.Count(), folded));
+            if (folded) continue;
+            foreach (var entry in group) _list.Children.Add(ListItem(entry));
+        }
         if (shown.Count == 0 && _scanned)
         {
             var none = Ui.Text(_entries.Count == 0 ? L.T("Sin planes todavía") : L.T("Nada con ese nombre"), 13, _ink.Tertiary);
             none.Margin = new Thickness(10, 8);
             _list.Children.Add(none);
         }
+        var hidden = _index.HiddenFolders.Count + _index.HiddenPlans.Count;
+        if (hidden > 0) _list.Children.Add(HiddenButton(hidden));
     }
+
+    /// <summary>Los proyectos plegados en la lista (su carpeta).</summary>
+    readonly HashSet<string> _folded = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>El nombre de un proyecto en la lista: el de su carpeta.</summary>
+    internal static string ProjectName(string folder) => Path.GetFileName(Path.TrimEndingDirectorySeparator(folder)) is { Length: > 0 } name ? name : folder;
+
+    /// <summary>El título de un proyecto: la flecha, su nombre (la carpeta, en el tooltip) y cuántos planes tiene. Con clic derecho, su menú.</summary>
+    Border GroupHead(string folder, int count, bool folded)
+    {
+        var name = ProjectName(folder);
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Height = 26 };
+        var chevron = PlanPanel.Icon(folded ? CanvasIcons.Folded : CanvasIcons.Unfolded, _ink.Tertiary, 10, 2);
+        chevron.Margin = new Thickness(0, 0, 7, 0);
+        row.Children.Add(chevron);
+        var label = Ui.Text(name, 12, _ink.Secondary, FontWeight.SemiBold);
+        label.TextTrimming = TextTrimming.CharacterEllipsis;
+        label.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(label, 1);
+        row.Children.Add(label);
+        var number = Ui.Text(count.ToString(CultureInfo.CurrentCulture), 11.5, _ink.Tertiary);
+        number.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(number, 2);
+        row.Children.Add(number);
+        var head = Ui.Press(row, () =>
+        {
+            if (!_folded.Add(folder)) _folded.Remove(folder);
+            RenderList();
+        }, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, folded ? L.T("Mostrar {0}", name) : L.T("Plegar {0}", name));
+        head.Padding = new Thickness(8, 0);
+        head.CornerRadius = new CornerRadius(8);
+        // El primero va arriba; los demás, separados del grupo de arriba.
+        head.Margin = new Thickness(0, _list.Children.Count > 0 ? 8 : 0, 0, 2);
+        ToolTip.SetTip(head, folder);
+        head.ContextRequested += (_, e) =>
+        {
+            e.Handled = true;
+            ProjectMenu(head, folder);
+        };
+        return head;
+    }
+
+    /// <summary>El clic derecho en un proyecto: abrir su carpeta o desvincularlo (deja de verse aquí y en Canvas).</summary>
+    void ProjectMenu(Control anchor, string folder) =>
+        DropList.Show(anchor, _ink,
+        [
+            new DropList.Entry("carpeta", L.T("Abrir la carpeta"), Action: true),
+            new DropList.Entry("desvincular", L.T("Desvincular el proyecto"), Danger: true),
+        ], id =>
+        {
+            if (id == "carpeta") Shell.Open(folder);
+            if (id == "desvincular") HideProject(folder);
+        });
+
+    /// <summary>El clic derecho en un plan: abrir su carpeta, desvincularlo (sale de la lista) o eliminarlo (va a la papelera de Claupet).</summary>
+    void PlanMenu(Control anchor, PlanEntry entry) =>
+        DropList.Show(anchor, _ink,
+        [
+            new DropList.Entry("carpeta", L.T("Abrir la carpeta"), Action: true),
+            new DropList.Entry("desvincular", L.T("Desvincular el plan"), Action: true),
+            new DropList.Entry("eliminar", L.T("Eliminar el plan…"), Danger: true),
+        ], id =>
+        {
+            if (id == "carpeta") Shell.Open(Path.GetDirectoryName(entry.Path)!);
+            if (id == "desvincular") HidePlan(entry);
+            if (id == "eliminar") _ = DeleteAsync(anchor, entry);
+        });
+
+    /// <summary>Desvincula el proyecto: deja de verse aquí y en Canvas. La carpeta y sus archivos no se tocan.</summary>
+    internal void HideProject(string folder)
+    {
+        _index.Hide(folder);
+        Toast(L.T("«{0}» ya no se ve en Proyectos ni en Canvas", ProjectName(folder)), PlanPanel.CheckIcon);
+    }
+
+    /// <summary>Desvincula un plan: sale de la lista. El archivo no se toca.</summary>
+    internal void HidePlan(PlanEntry entry)
+    {
+        _index.HidePlan(entry.Path);
+        Toast(L.T("«{0}» ya no se ve en la lista", entry.Name), PlanPanel.CheckIcon);
+    }
+
+    /// <summary>
+    /// Elimina el plan después de preguntar. No se pierde del todo: el archivo pasa a la papelera de Claupet (en su
+    /// carpeta de datos), de donde se puede recuperar a mano.
+    /// </summary>
+    internal async Task DeleteAsync(Control anchor, PlanEntry entry)
+    {
+        if (!await ConfirmCard.Ask(anchor, _ink, L.T("¿Eliminar «{0}»?", entry.Name),
+            L.T("Se borra el archivo {0} de su carpeta. Queda una copia en la papelera de Claupet.", Path.GetFileName(entry.Path)),
+            L.T("Eliminar"), L.T("Cancelar"))) return;
+        try
+        {
+            var trash = DataFolder.In("papelera-planes");
+            Directory.CreateDirectory(trash);
+            File.Move(entry.Path, Path.Combine(trash, DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + "-" + Path.GetFileName(entry.Path)));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Toast(L.T("No se pudo eliminar: {0}", ex.Message), PlanPanel.PlanAlertIcon);
+            return;
+        }
+        _index.Forget(entry.Path);
+        Drop(e => !string.Equals(e.Path, entry.Path, StringComparison.OrdinalIgnoreCase));
+        Toast(L.T("«{0}» va a la papelera", entry.Name), CanvasIcons.Trash);
+    }
+
+    /// <summary>Saca de la lista lo que ya no va, enseguida, sin esperar a recorrer las carpetas.</summary>
+    void Drop(Func<PlanEntry, bool> keep)
+    {
+        var left = _entries.Where(keep).ToList();
+        if (left.Count != _entries.Count) Apply(left);
+    }
+
+    /// <summary>Cambió lo desvinculado (aquí o en Canvas): lo que se ocultó sale ya; lo que vuelve aparece al recorrer.</summary>
+    void OnHiddenChanged()
+    {
+        _scanVersion++; // una búsqueda que empezó antes trae lo de antes: se descarta y se recorre otra vez
+        var plans = _index.HiddenPlans;
+        Drop(e => !_index.IsHidden(e.Folder) && !plans.Contains(e.Path, StringComparer.OrdinalIgnoreCase));
+        RenderList();
+        Rescan();
+    }
+
+    /// <summary>Al pie de la lista: lo desvinculado, para volver a mostrarlo.</summary>
+    Border HiddenButton(int count)
+    {
+        Border? button = null;
+        button = Ui.Press(Ui.Text(L.T("Desvinculados ({0})", count), 12, _ink.Tertiary), () => ShowHidden(button!),
+            (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, L.T("Desvinculados"));
+        button.Padding = new Thickness(8, 5);
+        button.Margin = new Thickness(0, 10, 0, 0);
+        button.CornerRadius = new CornerRadius(8);
+        button.HorizontalAlignment = HorizontalAlignment.Left;
+        ToolTip.SetTip(button, L.T("Los proyectos y planes que quitó de la lista. Elija uno para volver a verlo."));
+        return button;
+    }
+
+    void ShowHidden(Control anchor) =>
+        DropList.Show(anchor, _ink,
+        [
+            .. _index.HiddenFolders.Select(f => new DropList.Entry(f, L.T("Proyecto {0}", ProjectName(f)))),
+            .. _index.HiddenPlans.Select(p => new DropList.Entry(p, L.T("Plan {0}", Path.GetFileName(p)))),
+        ], id =>
+        {
+            if (id is not null) _index.Unhide(id);
+        });
 
     Control ListItem(PlanEntry entry)
     {
@@ -454,6 +646,11 @@ sealed class ProjectsPane : Panel
         item.CornerRadius = new CornerRadius(12);
         item.Background = current ? _ink.Pill : Brushes.Transparent;
         ToolTip.SetTip(item, entry.Path);
+        item.ContextRequested += (_, e) =>
+        {
+            e.Handled = true;
+            PlanMenu(item, entry);
+        };
         return item;
     }
 
