@@ -57,6 +57,7 @@ sealed class SettingsView : StackPanel
         _page = page.Id;
         _shape = shape;
         _rows.Clear();
+        _loose.Clear();
         _gallery = null;
         _market = null;
         Children.Clear();
@@ -78,7 +79,7 @@ sealed class SettingsView : StackPanel
             var row = rows[i];
             if (row.Kind == RowKind.Caption)
             {
-                Children.Add(new TextBlock
+                var caption = new TextBlock
                 {
                     Text = row.Text,
                     FontSize = 12.5,
@@ -86,7 +87,9 @@ sealed class SettingsView : StackPanel
                     FontFamily = Ink.Sans,
                     Foreground = ink.Tertiary,
                     Margin = new Thickness(4, 26, 0, 8),
-                });
+                };
+                Children.Add(caption);
+                _loose[i] = caption;
                 card = null;
                 last = null;
                 continue;
@@ -98,6 +101,7 @@ sealed class SettingsView : StackPanel
                 _galleryIndex = i;
                 _gallery.Show(row.Cards ?? [], ink);
                 Children.Add(_gallery);
+                _loose[i] = _gallery;
                 card = null;
                 last = null;
                 continue;
@@ -109,6 +113,7 @@ sealed class SettingsView : StackPanel
                 _marketIndex = i;
                 _market.Show(row, ink);
                 Children.Add(_market);
+                _loose[i] = _market;
                 card = null;
                 last = null;
                 continue;
@@ -164,6 +169,38 @@ sealed class SettingsView : StackPanel
         back.Margin = new Thickness(-8, 0, 0, 10);
         back.HorizontalAlignment = HorizontalAlignment.Left;
         return back;
+    }
+
+    /// <summary>Lo que no es una fila de tarjeta, por su número de fila: los encabezados y las tarjetas de temas y extensiones.</summary>
+    readonly Dictionary<int, Control> _loose = [];
+
+    /// <summary>
+    /// Lo que se ve de la fila index de la página (la que eligió la búsqueda): la fila; la que lleva una aclaración, si es
+    /// la aclaración; o el encabezado o las tarjetas. Null si no está en lo que se muestra.
+    /// </summary>
+    internal Control? TargetOf(int index) =>
+        _rows.FirstOrDefault(r => r.Index == index && r.Root is Border)?.Root
+        ?? _rows.FirstOrDefault(r => r.Hints.Any(h => h.Index == index))?.Root
+        ?? _loose.GetValueOrDefault(index);
+
+    /// <summary>Lleva a la fila index (la que eligió la búsqueda): la desplaza a la vista y la marca un momento con el acento.</summary>
+    public void Reveal(int index, Ink ink)
+    {
+        if (TargetOf(index) is not { } target) return;
+        target.BringIntoView();
+        switch (target)
+        {
+            case Border border:
+                var background = border.Background;
+                border.Background = PlanPanel.Translucent(ink.Accent, 0.16);
+                DispatcherTimer.RunOnce(() => border.Background = background, TimeSpan.FromSeconds(1.6));
+                break;
+            case TextBlock caption:
+                var foreground = caption.Foreground;
+                caption.Foreground = ink.Accent;
+                DispatcherTimer.RunOnce(() => caption.Foreground = foreground, TimeSpan.FromSeconds(1.6));
+                break;
+        }
     }
 
     /// <summary>La fila que pidió una lista, para mostrarla a su lado (su botón, si tiene); null si no está aquí.</summary>

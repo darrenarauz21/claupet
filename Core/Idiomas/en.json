@@ -2337,5 +2337,9 @@
   "Volvió a {0}, pero no se pudo actualizar.": "Back on {0}, but it couldn't be updated.",
   "Worktree propio": "Own worktree",
   "«{0}» no es un repositorio de git.": "“{0}” isn't a git repository.",
-  "· ya está en {0}": "· already in {0}"
+  "· ya está en {0}": "· already in {0}",
+  "Buscar en Ajustes": "Search Settings",
+  "Buscar en Claupet: secciones, ajustes, sesiones, canvas, planes…": "Search Claupet: sections, settings, sessions, canvases, plans…",
+  "Sección": "Section",
+  "Editor · reciente": "Editor · recent"
 }

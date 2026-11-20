@@ -16,7 +16,7 @@ using Avalonia.Styling;
 /// los ajustes. Lo del chat y los ajustes lo manda la bandeja (aquí no se guardan ajustes); la Terminal y el editor
 /// trabajan solos (con Claude Code y con los archivos).
 /// </summary>
-sealed class ConsoleWindow : Window
+sealed partial class ConsoleWindow : Window
 {
     enum Mode { Chat, Terminal, Editor, Canvas, Projects, Specialists, Settings }
 
@@ -37,6 +37,8 @@ sealed class ConsoleWindow : Window
     PressGuard? _stateGuard, _chatsGuard;
     (Ink Ink, string Text)? _sectionsShown, _chatsShown;
     readonly SettingsView _view = new() { MaxWidth = 700, HorizontalAlignment = HorizontalAlignment.Left };
+    /// <summary>La búsqueda: Ctrl+K en Ajustes y Ctrl+Shift+K en toda la Console (ConsoleWindow.Search.cs).</summary>
+    readonly SearchPalette _search = new();
     readonly ScrollViewer _scroll = new();
     readonly ChatPane _chat = new();
     readonly EditorPane _editor = new();
@@ -184,6 +186,16 @@ sealed class ConsoleWindow : Window
         _editor.DocsChanged += () => { if (_mode == Mode.Editor && _editorFiles) RenderFileList(); };
         _terminal.TabsChanged += () => { if (_mode == Mode.Terminal) _asideTop.Child = _terminal.Header(); };
         _terminal.ListChanged += () => { if (_mode == Mode.Terminal) Render(rebuild: true); };
+        // Ctrl+Shift+K busca en toda la Console, desde cualquier sección; Ctrl+K, en Ajustes (en Canvas y en Proyectos, en
+        // los suyos). Antes que nadie: el editor y la terminal no se lo quedan.
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key != Key.K) return;
+            if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift)) OpenGlobalSearch();
+            else if (e.KeyModifiers == KeyModifiers.Control && _mode == Mode.Settings) OpenSettingsSearch();
+            else return;
+            e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         // Los atajos del editor (Ctrl+N, O, S, W) mientras se ve.
         KeyDown += (_, e) =>
         {
@@ -233,6 +245,9 @@ sealed class ConsoleWindow : Window
         Grid.SetColumn(_main, 2);
         _body.Children.Add(_main);
         _root.Children.Add(_body);
+        // La búsqueda va encima de todo, también de la barra de arriba.
+        Grid.SetRowSpan(_search, 2);
+        _root.Children.Add(_search);
         Content = _root;
         Render(rebuild: true);
         _editor.RestoreSession();
