@@ -300,6 +300,15 @@ sealed partial class TerminalPane
         Arrange();
         var holder = new StackPanel();
         holder.Children.Add(_ended);
+        // Arriba de la caja: las corridas de los especialistas que llamó esta pestaña y la lista de @ mientras se escribe.
+        foreach (var bar in new Control[] { _runsBar, _mentionBar })
+        {
+            if (bar.Parent is Panel old) old.Children.Remove(bar);
+            holder.Children.Add(bar);
+        }
+        WatchRuns();
+        DrawRuns();
+        HideMentions();
         holder.Children.Add(card);
         return holder;
     }

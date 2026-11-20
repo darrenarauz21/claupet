@@ -111,8 +111,18 @@ sealed partial class TerminalPane : Grid
         _zoom.Child = _blocks;
         _scroll.Content = new Border { Child = _zoom, Padding = new Thickness(20, 12, 20, 16) };
         _input.AddHandler(KeyDownEvent, OnInputKey, RoutingStrategies.Tunnel);
-        // La caja de un agente se acomoda según lo escrito: una línea, o el texto arriba y los botones abajo.
-        _input.TextChanged += (_, _) => _arrangeComposer?.Invoke();
+        // La caja de un agente se acomoda según lo escrito: una línea, o el texto arriba y los botones abajo. Y con «@», la
+        // lista de especialistas.
+        _input.TextChanged += (_, _) =>
+        {
+            _arrangeComposer?.Invoke();
+            UpdateMentions();
+        };
+        // La lista de @ sigue al cursor: si sale del @ que se escribía, se cierra.
+        _input.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == TextBox.CaretIndexProperty) UpdateMentions();
+        };
         // Ctrl+T: la pestaña nueva, desde cualquier lado de la Terminal (la pantalla completa se lo pasa al programa).
         AddHandler(KeyDownEvent, (_, e) =>
         {
@@ -499,6 +509,12 @@ sealed partial class TerminalPane : Grid
             e.Handled = ShellKey(shell, e);
             return;
         }
+        // Con la lista de @ a la vista, las flechas, Intro, Tab y Esc son de ella.
+        if (MentionKey(e))
+        {
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.Escape && _current is { } tab && tab.Agent.Transcript.Busy)
         {
             e.Handled = true;
@@ -543,7 +559,8 @@ sealed partial class TerminalPane : Grid
         _input.Text = "";
         var images = tab.Images.Where((_, i) => text.Contains($"[Imagen #{i + 1}]", StringComparison.Ordinal)).ToList();
         tab.Images.Clear();
-        tab.Agent.Send(text, images);
+        // Con @especialista, el agente de la pestaña recibe además la nota de delegarle la tarea (la persona no la ve).
+        tab.Agent.Send(text, images, MentionDirective(text));
         TitleFirstAsk(tab, text);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
     }
