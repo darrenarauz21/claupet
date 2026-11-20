@@ -47,15 +47,53 @@ public sealed class TerminalPaneLayoutTests
     });
 
     [Fact]
+    public void ConVariasLineasLoEscritoOcupaTodoElAnchoYLosBotonesVanAbajo() => Headless.Run(() =>
+    {
+        using var dir = new TempDir();
+        var (pane, window) = Open(1400, 900);
+        pane.Add(ClaudeTab(dir.Path));
+        Headless.Frame(window);
+        var (input, chip) = Composer(pane);
+        try
+        {
+            // Una línea corta: todo en una fila, la cuenta al lado de lo escrito.
+            input.Text = "hola";
+            Headless.Frame(window);
+            Assert.False(pane.ComposerStacked);
+            Assert.Equal(1, Grid.GetColumnSpan(input));
+            Assert.True(In(chip, pane).Y < In(input, pane).Bottom, "la cuenta, en la misma fila");
+
+            // Varias líneas: lo escrito ocupa todo el ancho y la cuenta, el modelo y el envío quedan debajo, no a media altura.
+            input.Text = "uno\ndos\ntres\ncuatro";
+            Headless.Frame(window);
+            Assert.True(pane.ComposerStacked);
+            Assert.Equal(4, Grid.GetColumnSpan(input));
+            Assert.True(In(chip, pane).Y >= In(input, pane).Bottom, "la cuenta, debajo de lo escrito");
+
+            // Una sola línea larga, que ya no cabe al lado de los botones: también.
+            input.Text = string.Join(" ", Enumerable.Repeat("palabra", 40));
+            Headless.Frame(window);
+            Assert.True(pane.ComposerStacked);
+
+            // Al borrar, vuelve a una fila.
+            input.Text = "";
+            Headless.Frame(window);
+            Assert.False(pane.ComposerStacked);
+            Assert.Equal(1, Grid.GetColumnSpan(input));
+        }
+        finally { Close(pane, window); }
+    });
+
+    [Fact]
     public void LaCajaDeUnaTerminalNoHeredaLoQueLeDejoLaDeClaudeCode() => Headless.Run(() =>
     {
         using var dir = new TempDir();
-        // Angosta: la cuenta y el modelo pasan debajo y la caja de Claude Code ocupa tres columnas.
+        // Angosta: la cuenta, el modelo y el envío pasan debajo y la caja de Claude Code ocupa todo el ancho.
         var (pane, window) = Open(520, 700);
         pane.Add(ClaudeTab(dir.Path));
         Headless.Frame(window);
         var (input, _) = Composer(pane);
-        Assert.Equal(3, Grid.GetColumnSpan(input));
+        Assert.Equal(4, Grid.GetColumnSpan(input));
 
         pane.Add(ShellTab(dir.Path));
         Headless.Frame(window);

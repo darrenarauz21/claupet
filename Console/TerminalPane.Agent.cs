@@ -142,7 +142,19 @@ sealed partial class TerminalPane
         foreach (var property in new AvaloniaProperty[]
             { Grid.RowProperty, Grid.ColumnProperty, Grid.RowSpanProperty, Grid.ColumnSpanProperty, MarginProperty, MinWidthProperty, VerticalAlignmentProperty })
             _input.ClearValue(property);
+        _arrangeComposer = null;
     }
+
+    /// <summary>Vuelve a acomodar la caja de la pestaña de un agente según lo escrito (la de un shell no tiene).</summary>
+    Action? _arrangeComposer;
+
+    /// <summary>Lo que ocupa lo escrito en una sola línea, con la letra de la caja.</summary>
+    double TextWidth(string text) => text.Length == 0 ? 0
+        : new Avalonia.Media.TextFormatting.TextLayout(text, new Typeface(_input.FontFamily, _input.FontStyle, _input.FontWeight), _input.FontSize, null)
+            .WidthIncludingTrailingWhitespace;
+
+    /// <summary>Para las pruebas: si la cuenta, el modelo y el envío están en la barra de abajo (y no al lado de lo escrito).</summary>
+    internal bool ComposerStacked { get; private set; }
 
     Control Composer(Tab tab)
     {
@@ -232,19 +244,37 @@ sealed partial class TerminalPane
         Grid.SetColumn(_send, 3);
         line.Children.Add(_send);
 
-        // Angosta (con el panel de la derecha abierto, una ventana chica): la cuenta, el modelo y los permisos pasan debajo
-        // de lo que se escribe, para que la caja no se parta en varias líneas.
-        void Arrange(double width)
+        // Lo escrito en una línea: todo en una fila. Con más de una (o angosta, con el panel de la derecha abierto o una
+        // ventana chica), lo escrito ocupa todo el ancho y la cuenta, el modelo, los permisos y el envío bajan a una barra
+        // debajo, como en un chat: antes quedaban flotando a media altura de un texto largo y le quitaban ancho. Con un
+        // margen, para que no salte de un lado al otro justo en el borde de la línea.
+        double width = 0;
+        (bool Stacked, bool Narrow)? applied = null;
+        void Arrange()
         {
             var narrow = width < 600;
-            Grid.SetRow(chips, narrow ? 1 : 0);
-            Grid.SetColumn(chips, narrow ? 0 : 1);
-            chips.HorizontalAlignment = narrow ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
-            chips.Margin = narrow ? new Thickness(2, 2, 0, 2) : default;
-            Grid.SetColumnSpan(_input, narrow ? 3 : 1);
-            Grid.SetRow(hint, narrow ? 1 : 0);
-            Grid.SetColumn(hint, narrow ? 2 : 2);
+            var text = _input.Text ?? "";
+            bool stacked;
+            if (narrow || text.Contains('\n') || text.Length > 400) stacked = true;
+            else
+            {
+                // Lo que queda para escribir al lado de los botones (la caja tiene 6 de cada lado y lo escrito, 12 de margen).
+                var room = width - 12 - 12 - chips.DesiredSize.Width - hint.DesiredSize.Width - _send.Width;
+                var needed = TextWidth(text) + 8;
+                stacked = ComposerStacked ? needed > room - 24 : needed > room;
+            }
+            ComposerStacked = stacked;
+            if (applied == (stacked, narrow)) return;
+            applied = (stacked, narrow);
+            Grid.SetColumnSpan(_input, stacked ? 4 : 1);
+            _input.Margin = stacked ? new Thickness(8, 4, 4, 2) : new Thickness(8, 0, 4, 0);
+            Grid.SetRow(chips, stacked ? 1 : 0);
+            Grid.SetColumn(chips, stacked ? 0 : 1);
+            chips.HorizontalAlignment = stacked ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
+            chips.Margin = stacked ? new Thickness(2, 2, 0, 0) : default;
+            Grid.SetRow(hint, stacked ? 1 : 0);
             hint.IsVisible = !narrow;
+            Grid.SetRow(_send, stacked ? 1 : 0);
         }
         var card = new Border
         {
@@ -257,11 +287,17 @@ sealed partial class TerminalPane
             MinHeight = 42,
             Child = line,
         };
-        card.SizeChanged += (_, e) => Arrange(e.NewSize.Width);
+        card.SizeChanged += (_, e) =>
+        {
+            width = e.NewSize.Width;
+            Arrange();
+        };
+        _arrangeComposer = Arrange;
         var resumable = agent.Transcript.SessionId is not null || agent.Options.Resume is not null;
         _ended = EndedBar(L.T("Esta sesión terminó: lo que escriba no llega hasta retomarla."), claude && resumable ? L.T("Retomar la sesión") : L.T("Abrir de nuevo"), () => Reopen(tab));
         _ended.IsVisible = agent.Ended;
-        Arrange(Bounds.Width > 0 ? Bounds.Width - (_projects.PanelOpen ? _projects.PanelWidth : 0) - 24 : 800);
+        width = Bounds.Width > 0 ? Bounds.Width - (_projects.PanelOpen ? _projects.PanelWidth : 0) - 24 : 800;
+        Arrange();
         var holder = new StackPanel();
         holder.Children.Add(_ended);
         holder.Children.Add(card);
