@@ -156,12 +156,22 @@ sealed class ProjectsPane : Panel
 
     // ── Datos ───────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Sube con cada búsqueda que se pidió para mostrar un plan (ShowPlanAsync): la búsqueda de fondo que empezó antes llega
+    /// vieja (sin ese plan) y no se aplica; si no, cambiaba la lista y lo elegido justo después de mostrarlo.
+    /// </summary>
+    int _scanVersion;
+
+    /// <summary>Cuántos ShowPlanAsync están buscando: mientras tanto no arranca otra búsqueda de fondo.</summary>
+    int _showing;
+
     /// <summary>Vuelve a buscar los planes aparte, sin trabar la ventana.</summary>
     void Rescan()
     {
-        if (_scanning) return;
+        if (_scanning || _showing > 0) return; // mientras se muestra un plan, su búsqueda es la que vale
         _scanning = true;
         var folders = _folders();
+        var version = _scanVersion;
         _ = Task.Run(() =>
         {
             IReadOnlyList<PlanEntry> found = [];
@@ -176,6 +186,7 @@ sealed class ProjectsPane : Panel
                 Dispatcher.UIThread.Post(() =>
                 {
                     _scanning = false;
+                    if (version != _scanVersion) return; // llegó vieja: la de ShowPlanAsync ya trae lo de ahora
                     Apply(found);
                     SetCanvases(canvases);
                 });
@@ -215,20 +226,29 @@ sealed class ProjectsPane : Panel
     /// </summary>
     public async Task ShowPlanAsync(string path)
     {
+        var version = ++_scanVersion;
         _selected = path;
         var opened = Selected is not null;
         if (opened) Open(Selected!);
         var folders = _folders();
-        var (found, canvases) = await Task.Run(() =>
+        IReadOnlyList<PlanEntry> found;
+        IReadOnlyList<CanvasSummary> canvases;
+        _showing++;
+        try
         {
-            var scan = ScanAndRecord(folders);
-            if (!scan.Any(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)))
+            (found, canvases) = await Task.Run(() =>
             {
-                _index.Add(path);
-                scan = ScanAndRecord(folders);
-            }
-            return (scan, _canvases.List());
-        });
+                var scan = ScanAndRecord(folders);
+                if (!scan.Any(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _index.Add(path);
+                    scan = ScanAndRecord(folders);
+                }
+                return (scan, _canvases.List());
+            });
+        }
+        finally { _showing--; }
+        if (version != _scanVersion) return; // se pidió mostrar otro plan mientras tanto: esa búsqueda manda
         Apply(found);
         SetCanvases(canvases);
         // Mientras se buscaba, la persona pudo elegir otro plan: entonces no se le cambia.

@@ -13,14 +13,27 @@ sealed class SpecialistTool
 }
 
 /// <summary>
-/// Un especialista (experimental): un agente con nombre, rol, instrucciones y herramientas, listo para abrir en la Terminal.
-/// Las herramientas son el canvas de Claupet («canvas») y los servidores MCP de las extensiones, por su nombre. Los de la
-/// persona se guardan como .json en la carpeta «especialistas»; los de una extensión (la ranura «agent») son de solo lectura.
+/// Hasta dónde llega un especialista en una tarea que le delegan: los minutos (pasados, se detiene) y los turnos del agente
+/// (donde el agente deja ponerles tope).
+/// </summary>
+sealed class SpecialistLimits
+{
+    public const int MaxMinutes = 120, MaxTurns = 200;
+    public int Minutes { get; set; } = 15;
+    public int Turns { get; set; } = 40;
+}
+
+/// <summary>
+/// Un especialista (experimental): un agente con nombre, rol, instrucciones y herramientas. Se abre en la Terminal como
+/// una sesión propia o, como los «dots», trabaja en una tarea que le delega la persona (@nombre) u otro agente
+/// (SpecialistRunner), y devuelve el resultado. Las herramientas son el canvas de Claupet («canvas») y los servidores MCP
+/// de las extensiones, por su nombre. Los de la persona se guardan como .json en la carpeta «especialistas»; los de una
+/// extensión (la ranura «agent») son de solo lectura.
 /// </summary>
 sealed class Specialist
 {
     public const string CanvasTool = "canvas";
-    public const int MaxName = 60, MaxRole = 120, MaxInstructions = 8000;
+    public const int MaxName = 60, MaxRole = 120, MaxWhen = 300, MaxInstructions = 8000;
 
     /// <summary>Los colores (los de las paletas de Claupet) y los íconos que se pueden elegir.</summary>
     public static readonly string[] Colors = ["#D97757", "#5BA3E0", "#6DB283", "#A48BE0", "#E07CA4", "#E0A84B"];
@@ -38,6 +51,23 @@ sealed class Specialist
     public string? Folder { get; set; }
     public string Instructions { get; set; } = "";
     public Dictionary<string, SpecialistTool> Tools { get; set; } = new() { [CanvasTool] = new SpecialistTool { On = true, Ask = false } };
+
+    /// <summary>
+    /// Cuándo usarlo: la frase con la que un agente decide delegarle una tarea («cuando haya que revisar un diff»). Vacía,
+    /// se usa el rol.
+    /// </summary>
+    public string When { get; set; } = "";
+
+    /// <summary>Edita archivos: al delegarle una tarea trabaja en su propio worktree (si la carpeta es un repositorio).</summary>
+    public bool EditsFiles { get; set; }
+
+    /// <summary>La cuenta de Claude Code con la que trabaja (su carpeta de configuración); null: la de quien lo llama.</summary>
+    public string? Account { get; set; }
+
+    public SpecialistLimits Limits { get; set; } = new();
+
+    /// <summary>Lo que se le dice a un agente para que sepa cuándo delegarle: «cuándo usarlo» o, si no se escribió, el rol.</summary>
+    public string Purpose => When.Trim() is { Length: > 0 } when ? when : Role.Trim();
 
     /// <summary>La extensión que lo trae («id · nombre»); null si es de la persona.</summary>
     [JsonIgnore] public string? Extension { get; set; }
@@ -60,7 +90,8 @@ sealed class Specialist
     public Specialist Copy(string name) => new()
     {
         Id = Specialists.NewId(), Name = name, Role = Role, Color = Color, Glyph = Glyph, Agent = Agent, Model = Model, Effort = Effort,
-        Folder = Folder, Instructions = Instructions,
+        Folder = Folder, Instructions = Instructions, When = When, EditsFiles = EditsFiles, Account = Account,
+        Limits = new SpecialistLimits { Minutes = Limits.Minutes, Turns = Limits.Turns },
         Tools = Tools.ToDictionary(t => t.Key, t => new SpecialistTool { On = t.Value.On, Ask = t.Value.Ask }),
     };
 
@@ -70,7 +101,12 @@ sealed class Specialist
         static string Clip(string? text, int max) => (text ?? "").Length <= max ? text ?? "" : text![..max];
         Name = Clip(Name?.Trim(), MaxName);
         Role = Clip(Role?.Replace('\n', ' ').Trim(), MaxRole);
+        When = Clip(When?.Replace('\n', ' ').Trim(), MaxWhen);
         Instructions = Clip(Instructions, MaxInstructions);
+        Limits ??= new();
+        Limits.Minutes = Math.Clamp(Limits.Minutes, 1, SpecialistLimits.MaxMinutes);
+        Limits.Turns = Math.Clamp(Limits.Turns, 1, SpecialistLimits.MaxTurns);
+        if (Account is { Length: 0 }) Account = null;
         if (!Colors.Contains(Color)) Color = Colors[0];
         if (!Glyphs.Contains(Glyph)) Glyph = Glyphs[0];
         if (Agent is not (AgentKinds.Claude or AgentKinds.Codex or AgentKinds.Gemini or AgentKinds.Copilot or AgentKinds.OpenCode)) Agent = AgentKinds.Claude;
@@ -188,6 +224,7 @@ static class Specialists
         Model = a.Model,
         Effort = a.Effort,
         Instructions = a.Instructions,
+        When = a.When?.Text ?? "",
         Tools = a.Tools.ToDictionary(t => t, _ => new SpecialistTool { On = true, Ask = true }),
         Extension = $"{ext.Id} · {ext.Manifest.Name.Text}",
     });

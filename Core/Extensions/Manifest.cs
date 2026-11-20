@@ -234,9 +234,12 @@ sealed record RuntimeSpec
 
 sealed record CommandSpec(string Name, LocalizedText Description);
 
-/// <summary>Un especialista que trae una extensión (la ranura «agent»). Tools: «canvas» y servidores de su «mcp».</summary>
+/// <summary>
+/// Un especialista que trae una extensión (la ranura «agent»). Tools: «canvas» y servidores de su «mcp». When: cuándo
+/// usarlo (la frase con la que un agente decide delegarle), opcional.
+/// </summary>
 sealed record AgentSpec(string Id, LocalizedText Name, LocalizedText Role, string Instructions, string Agent, string? Model, string? Effort,
-    string? Color, string? Glyph, IReadOnlyList<string> Tools);
+    string? Color, string? Glyph, IReadOnlyList<string> Tools, LocalizedText? When = null);
 
 sealed record VoiceSpec(string Id, LocalizedText Name, string File, string? Language);
 
@@ -616,6 +619,7 @@ sealed record ExtensionManifest
             if (list.Any(a => a.Id == id)) errors.Add(L.T("Especialista repetido: «{0}».", id));
             var name = Text(item, "name", errors, required: true, max: Specialist.MaxName);
             var role = Text(item, "role", errors, required: false, max: Specialist.MaxRole);
+            var when = item.TryGetProperty("when", out _) ? Text(item, "when", errors, required: false, max: Specialist.MaxWhen) : null;
             var instructions = Json.Str(item, "instructions") ?? "";
             if (instructions.Length > Specialist.MaxInstructions || instructions.Contains(char.MinValue))
                 errors.Add(L.T("Especialista «{0}»: «instructions» es demasiado largo (máximo {1}).", id, Specialist.MaxInstructions));
@@ -632,7 +636,7 @@ sealed record ExtensionManifest
             var tools = Strings(item, "tools", errors);
             foreach (var t in tools.Where(t => t != Specialist.CanvasTool && mcp.All(m => m.Name != t)))
                 errors.Add(L.T("Especialista «{0}»: la herramienta «{1}» no es «canvas» ni un servidor de «mcp».", id, t));
-            list.Add(new AgentSpec(id, name, role, instructions, agent, model, effort, color?.ToUpperInvariant(), icon, tools));
+            list.Add(new AgentSpec(id, name, role, instructions, agent, model, effort, color?.ToUpperInvariant(), icon, tools, when));
         }
         if (list.Count > 16) errors.Add(L.T("«{0}» trae demasiados elementos.", "agents"));
         return list;
