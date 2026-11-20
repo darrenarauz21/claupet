@@ -182,7 +182,7 @@ sealed partial class CanvasPane : Grid
     }
 
     /// <summary>Para las pruebas: si ya se leyó y se dibujó Canvas.</summary>
-    internal bool Loaded => !_pending;
+    internal bool DocumentLoaded => !_pending;
 
     /// <summary>
     /// Lo deja dibujado sin que se vea (la Console lo pide un rato después de abrir, con la ventana quieta): así entrar a

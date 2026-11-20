@@ -66,14 +66,14 @@ public class CanvasPaneTests
         var pane = new CanvasPane((text, folder) => terminal.MarkdownPage(text, folder), store);
         pane.SetInk(Ink.For(true));
         // Construido y con sus colores (lo que hace la Console al abrir), todavía nada: ni la lista ni el documento.
-        Assert.False(pane.Loaded);
+        Assert.False(pane.DocumentLoaded);
         Assert.Empty(Texts(pane));
 
         // Al verse, el más reciente, con sus colores.
         var window = new Avalonia.Controls.Window { Width = 1200, Height = 900, Content = pane };
         window.Show();
         Headless.Frame(window);
-        Assert.True(pane.Loaded);
+        Assert.True(pane.DocumentLoaded);
         Assert.Equal(reciente.Id, pane.CurrentId);
         Assert.Contains(Texts(window), t => t.Contains("Reciente"));
         pane.Close();
@@ -94,7 +94,7 @@ public class CanvasPaneTests
         pane.ListChanged += () => listed++;
 
         pane.Show(pedido.Id);
-        Assert.True(pane.Loaded);
+        Assert.True(pane.DocumentLoaded);
         Assert.Equal(pedido.Id, pane.CurrentId);
         Assert.True(listed > 0, "la lista de la Console se entera");
         pane.Close();
