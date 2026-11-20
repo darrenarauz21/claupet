@@ -300,14 +300,17 @@ sealed partial class TerminalPane
         Arrange();
         var holder = new StackPanel();
         holder.Children.Add(_ended);
-        // Arriba de la caja: las corridas de los especialistas que llamó esta pestaña y la lista de @ mientras se escribe.
-        foreach (var bar in new Control[] { _runsBar, _mentionBar })
+        // Arriba de la caja: las corridas de los especialistas que llamó esta pestaña, lo traído de otras sesiones para su
+        // próximo pedido y la lista de @ o # mientras se escribe.
+        foreach (var bar in new Control[] { _runsBar, _contextBar, _mentionBar })
         {
             if (bar.Parent is Panel old) old.Children.Remove(bar);
             holder.Children.Add(bar);
         }
         WatchRuns();
+        WatchInbox();
         DrawRuns();
+        DrawContext();
         HideMentions();
         holder.Children.Add(card);
         return holder;
@@ -685,12 +688,13 @@ sealed partial class TerminalPane
         Grid.SetColumn(column, 1);
         row.Children.Add(column);
         var copy = Tool(CopyIcon, L.T("Copiar la respuesta"), () => CopyToClipboard(block.Text));
-        copy.Opacity = 0;
-        copy.VerticalAlignment = VerticalAlignment.Top;
-        copy.Margin = new Thickness(6, -2, 0, 0);
-        Grid.SetColumn(copy, 2);
-        row.Children.Add(copy);
-        ShowOnHover(row, copy);
+        // «Enviar a…»: la respuesta, como contexto del próximo pedido de otra sesión (TerminalPane.Sessions.cs).
+        Border? send = null;
+        send = Tool(SendIcon, L.T("Enviar a otra sesión"), () => SendTo(send!, block.Text));
+        var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Opacity = 0, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(6, -2, 0, 0), Children = { send, copy } };
+        Grid.SetColumn(tools, 2);
+        row.Children.Add(tools);
+        ShowOnHover(row, tools);
         if (block.Open)
         {
             // Mientras llega, texto plano (barato de cambiar); al terminar, con su formato.

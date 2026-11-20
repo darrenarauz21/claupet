@@ -2357,5 +2357,11 @@
   "detenido": "stopped",
   "pasó su tope": "hit its limit",
   "Empezando…": "Starting…",
-  "Ver su sesión": "Open its session"
+  "Ver su sesión": "Open its session",
+  "Intro o Tab elige · Esc cierra · el pedido lleva el contexto de esa sesión": "Enter or Tab picks · Esc closes · your message carries that session's context",
+  "Mensaje de la sesión «{0}»: {1}": "Message from session “{0}”: {1}",
+  "Va con su próximo pedido": "Goes with your next message",
+  "De «{0}»: {1}": "From “{0}”: {1}",
+  "No hay otra sesión abierta a la cual enviarlo.": "There's no other open session to send it to.",
+  "Enviar a otra sesión": "Send to another session"
 }

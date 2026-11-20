@@ -72,6 +72,27 @@ con su porcentaje; al pasar el mouse, también el uso de la sesión de 5 horas d
 - **Una parte:** selecciónela con el mouse y pulse **Ctrl+C**, o haga clic derecho › **Copiar**
   (**Seleccionar todo** elige el bloque entero).
 
+### Especialistas y otras sesiones
+
+> [!NOTE]
+> **Experimental.** Funciona igual con Claude Code, Codex, Gemini CLI, Copilot CLI y OpenCode.
+
+- **`@` llama a un especialista.** Al escribir `@` aparece la lista de sus especialistas; se elige con las flechas
+  e **Intro** o **Tab** (**Esc** la cierra). `@revisor-de-prs revisa el PR 12` le pide al agente de la pestaña que le
+  delegue esa tarea, con lo que hace falta de la conversación, y que le cuente el resultado. El agente también puede
+  delegar por su cuenta cuando una tarea encaja con el «cuándo usarlo» de un especialista.
+- **Lo que hacen los especialistas** se ve arriba de la caja: cómo va, su último paso y cuánto lleva. **Ver su
+  sesión** abre su conversación en una pestaña; **Detener** lo para. Sus permisos se responden en la isla.
+- **`#` trae el contexto de otra sesión.** Al escribir `#` aparecen las otras pestañas; `¿qué decidiste sobre el
+  token? #arreglo-del-login` agrega al pedido de qué trata esa sesión, sus últimas respuestas y lo que editó.
+- **Enviar a…**: pase el mouse por una respuesta y toque la flecha para mandarla a otra pestaña. Queda arriba de su
+  caja («Va con su próximo pedido») y viaja con lo próximo que usted le escriba; la **×** la quita.
+- **Entre agentes.** Una sesión puede leer de qué trata otra y dejarle un mensaje. Si la otra está quieta, el mensaje
+  le llega como un pedido («Mensaje de la sesión…»); si trabaja, al terminar. Después de tres mensajes seguidos sin
+  que usted escriba, los siguientes ya no entran solos: esperan arriba de la caja a su próximo pedido.
+- **La pizarra del proyecto** es un canvas («Pizarra · nombre del proyecto») que todas las sesiones del proyecto leen
+  y donde anotan decisiones y acuerdos, cada nota con quién la dejó y cuándo. Se abre en **Canvas**.
+
 ## Los bloques
 
 | Bloque | Qué muestra |

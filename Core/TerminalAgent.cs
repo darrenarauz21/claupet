@@ -758,6 +758,7 @@ sealed class TerminalAgent : IDisposable
         // El bloque se crea aunque nadie escuche (una prueba): Changed solo avisa.
         var ask = Transcript.Ask(text);
         Changed?.Invoke([ask]);
+        Share([ask]);
         var prompt = hidden is { Length: > 0 } ? text + hidden : text;
         if (!Coordinate)
         {
@@ -979,6 +980,18 @@ sealed class TerminalAgent : IDisposable
             foreach (var permission in changed.Where(b => b.Kind == AgentBlockKind.Permission && b.Answer is null && !_island.ContainsKey(b)))
                 _ = AskIslandAsync(permission);
         Changed?.Invoke(changed);
+        Share(changed);
+    }
+
+    /// <summary>
+    /// Al terminar un turno (o empezar uno), su tarjeta para las otras sesiones (SessionShare): de qué trata, sus últimos
+    /// pedidos y respuestas y lo que editó. Solo las que se coordinan (las de la Terminal y los especialistas).
+    /// </summary>
+    void Share(IReadOnlyList<AgentBlock> changed)
+    {
+        if (!Coordinate || !changed.Any(b => b.Kind is AgentBlockKind.Ask or AgentBlockKind.Done)) return;
+        try { SessionShare.Publish(SessionShare.CardOf(_driver.CanvasKey, _driver.Name, _options, Transcript, Touched())); }
+        catch (Exception ex) { ErrorLog.Write(ex); }
     }
 
     /// <summary>El último modelo que se le anotó a Claupet Canvas para esta sesión.</summary>
@@ -1025,6 +1038,7 @@ sealed class TerminalAgent : IDisposable
     {
         Unregister();
         if (_modelNoted is not null) CanvasAgentModel.Forget(_driver.CanvasKey);
+        if (Coordinate) SessionShare.Forget(_driver.CanvasKey);
         foreach (var permission in _island.Keys.ToList()) StopIsland(permission);
         var process = _process;
         _process = null;

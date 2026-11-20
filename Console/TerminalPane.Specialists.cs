@@ -16,19 +16,26 @@ using Avalonia.Threading;
 /// </summary>
 sealed partial class TerminalPane
 {
-    // ── @ en la caja ────────────────────────────────────────────────────────────────────────
+    // ── @ y # en la caja ────────────────────────────────────────────────────────────────────
+
+    /// <summary>Lo que ofrece la lista: lo que se escribe al elegirlo («@revisor-de-prs», «#arreglo-login»), su color y de qué es.</summary>
+    sealed record MentionItem(string Insert, string Name, string Detail, IBrush Color);
 
     readonly Border _mentionBar = new() { IsVisible = false, Margin = new Thickness(12, 0, 12, 6), CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1), Padding = new Thickness(4) };
-    IReadOnlyList<Specialist> _mentionAll = [];
-    List<Specialist> _mentionPicks = [];
+    IReadOnlyList<MentionItem> _mentionAll = [];
+    List<MentionItem> _mentionPicks = [];
     int _mentionIndex;
-    /// <summary>Dónde empieza el @ que se está escribiendo (su posición en la caja); -1 si no hay.</summary>
+    /// <summary>Dónde empieza el @ o el # que se está escribiendo (su posición en la caja); -1 si no hay.</summary>
     int _mentionAt = -1;
+    char _mentionMark;
 
-    /// <summary>Para las pruebas: los especialistas que ofrece la lista de @ (vacía si no se ve).</summary>
+    /// <summary>Para las pruebas: lo que ofrece la lista de @ o # (vacía si no se ve).</summary>
     internal IReadOnlyList<string> MentionChoices => _mentionBar.IsVisible ? [.. _mentionPicks.Select(s => s.Name)] : [];
 
-    /// <summary>Lo escrito cambió: si el cursor está justo después de «@algo», la lista de especialistas que coinciden.</summary>
+    /// <summary>
+    /// Lo escrito cambió: si el cursor está justo después de «@algo» (especialistas) o «#algo» (las otras sesiones de la
+    /// Terminal), la lista de los que coinciden.
+    /// </summary>
     void UpdateMentions()
     {
         if (_current is not { Shell: null } || _creating)
@@ -38,17 +45,20 @@ sealed partial class TerminalPane
         }
         var text = _input.Text ?? "";
         var caret = Math.Clamp(_input.CaretIndex, 0, text.Length);
-        var at = text.LastIndexOf('@', Math.Max(0, caret - 1));
-        if (caret == 0 || at < 0 || (at > 0 && !char.IsWhiteSpace(text[at - 1])) || text[at..caret].Any(char.IsWhiteSpace))
+        var at = caret == 0 ? -1 : text.LastIndexOfAny(['@', '#'], caret - 1);
+        if (at < 0 || (at > 0 && !char.IsWhiteSpace(text[at - 1])) || text[at..caret].Any(char.IsWhiteSpace))
         {
             HideMentions();
             return;
         }
-        if (_mentionAt != at) _mentionAll = Specialists.All(); // al empezar un @ nuevo: los de ahora (pudo crearse uno)
+        var mark = text[at];
+        // Al empezar uno nuevo: los de ahora (pudo crearse un especialista o abrirse una pestaña).
+        if (_mentionAt != at || _mentionMark != mark) _mentionAll = mark == '@' ? SpecialistItems() : SessionItems();
         _mentionAt = at;
+        _mentionMark = mark;
         var typed = SpecialistTools.Fold(text[(at + 1)..caret]);
-        _mentionPicks = [.. _mentionAll.Where(s => typed.Length == 0 || SpecialistTools.Slug(s.Name).Contains(typed, StringComparison.Ordinal)
-            || SpecialistTools.Fold(s.Purpose).Contains(typed, StringComparison.Ordinal)).Take(6)];
+        _mentionPicks = [.. _mentionAll.Where(m => typed.Length == 0 || SpecialistTools.Fold(m.Insert).Contains(typed, StringComparison.Ordinal)
+            || SpecialistTools.Fold(m.Detail).Contains(typed, StringComparison.Ordinal)).Take(6)];
         if (_mentionPicks.Count == 0)
         {
             HideMentions();
@@ -57,6 +67,18 @@ sealed partial class TerminalPane
         _mentionIndex = Math.Clamp(_mentionIndex, 0, _mentionPicks.Count - 1);
         DrawMentions();
     }
+
+    IReadOnlyList<MentionItem> SpecialistItems() =>
+        [.. Specialists.All().Select(s => new MentionItem("@" + SpecialistTools.Slug(s.Name), s.Name, s.Purpose.Length > 0 ? s.Purpose : AgentKinds.Label(s.Agent), Brush(s.Color)))];
+
+    /// <summary>Las otras pestañas de agente de la Terminal, con lo que se escribe para traer su contexto («#arreglo-login»).</summary>
+    IReadOnlyList<MentionItem> SessionItems() =>
+        [.. _tabs.Where(t => t.Shell is null && t != _current).Select(t => new MentionItem("#" + TabSlug(t), Title(t),
+            $"{t.Project} · {AgentKinds.Label(t.Agent.Options.Kind)}{(t.Agent.Transcript.Busy ? " · " + L.T("trabajando") : "")}", _ink.Accent))];
+
+    /// <summary>Cómo se nombra una pestaña después de #: las primeras palabras de su título.</summary>
+    internal static string TabSlug(Tab tab) =>
+        SpecialistTools.Slug(string.Join(' ', Title(tab).Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(4))) is { Length: > 0 } slug ? slug : SpecialistTools.Slug(tab.Project);
 
     void HideMentions()
     {
@@ -70,27 +92,32 @@ sealed partial class TerminalPane
         var list = new StackPanel { Spacing = 1 };
         for (var i = 0; i < _mentionPicks.Count; i++)
         {
-            var s = _mentionPicks[i];
+            var m = _mentionPicks[i];
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*") };
-            row.Children.Add(new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = Brush(s.Color), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 9, 0) });
-            var name = Ui.Text("@" + SpecialistTools.Slug(s.Name), 13, _ink.Text, FontWeight.SemiBold);
+            row.Children.Add(new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = m.Color, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 9, 0) });
+            var name = Ui.Text(m.Insert, 13, _ink.Text, FontWeight.SemiBold);
             name.VerticalAlignment = VerticalAlignment.Center;
+            name.MaxWidth = 280;
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
             Grid.SetColumn(name, 1);
             row.Children.Add(name);
-            var purpose = Ui.Text(s.Purpose.Length > 0 ? s.Purpose : AgentKinds.Label(s.Agent), 12, _ink.Tertiary);
-            purpose.TextTrimming = TextTrimming.CharacterEllipsis;
-            purpose.Margin = new Thickness(10, 0, 0, 0);
-            purpose.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(purpose, 2);
-            row.Children.Add(purpose);
-            var pick = s;
-            var item = Ui.Press(row, () => PickMention(pick), (b, on) => b.Background = on || pick == _mentionPicks[_mentionIndex] ? _ink.Pill : Brushes.Transparent, s.Name);
+            var detail = Ui.Text(m.Detail, 12, _ink.Tertiary);
+            detail.TextTrimming = TextTrimming.CharacterEllipsis;
+            detail.Margin = new Thickness(10, 0, 0, 0);
+            detail.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(detail, 2);
+            row.Children.Add(detail);
+            var pick = m;
+            var item = Ui.Press(row, () => PickMention(pick), (b, on) => b.Background = on || pick == _mentionPicks[_mentionIndex] ? _ink.Pill : Brushes.Transparent, m.Name);
+            ToolTip.SetTip(item, m.Name);
             item.Padding = new Thickness(8, 6);
             item.CornerRadius = new CornerRadius(8);
             item.Background = i == _mentionIndex ? _ink.Pill : Brushes.Transparent;
             list.Children.Add(item);
         }
-        var hint = Ui.Text(L.T("Intro o Tab elige · Esc cierra · el agente de esta pestaña le delega la tarea"), 11, _ink.Tertiary);
+        var hint = Ui.Text(_mentionMark == '@'
+            ? L.T("Intro o Tab elige · Esc cierra · el agente de esta pestaña le delega la tarea")
+            : L.T("Intro o Tab elige · Esc cierra · el pedido lleva el contexto de esa sesión"), 11, _ink.Tertiary);
         hint.Margin = new Thickness(10, 4, 10, 2);
         list.Children.Add(hint);
         _mentionBar.Background = _ink.Raised;
@@ -99,13 +126,13 @@ sealed partial class TerminalPane
         _mentionBar.IsVisible = true;
     }
 
-    /// <summary>Elige un especialista de la lista: el @ que se escribía pasa a ser su nombre, con un espacio para seguir.</summary>
-    void PickMention(Specialist s)
+    /// <summary>Elige de la lista: el @ o # que se escribía pasa a ser su nombre, con un espacio para seguir.</summary>
+    void PickMention(MentionItem m)
     {
         var text = _input.Text ?? "";
-        if (_mentionAt < 0 || _mentionAt >= text.Length + 1) return;
+        if (_mentionAt < 0 || _mentionAt > text.Length) return;
         var caret = Math.Clamp(_input.CaretIndex, _mentionAt, text.Length);
-        var insert = "@" + SpecialistTools.Slug(s.Name) + " ";
+        var insert = m.Insert + " ";
         var after = text[caret..].TrimStart();
         _input.Text = text[.._mentionAt] + insert + after;
         _input.CaretIndex = _mentionAt + insert.Length;
@@ -113,7 +140,7 @@ sealed partial class TerminalPane
         _input.Focus();
     }
 
-    /// <summary>Las teclas mientras se ve la lista de @: flechas, Intro o Tab para elegir y Esc para cerrar. true si la usó.</summary>
+    /// <summary>Las teclas mientras se ve la lista: flechas, Intro o Tab para elegir y Esc para cerrar. true si la usó.</summary>
     bool MentionKey(KeyEventArgs e)
     {
         if (!_mentionBar.IsVisible || _mentionPicks.Count == 0) return false;

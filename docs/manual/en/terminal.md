@@ -72,6 +72,27 @@ has used (a bar with its percentage; hovering also shows the account's 5-hour se
 - **Part of it:** select it with the mouse and press **Ctrl+C**, or right-click › **Copy** (**Select all**
   picks the whole block).
 
+### Specialists and other sessions
+
+> [!NOTE]
+> **Experimental.** It works the same with Claude Code, Codex, Gemini CLI, Copilot CLI and OpenCode.
+
+- **`@` calls a specialist.** Typing `@` shows your specialists; pick one with the arrows and **Enter** or **Tab**
+  (**Esc** closes the list). `@pr-reviewer review PR 12` asks the tab's agent to delegate that task to it, with what it
+  needs from the conversation, and to tell you the result. The agent can also delegate on its own when a task matches a
+  specialist's "when to use it".
+- **What specialists are doing** shows above the box: how it's going, its last step and how long it's been. **Open its
+  session** opens its conversation in a tab; **Stop** stops it. Its permissions are answered in the island.
+- **`#` brings another session's context.** Typing `#` shows the other tabs; `what did you decide about the token?
+  #login-fix` adds what that session is about, its latest answers and what it edited.
+- **Send to…**: hover over an answer and tap the arrow to send it to another tab. It waits above that tab's box ("Goes
+  with your next message") and travels with what you write next; the **×** removes it.
+- **Between agents.** A session can read what another is about and leave it a message. If the other one is idle, it
+  gets it as a request ("Message from session…"); if it's working, when it finishes. After three messages in a row
+  without you writing, the next ones don't go in on their own: they wait above the box for your next message.
+- **The project board** is a canvas ("Pizarra · project name") every session of the project reads and where they note
+  decisions and agreements, each note with who left it and when. Open it in **Canvas**.
+
 ## The blocks
 
 | Block | What it shows |
