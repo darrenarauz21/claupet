@@ -8,18 +8,125 @@ using Avalonia.Media;
 using Avalonia.Threading;
 
 /// <summary>
-/// Los especialistas desde la Terminal. Al escribir «@» en la caja aparece la lista de especialistas (flechas, Intro o
-/// Tab para elegir, Esc para cerrar); un pedido con @especialista va con una nota para el agente de la pestaña: que le
-/// delegue la tarea con pedir_a_especialista y cuente el resultado. Arriba de la caja se ven las corridas de los
-/// especialistas que llamó esa pestaña (las lee del diario, aunque corran en otro proceso): cómo van, su último paso,
-/// «Ver su sesión» y «Detener».
+/// Los especialistas desde la Terminal, sin salir de la sesión:
+/// - En la caja se elige el especialista de la pestaña: desde el próximo pedido, la misma sesión trabaja como él (sus
+///   instrucciones van una vez, en una nota que la persona no ve; con Claude Code, también su modelo y su esfuerzo).
+/// - Al escribir «@» aparece la lista de especialistas (flechas, Intro o Tab para elegir, Esc para cerrar). Un pedido con
+///   @especialista va con una nota para el agente de la pestaña: en Claude Code, que se lo pase a su subagente (los
+///   especialistas van como subagentes al abrir, --agents) y el trabajo queda en la sesión; en los demás agentes, o si es
+///   un especialista que la sesión no recibió, que se lo delegue con pedir_a_especialista (aparte). «Abrir aparte», en
+///   la lista, lo abre en una pestaña propia.
+/// Arriba de la caja se ven las corridas aparte de los especialistas que llamó esa pestaña (las lee del diario, aunque
+/// corran en otro proceso): cómo van, su último paso, «Ver su sesión» y «Detener».
 /// </summary>
 sealed partial class TerminalPane
 {
+    // ── El especialista de la pestaña ───────────────────────────────────────────────────────
+
+    /// <summary>Lo que dice su etiqueta en la caja: el especialista de la pestaña o «especialista».</summary>
+    static string RoleText(Tab tab) => tab.Agent.Options.Specialist?.Name ?? tab.Role?.Name ?? L.T("especialista");
+
+    /// <summary>La etiqueta de la caja: su color si hay uno; tocarla abre la lista (la de una pestaña abierta como especialista es fija).</summary>
+    Border RoleChip(Tab tab)
+    {
+        var dot = new Border { Width = 6, Height = 6, CornerRadius = new CornerRadius(3), VerticalAlignment = VerticalAlignment.Center };
+        void Paint()
+        {
+            var role = tab.Agent.Options.Specialist ?? tab.Role;
+            dot.Background = role is null ? _ink.Tertiary : Brush(role.Color);
+            dot.Opacity = role is null ? 0.5 : 1;
+        }
+        Border? chip = null;
+        TextBlock? text = null;
+        chip = Pick(RoleText(tab), tab.Agent.Options.Specialist is not null ? null : () => RoleMenu(chip!, tab, () =>
+        {
+            text!.Text = RoleText(tab);
+            Paint();
+        }), dot);
+        text = chip.Child is StackPanel { Children: [.., TextBlock label] } ? label : null;
+        Paint();
+        ToolTip.SetTip(chip, tab.Agent.Options.Specialist is { } own
+            ? L.T("Esta pestaña se abrió como el especialista «{0}».", own.Name)
+            : L.T("El especialista con que trabaja esta sesión: desde el próximo pedido sigue sus instrucciones, sin abrir otra. Usa las herramientas de esta pestaña."));
+        return chip;
+    }
+
+    /// <summary>La lista de especialistas para la pestaña, con «Sin especialista» arriba.</summary>
+    void RoleMenu(Control anchor, Tab tab, Action changed)
+    {
+        const string None = "\u0001none";
+        var all = Specialists.All();
+        var entries = new List<DropList.Entry> { new(None, L.T("Sin especialista"), tab.Role is null) };
+        entries.AddRange(all.Select(s => new DropList.Entry(s.Id, s.Name, tab.Role?.Id == s.Id)));
+        DropList.Show(anchor, _ink, entries, picked =>
+        {
+            if (picked is null) return;
+            ChooseRole(tab, picked == None ? null : all.FirstOrDefault(s => s.Id == picked));
+            changed();
+        });
+    }
+
+    /// <summary>
+    /// Cambia el especialista de la pestaña. Su nota sale con el próximo pedido (si se cambia otra vez antes, solo la última).
+    /// Con Claude Code, si el especialista trae modelo o esfuerzo, la sesión pasa a ellos y, al quitarlo, vuelve a los de antes.
+    /// </summary>
+    internal void ChooseRole(Tab tab, Specialist? role)
+    {
+        if (tab.Role?.Id == role?.Id) return;
+        var before = tab.Role;
+        tab.Role = role;
+        // Si la nota del anterior no llegó a salir, la sesión nunca supo de él: no hay nada que quitarle.
+        var told = before is not null && tab.RoleNote is null;
+        tab.RoleNote = SpecialistTools.RoleNote(role, told ? before : null);
+        var agent = tab.Agent;
+        if (agent.Options.Kind == AgentKinds.Claude)
+        {
+            if (tab.RoleRestore is { } back && (role is null || (role.Model is null && role.Effort is null)))
+            {
+                agent.SetModel(back.Model);
+                if (back.Effort is { } effort) agent.SetEffort(effort);
+                tab.RoleRestore = null;
+            }
+            if (role is { Agent: AgentKinds.Claude } && (role.Model is not null || role.Effort is not null))
+            {
+                tab.RoleRestore ??= (ClaudeModels.ChoiceFor(agent.Transcript.Model, agent.Driver.Models, agent.Options.Model, agent.Transcript.Offered ?? ClaudeModels.Known), agent.Effort);
+                if (role.Model is { } model) agent.SetModel(model);
+                if (role.Effort is { } effort) agent.SetEffort(effort);
+            }
+            if (tab == _current && _modelText is { } label) label.Text = ModelAndEffort(tab);
+        }
+        agent.Transcript.Notice(role is null
+            ? L.T("Sin especialista: desde el próximo pedido trabaja como siempre.")
+            : L.T("Especialista «{0}»: desde el próximo pedido esta sesión sigue sus instrucciones.", role.Name));
+        SaveOpen();
+    }
+
+    /// <summary>Los especialistas que la sesión de la pestaña recibió como subagentes (solo Claude Code).</summary>
+    static IReadOnlyList<(string Name, Specialist Specialist)> SubagentsOf(Tab tab) => tab.Agent.Driver is ClaudeDriver claude ? claude.Subagents : [];
+
+    /// <summary>
+    /// Las notas de especialistas para un pedido (null si no hay): con el primero, que los especialistas son también sus
+    /// subagentes; si cambió el de la pestaña, la de trabajar como él; si menciona a alguno, la de pasarle la tarea.
+    /// </summary>
+    internal static string? SpecialistNotes(Tab tab, string text)
+    {
+        var subagents = SubagentsOf(tab);
+        var notes = new System.Text.StringBuilder();
+        if (!tab.SubagentsTold && SpecialistTools.SubagentsNote(subagents) is { } told) notes.Append(told);
+        tab.SubagentsTold = true;
+        if (tab.RoleNote is { } role) notes.Append(role);
+        tab.RoleNote = null;
+        if (text.Contains('@') && SpecialistTools.Directive(SpecialistTools.Mentions(text, Specialists.All()), subagents) is { } directive) notes.Append(directive);
+        return notes.Length == 0 ? null : notes.ToString();
+    }
+
     // ── @ y # en la caja ────────────────────────────────────────────────────────────────────
 
-    /// <summary>Lo que ofrece la lista: lo que se escribe al elegirlo («@revisor-de-prs», «#arreglo-login»), su color y de qué es.</summary>
-    sealed record MentionItem(string Insert, string Name, string Detail, IBrush Color);
+    /// <summary>
+    /// Lo que ofrece la lista: lo que se escribe al elegirlo («@revisor-de-prs», «#arreglo-login»), su color, de qué es y,
+    /// si es un especialista, cuál (para «Abrir aparte»).
+    /// </summary>
+    sealed record MentionItem(string Insert, string Name, string Detail, IBrush Color, Specialist? Specialist = null);
 
     readonly Border _mentionBar = new() { IsVisible = false, Margin = new Thickness(12, 0, 12, 6), CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1), Padding = new Thickness(4) };
     IReadOnlyList<MentionItem> _mentionAll = [];
@@ -69,7 +176,7 @@ sealed partial class TerminalPane
     }
 
     IReadOnlyList<MentionItem> SpecialistItems() =>
-        [.. Specialists.All().Select(s => new MentionItem("@" + SpecialistTools.Slug(s.Name), s.Name, s.Purpose.Length > 0 ? s.Purpose : AgentKinds.Label(s.Agent), Brush(s.Color)))];
+        [.. Specialists.All().Select(s => new MentionItem("@" + SpecialistTools.Slug(s.Name), s.Name, s.Purpose.Length > 0 ? s.Purpose : AgentKinds.Label(s.Agent), Brush(s.Color), s))];
 
     /// <summary>Las otras pestañas de agente de la Terminal, con lo que se escribe para traer su contexto («#arreglo-login»).</summary>
     IReadOnlyList<MentionItem> SessionItems() =>
@@ -93,7 +200,7 @@ sealed partial class TerminalPane
         for (var i = 0; i < _mentionPicks.Count; i++)
         {
             var m = _mentionPicks[i];
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*") };
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto") };
             row.Children.Add(new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = m.Color, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 9, 0) });
             var name = Ui.Text(m.Insert, 13, _ink.Text, FontWeight.SemiBold);
             name.VerticalAlignment = VerticalAlignment.Center;
@@ -107,6 +214,27 @@ sealed partial class TerminalPane
             detail.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(detail, 2);
             row.Children.Add(detail);
+            if (m.Specialist is { } specialist)
+            {
+                // Para quien lo quiere en una pestaña propia, con su agente, sus herramientas y su carpeta.
+                var label = Ui.Text(L.T("Abrir aparte"), 11.5, _ink.Tertiary);
+                var apart = Ui.Press(label, () =>
+                {
+                    HideMentions();
+                    OpenSpecialist(specialist);
+                }, (b, on) =>
+                {
+                    b.Background = on ? _ink.Hairline : Brushes.Transparent;
+                    label.Foreground = on ? _ink.Text : _ink.Tertiary;
+                }, L.T("Abrir aparte"));
+                apart.Padding = new Thickness(7, 2);
+                apart.CornerRadius = new CornerRadius(6);
+                apart.Margin = new Thickness(8, 0, 0, 0);
+                apart.VerticalAlignment = VerticalAlignment.Center;
+                ToolTip.SetTip(apart, L.T("Abre «{0}» en una pestaña propia, aparte de esta sesión.", specialist.Name));
+                Grid.SetColumn(apart, 3);
+                row.Children.Add(apart);
+            }
             var pick = m;
             var item = Ui.Press(row, () => PickMention(pick), (b, on) => b.Background = on || pick == _mentionPicks[_mentionIndex] ? _ink.Pill : Brushes.Transparent, m.Name);
             ToolTip.SetTip(item, m.Name);
@@ -116,7 +244,9 @@ sealed partial class TerminalPane
             list.Children.Add(item);
         }
         var hint = Ui.Text(_mentionMark == '@'
-            ? L.T("Intro o Tab elige · Esc cierra · el agente de esta pestaña le delega la tarea")
+            ? _current is { } tab && SubagentsOf(tab).Count > 0
+                ? L.T("Intro o Tab elige · Esc cierra · trabaja dentro de esta sesión, como subagente")
+                : L.T("Intro o Tab elige · Esc cierra · el agente de esta pestaña le delega la tarea")
             : L.T("Intro o Tab elige · Esc cierra · el pedido lleva el contexto de esa sesión"), 11, _ink.Tertiary);
         hint.Margin = new Thickness(10, 4, 10, 2);
         list.Children.Add(hint);
@@ -153,10 +283,6 @@ sealed partial class TerminalPane
             default: return false;
         }
     }
-
-    /// <summary>La nota para el agente si el pedido menciona especialistas (null si no menciona a ninguno).</summary>
-    static string? MentionDirective(string text) =>
-        text.Contains('@') ? SpecialistTools.Directive(SpecialistTools.Mentions(text, Specialists.All())) : null;
 
     static IBrush Brush(string hex) => Color.TryParse(hex, out var c) ? new SolidColorBrush(c) : Brushes.Gray;
 

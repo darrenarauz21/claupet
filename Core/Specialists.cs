@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
@@ -202,6 +203,70 @@ static class Specialists
             Directory.CreateDirectory(dir);
             var file = Path.Combine(dir, (IdPattern.IsMatch(s.Id) ? s.Id : "ext-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(s.Id)))[..10].ToLowerInvariant()) + ".md");
             File.WriteAllText(file, s.Prompt(), new UTF8Encoding(false));
+            return file;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ErrorLog.Write(ex); return null; }
+    }
+
+    // ── Como subagentes de Claude Code ──────────────────────────────────────────────────────
+
+    /// <summary>Los nombres de los subagentes que ya trae Claude Code: un especialista no los tapa.</summary>
+    static readonly HashSet<string> BuiltInAgents = new(["general-purpose", "explore", "plan", "statusline-setup", "fork", "claude"], StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Los especialistas que una sesión de Claude Code recibe como subagentes propios (--agents), para trabajar dentro de
+    /// esa misma sesión: los de Claude Code, con el nombre con que se escriben después de @ («revisor-de-commits»), sin
+    /// repetir nombres ni tapar los que trae Claude Code.
+    /// </summary>
+    public static IReadOnlyList<(string Name, Specialist Specialist)> Subagents(IEnumerable<Specialist> all)
+    {
+        var list = new List<(string Name, Specialist Specialist)>();
+        foreach (var s in all)
+            if (s.Agent == AgentKinds.Claude && SpecialistTools.Slug(s.Name) is { Length: > 0 } name && !BuiltInAgents.Contains(name) && list.All(x => x.Name != name))
+                list.Add((name, s));
+        return list;
+    }
+
+    /// <summary>Los subagentes como los lee --agents: cuándo usarlo, sus instrucciones, su modelo (o el de la sesión) y su esfuerzo.</summary>
+    internal static JsonObject SubagentsJson(IReadOnlyList<(string Name, Specialist Specialist)> subagents)
+    {
+        var json = new JsonObject();
+        foreach (var (name, s) in subagents)
+        {
+            var agent = new JsonObject
+            {
+                ["description"] = s.Purpose.Length > 0 ? s.Purpose : s.Name.Trim(),
+                ["prompt"] = s.Prompt(),
+                ["model"] = s.Model is { Length: > 0 } model ? model : "inherit",
+            };
+            if (s.Effort is { Length: > 0 } effort) agent["effort"] = effort;
+            json[name] = agent;
+        }
+        return json;
+    }
+
+    /// <summary>
+    /// Los subagentes en un archivo, para «--agents» (el JSON no sobrevive a cmd.exe). Uno por contenido: las pestañas que
+    /// abren a la vez no se pisan, y los de más de una semana se borran. Null si no hay subagentes o no se pudo.
+    /// </summary>
+    public static string? SubagentsFile(IReadOnlyList<(string Name, Specialist Specialist)> subagents)
+    {
+        if (subagents.Count == 0) return null;
+        try
+        {
+            var text = SubagentsJson(subagents).ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+            var dir = Path.Combine(Folder, "sesiones");
+            Directory.CreateDirectory(dir);
+            var file = Path.Combine(dir, "subagentes-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..10].ToLowerInvariant() + ".json");
+            if (!File.Exists(file))
+            {
+                var temp = file + "." + Guid.NewGuid().ToString("N")[..6] + ".tmp";
+                File.WriteAllText(temp, text, new UTF8Encoding(false));
+                File.Move(temp, file, overwrite: true);
+            }
+            else File.SetLastWriteTimeUtc(file, DateTime.UtcNow);
+            foreach (var old in new DirectoryInfo(dir).EnumerateFiles("subagentes-*.json").Where(f => f.FullName != file && DateTime.UtcNow - f.LastWriteTimeUtc > TimeSpan.FromDays(7)).ToList())
+                old.Delete();
             return file;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ErrorLog.Write(ex); return null; }

@@ -70,6 +70,17 @@ sealed partial class TerminalPane : Grid
         public Queue<SessionMessage> Waiting { get; } = new();
         /// <summary>Cuántos mensajes de otras sesiones se le mandaron solos desde el último pedido de la persona.</summary>
         public int AutoMessages { get; set; }
+        /// <summary>
+        /// El especialista con que trabaja esta misma sesión, elegido en la caja (TerminalPane.Specialists.cs); null, ninguno.
+        /// No es el de una pestaña abierta como especialista (ese va en Agent.Options.Specialist, desde que abre).
+        /// </summary>
+        public Specialist? Role { get; set; }
+        /// <summary>La nota de que cambió el especialista, para el próximo pedido (se manda una vez); null, nada pendiente.</summary>
+        public string? RoleNote { get; set; }
+        /// <summary>El modelo y el esfuerzo de antes de elegir un especialista que trae los suyos: vuelven al quitarlo.</summary>
+        public (string? Model, string? Effort)? RoleRestore { get; set; }
+        /// <summary>Ya se le dijo que los especialistas son también sus subagentes (con el primer pedido).</summary>
+        public bool SubagentsTold { get; set; }
     }
 
     /// <summary>
@@ -568,9 +579,10 @@ sealed partial class TerminalPane : Grid
         _input.Text = "";
         var images = tab.Images.Where((_, i) => text.Contains($"[Imagen #{i + 1}]", StringComparison.Ordinal)).ToList();
         tab.Images.Clear();
-        // Con @especialista, el agente de la pestaña recibe además la nota de delegarle la tarea; con #sesión o lo que se le
-        // trajo con «Enviar a…», el contexto de esas sesiones (la persona no ve las notas, sí lo que escribió).
-        tab.Agent.Send(text, images, MentionDirective(text) + SessionContext(tab, text));
+        // Con el especialista elegido en la caja, la nota de trabajar como él (una vez por cambio); con @especialista, la de
+        // pasarle la tarea (a su subagente, si la sesión lo tiene); con #sesión o lo que se le trajo con «Enviar a…», el
+        // contexto de esas sesiones. La persona no ve las notas, sí lo que escribió.
+        tab.Agent.Send(text, images, SpecialistNotes(tab, text) + SessionContext(tab, text));
         tab.AutoMessages = 0; // la persona habló: los mensajes de otras sesiones pueden volver a entrar solos
         TitleFirstAsk(tab, text);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
@@ -579,6 +591,8 @@ sealed partial class TerminalPane : Grid
     /// <summary>Llegaron eventos de una sesión: se cambian solo sus bloques (y la lista, si cambió su estado).</summary>
     /// <summary>La etiqueta de permisos de la pestaña que se ve.</summary>
     TextBlock? _modeText;
+    /// <summary>La etiqueta del modelo y el esfuerzo de la pestaña que se ve (cambia también al elegir un especialista).</summary>
+    TextBlock? _modelText;
 
     void OnChanged(Tab tab, IReadOnlyList<AgentBlock> changed)
     {

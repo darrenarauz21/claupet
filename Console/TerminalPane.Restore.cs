@@ -10,8 +10,18 @@ using Avalonia.Threading;
 /// </summary>
 sealed partial class TerminalPane
 {
+    /// <summary>
+    /// Una pestaña anotada. Role: el especialista elegido en la caja (su id); RoleBack, RoleModel y RoleEffort: el modelo y
+    /// el esfuerzo a los que vuelve al quitarlo, si el especialista trajo los suyos.
+    /// </summary>
     sealed record OpenTab(string Folder, string Kind, string? ConfigDir, string? Model, string? Effort, string? Mode,
-        string? Session, string? Shell, string? Distro, string Draft);
+        string? Session, string? Shell, string? Distro, string Draft)
+    {
+        public string? Role { get; init; }
+        public bool RoleBack { get; init; }
+        public string? RoleModel { get; init; }
+        public string? RoleEffort { get; init; }
+    }
 
     sealed record OpenTabs(List<OpenTab> Tabs, int Current);
 
@@ -41,7 +51,13 @@ sealed partial class TerminalPane
             }
             tabs.Add(new OpenTab(o.Folder, o.Kind, o.ConfigDir, o.Model, tab.Agent.Effort ?? o.Effort,
                 tab.FollowsSession ? null : tab.Agent.Transcript.PermissionMode ?? o.PermissionMode,
-                tab.Agent.Transcript.SessionId ?? o.Resume, null, null, tab.Draft));
+                tab.Agent.Transcript.SessionId ?? o.Resume, null, null, tab.Draft)
+            {
+                Role = tab.Role?.Id,
+                RoleBack = tab.RoleRestore is not null,
+                RoleModel = tab.RoleRestore?.Model,
+                RoleEffort = tab.RoleRestore?.Effort,
+            });
         }
         try
         {
@@ -119,10 +135,25 @@ sealed partial class TerminalPane
         var account = claude ? Accounts().FirstOrDefault(a => global::Claupet.Account.SamePath(a.ConfigDir, configDir)) : null;
         var tab = new Tab(agent, claude ? account?.Label ?? L.T("cuenta por defecto") : AgentKinds.Label(saved.Kind)) { Draft = saved.Draft };
         agent.Changed += changed => OnChanged(tab, changed);
+        RestoreRole(tab, saved);
         Add(tab);
         // Add deja la caja vacía: lo escrito de esta pestaña vuelve a ella (y se guarda bien al abrir la siguiente).
         _input.Text = tab.Draft;
         agent.Start();
+        // Con Claude Code vuelve también el modelo del especialista (el esfuerzo ya quedó anotado como el de la pestaña).
+        if (claude && tab.Role is { Agent: AgentKinds.Claude, Model: { } model }) agent.SetModel(model);
         return tab;
+    }
+
+    /// <summary>
+    /// El especialista que tenía la pestaña, si todavía existe (antes de mostrarla: su etiqueta sale con él). Una
+    /// conversación retomada ya tiene su nota; una nueva la recibe con el próximo pedido.
+    /// </summary>
+    static void RestoreRole(Tab tab, OpenTab saved)
+    {
+        if (saved.Role is not { } id || Specialists.All().FirstOrDefault(s => s.Id == id) is not { } role) return;
+        tab.Role = role;
+        if (saved.RoleBack) tab.RoleRestore = (saved.RoleModel, saved.RoleEffort);
+        if (tab.Agent.Options.Resume is null) tab.RoleNote = SpecialistTools.RoleNote(role, null);
     }
 }

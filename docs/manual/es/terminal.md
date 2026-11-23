@@ -77,11 +77,18 @@ con su porcentaje; al pasar el mouse, también el uso de la sesión de 5 horas d
 > [!NOTE]
 > **Experimental.** Funciona igual con Claude Code, Codex, Gemini CLI, Copilot CLI y OpenCode.
 
+- **El especialista de la pestaña.** En la caja, junto al modelo, **especialista** elige con cuál trabaja esta misma
+  sesión, sin abrir otra: desde el próximo pedido sigue sus instrucciones, con toda la conversación y las herramientas
+  de la pestaña. Con Claude Code, si el especialista tiene modelo o esfuerzo, la sesión pasa a ellos y vuelve a los de
+  antes al elegir **Sin especialista**. La elección se conserva al reabrir Claupet.
 - **`@` llama a un especialista.** Al escribir `@` aparece la lista de sus especialistas; se elige con las flechas
-  e **Intro** o **Tab** (**Esc** la cierra). `@revisor-de-prs revisa el PR 12` le pide al agente de la pestaña que le
-  delegue esa tarea, con lo que hace falta de la conversación, y que le cuente el resultado. El agente también puede
-  delegar por su cuenta cuando una tarea encaja con el «cuándo usarlo» de un especialista.
-- **Lo que hacen los especialistas** se ve arriba de la caja: cómo va, su último paso y cuánto lleva. **Ver su
+  e **Intro** o **Tab** (**Esc** la cierra). `@revisor-de-prs revisa el PR 12` le pasa esa tarea, con lo que hace falta
+  de la conversación, y el agente le cuenta el resultado. En Claude Code, los especialistas de Claude Code son
+  subagentes de la sesión: el trabajo queda dentro de ella, sin otra pestaña. En los demás agentes, o con un
+  especialista creado después de abrir la pestaña, se delega aparte. **Abrir aparte**, en la lista, lo abre en una
+  pestaña propia. El agente también puede llamarlos por su cuenta cuando una tarea encaja con el «cuándo usarlo» de un
+  especialista.
+- **Lo que hacen los especialistas aparte** se ve arriba de la caja: cómo va, su último paso y cuánto lleva. **Ver su
   sesión** abre su conversación en una pestaña; **Detener** lo para. Sus permisos se responden en la isla.
 - **`#` trae el contexto de otra sesión.** Al escribir `#` aparecen las otras pestañas; `¿qué decidiste sobre el
   token? #arreglo-del-login` agrega al pedido de qué trata esa sesión, sus últimas respuestas y lo que editó.

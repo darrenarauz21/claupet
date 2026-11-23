@@ -180,8 +180,9 @@ next page.
 > [!NOTE]
 > **Experimental.** This view isn't finished yet: it may change or fail.
 
-A specialist is an agent with a name, role, instructions and tools, ready to open in the Terminal. For example, a
-"PR reviewer" with Claude Code, its review rules and the GitHub server.
+A specialist is an agent with a name, role, instructions and tools. For example, a "PR reviewer" with Claude Code,
+its review rules and the GitHub server. You use it inside any Terminal tab (picking it in the box or with `@`, see
+[Terminal](terminal.md#specialists-and-other-sessions)) or open it separately, in its own tab.
 
 - **+** creates one. You type the name and role in place; tap the big icon to change its color and icon.
   Everything saves on its own.

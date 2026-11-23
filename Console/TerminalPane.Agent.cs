@@ -190,10 +190,13 @@ sealed partial class TerminalPane
             chips.Children.Add(account);
         }
         else chips.Children.Add(Pick(AgentKinds.Label(agent.Options.Kind), null));
+        // El especialista con que trabaja esta misma sesión (TerminalPane.Specialists.cs).
+        chips.Children.Add(RoleChip(tab));
         TextBlock? modelText = null;
         Border? model = null;
         model = Pick(ModelAndEffort(tab), () => ModelMenu(model!, tab, () => modelText!.Text = ModelAndEffort(tab)));
         modelText = model.Child is StackPanel { Children: [.., TextBlock label] } ? label : null;
+        _modelText = modelText;
         ToolTip.SetTip(model, L.T("El modelo y el esfuerzo de esta pestaña: valen desde el turno siguiente."));
         chips.Children.Add(model);
         _modeText = null;

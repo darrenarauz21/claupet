@@ -162,17 +162,61 @@ static class SpecialistTools
     }
 
     /// <summary>
-    /// La nota que acompaña un pedido con @especialista (la persona no la ve): que el agente de la sesión le delegue la
-    /// tarea con pedir_a_especialista, con el contexto de la conversación, y le cuente el resultado. Null si no menciona a nadie.
+    /// La nota que acompaña un pedido con @especialista (la persona no la ve). Si la sesión lo tiene como subagente propio
+    /// (Claude Code, --agents), que le pase la tarea a ese subagente: el trabajo queda en esta misma sesión. Si no, que se
+    /// la delegue con pedir_a_especialista (otro agente, aparte). En los dos casos, con el contexto de la conversación y
+    /// contándole el resultado. Null si no menciona a nadie.
     /// </summary>
-    public static string? Directive(IReadOnlyList<(Specialist Specialist, string Token)> mentions)
+    public static string? Directive(IReadOnlyList<(Specialist Specialist, string Token)> mentions, IReadOnlyList<(string Name, Specialist Specialist)>? subagents = null)
     {
         if (mentions.Count == 0) return null;
-        var who = string.Join(", ", mentions.Select(m => $"«{m.Specialist.Name}» (@{m.Token}, id {m.Specialist.Id})"));
-        return $"\n\n<{Workspace.Tag}>\nThe user mentions the specialist{(mentions.Count > 1 ? "s" : "")} {who}. Delegate what they ask of " +
-            $"{(mentions.Count > 1 ? "each one" : "it")} with the tool pedir_a_especialista (claupet-canvas server), giving it all the context " +
-            $"it needs from this conversation (it does not see it), and then tell the user the result.\n</{Workspace.Tag}>";
+        var inside = new List<string>();
+        var away = new List<(Specialist Specialist, string Token)>();
+        foreach (var m in mentions)
+            if (subagents?.FirstOrDefault(x => x.Specialist.Id == m.Specialist.Id) is { Name: { } name }) inside.Add($"«{m.Specialist.Name}» (@{m.Token}, your subagent \"{name}\")");
+            else away.Add(m);
+        var text = new StringBuilder();
+        if (inside.Count > 0)
+            text.Append($"The user mentions the specialist{(inside.Count > 1 ? "s" : "")} {string.Join(", ", inside)}. Hand what they ask of " +
+                $"{(inside.Count > 1 ? "each one" : "it")} to that subagent of yours (the Agent tool, with that subagent_type), giving it all the " +
+                "context it needs from this conversation (it does not see it), and then tell the user the result.");
+        if (away.Count > 0)
+        {
+            if (text.Length > 0) text.Append('\n');
+            var who = string.Join(", ", away.Select(m => $"«{m.Specialist.Name}» (@{m.Token}, id {m.Specialist.Id})"));
+            text.Append($"The user mentions the specialist{(away.Count > 1 ? "s" : "")} {who}. Delegate what they ask of " +
+                $"{(away.Count > 1 ? "each one" : "it")} with the tool pedir_a_especialista (claupet-canvas server), giving it all the context " +
+                "it needs from this conversation (it does not see it), and then tell the user the result.");
+        }
+        return Note(text.ToString());
     }
+
+    /// <summary>
+    /// La nota del primer pedido después de elegir (o quitar) el especialista de la pestaña: desde ese pedido, la misma
+    /// sesión trabaja como ese especialista, con sus instrucciones, su conversación y sus herramientas. Se manda una vez por
+    /// cambio, no con cada pedido. Null si no hay nada que decir.
+    /// </summary>
+    public static string? RoleNote(Specialist? now, Specialist? before)
+    {
+        if (now is not null)
+            return Note($"The user chose the specialist «{now.Name.Trim()}» for this session in Claupet. From this message on, work as that " +
+                "specialist, following the instructions below, until the user changes it. Keep this conversation and this session's tools.\n\n" + now.Prompt());
+        if (before is not null)
+            return Note($"The user stopped using the specialist «{before.Name.Trim()}» in this session. From this message on, drop its role " +
+                "and instructions and work as usual.");
+        return null;
+    }
+
+    /// <summary>
+    /// La nota del primer pedido de una sesión de Claude Code que recibió los especialistas como subagentes: que los use a
+    /// ellos (el trabajo queda en esta sesión) en vez de pedir_a_especialista. Null si no recibió ninguno.
+    /// </summary>
+    public static string? SubagentsNote(IReadOnlyList<(string Name, Specialist Specialist)> subagents) =>
+        subagents.Count == 0 ? null
+            : Note($"The user's specialists are also your own subagents in this session ({string.Join(", ", subagents.Select(s => $"\"{s.Name}\""))}). " +
+                "When a task matches one of them, use that subagent (the Agent tool) instead of pedir_a_especialista, so the work stays in this session.");
+
+    static string? Note(string text) => text.Length == 0 ? null : $"\n\n<{Workspace.Tag}>\n{text}\n</{Workspace.Tag}>";
 
     /// <summary>El nombre como se escribe después de @: «Revisor de PRs» → «revisor-de-prs».</summary>
     internal static string Slug(string name) =>

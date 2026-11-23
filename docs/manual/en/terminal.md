@@ -77,11 +77,17 @@ has used (a bar with its percentage; hovering also shows the account's 5-hour se
 > [!NOTE]
 > **Experimental.** It works the same with Claude Code, Codex, Gemini CLI, Copilot CLI and OpenCode.
 
+- **The tab's specialist.** In the box, next to the model, **specialist** picks which one this same session works as,
+  without opening another: from the next message it follows its instructions, with the whole conversation and the tab's
+  tools. With Claude Code, if the specialist has a model or effort, the session switches to them and goes back to the
+  previous ones when you pick **No specialist**. The choice is kept when Claupet reopens.
 - **`@` calls a specialist.** Typing `@` shows your specialists; pick one with the arrows and **Enter** or **Tab**
-  (**Esc** closes the list). `@pr-reviewer review PR 12` asks the tab's agent to delegate that task to it, with what it
-  needs from the conversation, and to tell you the result. The agent can also delegate on its own when a task matches a
-  specialist's "when to use it".
-- **What specialists are doing** shows above the box: how it's going, its last step and how long it's been. **Open its
+  (**Esc** closes the list). `@pr-reviewer review PR 12` hands it that task, with what it needs from the conversation,
+  and the agent tells you the result. In Claude Code, your Claude Code specialists are subagents of the session: the
+  work stays inside it, with no other tab. In the other agents, or with a specialist created after the tab opened, it is
+  delegated separately. **Open separately**, in the list, opens it in its own tab. The agent can also call them on its
+  own when a task matches a specialist's "when to use it".
+- **What separate specialists are doing** shows above the box: how it's going, its last step and how long it's been. **Open its
   session** opens its conversation in a tab; **Stop** stops it. Its permissions are answered in the island.
 - **`#` brings another session's context.** Typing `#` shows the other tabs; `what did you decide about the token?
   #login-fix` adds what that session is about, its latest answers and what it edited.

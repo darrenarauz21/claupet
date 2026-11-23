@@ -204,9 +204,19 @@ sealed partial class TerminalPane
     internal void ReplaceEnded(Tab ended, Tab? opened, string draft)
     {
         opened?.Images.AddRange(ended.Images);
+        // Sigue con el mismo especialista: una conversación retomada ya tiene su nota (salvo que no haya llegado a salir);
+        // una nueva la recibe con el próximo pedido.
+        if (opened is not null && opened != ended && ended.Role is { } role && opened.Agent.Options.Specialist is null)
+        {
+            opened.Role = role;
+            opened.RoleRestore = ended.RoleRestore;
+            opened.RoleNote = ended.RoleNote ?? (opened.Agent.Options.Resume is null ? SpecialistTools.RoleNote(role, null) : null);
+            if (opened.Agent.Options.Kind == AgentKinds.Claude && role is { Agent: AgentKinds.Claude, Model: { } model }) opened.Agent.SetModel(model);
+        }
         // Queda en el lugar de la que reemplaza, no al final de la lista.
         if (opened is not null && opened != ended && _tabs.Remove(opened)) _tabs.Insert(_tabs.IndexOf(ended), opened);
         CloseTab(ended);
+        if (opened is not null && opened.Role is not null && opened == _current) Select(opened);
         _input.Text = draft;
         _input.CaretIndex = draft.Length;
     }

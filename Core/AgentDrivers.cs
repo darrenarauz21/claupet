@@ -143,11 +143,20 @@ sealed class ClaudeDriver(AgentTranscript transcript) : IAgentDriver
     public IReadOnlyList<string> Efforts => Launcher.Efforts;
     public IReadOnlyList<string> Modes => TerminalAgent.Modes;
 
+    /// <summary>
+    /// Los especialistas que esta sesión recibió como subagentes propios al abrir (--agents): con @ o por su cuenta, los usa
+    /// sin salir de la sesión. Una sesión que ya es un especialista no los recibe.
+    /// </summary>
+    public IReadOnlyList<(string Name, Specialist Specialist)> Subagents { get; private set; } = [];
+
     public ProcessStartInfo? Start(AgentOptions options)
     {
         if (Assistant.FindClaude() is not { } claude) return null;
+        Subagents = options.Specialist is null ? Specialists.Subagents(Specialists.All()) : [];
+        List<string> agents = Specialists.SubagentsFile(Subagents) is { } file ? ["--agents", file] : [];
+        if (agents.Count == 0) Subagents = [];
         // Con Claupet Canvas (MCP): la sesión puede crear y editar canvas que se ven en vivo en la Console.
-        var start = Assistant.ClaudeStart(claude, options.ConfigDir, [.. TerminalAgent.Arguments(options), .. CanvasMcp.ClaudeArguments(options.Folder, options.Specialist, CanvasKey)]);
+        var start = Assistant.ClaudeStart(claude, options.ConfigDir, [.. TerminalAgent.Arguments(options), .. CanvasMcp.ClaudeArguments(options.Folder, options.Specialist, CanvasKey), .. agents]);
         // El hook de permisos de Claupet se aparta: la sesión pregunta en su bloque (y en la isla).
         start.Environment[Approvals.TerminalVariable] = "1";
         return start;
