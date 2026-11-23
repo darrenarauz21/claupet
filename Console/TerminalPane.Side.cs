@@ -808,8 +808,9 @@ sealed partial class TerminalPane
     {
         if (_sideGuard?.Held == true) return; // se intenta en la próxima vuelta
         var version = _sideVersion;
+        // Cada sesión, por el título de su pestaña (el de la lista de la izquierda) y su proyecto: la cuenta sola no las distinguía.
         var running = _tabs.Where(t => t.Agent.ProcessId is not null)
-            .Select(t => (Tab: t, Pid: t.Agent.ProcessId!.Value, Label: $"{t.Account} · {t.Project}")).ToList();
+            .Select(t => (Tab: t, Pid: t.Agent.ProcessId!.Value, Label: $"{Title(t)} · {t.Project}")).ToList();
         _ = Task.Run(() =>
         {
             var lines = new List<ProcessLine>();
@@ -822,7 +823,7 @@ sealed partial class TerminalPane
                 var own = new[] { pid }.Concat(children.Where(c => c.Name is "claude" or "node" && c.ParentPid == pid).Select(c => c.Pid));
                 lines.Add(new(pid, "claude", label, own.Sum(p => ProcessTree.Memory(p) ?? 0), 0, tab));
                 foreach (var child in children.Where(c => !(c.Name is "claude" or "node" && c.ParentPid == pid)))
-                    lines.Add(new(child.Pid, child.Name, $"pid {child.Pid}", ProcessTree.Memory(child.Pid) ?? 0, 1, null));
+                    lines.Add(new(child.Pid, child.Name, ChildDetail(child.Name, child.Pid), ProcessTree.Memory(child.Pid) ?? 0, 1, null));
             }
             return lines;
         }).ContinueWith(read =>
@@ -833,6 +834,13 @@ sealed partial class TerminalPane
     }
 
     static string Megabytes(long memory) => L.T("{0:0} MB", memory / 1048576.0);
+
+    /// <summary>
+    /// Qué es un proceso que abrió una sesión: Claupet es su servidor (canvas, planes, especialistas y otras sesiones);
+    /// lo demás, por su pid.
+    /// </summary>
+    internal static string ChildDetail(string name, int pid) =>
+        string.Equals(name, "Claupet", StringComparison.OrdinalIgnoreCase) ? L.T("servidor de Claupet · pid {0}", pid) : $"pid {pid}";
 
     void PaintProcesses(IReadOnlyList<ProcessLine> lines)
     {
@@ -856,7 +864,10 @@ sealed partial class TerminalPane
         {
             var pid = line.Pid;
             var row = line.Session is { } tab
-                ? ProcessRow(line.Name, line.Detail, line.Memory, L.T("Detener la sesión"), () => tab.Agent.Stop(), 0, out var mb)
+                ? ProcessRow(line.Name, line.Detail, line.Memory, L.T("Detener la sesión"), () => tab.Agent.Stop(), 0, out var mb,
+                    L.T("{0}\n{1} · {2} · pid {3}\nTóquela para ir a su pestaña.", Title(tab), AgentKinds.Label(tab.Agent.Options.Kind),
+                        tab.Agent.Options.Specialist is { } specialist ? L.T("especialista {0}", specialist.Name) : L.T("cuenta {0}", tab.Account), pid),
+                    () => { if (_tabs.Contains(tab)) Select(tab); })
                 : ProcessRow(line.Name, line.Detail, line.Memory, L.T("Detener {0}", line.Name), () =>
                 {
                     ProcessTree.Stop(pid);
@@ -868,14 +879,21 @@ sealed partial class TerminalPane
         _sideBody.Children.Add(Hint(L.T("Se actualiza cada 3 segundos. Detener corta el proceso y lo que abrió.")));
     }
 
-    Control ProcessRow(string name, string detail, long memory, string stopName, Action stop, int depth, out TextBlock mb)
+    /// <summary>
+    /// Una fila de Procesos. tip: lo que se ve al pasar el mouse; open: lo que hace tocarla (en la de una sesión, ir a su
+    /// pestaña). Detener es aparte: su botón no abre la pestaña.
+    /// </summary>
+    Control ProcessRow(string name, string detail, long memory, string stopName, Action stop, int depth, out TextBlock mb, string? tip = null, Action? open = null)
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), Margin = new Thickness(depth * 14, 0, 0, 0) };
-        var text = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        // En una grilla y no en una fila sin fin: un título largo se corta con «…» en vez de empujar los MB y Detener.
+        var text = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(Ui.Text(name, 12.5, depth == 0 ? _ink.Text : _ink.Secondary, family: Mono));
         var small = Ui.Text(detail, 11, _ink.Tertiary);
         small.TextTrimming = TextTrimming.CharacterEllipsis;
         small.VerticalAlignment = VerticalAlignment.Center;
+        small.Margin = new Thickness(6, 0, 0, 0);
+        Grid.SetColumn(small, 1);
         text.Children.Add(small);
         row.Children.Add(text);
         mb = Ui.Text(Megabytes(memory), 11.5, _ink.Tertiary, family: Mono);
@@ -890,6 +908,11 @@ sealed partial class TerminalPane
         ToolTip.SetTip(button, stopName);
         Grid.SetColumn(button, 2);
         row.Children.Add(button);
-        return new Border { Padding = new Thickness(8, 5), CornerRadius = new CornerRadius(8), Child = row };
+        var holder = open is null ? new Border { Child = row }
+            : Ui.Press(row, open, (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, detail);
+        holder.Padding = new Thickness(8, 5);
+        holder.CornerRadius = new CornerRadius(8);
+        if (tip is not null) ToolTip.SetTip(holder, tip);
+        return holder;
     }
 }
