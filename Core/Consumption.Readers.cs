@@ -66,7 +66,8 @@ sealed class UsageLedger
     static readonly TimeSpan Keep = TimeSpan.FromDays(45);
     static readonly JsonSerializerOptions Options = new() { WriteIndented = false };
 
-    readonly string _path;
+    /// <summary>La caché; null, solo en memoria.</summary>
+    readonly string? _path;
     readonly object _lock = new();
     Dictionary<string, UsageFile> _files = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, string?> _projects = new(StringComparer.OrdinalIgnoreCase);
@@ -76,6 +77,11 @@ sealed class UsageLedger
         _path = path ?? DataFolder.In("consumo", "cache.json");
         Load();
     }
+
+    UsageLedger(bool memory) => _path = memory ? null : DataFolder.In("consumo", "cache.json");
+
+    /// <summary>Solo en memoria, sin leer ni escribir la caché: la bandeja (lo de hoy), para no pisar la de la Console.</summary>
+    public static UsageLedger InMemory() => new(memory: true);
 
     sealed class Stored
     {
@@ -87,7 +93,7 @@ sealed class UsageLedger
     {
         try
         {
-            if (!File.Exists(_path)) return;
+            if (_path is null || !File.Exists(_path)) return;
             using var stream = File.OpenRead(_path);
             if (JsonSerializer.Deserialize<Stored>(stream, Options) is { Version: Version } stored)
                 _files = new(stored.Files, StringComparer.OrdinalIgnoreCase);
@@ -98,6 +104,7 @@ sealed class UsageLedger
     /// <summary>Guarda lo leído (sin los archivos que ya no cambian hace más de Keep).</summary>
     public void Save()
     {
+        if (_path is null) return;
         lock (_lock)
         {
             var old = DateTime.UtcNow - Keep;

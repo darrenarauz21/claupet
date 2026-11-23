@@ -102,7 +102,9 @@ sealed partial class ConsoleWindow : Window
         _openSession = SessionTarget.Parse(section);
         if (_openSession is not null) section = null;
         _mode = ConsoleApp.Files.Count > 0 ? Mode.Editor : _openSession is not null ? Mode.Terminal : section is null ? Mode.Chat : Mode.Settings;
-        _section = section ?? "general";
+        // Ajustes › Consumo es de la Console, no una sección de la bandeja («Ver detalle» en Uso).
+        _usageSettings = section == ConsoleLink.Usage;
+        _section = section is null || _usageSettings ? "general" : section;
         Title = "Claupet Console";
         Icon = Ui.LogoIcon();
         Width = 1080;
@@ -392,8 +394,16 @@ sealed partial class ConsoleWindow : Window
                     SetMode(Mode.Terminal);
                     _terminal.OpenSession(target);
                 }
+                else if (message.Key == ConsoleLink.Usage)
+                {
+                    _mode = Mode.Settings;
+                    _terminalSettings = false;
+                    _usageSettings = true;
+                    Render(rebuild: true);
+                }
                 else if (message.Key is { Length: > 0 } section && _pages.Any(p => p.Id == section))
                 {
+                    _terminalSettings = _usageSettings = false;
                     var moved = section != _section;
                     _mode = Mode.Settings;
                     _section = section;

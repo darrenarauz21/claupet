@@ -25,7 +25,8 @@ Arriba hay un botón por cuenta. Para la elegida se ve:
 | **Sesión** | El uso de la ventana de 5 horas, con su barra y cuándo se reinicia («Reinicia en 2 h 10 min»). |
 | **Semana** | El límite semanal, con el día y la hora en que se reinicia. |
 | **Semana · modelo** | El límite semanal de un modelo, si su plan lo tiene. |
-| **Pie** | Los tokens de hoy en este equipo y la hora de los datos que se ven. |
+| **Hoy** | Las respuestas y los tokens de hoy de Claude Code en este equipo, con una franja que reparte la salida entre sus modelos («Opus 5.5 62 % · Sonnet 5.5 38 %»). |
+| **Pie** | Los tokens de hoy (de todos los agentes, si otro trabajó hoy), **Ver detalle ›**, que abre Ajustes › Consumo en Claupet Console, y la hora de los datos que se ven. |
 
 Claupet actualiza sola cada 5 minutos. Para hacerlo ahora, use **Actualizar** en el menú del ícono.
 
@@ -43,14 +44,18 @@ Code que renueve el acceso de esa cuenta y vuelve a consultar.
 ## Otros agentes: Codex, Gemini, Copilot y OpenCode
 
 Si en este equipo usa también Codex CLI, Gemini CLI, GitHub Copilot CLI u OpenCode, Claupet los encuentra
-solos y los muestra debajo de la cuenta, bajo **Otros agentes**:
+solos y los muestra debajo de la cuenta, bajo **Otros agentes**, uno por fila: a la derecha, los tokens de hoy;
+debajo, su modelo principal, las respuestas de hoy y cuándo reinicia su límite o cuándo trabajó.
 
-| Agente | Qué se ve en Uso |
+| Agente | Qué se ve en su fila |
 |---|---|
-| **Codex CLI** | Sus límites de 5 horas y de la semana, con su porcentaje, cuando ya respondió alguna vez. |
-| **Gemini CLI** | Las respuestas y los tokens de hoy. Gemini CLI no anota cuánto le queda de su cuota, así que no hay porcentaje. |
-| **GitHub Copilot CLI** | Su actividad de hoy (su formato no está documentado, así que se ve menos). |
-| **OpenCode** | Las respuestas y los tokens de hoy, leídos de su base (`opencode.db`) con el SQLite de su sistema. No anota límites, así que no hay porcentaje. |
+| **Codex** | Sus límites de 5 horas y de la semana en miniatura, con su porcentaje, cuando ya respondió alguna vez. |
+| **Gemini CLI** | Una franja que reparte los tokens de hoy entre sus modelos. Gemini CLI no anota cuánto le queda de su cuota, así que no hay porcentaje. |
+| **Copilot CLI** | La franja de sus modelos y las solicitudes premium de hoy. |
+| **OpenCode** | La franja de sus modelos y lo que costó hoy en dólares, leídos de su base (`opencode.db`) con el SQLite de su sistema. No anota límites, así que no hay porcentaje. |
+
+El detalle de todos, por modelo y por día, está en **Ajustes › Consumo** de Claupet Console
+([Ajustes](ajustes.md#consumo)).
 
 Solo salen los que hoy hicieron algo o tienen un límite que todavía corre. Se eligen cuáles seguir en
 **Ajustes › Cuentas** de Claupet Console. Claupet solo lee sus archivos: no usa sus cuentas ni gasta
