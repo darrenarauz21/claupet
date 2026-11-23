@@ -25,8 +25,9 @@ There's a button per account at the top. For the selected one you see:
 | **Session** | Usage of the 5-hour window, with its bar and when it resets ("Resets in 2 h 10 min"). |
 | **Week** | The weekly limit, with the day and time it resets. |
 | **Week · model** | A model's weekly limit, if your plan has one. |
-| **Today** | Claude Code's responses and tokens today on this computer, with a strip that splits the output among its models ("Opus 5.5 62 % · Sonnet 5.5 38 %"). |
-| **Footer** | Today's tokens (of every agent, if another one worked today), **See details ›**, which opens Settings › Consumption in Claupet Console, and the time of the data you're seeing. |
+| **Today's models** | How Claude Code's output today split among its models, with its strip ("Opus 5.5 62 % · Sonnet 5.5 38 %"). |
+| **See details ›** | Opens Settings › Consumption in Claupet Console: every agent, by model and by day. |
+| **Footer** | Today's responses and output tokens (of every agent, if another one worked today) and the time of the data you're seeing. |
 
 Claupet refreshes on its own every 5 minutes. To do it now, use **Refresh** in the icon's menu.
 
@@ -44,7 +45,7 @@ that account's access and checks again.
 ## Other agents: Codex, Gemini, Copilot and OpenCode
 
 If you also use Codex CLI, Gemini CLI, GitHub Copilot CLI or OpenCode on this computer, Claupet finds them on its own
-and shows them below the account, under **Other agents**, one per row: on the right, today's tokens; below, its main
+and shows them below the account, under **Other agents**, one per row: on the right, today's output tokens; below, its main
 model, today's responses and when its limit resets or when it last worked.
 
 | Agent | What you see in its row |

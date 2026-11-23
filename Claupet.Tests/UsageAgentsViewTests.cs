@@ -26,7 +26,9 @@ public sealed class UsageAgentsViewTests
             local.OutputByModel["sonnet-5-5"] = 192_000;
             var snapshot = new UsageSnapshot { Limits = [new LimitRow("session", "Sesión", 5, null, DateTimeOffset.Now.AddHours(4))], FetchedAt = DateTimeOffset.Now };
             view.Render([account], account.ConfigDir, new Dictionary<string, UsageSnapshot> { [account.ConfigDir] = snapshot }, new Dictionary<string, Profile>(), local, DateTime.Now);
-            Assert.Equal("Hoy: 470 respuestas · 505 k tokens", view.FooterText); // sin otros agentes, como antes
+            Assert.Equal(Format.Local(local), view.FooterText); // sin otros agentes, como antes
+            Headless.Frame(window);
+            Assert.Contains("detail", view.HitKeys); // «Ver detalle» también sin otros agentes
 
             var now = DateTimeOffset.Now;
             var report = UsageReport.Build(
@@ -43,7 +45,7 @@ public sealed class UsageAgentsViewTests
             ], report);
             Headless.Frame(window);
             Assert.Contains("detail", view.HitKeys); // «Ver detalle» lleva a Ajustes › Consumo
-            Assert.Equal("Todos hoy: 584.3 k tokens", view.FooterText); // los 505 k de Claude y los de los otros agentes
+            Assert.Equal("Todos hoy: 584.3 k tokens de salida", view.FooterText); // los 505 k de Claude y los de los otros agentes
             if (Environment.GetEnvironmentVariable("CLAUPET_USO_SHOT") is { Length: > 0 } shot) window.CaptureRenderedFrame()?.Save(shot);
         }
         finally { window.Close(); }

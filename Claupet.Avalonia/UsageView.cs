@@ -506,22 +506,15 @@ sealed partial class UsageView : Control
         y += 14;
         var gear = new Rect(ViewWidth - Pad - 26, y + (small - 28) / 2, 28, 28);
         AddHit("gear", gear, HitKind.Gear);
-        // Unos 20 de alto sea cual sea la cuadrícula del estilo (la de la cabeza del chibi es más fina).
-        var rows = RefreshSprite.Rows(_refreshStyle);
-        var unit = Math.Max(1, Math.Round(20.0 / rows));
-        var right = gear.X - 8;
-        var when = _refresh is not null ? "" : _busy ? L.T("Actualizando…") : _updated is { } u ? $"{u:t}" : "";
-        var whenWidth = _refresh is not null ? RefreshSprite.Columns(_refreshStyle) * unit : Gfx.Measure(when, Gfx.Small).Width;
-        // En Uso, «Ver detalle»: Ajustes › Consumo, con todos los agentes por modelo.
-        var detail = _view == View.Usage ? L.T("Ver detalle ›") : "";
-        var detailWidth = detail.Length == 0 ? 0 : Gfx.Measure(detail, Gfx.Small).Width;
-        var detailRect = new Rect(right - whenWidth - 12 - detailWidth, y, detailWidth + 1, small);
-        if (detail.Length > 0) AddHit("detail", detailRect.Inflate(4), HitKind.Detail);
         if (dc is not null)
         {
-            var left = right - Pad - whenWidth - 12 - (detail.Length == 0 ? 0 : detailWidth + 12);
-            Gfx.Write(dc, TodayText(), Gfx.Small, _t.Tertiary, new Rect(Pad, y, left, small));
-            if (detail.Length > 0) Gfx.Write(dc, detail, Gfx.Small, _hoverKey == "detail" ? _t.Text : _t.Accent, detailRect);
+            // Unos 20 de alto sea cual sea la cuadrícula del estilo (la de la cabeza del chibi es más fina).
+            var rows = RefreshSprite.Rows(_refreshStyle);
+            var unit = Math.Max(1, Math.Round(20.0 / rows));
+            var right = gear.X - 8;
+            var when = _refresh is not null ? "" : _busy ? L.T("Actualizando…") : _updated is { } u ? $"{u:t}" : "";
+            var whenWidth = _refresh is not null ? RefreshSprite.Columns(_refreshStyle) * unit : Gfx.Measure(when, Gfx.Small).Width;
+            Gfx.Write(dc, TodayText(), Gfx.Small, _t.Tertiary, new Rect(Pad, y, right - Pad - whenWidth - 12, small));
             if (_refresh is { } frame)
                 Gfx.Pixels(dc, right - whenWidth, y + (small - rows * unit) / 2, unit,
                     fill => RefreshSprite.Paint(fill, _refreshStyle, frame, _t.Accent));

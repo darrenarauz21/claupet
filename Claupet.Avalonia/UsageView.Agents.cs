@@ -30,9 +30,9 @@ sealed partial class UsageView
     {
         var others = _today?.Agents.Where(a => a.Agent != UsageAgents.Claude && a.Sums.Responses > 0).ToList() ?? [];
         if (others.Count == 0) return Format.Local(_local);
-        // Corto, para que quepa junto a «Ver detalle»: las respuestas de cada uno ya van en su fila.
+        // Sin las respuestas, para que quepa: las de cada uno ya van en su fila.
         var output = (_local?.Output ?? 0) + others.Sum(a => a.Sums.Output);
-        return L.T("Todos hoy: {0} tokens", Format.Tokens(output));
+        return L.T("Todos hoy: {0} tokens de salida", Format.Tokens(output));
     }
 
     static SD.Color AgentColor(string agent) => SD.ColorTranslator.FromHtml(UsageAgents.Color(agent));
@@ -74,19 +74,14 @@ sealed partial class UsageView
         if (_local is not { Responses: > 0 } local || local.Output <= 0) return y;
         var small = Gfx.Small.LineHeight;
         var models = local.OutputByModel.Where(m => m.Value > 0).OrderByDescending(m => m.Value).ToList();
-        var line = L.T("Hoy: {0} resp. · {1} tokens", local.Responses, Format.Tokens(local.Output));
-        Gfx.Write(dc, line, Gfx.Small, _t.Secondary, new Rect(Pad, y, Inner - 96, small));
-        if (dc is not null && models.Count > 0)
+        if (models.Count == 0) return y;
+        // Solo el reparto: los totales de hoy ya van en el pie.
+        var shares = string.Join(" · ", models.Take(3).Select(m => $"{ClaudeModel(m.Key)} {100.0 * m.Value / local.Output:0} %"));
+        Gfx.Write(dc, shares, Gfx.Small, _t.Secondary, new Rect(Pad, y, Inner - 96, small));
+        if (dc is not null)
             Mix(dc, new Rect(ViewWidth - Pad - 86, y + small / 2 - 2.5, 86, 5),
                 [.. models.Select((m, i) => ((double)m.Value, Shade(AgentColor(UsageAgents.Claude), i)))]);
-        y += small + 3;
-        var shares = string.Join(" · ", models.Take(3).Select(m => $"{ClaudeModel(m.Key)} {100.0 * m.Value / local.Output:0} %"));
-        if (shares.Length > 0)
-        {
-            Gfx.Write(dc, shares, Gfx.Small, _t.Tertiary, new Rect(Pad, y, Inner, small));
-            y += small;
-        }
-        return y + 16;
+        return y + small + 16;
     }
 
     /// <summary>El nombre de un modelo de Claude como en el resto de la app («opus-5-5» → «Opus 5.5»).</summary>
@@ -110,15 +105,28 @@ sealed partial class UsageView
         _ => limit.Label,
     };
 
-    double ComposeAgentUsage(DrawingContext? dc, double y)
+    double ComposeAgentUsage(DrawingContext? dc, double y) => ComposeDetailLink(dc, ComposeAgentRows(dc, ComposeClaudeToday(dc, y)));
+
+    /// <summary>«Ver detalle ›», a la derecha y en su propia línea (en el pie le quitaba lugar a lo de hoy): Ajustes › Consumo.</summary>
+    double ComposeDetailLink(DrawingContext? dc, double y)
     {
-        y = ComposeClaudeToday(dc, y);
+        var small = Gfx.Small.LineHeight;
+        var text = L.T("Ver detalle ›");
+        var width = Gfx.Measure(text, Gfx.Small).Width;
+        var link = new Rect(ViewWidth - Pad - width, y, width + 1, small);
+        AddHit("detail", link.Inflate(4), HitKind.Detail);
+        Gfx.Write(dc, text, Gfx.Small, _hoverKey == "detail" ? _t.Text : _t.Accent, link);
+        return y + small + 14;
+    }
+
+    double ComposeAgentRows(DrawingContext? dc, double y)
+    {
         var now = DateTimeOffset.Now;
         var shown = _agents.Where(a => Agents.ShowsInUsage(a, now)).ToList();
         if (shown.Count == 0) return y;
         var body = Gfx.Body.LineHeight;
         var small = Gfx.Small.LineHeight;
-        y = AgentsCaption(dc, y, L.T("tokens hoy"));
+        y = AgentsCaption(dc, y, L.T("salida hoy"));
         const double nameWidth = 88, numberWidth = 44;
         var middleX = Pad + nameWidth;
         var middleWidth = Inner - nameWidth - numberWidth - 8;

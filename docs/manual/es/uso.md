@@ -25,8 +25,9 @@ Arriba hay un botón por cuenta. Para la elegida se ve:
 | **Sesión** | El uso de la ventana de 5 horas, con su barra y cuándo se reinicia («Reinicia en 2 h 10 min»). |
 | **Semana** | El límite semanal, con el día y la hora en que se reinicia. |
 | **Semana · modelo** | El límite semanal de un modelo, si su plan lo tiene. |
-| **Hoy** | Las respuestas y los tokens de hoy de Claude Code en este equipo, con una franja que reparte la salida entre sus modelos («Opus 5.5 62 % · Sonnet 5.5 38 %»). |
-| **Pie** | Los tokens de hoy (de todos los agentes, si otro trabajó hoy), **Ver detalle ›**, que abre Ajustes › Consumo en Claupet Console, y la hora de los datos que se ven. |
+| **Modelos de hoy** | Cómo se repartió la salida de hoy de Claude Code entre sus modelos, con su franja («Opus 5.5 62 % · Sonnet 5.5 38 %»). |
+| **Ver detalle ›** | Abre Ajustes › Consumo en Claupet Console: todos los agentes, por modelo y por día. |
+| **Pie** | Las respuestas y los tokens de salida de hoy (de todos los agentes, si otro trabajó hoy) y la hora de los datos que se ven. |
 
 Claupet actualiza sola cada 5 minutos. Para hacerlo ahora, use **Actualizar** en el menú del ícono.
 
@@ -44,7 +45,7 @@ Code que renueve el acceso de esa cuenta y vuelve a consultar.
 ## Otros agentes: Codex, Gemini, Copilot y OpenCode
 
 Si en este equipo usa también Codex CLI, Gemini CLI, GitHub Copilot CLI u OpenCode, Claupet los encuentra
-solos y los muestra debajo de la cuenta, bajo **Otros agentes**, uno por fila: a la derecha, los tokens de hoy;
+solos y los muestra debajo de la cuenta, bajo **Otros agentes**, uno por fila: a la derecha, los tokens de salida de hoy;
 debajo, su modelo principal, las respuestas de hoy y cuándo reinicia su límite o cuándo trabajó.
 
 | Agente | Qué se ve en su fila |

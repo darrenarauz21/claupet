@@ -2456,11 +2456,10 @@
   "No se pudo guardar: {0}": "Couldn't save: {0}",
   "US$ {0:0.00}": "US$ {0:0.00}",
   "Sin consumo en este periodo.": "No usage in this period.",
-  "Todos hoy: {0} tokens": "All today: {0} tokens",
-  "Hoy: {0} resp. · {1} tokens": "Today: {0} resp. · {1} tokens",
+  "Todos hoy: {0} tokens de salida": "All today: {0} output tokens",
   "5 h": "5 h",
   "sem.": "wk.",
-  "tokens hoy": "tokens today",
+  "salida hoy": "output today",
   "{0} resp.": "{0} resp.",
   "no escribe sus límites": "doesn't write its limits",
   "Ver detalle ›": "See details ›"
