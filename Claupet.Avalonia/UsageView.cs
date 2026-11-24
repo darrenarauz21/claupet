@@ -400,17 +400,22 @@ sealed partial class UsageView : Control
                     : L.T(" · {0} tokens · {1} respuestas", Format.Tokens(record.Tokens), record.Responses));
             }
             else detail = _activity.FirstDay is { } first && first > start ? L.T("Desde el {0:d 'de' MMMM}", first) : L.T("Últimos 6 meses");
-            Gfx.Write(dc, detail, Gfx.Small, hovered is null ? _t.Tertiary : _t.Secondary, new Rect(Pad, y, Inner - legendWidth - 10, small));
+            // Con un día elegido, su línea ocupa todo el ancho (la leyenda no hace falta): antes se cortaba («949 res…»).
+            Gfx.Write(dc, detail, Gfx.Small, hovered is null ? _t.Tertiary : _t.Secondary,
+                new Rect(Pad, y, hovered is null ? Inner - legendWidth - 10 : Inner, small));
 
-            var x = Pad + Inner - legendWidth;
-            Gfx.Write(dc, L.T("Menos"), Gfx.Small, _t.Tertiary, new Rect(x, y, less + 2, small));
-            x += less + 5;
-            for (var level = 0; level <= 4; level++)
+            if (hovered is null)
             {
-                Gfx.Fill(dc, HeatColor(level), new Rect(x, y + (small - legendBox) / 2, legendBox, legendBox), 2);
-                x += legendBox + 3;
+                var x = Pad + Inner - legendWidth;
+                Gfx.Write(dc, L.T("Menos"), Gfx.Small, _t.Tertiary, new Rect(x, y, less + 2, small));
+                x += less + 5;
+                for (var level = 0; level <= 4; level++)
+                {
+                    Gfx.Fill(dc, HeatColor(level), new Rect(x, y + (small - legendBox) / 2, legendBox, legendBox), 2);
+                    x += legendBox + 3;
+                }
+                Gfx.Write(dc, L.T("Más"), Gfx.Small, _t.Tertiary, new Rect(x + 2, y, more + 2, small));
             }
-            Gfx.Write(dc, L.T("Más"), Gfx.Small, _t.Tertiary, new Rect(x + 2, y, more + 2, small));
         }
         y += small + 22;
 
@@ -418,12 +423,12 @@ sealed partial class UsageView : Control
         static string Days(int n) => n == 1 ? L.T("1 día") : L.T("{0} días", n);
         var items = new (string Value, string Label)[]
         {
-            (Format.Tokens(stats.Tokens), L.T("tokens")),
+            (Format.Tokens(stats.Tokens), L.T("tokens (entrada y salida)")),
             (stats.ActiveDays.ToString(), L.T("días activos")),
             (Days(stats.CurrentStreak), L.T("racha actual")),
             (Days(stats.LongestStreak), L.T("racha más larga")),
             (stats.BusiestDay is { } busiest ? L.T("{0:d MMM}", busiest).Replace(".", "") : "—", L.T("día más activo")),
-            (stats.FavoriteModel ?? "—", L.T("modelo favorito")),
+            (stats.FavoriteModel is { } favorite ? ModelName(favorite) : "—", L.T("modelo favorito")),
         };
         var columnWidth = Inner / 2;
         var rowHeight = Gfx.BodyStrong.LineHeight + 2 + small + 14;
@@ -434,8 +439,16 @@ sealed partial class UsageView : Control
             Gfx.Write(dc, items[i].Value, Gfx.BodyStrong, _t.Text, new Rect(x, rowTop, columnWidth - 8, Gfx.BodyStrong.LineHeight));
             Gfx.Write(dc, items[i].Label, Gfx.Small, _t.Tertiary, new Rect(x, rowTop + Gfx.BodyStrong.LineHeight + 2, columnWidth - 8, small));
         }
-        return y + (items.Length + 1) / 2 * rowHeight + 6;
+        y += (items.Length + 1) / 2 * rowHeight;
+        // Qué cuentan los tokens de aquí: no son los del pie (solo la salida) y dejan fuera la lectura de caché.
+        var note = L.T("Tokens: entrada, escritura en caché y salida; sin la lectura de caché. El pie cuenta solo la salida.");
+        var noteHeight = Gfx.MeasureWrapped(note, Gfx.Small, Inner, 3);
+        Gfx.Write(dc, note, Gfx.Small, _t.Tertiary, new Rect(Pad, y, Inner, noteHeight), maxLines: 3);
+        return y + noteHeight + 14;
     }
+
+    /// <summary>Un modelo del historial («opus-5-5», sin «claude-») con el nombre que usa el resto de la app: «Opus 5.5».</summary>
+    static string ModelName(string key) => Format.ModelChoice(key.StartsWith("claude-", StringComparison.Ordinal) ? key : "claude-" + key);
 
     SD.Color HeatColor(int level) => level switch
     {
