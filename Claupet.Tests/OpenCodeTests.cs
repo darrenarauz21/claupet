@@ -67,7 +67,7 @@ public sealed class OpenCodeTests
     }
 
     /// <summary>Una base como la de OpenCode 2: sesiones (id, carpeta, padre, modelo, hora) y mensajes (tipo y data).</summary>
-    static void CreateDbV2(string path, IEnumerable<(string Id, string Folder, string? Parent, string? Model, DateTimeOffset At)> sessions,
+    internal static void CreateDbV2(string path, IEnumerable<(string Id, string Folder, string? Parent, string? Model, DateTimeOffset At)> sessions,
         IEnumerable<(string Session, string Type, DateTimeOffset At, string Data)> messages)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);

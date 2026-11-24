@@ -6,7 +6,7 @@ Every section of Settings and what each option does, in the order they appear.
 
 **On this page:** [Where they are](#where-to-find-settings) · [General](#general) · [Alerts](#alerts) ·
 [Appearance](#appearance) · [Pet](#pet) · [Assistant](#assistant) · [Answers](#answers) ·
-[Extensions](#extensions) · [Island](#island) · [Accounts](#accounts) · [System](#system) ·
+[Extensions](#extensions) · [Island](#island) · [Accounts](#accounts) · [Consumption](#consumption) · [System](#system) ·
 [Terminal](#terminal)
 
 ## Where to find settings
@@ -148,6 +148,28 @@ The island at the top edge: the chat, permissions and the weekly recap.
 | **Claude Code** | Each account, and whether its memory is its own or shared with another. |
 | **Add account…** | Adds another config folder (see [Getting started](primeros-pasos.md#your-claude-code-accounts)). |
 | **Other agents** | A switch for each agent found (Codex CLI, Gemini CLI, GitHub Copilot CLI): whether it's followed in Usage and Activity. |
+
+## Consumption
+
+🪟 What every agent spent on this computer (Claude Code, Codex, Gemini CLI, OpenCode and Copilot CLI), by model. It's
+read from their files: it doesn't use their accounts or spend tokens. The first time it reads the last 31 days (it can
+take a few seconds); after that, every minute, only what's new.
+
+| Part | What it shows |
+|---|---|
+| **Period** | Today (by hour), 7 days, 30 days or this month (by day). With more than one Claude Code account, you also pick the account. |
+| **Top strip** | The agents (clicking one hides it or shows it again) and the totals: responses, output tokens, input tokens (with what was read from cache), reasoning tokens and the cost. |
+| **Trend** | Stacked areas by agent or by model, of output tokens, input tokens or responses. Hovering shows each step. |
+| **By model** | One row per model with its agent and provider, responses, input, cache, output, reasoning, its trend and its share of the output. Click a column to sort. |
+| **Output split** | A donut by model or by agent. |
+| **Activity by hour** | The responses of the last 7 days, by day and hour. |
+| **Limits** | The ones Claude Code and Codex write, with when they reset. |
+| **By project** | Each session's repository (worktrees count in theirs). |
+| **Export CSV** | The period's by-model table, for a spreadsheet. |
+
+The cost only shows up if the agent writes it: OpenCode, in dollars; Copilot CLI, in premium requests. Claude Code,
+Codex and Gemini CLI don't write it, and Claupet doesn't estimate it. Only the agents followed in
+[Accounts](#accounts) count.
 
 ## System
 

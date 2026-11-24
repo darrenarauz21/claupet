@@ -6,7 +6,7 @@ Cada sección de Ajustes y qué hace cada opción, en el orden en que aparecen.
 
 **En esta página:** [Dónde están](#dónde-están-los-ajustes) · [General](#general) · [Avisos](#avisos) ·
 [Apariencia](#apariencia) · [Mascota](#mascota) · [Asistente](#asistente) · [Respuestas](#respuestas) ·
-[Extensiones](#extensiones) · [Isla](#isla) · [Cuentas](#cuentas) · [Sistema](#sistema) ·
+[Extensiones](#extensiones) · [Isla](#isla) · [Cuentas](#cuentas) · [Consumo](#consumo) · [Sistema](#sistema) ·
 [Terminal](#terminal)
 
 ## Dónde están los ajustes
@@ -147,6 +147,28 @@ La isla del borde de arriba: el chat, los permisos y el resumen de la semana.
 | **Claude Code** | Cada cuenta y si su memoria es propia o compartida con otra. |
 | **Agregar cuenta…** | Agrega otra carpeta de configuración (ver [Primeros pasos](primeros-pasos.md#sus-cuentas-de-claude-code)). |
 | **Otros agentes** | Un interruptor por cada agente encontrado (Codex CLI, Gemini CLI, GitHub Copilot CLI): si se sigue en Uso y Actividad. |
+
+## Consumo
+
+🪟 Lo que gastaron todos los agentes en este equipo (Claude Code, Codex, Gemini CLI, OpenCode y Copilot CLI), por
+modelo. Se lee de sus archivos: no usa sus cuentas ni gasta tokens. La primera vez lee los últimos 31 días (puede
+tardar unos segundos); después, cada minuto, solo lo nuevo.
+
+| Parte | Qué muestra |
+|---|---|
+| **Periodo** | Hoy (por hora), 7 días, 30 días o este mes (por día). Con más de una cuenta de Claude Code, también se elige la cuenta. |
+| **Franja de arriba** | Los agentes (tocarlos los oculta o los vuelve a mostrar) y los totales: respuestas, tokens de salida, de entrada (con lo leído de caché), de razonamiento y el costo. |
+| **Tendencia** | Áreas apiladas por agente o por modelo, de tokens de salida, de entrada o de respuestas. Al pasar el mouse se ve cada tramo. |
+| **Por modelo** | Una fila por modelo con su agente y proveedor, respuestas, entrada, caché, salida, razonamiento, su tendencia y su parte de la salida. Se ordena tocando una columna. |
+| **Reparto de la salida** | Una dona por modelo o por agente. |
+| **Actividad por hora** | Las respuestas de los últimos 7 días, por día y hora. |
+| **Límites** | Los que escriben Claude Code y Codex, con cuándo se reinician. |
+| **Por proyecto** | El repositorio de cada sesión (los worktrees cuentan en el suyo). |
+| **Exportar CSV** | La tabla por modelo del periodo, para una hoja de cálculo. |
+
+El costo aparece solo si el agente lo escribe: OpenCode, en dólares; Copilot CLI, en solicitudes premium. Claude
+Code, Codex y Gemini CLI no lo escriben, y Claupet no lo estima. Solo cuentan los agentes que se siguen en
+[Cuentas](#cuentas).
 
 ## Sistema
 
