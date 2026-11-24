@@ -8,6 +8,11 @@ sealed partial class TrayController
 {
     IReadOnlyList<AgentSnapshot> _agents = [];
     bool _readingAgents;
+    /// <summary>
+    /// Lo de hoy de los otros agentes por modelo (para Uso), en memoria: cada vez se lee solo lo nuevo de sus archivos. La
+    /// caché del disco es de Ajustes › Consumo, en la Console; la bandeja no la toca. Lo de Claude ya lo cuenta Activity.
+    /// </summary>
+    readonly UsageLedger _today = UsageLedger.InMemory();
 
     /// <summary>Busca los que están en su carpeta de siempre y lee los que se siguen, fuera del hilo de la interfaz.</summary>
     async Task ReadAgentsAsync()
@@ -18,8 +23,17 @@ sealed partial class TrayController
         {
             if (Agents.Detect(_settings)) SettingsStore.Save(_settings);
             var list = _settings.Agents.ToList();
-            _agents = await Task.Run(() => Agents.ReadAll(list, DateTimeOffset.Now));
-            View.SetAgents(_agents);
+            var sources = new UsageSources([], list.Where(a => a.Follow).ToList());
+            (_agents, var today) = await Task.Run(() =>
+            {
+                var now = DateTimeOffset.Now;
+                var agents = Agents.ReadAll(list, now);
+                UsageReport? report = null;
+                try { report = UsageReport.Build(_today.Refresh(sources, UsageReport.Range(UsagePeriod.Today, now).From), UsagePeriod.Today, now); }
+                catch (Exception ex) { ErrorLog.Write(ex); }
+                return (agents, report);
+            });
+            View.SetAgents(_agents, today);
             UpdateAgentPets(); // las mascotas de los agentes que están en el equipo
             PushSettings();
         }

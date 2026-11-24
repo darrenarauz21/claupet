@@ -20,6 +20,8 @@ sealed partial class UsageView : Control
     public event Action<Account>? RemoveRequested;
     public event Action<Account>? RenameRequested;
     public event Action<SessionInfo>? NewSessionRequested;
+    /// <summary>«Ver detalle», en el pie de Uso: Ajustes › Consumo en la Console.</summary>
+    public event Action? DetailRequested;
     /// <summary>Una acción de «Ajustes» (notify, sound, pack:id, startup, sample, sounds, add, setup, diag, unsetup).</summary>
     public event Action<string>? SettingRequested;
 
@@ -27,7 +29,7 @@ sealed partial class UsageView : Control
 
     /// <summary>Activity son las sesiones, cada una con su carril (antes «Sesiones» y «Flujos»); History, el mapa de calor.</summary>
     enum View { Usage, Activity, History, Settings }
-    enum HitKind { Refresh, Account, Add, View, IdleToggle, Day, Gear, CloseSettings, Setting, SettingsTab, FlowSession, FlowBack, SessionAction }
+    enum HitKind { Refresh, Account, Add, View, IdleToggle, Day, Gear, CloseSettings, Setting, SettingsTab, FlowSession, FlowBack, SessionAction, Detail }
     sealed record Hit(string Key, Rect Bounds, HitKind Kind, Account? Account = null, SessionInfo? Session = null, View View = View.Usage, DateOnly Day = default);
 
     /// <summary>Semanas completas del cuadro del historial, más la actual.</summary>
@@ -512,7 +514,7 @@ sealed partial class UsageView : Control
             var right = gear.X - 8;
             var when = _refresh is not null ? "" : _busy ? L.T("Actualizando…") : _updated is { } u ? $"{u:t}" : "";
             var whenWidth = _refresh is not null ? RefreshSprite.Columns(_refreshStyle) * unit : Gfx.Measure(when, Gfx.Small).Width;
-            Gfx.Write(dc, Format.Local(_local), Gfx.Small, _t.Tertiary, new Rect(Pad, y, right - Pad - whenWidth - 12, small));
+            Gfx.Write(dc, TodayText(), Gfx.Small, _t.Tertiary, new Rect(Pad, y, right - Pad - whenWidth - 12, small));
             if (_refresh is { } frame)
                 Gfx.Pixels(dc, right - whenWidth, y + (small - rows * unit) / 2, unit,
                     fill => RefreshSprite.Paint(fill, _refreshStyle, frame, _t.Accent));
@@ -533,6 +535,12 @@ sealed partial class UsageView : Control
         _hits.Add(new Hit(key, bounds, kind, account, session, view, day));
 
     Hit? HitAt(Point p) => _hits.LastOrDefault(h => h.Bounds.Contains(p));
+
+    /// <summary>Para las pruebas: lo que se puede tocar en lo dibujado.</summary>
+    internal IReadOnlyList<string> HitKeys => [.. _hits.Select(h => h.Key)];
+
+    /// <summary>Para las pruebas: lo que dice el pie.</summary>
+    internal string FooterText => TodayText();
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
@@ -575,6 +583,7 @@ sealed partial class UsageView : Control
         {
             case HitKind.Refresh when !_busy: RefreshRequested?.Invoke(); break;
             case HitKind.Add: AddRequested?.Invoke(); break;
+            case HitKind.Detail: DetailRequested?.Invoke(); break;
             case HitKind.View: OpenView(hit.View); break;
             case HitKind.Gear:
                 if (_view == View.Settings) OpenView(_beforeSettings);

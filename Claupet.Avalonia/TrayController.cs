@@ -110,6 +110,7 @@ sealed partial class TrayController
             SettingsStore.Save(_settings);
         };
         View.NewSessionRequested += session => _ = NewSessionAsync(session);
+        View.DetailRequested += () => _ = OpenConsoleAsync(ConsoleLink.Usage);
         SetupExtensions();
         WatchMascotScreens(); // también sin mascota: con la sesión bloqueada se pausa la isla
         StartConsole();

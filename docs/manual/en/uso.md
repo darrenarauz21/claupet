@@ -25,7 +25,9 @@ There's a button per account at the top. For the selected one you see:
 | **Session** | Usage of the 5-hour window, with its bar and when it resets ("Resets in 2 h 10 min"). |
 | **Week** | The weekly limit, with the day and time it resets. |
 | **Week · model** | A model's weekly limit, if your plan has one. |
-| **Footer** | Today's tokens on this computer and the time of the data you're seeing. |
+| **Today's models** | How Claude Code's output today split among its models, with its strip ("Opus 5.5 62 % · Sonnet 5.5 38 %"). |
+| **See details ›** | Opens Settings › Consumption in Claupet Console: every agent, by model and by day. |
+| **Footer** | Today's responses and output tokens (of every agent, if another one worked today) and the time of the data you're seeing. |
 
 Claupet refreshes on its own every 5 minutes. To do it now, use **Refresh** in the icon's menu.
 
@@ -43,14 +45,18 @@ that account's access and checks again.
 ## Other agents: Codex, Gemini, Copilot and OpenCode
 
 If you also use Codex CLI, Gemini CLI, GitHub Copilot CLI or OpenCode on this computer, Claupet finds them on its own
-and shows them below the account, under **Other agents**:
+and shows them below the account, under **Other agents**, one per row: on the right, today's output tokens; below, its main
+model, today's responses and when its limit resets or when it last worked.
 
-| Agent | What you see in Usage |
+| Agent | What you see in its row |
 |---|---|
-| **Codex CLI** | Its 5-hour and weekly limits, with their percentage, once it has answered at least once. |
-| **Gemini CLI** | Today's responses and tokens. Gemini CLI doesn't record how much of its quota is left, so there's no percentage. |
-| **GitHub Copilot CLI** | Today's activity (its format isn't documented, so you see less). |
-| **OpenCode** | Today's responses and tokens, read from its database (`opencode.db`) with your system's SQLite. It doesn't record limits, so there's no percentage. |
+| **Codex** | Its 5-hour and weekly limits in miniature, with their percentage, once it has answered at least once. |
+| **Gemini CLI** | A strip that splits today's tokens among its models. Gemini CLI doesn't record how much of its quota is left, so there's no percentage. |
+| **Copilot CLI** | The strip of its models and today's premium requests. |
+| **OpenCode** | The strip of its models and what it cost today in dollars, read from its database (`opencode.db`) with your system's SQLite. It doesn't record limits, so there's no percentage. |
+
+The details of all of them, by model and by day, are in Claupet Console's **Settings › Consumption**
+([Settings](ajustes.md#consumption)).
 
 Only the ones that did something today or have a limit still running show up. Choose which ones to follow
 in Claupet Console's **Settings › Accounts**. Claupet only reads their files: it doesn't use their accounts
