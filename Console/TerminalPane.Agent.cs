@@ -661,7 +661,33 @@ sealed partial class TerminalPane
             || previous.Kind is AgentBlockKind.Ask or AgentBlockKind.Permission;
     }
 
-    /// <summary>Lo que se escribió: «›» en acento y el pedido en negrita; Copiar al pasar el mouse.</summary>
+    /// <summary>Hasta cuántas líneas o caracteres se ve entero un pedido; uno más largo se pliega a su comienzo.</summary>
+    internal const int AskPreviewLines = 12, AskPreviewChars = 1200;
+    /// <summary>Lo más que se dibuja de un pedido desplegado: el resto se copia con Copiar (dibujarlo entero llenaba la memoria).</summary>
+    internal const int AskShownChars = 200_000;
+
+    /// <summary>Los pedidos largos que se desplegaron (siguen así si su bloque se vuelve a dibujar).</summary>
+    readonly HashSet<AgentBlock> _openAsks = [];
+
+    /// <summary>El comienzo de un pedido largo: sus primeras líneas, sin pasar de AskPreviewChars. null si es corto y se ve entero.</summary>
+    internal static string? AskPreview(string text)
+    {
+        if (text.Length <= AskPreviewChars && LineCount(text, AskPreviewLines + 1) <= AskPreviewLines) return null;
+        var end = -1;
+        for (var line = 0; line < AskPreviewLines; line++)
+        {
+            var next = text.IndexOf('\n', end + 1);
+            if (next < 0 || next > AskPreviewChars) { end = -1; break; }
+            end = next;
+        }
+        var cut = end >= 0 ? end : Math.Min(text.Length, AskPreviewChars);
+        return text[..cut].TrimEnd() + " …";
+    }
+
+    /// <summary>
+    /// Lo que se escribió: «›» en acento y el pedido en negrita; Copiar al pasar el mouse. Un pedido largo (un texto pegado,
+    /// por ejemplo) se ve plegado a sus primeras líneas, con «Mostrar todo» para desplegarlo y «Mostrar menos» para volver.
+    /// </summary>
     Control AskView(AgentBlock block)
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("24,*,Auto") };
@@ -669,10 +695,34 @@ sealed partial class TerminalPane
         sign.VerticalAlignment = VerticalAlignment.Top;
         sign.Margin = new Thickness(2, -2, 0, 0);
         row.Children.Add(sign);
-        var text = Selectable(block.Text, Ink.Sans, 13.5, _ink.Text);
-        text.FontWeight = FontWeight.SemiBold;
-        Grid.SetColumn(text, 1);
-        row.Children.Add(text);
+        var column = new StackPanel { Spacing = 4 };
+        Grid.SetColumn(column, 1);
+        row.Children.Add(column);
+        var preview = AskPreview(block.Text);
+        void Fill()
+        {
+            column.Children.Clear();
+            var open = preview is null || _openAsks.Contains(block);
+            var shown = !open ? preview! : block.Text.Length > AskShownChars
+                ? block.Text[..AskShownChars] + "\n…\n" + L.T("(Siguen {0} caracteres más: Copiar lleva el texto entero).", (block.Text.Length - AskShownChars).ToString("N0"))
+                : block.Text;
+            var text = Selectable(shown, Ink.Sans, 13.5, _ink.Text);
+            text.FontWeight = FontWeight.SemiBold;
+            column.Children.Add(text);
+            if (preview is null) return;
+            var lines = LineCount(block.Text);
+            var label = Ui.Text(open ? L.T("Mostrar menos")
+                : lines > 1 ? L.T("Mostrar todo · {0} líneas", lines.ToString("N0")) : L.T("Mostrar todo · {0} caracteres", block.Text.Length.ToString("N0")),
+                12, _ink.Accent);
+            var toggle = Ui.Press(label, () =>
+            {
+                if (!_openAsks.Remove(block)) _openAsks.Add(block);
+                Fill();
+            }, (b, on) => label.TextDecorations = on ? TextDecorations.Underline : null, label.Text);
+            toggle.HorizontalAlignment = HorizontalAlignment.Left;
+            column.Children.Add(toggle);
+        }
+        Fill();
         var copy = Tool(CopyIcon, L.T("Copiar"), () => CopyToClipboard(block.Text));
         copy.Opacity = 0;
         copy.VerticalAlignment = VerticalAlignment.Top;

@@ -222,9 +222,10 @@ sealed partial class TerminalPane
     }
 
     /// <summary>
-    /// Ctrl+V en la caja de un agente: una imagen copiada, o la ruta o la URL de una imagen, se suma al pedido como
-    /// «[Imagen #N]» (como en Rider o en otras consolas), y los demás archivos copiados entran con su ruta; cualquier otro
-    /// texto se pega como siempre.
+    /// Pegar en la caja de un agente (Ctrl+V o el menú de la caja): una imagen copiada, o la ruta o la URL de una imagen, se
+    /// suma al pedido como «[Imagen #N]» (como en Rider o en otras consolas), y los demás archivos copiados entran con su
+    /// ruta. Un texto largo entra como «[Texto #N · 240 líneas]» y se manda entero al enviar (la caja no carga con él); el
+    /// corto se pega como siempre, donde está el cursor y en lugar de lo elegido.
     /// </summary>
     async Task PasteIntoComposerAsync(Tab tab)
     {
@@ -240,15 +241,50 @@ sealed partial class TerminalPane
         }
         else if (PastedImages.Reference(text, tab.Agent.Options.Folder) is { } reference && await PastedImages.LoadAsync(reference) is { } image)
             added = Attach(tab, image);
-        if (added is null)
-        {
-            _input.Paste();
-            return;
-        }
-        var at = Math.Clamp(_input.CaretIndex, 0, _input.Text?.Length ?? 0);
-        _input.Text = (_input.Text ?? "").Insert(at, added);
-        _input.CaretIndex = at + added.Length;
+        else added = IsLongPaste(text) ? AttachText(tab, text) : text;
+        if (added is null) return;
+        // Si mientras se leía el portapapeles se cambió de pestaña, la marca (y su texto) ya no van a esta caja.
+        if (_current != tab) return;
+        var current = _input.Text ?? "";
+        var start = Math.Clamp(Math.Min(_input.SelectionStart, _input.SelectionEnd), 0, current.Length);
+        var end = Math.Clamp(Math.Max(_input.SelectionStart, _input.SelectionEnd), start, current.Length);
+        _input.Text = current[..start] + added + current[end..];
+        _input.CaretIndex = start + added.Length;
         _input.Focus();
+    }
+
+    /// <summary>Desde cuántas líneas o caracteres un texto pegado entra como marca y no entero.</summary>
+    internal const int LongPasteLines = 15, LongPasteChars = 1500;
+
+    internal static bool IsLongPaste(string text) =>
+        text.Length > LongPasteChars || LineCount(text, LongPasteLines + 1) > LongPasteLines;
+
+    /// <summary>Cuántas líneas tiene, contando como mucho hasta stop (para no recorrer un texto enorme).</summary>
+    internal static int LineCount(string text, int stop = int.MaxValue)
+    {
+        var lines = 1;
+        for (var at = text.IndexOf('\n'); at >= 0 && lines < stop; at = text.IndexOf('\n', at + 1)) lines++;
+        return lines;
+    }
+
+    /// <summary>El texto largo va con el pedido; devuelve su marca para la caja («[Texto #1 · 240 líneas]»).</summary>
+    static string AttachText(Tab tab, string text)
+    {
+        var marker = PasteMarker(tab.Pastes.Count + 1, text);
+        tab.Pastes.Add((marker, text));
+        return marker + " ";
+    }
+
+    internal static string PasteMarker(int number, string text) => LineCount(text) is var lines and > 1
+        ? L.T("[Texto #{0} · {1} líneas]", number, lines.ToString("N0"))
+        : L.T("[Texto #{0} · {1} caracteres]", number, text.Length.ToString("N0"));
+
+    /// <summary>Cambia cada marca que sigue en el pedido por su texto; las que se borraron de la caja no van.</summary>
+    internal static string ExpandPastes(string text, IReadOnlyList<(string Marker, string Text)> pastes)
+    {
+        foreach (var (marker, pasted) in pastes)
+            if (text.Contains(marker, StringComparison.Ordinal)) text = text.Replace(marker, pasted, StringComparison.Ordinal);
+        return text;
     }
 
     /// <summary>La imagen va con el pedido; devuelve su marca para la caja.</summary>
