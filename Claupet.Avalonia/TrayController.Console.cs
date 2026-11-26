@@ -387,14 +387,34 @@ sealed partial class TrayController : IConsoleApp
         chat.Show(true);
         // Con la voz encendida, la respuesta no se muestra mientras llega: sale cuando empieza a sonar.
         var speaking = _settings.ReadAloud;
+        // Los pedazos se juntan y la Console se entera como mucho diez veces por segundo: antes, con cada pedazo se copiaba
+        // la respuesta y se mandaba la conversación.
+        var pending = new System.Text.StringBuilder();
+        var flushing = false;
+        void Flush()
+        {
+            string add;
+            lock (pending)
+            {
+                add = pending.ToString();
+                pending.Clear();
+                flushing = false;
+            }
+            // Terminó (o empezó otra) mientras esperaba: lo de la respuesta ya está en su turno.
+            if (cancel.IsCancellationRequested || chat.Streaming is null || add.Length == 0) return;
+            chat.Streaming += add;
+            chat.Show(true);
+        }
         void Stream(string piece)
         {
             if (cancel.IsCancellationRequested || speaking) return;
-            Dispatcher.UIThread.Post(() =>
+            lock (pending)
             {
-                chat.Streaming = (chat.Streaming ?? "") + piece;
-                chat.Show(true);
-            });
+                pending.Append(piece);
+                if (flushing) return;
+                flushing = true;
+            }
+            _ = Task.Delay(100).ContinueWith(_ => Dispatcher.UIThread.Post(Flush), TaskScheduler.Default);
         }
         // «/comando …»: lo atiende la habilidad de una extensión, no el asistente.
         if (SkillCommand(text) is { } command)
@@ -449,6 +469,7 @@ sealed partial class TrayController : IConsoleApp
                 // Si pidió algo en el equipo, lo hace (con su permiso); si trajo datos, la respuesta empieza de nuevo con ellos.
                 : await RunActionAsync(result, request, chat.Island, Stream, () =>
                 {
+                    lock (pending) pending.Clear(); // lo que quedaba de la respuesta de antes no va a la nueva
                     chat.Streaming = "";
                     chat.Show(true);
                 }, cancel);

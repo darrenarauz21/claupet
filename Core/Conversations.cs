@@ -48,7 +48,14 @@ sealed record ChatSummary(string Id, string Title, string Preview, DateTimeOffse
 /// es (cambia según el sistema: donde hay isla, es la misma).
 /// </summary>
 sealed record ChatView(string Id, string Title, IReadOnlyList<ChatTurn> Turns, string? Streaming, bool Asking, string Model, bool ReadAloud,
-    string? About = null);
+    string? About = null)
+{
+    /// <summary>
+    /// Solo cambió lo que va llegando: Turns va vacío y la Console se queda con los que ya tiene. Antes, con cada pedazo de
+    /// la respuesta viajaba la conversación entera (con un texto pegado de megas, una y otra vez).
+    /// </summary>
+    public bool StreamOnly { get; init; }
+}
 
 /// <summary>Una conversación guardada como IChatLog: cada turno nuevo se guarda; la primera pregunta le da el título.</summary>
 sealed class SavedChat(Conversation conversation, ConversationStore store) : IChatLog

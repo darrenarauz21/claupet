@@ -17,31 +17,31 @@ public sealed class PastedTextTests : IDisposable
     [Fact]
     public void UnTextoLargoEntraComoMarcaYVuelveEnteroAlEnviar()
     {
-        Assert.True(TerminalPane.IsLongPaste(Big));
-        Assert.True(TerminalPane.IsLongPaste(new string('x', TerminalPane.LongPasteChars + 1)));
-        Assert.False(TerminalPane.IsLongPaste("una línea\ny otra"));
+        Assert.True(LongText.IsLongPaste(Big));
+        Assert.True(LongText.IsLongPaste(new string('x', LongText.PasteChars + 1)));
+        Assert.False(LongText.IsLongPaste("una línea\ny otra"));
 
-        var marker = TerminalPane.PasteMarker(1, Big);
+        var marker = LongText.PasteMarker(1, Big);
         Assert.Equal("[Texto #1 · 240 líneas]", marker);
-        Assert.Contains("caracteres", TerminalPane.PasteMarker(2, new string('x', 2000))); // una sola línea: sus caracteres
+        Assert.Contains("caracteres", LongText.PasteMarker(2, new string('x', 2000))); // una sola línea: sus caracteres
 
-        List<(string Marker, string Text)> pastes = [(marker, Big), (TerminalPane.PasteMarker(2, "otro"), "otro")];
-        Assert.Equal($"revisa esto:\n{Big}\ngracias", TerminalPane.ExpandPastes($"revisa esto:\n{marker}\ngracias", pastes));
+        List<(string Marker, string Text)> pastes = [(marker, Big), (LongText.PasteMarker(2, "otro"), "otro")];
+        Assert.Equal($"revisa esto:\n{Big}\ngracias", LongText.ExpandPastes($"revisa esto:\n{marker}\ngracias", pastes));
         // La marca que se borró de la caja no va.
-        Assert.Equal("ya no está", TerminalPane.ExpandPastes("ya no está", pastes));
+        Assert.Equal("ya no está", LongText.ExpandPastes("ya no está", pastes));
     }
 
     [Fact]
     public void UnPedidoLargoSeVePlegado()
     {
-        Assert.Null(TerminalPane.AskPreview("un pedido corto"));
-        var preview = TerminalPane.AskPreview(Big)!;
+        Assert.Null(LongText.Preview("un pedido corto", TerminalPane.AskPreviewLines, TerminalPane.AskPreviewChars));
+        var preview = LongText.Preview(Big, TerminalPane.AskPreviewLines, TerminalPane.AskPreviewChars)!;
         Assert.Equal(TerminalPane.AskPreviewLines, preview.Split('\n').Length);
         Assert.EndsWith(" …", preview);
         // Una sola línea larguísima: se corta en AskPreviewChars.
-        Assert.Equal(TerminalPane.AskPreviewChars + 2, TerminalPane.AskPreview(new string('a', 50_000))!.Length);
-        Assert.Equal(3, TerminalPane.LineCount("a\nb\nc"));
-        Assert.Equal(5, TerminalPane.LineCount(Big, stop: 5)); // sin recorrer el resto
+        Assert.Equal(TerminalPane.AskPreviewChars + 2, LongText.Preview(new string('a', 50_000), TerminalPane.AskPreviewLines, TerminalPane.AskPreviewChars)!.Length);
+        Assert.Equal(3, LongText.LineCount("a\nb\nc"));
+        Assert.Equal(5, LongText.LineCount(Big, stop: 5)); // sin recorrer el resto
     }
 
     [Fact]

@@ -105,6 +105,24 @@ sealed partial class TerminalPane : Grid
     readonly Dictionary<AgentBlock, Border> _views = [];
     /// <summary>Lo que se va escribiendo de una respuesta: se cambia solo el texto, sin rehacer el bloque.</summary>
     readonly Dictionary<AgentBlock, SelectableTextBlock> _live = [];
+    /// <summary>Las respuestas que recibieron pedazos desde el último repintado (FlushLive).</summary>
+    readonly HashSet<AgentBlock> _livePending = [];
+    IDisposable? _liveTimer;
+    /// <summary>Cada cuánto se repinta lo que va llegando (unas 10 veces por segundo se lee igual de fluido).</summary>
+    static readonly TimeSpan LiveEvery = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// Repinta las respuestas que siguen llegando, con lo que tienen ahora: enteras si son cortas o, si no, su final
+    /// (LongText.LiveText). Acomodar decenas de miles de caracteres con cada pedazo trababa.
+    /// </summary>
+    void FlushLive()
+    {
+        _liveTimer = null;
+        foreach (var block in _livePending)
+            if (block.Open && _live.TryGetValue(block, out var text)) text.Text = LongText.LiveText(block.Text);
+        _livePending.Clear();
+    }
+
     readonly StackPanel _blocks = new() { Spacing = 6 };
     /// <summary>El tamaño elegido en Ajustes › Terminal agranda o achica los bloques enteros, como un zoom.</summary>
     readonly LayoutTransformControl _zoom = new();
@@ -596,7 +614,7 @@ sealed partial class TerminalPane : Grid
         // Los textos largos pegados vuelven a su lugar (los de las marcas que siguen en la caja). Las menciones (@, #) se
         // buscan en lo que escribió la persona, no dentro de lo pegado.
         var typed = text;
-        text = ExpandPastes(text, tab.Pastes);
+        text = LongText.ExpandPastes(text, tab.Pastes);
         tab.Pastes.Clear();
         // Con el especialista elegido en la caja, la nota de trabajar como él (una vez por cambio); con @especialista, la de
         // pasarle la tarea (a su subagente, si la sesión lo tiene); con #sesión o lo que se le trajo con «Enviar a…», el
@@ -636,9 +654,11 @@ sealed partial class TerminalPane : Grid
         if (changed.Count > 0 && _blocks.Children.Count == 1 && _views.Count == 0 && _earlier is null) _blocks.Children.Clear();
         foreach (var block in changed)
         {
-            if (_live.TryGetValue(block, out var text) && block.Open)
+            if (_live.ContainsKey(block) && block.Open)
             {
-                text.Text = block.Text;
+                // Lo que va llegando se pinta junto, cada LiveEvery: antes se volvía a acomodar el texto entero con cada pedazo.
+                _livePending.Add(block);
+                _liveTimer ??= DispatcherTimer.RunOnce(FlushLive, LiveEvery);
                 continue;
             }
             var old = _views.GetValueOrDefault(block);
