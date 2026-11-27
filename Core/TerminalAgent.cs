@@ -178,12 +178,19 @@ sealed partial class AgentTranscript
                 System(r, changed);
                 break;
             case "stream_event" when r.TryGetProperty("event", out var e):
+                if (Json.Str(e, "type") == "message_start") Busy = true; // el modelo empezó a responder (ver abajo)
                 Stream(e, changed);
                 break;
             case "assistant" when r.TryGetProperty("message", out var m):
                 // El modelo que respondió de verdad (en modo plan, Claude Code puede usar otro que el de init). Los mensajes
                 // locales, como el de /exit, vienen con «<synthetic>»: no los respondió ningún modelo.
-                if (Json.Str(m, "model") is { } used && !used.StartsWith('<')) Model = used;
+                if (Json.Str(m, "model") is { } used && !used.StartsWith('<'))
+                {
+                    Model = used;
+                    // Un turno que Claude Code empezó solo (al terminar una tarea en segundo plano, por ejemplo) no pasa por
+                    // Ask: sin esto, trabajaba con la luz de la pestaña apagada. El resultado del turno la vuelve a apagar.
+                    Busy = true;
+                }
                 Assistant(m, changed);
                 break;
             // Los «isReplay» son ecos de lo que hizo el anfitrión (cambiar el modelo): no son pedidos de la persona.

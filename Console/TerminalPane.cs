@@ -101,7 +101,7 @@ sealed partial class TerminalPane : Grid
     int _shownFrom;
     Control? _earlier;
     /// <summary>Lo que muestra la lista de cada pestaña, para rehacerla solo cuando cambia (no con cada pedazo de texto).</summary>
-    readonly Dictionary<Tab, (bool Busy, bool Waiting, bool Running, string Title)> _tabState = [];
+    readonly Dictionary<Tab, (bool Busy, bool Waiting, bool Running, bool Background, string Title)> _tabState = [];
     readonly Dictionary<AgentBlock, Border> _views = [];
     /// <summary>Lo que se va escribiendo de una respuesta: se cambia solo el texto, sin rehacer el bloque.</summary>
     readonly Dictionary<AgentBlock, SelectableTextBlock> _live = [];
@@ -540,7 +540,7 @@ sealed partial class TerminalPane : Grid
     bool ListStateChanged(Tab tab)
     {
         var t = tab.Agent.Transcript;
-        var state = (t.Busy, Waiting(t), tab.Agent.Running, Title(tab) + " · " + Describe(tab));
+        var state = (t.Busy, Waiting(t), tab.Agent.Running, t.BackgroundTasks > 0, Title(tab) + " · " + Describe(tab));
         if (_tabState.TryGetValue(tab, out var before) && before == state) return false;
         _tabState[tab] = state;
         return true;
