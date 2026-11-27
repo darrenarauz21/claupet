@@ -82,7 +82,7 @@ sealed partial class AgentTranscript
                     Close(changed);
                     say = Add(new AgentBlock { Kind = AgentBlockKind.Say, Id = Json.Str(u, "messageId") ?? "", Open = true }, changed);
                 }
-                say.Text += text;
+                say.Append(text);
                 Touch(say, changed);
                 break;
             case "user_message_chunk" when !Busy && AcpText(u) is { } asked:
@@ -93,7 +93,7 @@ sealed partial class AgentTranscript
                     Close(changed);
                     ask = Add(new AgentBlock { Kind = AgentBlockKind.Ask, Open = true }, changed);
                 }
-                ask.Text += asked;
+                ask.Append(asked);
                 Touch(ask, changed);
                 break;
             case "agent_thought_chunk" when AcpText(u) is { } thought:
@@ -103,7 +103,7 @@ sealed partial class AgentTranscript
                     Close(changed);
                     think = Add(new AgentBlock { Kind = AgentBlockKind.Think, Id = Json.Str(u, "messageId") ?? "", Open = true }, changed);
                 }
-                think.Text += thought;
+                think.Append(thought);
                 Touch(think, changed);
                 break;
             case "tool_call" or "tool_call_update":

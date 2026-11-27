@@ -661,28 +661,13 @@ sealed partial class TerminalPane
             || previous.Kind is AgentBlockKind.Ask or AgentBlockKind.Permission;
     }
 
-    /// <summary>Hasta cuántas líneas o caracteres se ve entero un pedido; uno más largo se pliega a su comienzo.</summary>
+    /// <summary>Hasta cuántas líneas o caracteres se ve entero un pedido; uno más largo se pliega a su comienzo (LongText).</summary>
     internal const int AskPreviewLines = 12, AskPreviewChars = 1200;
-    /// <summary>Lo más que se dibuja de un pedido desplegado: el resto se copia con Copiar (dibujarlo entero llenaba la memoria).</summary>
-    internal const int AskShownChars = 200_000;
+    /// <summary>Lo mismo para un bloque de código de una respuesta.</summary>
+    internal const int CodePreviewLines = 40, CodePreviewChars = 4000;
 
     /// <summary>Los pedidos largos que se desplegaron (siguen así si su bloque se vuelve a dibujar).</summary>
     readonly HashSet<AgentBlock> _openAsks = [];
-
-    /// <summary>El comienzo de un pedido largo: sus primeras líneas, sin pasar de AskPreviewChars. null si es corto y se ve entero.</summary>
-    internal static string? AskPreview(string text)
-    {
-        if (text.Length <= AskPreviewChars && LineCount(text, AskPreviewLines + 1) <= AskPreviewLines) return null;
-        var end = -1;
-        for (var line = 0; line < AskPreviewLines; line++)
-        {
-            var next = text.IndexOf('\n', end + 1);
-            if (next < 0 || next > AskPreviewChars) { end = -1; break; }
-            end = next;
-        }
-        var cut = end >= 0 ? end : Math.Min(text.Length, AskPreviewChars);
-        return text[..cut].TrimEnd() + " …";
-    }
 
     /// <summary>
     /// Lo que se escribió: «›» en acento y el pedido en negrita; Copiar al pasar el mouse. Un pedido largo (un texto pegado,
@@ -695,34 +680,14 @@ sealed partial class TerminalPane
         sign.VerticalAlignment = VerticalAlignment.Top;
         sign.Margin = new Thickness(2, -2, 0, 0);
         row.Children.Add(sign);
-        var column = new StackPanel { Spacing = 4 };
-        Grid.SetColumn(column, 1);
-        row.Children.Add(column);
-        var preview = AskPreview(block.Text);
-        void Fill()
+        var text = LongText.Foldable(block.Text, AskPreviewLines, AskPreviewChars, _ink.Accent, shown =>
         {
-            column.Children.Clear();
-            var open = preview is null || _openAsks.Contains(block);
-            var shown = !open ? preview! : block.Text.Length > AskShownChars
-                ? block.Text[..AskShownChars] + "\n…\n" + L.T("(Siguen {0} caracteres más: Copiar lleva el texto entero).", (block.Text.Length - AskShownChars).ToString("N0"))
-                : block.Text;
-            var text = Selectable(shown, Ink.Sans, 13.5, _ink.Text);
-            text.FontWeight = FontWeight.SemiBold;
-            column.Children.Add(text);
-            if (preview is null) return;
-            var lines = LineCount(block.Text);
-            var label = Ui.Text(open ? L.T("Mostrar menos")
-                : lines > 1 ? L.T("Mostrar todo · {0} líneas", lines.ToString("N0")) : L.T("Mostrar todo · {0} caracteres", block.Text.Length.ToString("N0")),
-                12, _ink.Accent);
-            var toggle = Ui.Press(label, () =>
-            {
-                if (!_openAsks.Remove(block)) _openAsks.Add(block);
-                Fill();
-            }, (b, on) => label.TextDecorations = on ? TextDecorations.Underline : null, label.Text);
-            toggle.HorizontalAlignment = HorizontalAlignment.Left;
-            column.Children.Add(toggle);
-        }
-        Fill();
+            var view = Selectable(shown, Ink.Sans, 13.5, _ink.Text);
+            view.FontWeight = FontWeight.SemiBold;
+            return view;
+        }, _openAsks.Contains(block), open => { if (open) _openAsks.Add(block); else _openAsks.Remove(block); });
+        Grid.SetColumn(text, 1);
+        row.Children.Add(text);
         var copy = Tool(CopyIcon, L.T("Copiar"), () => CopyToClipboard(block.Text));
         copy.Opacity = 0;
         copy.VerticalAlignment = VerticalAlignment.Top;
@@ -750,8 +715,8 @@ sealed partial class TerminalPane
         ShowOnHover(row, tools);
         if (block.Open)
         {
-            // Mientras llega, texto plano (barato de cambiar); al terminar, con su formato.
-            var live = Selectable(block.Text, Ink.Sans, 13.5, _ink.Text);
+            // Mientras llega, texto plano (barato de cambiar) y, si ya es muy larga, su final; al terminar, entera y con su formato.
+            var live = Selectable(LongText.LiveText(block.Text), Ink.Sans, 13.5, _ink.Text);
             _live[block] = live;
             column.Children.Add(live);
             return row;
@@ -1271,20 +1236,27 @@ sealed partial class TerminalPane
 
     IBrush Added => _ink.Dark ? new SolidColorBrush(Color.FromRgb(0xA8, 0xC7, 0xA0)) : new SolidColorBrush(Color.FromRgb(0x3F, 0x6B, 0x3A));
 
-    /// <summary>Un bloque de código, con su Copiar arriba a la derecha al pasar el mouse (copia solo ese bloque).</summary>
+    /// <summary>
+    /// Un bloque de código, con su Copiar arriba a la derecha al pasar el mouse (copia el bloque entero). Si es largo se ve
+    /// plegado a sus primeras líneas, con «Mostrar todo» (LongText): uno de miles de líneas pesaba como un texto pegado.
+    /// </summary>
     Control Code(string code)
     {
         code = code.TrimEnd('\n');
-        var text = Selectable(code, Mono, 12.5, _ink.Text);
-        text.TextWrapping = TextWrapping.NoWrap;
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        grid.Children.Add(new ScrollViewer
+        var text = LongText.Foldable(code, CodePreviewLines, CodePreviewChars, _ink.Accent, shown =>
         {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalAlignment = VerticalAlignment.Center,
-            Content = text,
+            var view = Selectable(shown, Mono, 12.5, _ink.Text);
+            view.TextWrapping = TextWrapping.NoWrap;
+            return new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = view,
+            };
         });
+        text.VerticalAlignment = VerticalAlignment.Center;
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        grid.Children.Add(text);
         // Al tocarlo, un visto un momento (y «Copiado» en la descripción), como en el chat.
         Border? copy = null;
         copy = Tool(CopyIcon, L.T("Copiar el código"), () =>

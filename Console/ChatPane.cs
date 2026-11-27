@@ -64,7 +64,37 @@ sealed class ChatPane : Grid
         _scroll.Content = new Border { Child = _messages, Padding = new Thickness(24, 8, 24, 24) };
         // Intro envía y Mayús+Intro hace otra línea: se atiende antes de que el cuadro ponga el salto.
         _input.AddHandler(KeyDownEvent, OnInputKey, RoutingStrategies.Tunnel);
+        // Pegar (Ctrl+V o el menú de la caja): un texto largo entra como «[Texto #1 · 240 líneas]» y va entero al enviar.
+        _input.AddHandler(TextBox.PastingFromClipboardEvent, (_, e) =>
+        {
+            e.Handled = true;
+            _ = PasteAsync();
+        });
         Build();
+    }
+
+    /// <summary>Los textos largos pegados en la caja: en ella solo queda su marca, que se cambia por el texto al enviar.</summary>
+    readonly List<(string Marker, string Text)> _pastes = [];
+
+    async Task PasteAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
+        string? text = null;
+        try { text = await Avalonia.Input.Platform.ClipboardExtensions.TryGetTextAsync(clipboard); }
+        catch (Exception) { }
+        if (string.IsNullOrEmpty(text)) return;
+        if (LongText.IsLongPaste(text))
+        {
+            var marker = LongText.PasteMarker(_pastes.Count + 1, text);
+            _pastes.Add((marker, text));
+            text = marker + " ";
+        }
+        var current = _input.Text ?? "";
+        var start = Math.Clamp(Math.Min(_input.SelectionStart, _input.SelectionEnd), 0, current.Length);
+        var end = Math.Clamp(Math.Max(_input.SelectionStart, _input.SelectionEnd), start, current.Length);
+        _input.Text = current[..start] + text + current[end..];
+        _input.CaretIndex = start + text.Length;
+        _input.Focus();
     }
 
     /// <summary>El id de la conversación que se muestra (null: todavía ninguna).</summary>
@@ -92,6 +122,17 @@ sealed class ChatPane : Grid
     public void Show(ChatView chat)
     {
         var same = _chat?.Id == chat.Id;
+        // Solo cambió lo que llega (ChatView.StreamOnly): los turnos son los que ya se tienen. Si no se tienen (otra
+        // conversación), se pide entera.
+        if (chat.StreamOnly)
+        {
+            if (!same || _chat is not { } shown)
+            {
+                Request?.Invoke(new ConsoleMessage { Type = ConsoleLink.ChatOpen, Key = chat.Id });
+                return;
+            }
+            chat = chat with { Turns = shown.Turns, StreamOnly = false };
+        }
         if (!same) AskDelete(false);
         var atEnd = !same || _toEnd || _scroll.Offset.Y >= _scroll.Extent.Height - _scroll.Viewport.Height - 48;
         _toEnd = false;
@@ -238,6 +279,7 @@ sealed class ChatPane : Grid
 
     // ── Mensajes ────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>Lo que escribió la persona; si es largo (un texto pegado), plegado a su comienzo con «Mostrar todo».</summary>
     Control PersonBubble(string text) => new Border
     {
         Background = _ink.Pill,
@@ -245,12 +287,16 @@ sealed class ChatPane : Grid
         Padding = new Thickness(16, 10),
         HorizontalAlignment = HorizontalAlignment.Right,
         MaxWidth = Column * 0.78,
-        Child = Selectable(text),
+        Child = LongText.Foldable(text, TerminalPane.AskPreviewLines, TerminalPane.AskPreviewChars, _ink.Accent, shown => Selectable(shown)),
     };
 
-    /// <summary>Una respuesta de Claupet: su cabeza y, al lado, el texto, los bloques de código y de dónde vino.</summary>
+    /// <summary>
+    /// Una respuesta de Claupet: su cabeza y, al lado, el texto, los bloques de código y de dónde vino. Mientras llega, si ya
+    /// es larga, se ve su final (LongText.LiveText): se vuelve a armar con cada pedazo.
+    /// </summary>
     Control Answer(string text, string? who, bool writing)
     {
+        if (writing) text = LongText.LiveText(text);
         var column = new StackPanel { Spacing = 10, Margin = new Thickness(12, 0, 0, 0) };
         foreach (var segment in Conversations.Split(text))
             column.Children.Add(segment.Code ? CodeBlock(segment) : Paragraph(segment.Text, links: !writing));
@@ -358,36 +404,41 @@ sealed class ChatPane : Grid
         Grid.SetColumn(copy, 1);
         header.Children.Add(copy);
 
-        var code = new SelectableTextBlock
+        // Un bloque largo se pliega a sus primeras líneas (LongText): solo se colorea y se dibuja lo que se ve.
+        Control Code(string shown)
         {
-            FontFamily = Ink.Mono,
-            FontSize = 13,
-            LineHeight = 21.5,
-            Foreground = _ink.Text,
-            TextWrapping = TextWrapping.NoWrap,
-            SelectionBrush = Translucent(_ink.Accent, 0.35),
-        };
-        var runs = new InlineCollection();
-        foreach (var (text, kind) in CodeColors.Tokens(segment.Text))
-            runs.Add(new Run(text)
+            var code = new SelectableTextBlock
             {
-                Foreground = kind switch
+                FontFamily = Ink.Mono,
+                FontSize = 13,
+                LineHeight = 21.5,
+                Foreground = _ink.Text,
+                TextWrapping = TextWrapping.NoWrap,
+                SelectionBrush = Translucent(_ink.Accent, 0.35),
+            };
+            var runs = new InlineCollection();
+            foreach (var (text, kind) in CodeColors.Tokens(shown))
+                runs.Add(new Run(text)
                 {
-                    CodeColors.Kind.Keyword => _ink.Keyword,
-                    CodeColors.Kind.String => _ink.String,
-                    CodeColors.Kind.Comment => _ink.Tertiary,
-                    _ => _ink.Text,
-                },
-            });
-        code.Inlines = runs;
-        // Una línea larga se recorre de lado; la rueda sigue moviendo la conversación.
-        var scroller = new ScrollViewer
-        {
-            Content = code,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Padding = new Thickness(16, 4, 16, 16),
-        };
+                    Foreground = kind switch
+                    {
+                        CodeColors.Kind.Keyword => _ink.Keyword,
+                        CodeColors.Kind.String => _ink.String,
+                        CodeColors.Kind.Comment => _ink.Tertiary,
+                        _ => _ink.Text,
+                    },
+                });
+            code.Inlines = runs;
+            // Una línea larga se recorre de lado; la rueda sigue moviendo la conversación.
+            return new ScrollViewer
+            {
+                Content = code,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            };
+        }
+        var scroller = LongText.Foldable(segment.Text, TerminalPane.CodePreviewLines, TerminalPane.CodePreviewChars, _ink.Accent, Code);
+        scroller.Margin = new Thickness(16, 4, 16, 16);
         var stack = new StackPanel();
         stack.Children.Add(header);
         stack.Children.Add(scroller);
@@ -535,6 +586,9 @@ sealed class ChatPane : Grid
         var text = _input.Text?.Trim() ?? "";
         if (text.Length == 0) return;
         _toEnd = true;
+        // Los textos pegados vuelven a su lugar (los de las marcas que siguen en la caja).
+        text = LongText.ExpandPastes(text, _pastes);
+        _pastes.Clear();
         Request?.Invoke(new ConsoleMessage { Type = ConsoleLink.ChatSend, Key = chat.Id, Value = text });
         _input.Text = "";
     }
