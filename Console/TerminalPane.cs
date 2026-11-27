@@ -51,6 +51,11 @@ sealed partial class TerminalPane : Grid
         public bool Reopening { get; set; }
         /// <summary>Las imágenes pegadas en la caja («[Imagen #1]»…): van con el pedido si su marca sigue en el texto.</summary>
         public List<AgentImage> Images { get; } = [];
+        /// <summary>
+        /// Los textos largos pegados en la caja: en ella solo queda su marca («[Texto #1 · 240 líneas]»), que se cambia por el
+        /// texto al enviar (TerminalPane.History.cs). Así la caja no carga con miles de líneas.
+        /// </summary>
+        public List<(string Marker, string Text)> Pastes { get; } = [];
         /// <summary>El archivo que se ve en la tarjeta flotante (y su línea), si hay uno abierto (TerminalPane.Viewer.cs).</summary>
         public (string Path, int? Line)? Preview { get; set; }
         /// <summary>Los archivos fijados en el panel de la derecha, con su ícono junto a Ramas, Cambios y Procesos.</summary>
@@ -131,6 +136,13 @@ sealed partial class TerminalPane : Grid
         _zoom.Child = _blocks;
         _scroll.Content = new Border { Child = _zoom, Padding = new Thickness(20, 12, 20, 16) };
         _input.AddHandler(KeyDownEvent, OnInputKey, RoutingStrategies.Tunnel);
+        // Pegar desde el menú de la caja pasa por lo mismo que Ctrl+V: un texto largo entra como «[Texto #1 · 240 líneas]».
+        _input.AddHandler(TextBox.PastingFromClipboardEvent, (_, e) =>
+        {
+            if (_current is not { Shell: null } tab) return;
+            e.Handled = true;
+            _ = PasteIntoComposerAsync(tab);
+        });
         // La caja de un agente se acomoda según lo escrito: una línea, o el texto arriba y los botones abajo. Y con «@», la
         // lista de especialistas.
         _input.TextChanged += (_, _) =>
@@ -322,8 +334,10 @@ sealed partial class TerminalPane : Grid
 
     static bool Waiting(AgentTranscript t) => t.Blocks.Any(b => b.Kind == AgentBlockKind.Permission && b.Answer is null);
 
+    /// <summary>El título de una pestaña: el principio de su primer pedido (solo el principio: el pedido puede ser un texto enorme y esto se pide en cada dibujo de la lista).</summary>
     static string Title(Tab tab) => tab.Shell is { } shell ? ShellTitle(shell) :
-        tab.Agent.Transcript.Blocks.FirstOrDefault(b => b.Kind == AgentBlockKind.Ask)?.Text.ReplaceLineEndings(" ") is { Length: > 0 } first
+        tab.Agent.Transcript.Blocks.FirstOrDefault(b => b.Kind == AgentBlockKind.Ask)?.Text is { Length: > 0 } ask
+            && (ask.Length > 200 ? ask[..200] : ask).ReplaceLineEndings(" ") is { Length: > 0 } first
             ? first : "Claude Code";
 
     static string Describe(Tab tab) => tab.Shell is { } shell ? ShellDescribe(shell) :
@@ -579,10 +593,15 @@ sealed partial class TerminalPane : Grid
         _input.Text = "";
         var images = tab.Images.Where((_, i) => text.Contains($"[Imagen #{i + 1}]", StringComparison.Ordinal)).ToList();
         tab.Images.Clear();
+        // Los textos largos pegados vuelven a su lugar (los de las marcas que siguen en la caja). Las menciones (@, #) se
+        // buscan en lo que escribió la persona, no dentro de lo pegado.
+        var typed = text;
+        text = ExpandPastes(text, tab.Pastes);
+        tab.Pastes.Clear();
         // Con el especialista elegido en la caja, la nota de trabajar como él (una vez por cambio); con @especialista, la de
         // pasarle la tarea (a su subagente, si la sesión lo tiene); con #sesión o lo que se le trajo con «Enviar a…», el
         // contexto de esas sesiones. La persona no ve las notas, sí lo que escribió.
-        tab.Agent.Send(text, images, SpecialistNotes(tab, text) + SessionContext(tab, text));
+        tab.Agent.Send(text, images, SpecialistNotes(tab, typed) + SessionContext(tab, typed));
         tab.AutoMessages = 0; // la persona habló: los mensajes de otras sesiones pueden volver a entrar solos
         TitleFirstAsk(tab, text);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
