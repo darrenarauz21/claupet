@@ -157,14 +157,22 @@ public sealed class ConsumptionTests : IDisposable
         double? cost = null, double? premium = null) =>
         new(agent, account, session, model, null, project, at, new UsageSums { Responses = 1, Output = output, Input = 10, Cost = cost, Premium = premium });
 
-    static List<UsageRecord> Sample() =>
-    [
-        R(UsageAgents.Claude, "principal", "claude-opus-5-5", Noon.AddHours(-1), 100, "a", "p1"),
-        R(UsageAgents.Claude, "personal", "claude-sonnet-5-5", Noon.AddHours(-1), 50, "b", "p2"),
-        R(Agents.Codex, "Codex", "gpt-5.5", Noon.AddDays(-3), 30, "c", "p1"),
-        R(Agents.Copilot, "Copilot", "gpt-4.1", Noon.AddHours(-2), 5, "d", premium: 2),
-        R(Agents.OpenCode, "OpenCode", "deepseek", Noon.AddHours(-3), 7, "e", cost: 0.5),
-    ];
+    /// <summary>
+    /// Lo de unas horas antes de at (por defecto, las 12 de hoy). La página cuenta hasta este momento: sus pruebas pasan
+    /// la hora real, o a la mañana lo de las 9 a las 11 todavía no habría pasado.
+    /// </summary>
+    static List<UsageRecord> Sample(DateTimeOffset? at = null)
+    {
+        var noon = at ?? Noon;
+        return
+        [
+            R(UsageAgents.Claude, "principal", "claude-opus-5-5", noon.AddHours(-1), 100, "a", "p1"),
+            R(UsageAgents.Claude, "personal", "claude-sonnet-5-5", noon.AddHours(-1), 50, "b", "p2"),
+            R(Agents.Codex, "Codex", "gpt-5.5", noon.AddDays(-3), 30, "c", "p1"),
+            R(Agents.Copilot, "Copilot", "gpt-4.1", noon.AddHours(-2), 5, "d", premium: 2),
+            R(Agents.OpenCode, "OpenCode", "deepseek", noon.AddHours(-3), 7, "e", cost: 0.5),
+        ];
+    }
 
     [Fact]
     public void ElInformeSumaElPeriodoConSusFiltros()
@@ -217,7 +225,7 @@ public sealed class ConsumptionTests : IDisposable
             Headless.Frame(window);
             Assert.Equal(0, pane.Report!.Totals.Responses);
 
-            pane.Show(Sample(), [new UsageLimit(Agents.Codex, "Codex", "Semana", 41, DateTimeOffset.Now.AddDays(2))]);
+            pane.Show(Sample(DateTimeOffset.Now), [new UsageLimit(Agents.Codex, "Codex", "Semana", 41, DateTimeOffset.Now.AddDays(2))]);
             Headless.Frame(window);
             Assert.Equal(192, pane.Report!.Totals.Output); // 7 días, lo de siempre al abrir
 
