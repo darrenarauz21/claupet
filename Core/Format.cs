@@ -84,10 +84,14 @@ static class Format
         return string.Join(" · ", parts);
     }
 
+    /// <summary>
+    /// Lo de hoy en el pie: las respuestas y los tokens de salida (lo que escribieron los modelos). Dice «de salida»
+    /// porque el Historial cuenta otra cosa (entrada, escritura en caché y salida). «resp.» para que quepa en el pie.
+    /// </summary>
     public static string Local(LocalTotals? t) => t switch
     {
         null => "",
         { Responses: 0 } => L.T("Hoy: sin actividad"),
-        _ => L.T("Hoy: {0} respuestas · {1} tokens", t.Responses, Tokens(t.Output)),
+        _ => L.T("Hoy: {0} resp. · {1} tokens de salida", t.Responses, Tokens(t.Output)),
     };
 }

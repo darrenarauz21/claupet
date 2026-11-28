@@ -51,6 +51,11 @@ sealed partial class TerminalPane : Grid
         public bool Reopening { get; set; }
         /// <summary>Las imágenes pegadas en la caja («[Imagen #1]»…): van con el pedido si su marca sigue en el texto.</summary>
         public List<AgentImage> Images { get; } = [];
+        /// <summary>
+        /// Los textos largos pegados en la caja: en ella solo queda su marca («[Texto #1 · 240 líneas]»), que se cambia por el
+        /// texto al enviar (TerminalPane.History.cs). Así la caja no carga con miles de líneas.
+        /// </summary>
+        public List<(string Marker, string Text)> Pastes { get; } = [];
         /// <summary>El archivo que se ve en la tarjeta flotante (y su línea), si hay uno abierto (TerminalPane.Viewer.cs).</summary>
         public (string Path, int? Line)? Preview { get; set; }
         /// <summary>Los archivos fijados en el panel de la derecha, con su ícono junto a Ramas, Cambios y Procesos.</summary>
@@ -70,6 +75,17 @@ sealed partial class TerminalPane : Grid
         public Queue<SessionMessage> Waiting { get; } = new();
         /// <summary>Cuántos mensajes de otras sesiones se le mandaron solos desde el último pedido de la persona.</summary>
         public int AutoMessages { get; set; }
+        /// <summary>
+        /// El especialista con que trabaja esta misma sesión, elegido en la caja (TerminalPane.Specialists.cs); null, ninguno.
+        /// No es el de una pestaña abierta como especialista (ese va en Agent.Options.Specialist, desde que abre).
+        /// </summary>
+        public Specialist? Role { get; set; }
+        /// <summary>La nota de que cambió el especialista, para el próximo pedido (se manda una vez); null, nada pendiente.</summary>
+        public string? RoleNote { get; set; }
+        /// <summary>El modelo y el esfuerzo de antes de elegir un especialista que trae los suyos: vuelven al quitarlo.</summary>
+        public (string? Model, string? Effort)? RoleRestore { get; set; }
+        /// <summary>Ya se le dijo que los especialistas son también sus subagentes (con el primer pedido).</summary>
+        public bool SubagentsTold { get; set; }
     }
 
     /// <summary>
@@ -85,10 +101,28 @@ sealed partial class TerminalPane : Grid
     int _shownFrom;
     Control? _earlier;
     /// <summary>Lo que muestra la lista de cada pestaña, para rehacerla solo cuando cambia (no con cada pedazo de texto).</summary>
-    readonly Dictionary<Tab, (bool Busy, bool Waiting, bool Running, string Title)> _tabState = [];
+    readonly Dictionary<Tab, (bool Busy, bool Waiting, bool Running, bool Background, string Title)> _tabState = [];
     readonly Dictionary<AgentBlock, Border> _views = [];
     /// <summary>Lo que se va escribiendo de una respuesta: se cambia solo el texto, sin rehacer el bloque.</summary>
     readonly Dictionary<AgentBlock, SelectableTextBlock> _live = [];
+    /// <summary>Las respuestas que recibieron pedazos desde el último repintado (FlushLive).</summary>
+    readonly HashSet<AgentBlock> _livePending = [];
+    IDisposable? _liveTimer;
+    /// <summary>Cada cuánto se repinta lo que va llegando (unas 10 veces por segundo se lee igual de fluido).</summary>
+    static readonly TimeSpan LiveEvery = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>
+    /// Repinta las respuestas que siguen llegando, con lo que tienen ahora: enteras si son cortas o, si no, su final
+    /// (LongText.LiveText). Acomodar decenas de miles de caracteres con cada pedazo trababa.
+    /// </summary>
+    void FlushLive()
+    {
+        _liveTimer = null;
+        foreach (var block in _livePending)
+            if (block.Open && _live.TryGetValue(block, out var text)) text.Text = LongText.LiveText(block.Text);
+        _livePending.Clear();
+    }
+
     readonly StackPanel _blocks = new() { Spacing = 6 };
     /// <summary>El tamaño elegido en Ajustes › Terminal agranda o achica los bloques enteros, como un zoom.</summary>
     readonly LayoutTransformControl _zoom = new();
@@ -120,6 +154,13 @@ sealed partial class TerminalPane : Grid
         _zoom.Child = _blocks;
         _scroll.Content = new Border { Child = _zoom, Padding = new Thickness(20, 12, 20, 16) };
         _input.AddHandler(KeyDownEvent, OnInputKey, RoutingStrategies.Tunnel);
+        // Pegar desde el menú de la caja pasa por lo mismo que Ctrl+V: un texto largo entra como «[Texto #1 · 240 líneas]».
+        _input.AddHandler(TextBox.PastingFromClipboardEvent, (_, e) =>
+        {
+            if (_current is not { Shell: null } tab) return;
+            e.Handled = true;
+            _ = PasteIntoComposerAsync(tab);
+        });
         // La caja de un agente se acomoda según lo escrito: una línea, o el texto arriba y los botones abajo. Y con «@», la
         // lista de especialistas.
         _input.TextChanged += (_, _) =>
@@ -311,8 +352,10 @@ sealed partial class TerminalPane : Grid
 
     static bool Waiting(AgentTranscript t) => t.Blocks.Any(b => b.Kind == AgentBlockKind.Permission && b.Answer is null);
 
+    /// <summary>El título de una pestaña: el principio de su primer pedido (solo el principio: el pedido puede ser un texto enorme y esto se pide en cada dibujo de la lista).</summary>
     static string Title(Tab tab) => tab.Shell is { } shell ? ShellTitle(shell) :
-        tab.Agent.Transcript.Blocks.FirstOrDefault(b => b.Kind == AgentBlockKind.Ask)?.Text.ReplaceLineEndings(" ") is { Length: > 0 } first
+        tab.Agent.Transcript.Blocks.FirstOrDefault(b => b.Kind == AgentBlockKind.Ask)?.Text is { Length: > 0 } ask
+            && (ask.Length > 200 ? ask[..200] : ask).ReplaceLineEndings(" ") is { Length: > 0 } first
             ? first : "Claude Code";
 
     static string Describe(Tab tab) => tab.Shell is { } shell ? ShellDescribe(shell) :
@@ -497,7 +540,7 @@ sealed partial class TerminalPane : Grid
     bool ListStateChanged(Tab tab)
     {
         var t = tab.Agent.Transcript;
-        var state = (t.Busy, Waiting(t), tab.Agent.Running, Title(tab) + " · " + Describe(tab));
+        var state = (t.Busy, Waiting(t), tab.Agent.Running, t.BackgroundTasks > 0, Title(tab) + " · " + Describe(tab));
         if (_tabState.TryGetValue(tab, out var before) && before == state) return false;
         _tabState[tab] = state;
         return true;
@@ -568,9 +611,15 @@ sealed partial class TerminalPane : Grid
         _input.Text = "";
         var images = tab.Images.Where((_, i) => text.Contains($"[Imagen #{i + 1}]", StringComparison.Ordinal)).ToList();
         tab.Images.Clear();
-        // Con @especialista, el agente de la pestaña recibe además la nota de delegarle la tarea; con #sesión o lo que se le
-        // trajo con «Enviar a…», el contexto de esas sesiones (la persona no ve las notas, sí lo que escribió).
-        tab.Agent.Send(text, images, MentionDirective(text) + SessionContext(tab, text));
+        // Los textos largos pegados vuelven a su lugar (los de las marcas que siguen en la caja). Las menciones (@, #) se
+        // buscan en lo que escribió la persona, no dentro de lo pegado.
+        var typed = text;
+        text = LongText.ExpandPastes(text, tab.Pastes);
+        tab.Pastes.Clear();
+        // Con el especialista elegido en la caja, la nota de trabajar como él (una vez por cambio); con @especialista, la de
+        // pasarle la tarea (a su subagente, si la sesión lo tiene); con #sesión o lo que se le trajo con «Enviar a…», el
+        // contexto de esas sesiones. La persona no ve las notas, sí lo que escribió.
+        tab.Agent.Send(text, images, SpecialistNotes(tab, typed) + SessionContext(tab, typed));
         tab.AutoMessages = 0; // la persona habló: los mensajes de otras sesiones pueden volver a entrar solos
         TitleFirstAsk(tab, text);
         Dispatcher.UIThread.Post(_scroll.ScrollToEnd, DispatcherPriority.Background);
@@ -579,6 +628,8 @@ sealed partial class TerminalPane : Grid
     /// <summary>Llegaron eventos de una sesión: se cambian solo sus bloques (y la lista, si cambió su estado).</summary>
     /// <summary>La etiqueta de permisos de la pestaña que se ve.</summary>
     TextBlock? _modeText;
+    /// <summary>La etiqueta del modelo y el esfuerzo de la pestaña que se ve (cambia también al elegir un especialista).</summary>
+    TextBlock? _modelText;
 
     void OnChanged(Tab tab, IReadOnlyList<AgentBlock> changed)
     {
@@ -603,9 +654,11 @@ sealed partial class TerminalPane : Grid
         if (changed.Count > 0 && _blocks.Children.Count == 1 && _views.Count == 0 && _earlier is null) _blocks.Children.Clear();
         foreach (var block in changed)
         {
-            if (_live.TryGetValue(block, out var text) && block.Open)
+            if (_live.ContainsKey(block) && block.Open)
             {
-                text.Text = block.Text;
+                // Lo que va llegando se pinta junto, cada LiveEvery: antes se volvía a acomodar el texto entero con cada pedazo.
+                _livePending.Add(block);
+                _liveTimer ??= DispatcherTimer.RunOnce(FlushLive, LiveEvery);
                 continue;
             }
             var old = _views.GetValueOrDefault(block);

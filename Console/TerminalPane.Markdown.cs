@@ -144,18 +144,19 @@ sealed partial class TerminalPane
         Child = MdBlocks(quote, folder, depth),
     };
 
-    Control MdCode(string code, bool dim)
+    /// <summary>Un bloque de código indentado o de un tipo sin resaltar: plegado si es largo, como Code.</summary>
+    Control MdCode(string code, bool dim) => new Border
     {
-        var text = Selectable(code.TrimEnd('\n', '\r'), Mono, 12.5, dim ? _ink.Tertiary : _ink.Text);
-        text.TextWrapping = TextWrapping.NoWrap;
-        return new Border
+        Background = _ink.Window,
+        CornerRadius = new CornerRadius(8),
+        Padding = new Thickness(12, 9),
+        Child = LongText.Foldable(code.TrimEnd('\n', '\r'), CodePreviewLines, CodePreviewChars, _ink.Accent, shown =>
         {
-            Background = _ink.Window,
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12, 9),
-            Child = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = text },
-        };
-    }
+            var text = Selectable(shown, Mono, 12.5, dim ? _ink.Tertiary : _ink.Text);
+            text.TextWrapping = TextWrapping.NoWrap;
+            return new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = text };
+        }),
+    };
 
     Control MdTable(Table table, string folder)
     {

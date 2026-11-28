@@ -238,7 +238,8 @@ static class Agents
 /// <summary>
 /// Codex CLI ($CODEX_HOME o ~/.codex): una sesión por archivo, sessions/AAAA/MM/DD/rollout-*.jsonl. Los límites van en
 /// los eventos «event_msg» con payload.type «token_count»: payload.rate_limits.primary y .secondary, con used_percent,
-/// window_minutes (299: 5 h; 10079: la semana) y resets_in_seconds, que se cuentan desde el timestamp del evento. Del
+/// window_minutes (299: 5 h; 10079: la semana) y el reinicio: resets_at (segundos desde 1970, en las versiones nuevas) o
+/// resets_in_seconds (antes), que se cuentan desde el timestamp del evento. Del
 /// primer evento («session_meta») y del contexto del turno («turn_context») se toman la carpeta y el modelo si están. Los
 /// comprimidos (.jsonl.zst) no se leen: se cuentan aparte.
 /// </summary>
@@ -296,7 +297,9 @@ static class CodexReader
     {
         if (Agents.Number(window, "used_percent") is not { } used) return null;
         var minutes = (int)(Agents.Number(window, "window_minutes") ?? 0);
-        DateTimeOffset? resets = Agents.Number(window, "resets_in_seconds") is { } seconds ? at.AddSeconds(seconds) : null;
+        // Las versiones nuevas escriben la hora del reinicio (resets_at, en segundos desde 1970); las de antes, cuánto falta.
+        DateTimeOffset? resets = Agents.Number(window, "resets_at") is { } epoch && epoch > 0 ? DateTimeOffset.FromUnixTimeSeconds((long)epoch)
+            : Agents.Number(window, "resets_in_seconds") is { } seconds ? at.AddSeconds(seconds) : null;
         if (resets is { } r && r <= now) (used, resets) = (0, null);
         return new AgentLimit(WindowLabel(minutes), Math.Clamp(used, 0, 100), resets, minutes);
     }

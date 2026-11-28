@@ -53,6 +53,9 @@ static class ConsoleLink
     /// <summary>La conversación de la isla y la nubecita, que la Console muestra arriba de las guardadas.</summary>
     public const string QuickChat = "rapida";
 
+    /// <summary>Ajustes › Consumo, para Show y --seccion: es de la Console (no una sección de la bandeja).</summary>
+    public const string Usage = "consumo";
+
     /// <summary>Claupet.exe --console: Claupet Console, en su propio proceso.</summary>
     public const string Flag = "--console";
 

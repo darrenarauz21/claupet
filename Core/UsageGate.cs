@@ -50,6 +50,9 @@ static class UsageGate
         return Cached(entry) ?? (paused ? new UsageSnapshot { WaitingUntil = entry.PausedUntil } : null);
     }
 
+    /// <summary>Los últimos datos buenos de esa cuenta, sin preguntar al servicio (Ajustes › Consumo); null si nunca los hubo.</summary>
+    public static UsageSnapshot? Last(string configDir) => Read(configDir) is { } entry ? Cached(entry) : null;
+
     /// <summary>Guarda la respuesta buena; asked es cuando salió la consulta.</summary>
     public static void Success(string configDir, string body, DateTimeOffset asked) =>
         Update(configDir, e =>

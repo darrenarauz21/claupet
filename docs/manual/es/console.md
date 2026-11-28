@@ -181,8 +181,10 @@ la hoja siguiente.
 > [!NOTE]
 > **Experimental.** Esta vista todavía no está terminada: puede cambiar o fallar.
 
-Un especialista es un agente con nombre, rol, instrucciones y herramientas, listo para abrir en la Terminal. Por
-ejemplo, un «Revisor de PRs» con Claude Code, sus reglas para revisar y el servidor de GitHub.
+Un especialista es un agente con nombre, rol, instrucciones y herramientas. Por ejemplo, un «Revisor de PRs» con
+Claude Code, sus reglas para revisar y el servidor de GitHub. Se usa dentro de cualquier pestaña de la Terminal
+(eligiéndolo en la caja o con `@`, ver [Terminal](terminal.md#especialistas-y-otras-sesiones)) o se abre aparte, en
+una pestaña propia.
 
 - Con **+** se crea uno. El nombre y el rol se escriben en el mismo lugar; tocando el ícono grande se cambian el
   color y el ícono. Todo se guarda solo.

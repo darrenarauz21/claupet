@@ -26,7 +26,34 @@ sealed class AgentBlock
     /// <summary>El id del paso (tool_use_id) o de la parte del mensaje («msg_…:2»).</summary>
     public string Id { get; init; } = "";
     /// <summary>El pedido, la respuesta o el aviso; en un paso, sobre qué trabaja (el archivo, el comando); en un permiso, qué pide.</summary>
-    public string Text { get; set; } = "";
+    public string Text
+    {
+        get
+        {
+            if (_growing is { } growing && _text.Length != growing.Length) _text = growing.ToString();
+            return _text;
+        }
+        set
+        {
+            _text = value;
+            _growing = null;
+        }
+    }
+
+    string _text = "";
+    /// <summary>Lo que va llegando (Append): el texto se arma recién cuando alguien lo lee.</summary>
+    System.Text.StringBuilder? _growing;
+
+    /// <summary>
+    /// Suma un pedazo de la respuesta (o de lo que piensa) sin copiar todo lo anterior: una respuesta larga llega en miles
+    /// de pedazos y con «Text += pedazo» cada uno copiaba el texto entero.
+    /// </summary>
+    public void Append(string piece)
+    {
+        if (piece.Length == 0) return;
+        _growing ??= new System.Text.StringBuilder(_text, Math.Max(256, _text.Length * 2));
+        _growing.Append(piece);
+    }
     public string? Tool { get; init; }
     public StepState State { get; set; }
     /// <summary>Todavía llega texto (respuesta) o sigue pensando.</summary>
@@ -151,12 +178,19 @@ sealed partial class AgentTranscript
                 System(r, changed);
                 break;
             case "stream_event" when r.TryGetProperty("event", out var e):
+                if (Json.Str(e, "type") == "message_start") Busy = true; // el modelo empezó a responder (ver abajo)
                 Stream(e, changed);
                 break;
             case "assistant" when r.TryGetProperty("message", out var m):
                 // El modelo que respondió de verdad (en modo plan, Claude Code puede usar otro que el de init). Los mensajes
                 // locales, como el de /exit, vienen con «<synthetic>»: no los respondió ningún modelo.
-                if (Json.Str(m, "model") is { } used && !used.StartsWith('<')) Model = used;
+                if (Json.Str(m, "model") is { } used && !used.StartsWith('<'))
+                {
+                    Model = used;
+                    // Un turno que Claude Code empezó solo (al terminar una tarea en segundo plano, por ejemplo) no pasa por
+                    // Ask: sin esto, trabajaba con la luz de la pestaña apagada. El resultado del turno la vuelve a apagar.
+                    Busy = true;
+                }
                 Assistant(m, changed);
                 break;
             // Los «isReplay» son ecos de lo que hizo el anfitrión (cambiar el modelo): no son pedidos de la persona.
@@ -241,7 +275,7 @@ sealed partial class AgentTranscript
                 && Json.Str(delta, "type") == "text_delta" && Json.Str(delta, "text") is { } piece:
                 if (_blocks.LastOrDefault(b => b.Kind == AgentBlockKind.Say && b.Open) is { } say)
                 {
-                    say.Text += piece;
+                    say.Append(piece);
                     Touch(say, changed);
                 }
                 break;

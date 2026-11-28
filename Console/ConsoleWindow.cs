@@ -102,7 +102,9 @@ sealed partial class ConsoleWindow : Window
         _openSession = SessionTarget.Parse(section);
         if (_openSession is not null) section = null;
         _mode = ConsoleApp.Files.Count > 0 ? Mode.Editor : _openSession is not null ? Mode.Terminal : section is null ? Mode.Chat : Mode.Settings;
-        _section = section ?? "general";
+        // Ajustes › Consumo es de la Console, no una sección de la bandeja («Ver detalle» en Uso).
+        _usageSettings = section == ConsoleLink.Usage;
+        _section = section is null || _usageSettings ? "general" : section;
         Title = "Claupet Console";
         Icon = Ui.LogoIcon();
         Width = 1080;
@@ -392,8 +394,16 @@ sealed partial class ConsoleWindow : Window
                     SetMode(Mode.Terminal);
                     _terminal.OpenSession(target);
                 }
+                else if (message.Key == ConsoleLink.Usage)
+                {
+                    _mode = Mode.Settings;
+                    _terminalSettings = false;
+                    _usageSettings = true;
+                    Render(rebuild: true);
+                }
                 else if (message.Key is { Length: > 0 } section && _pages.Any(p => p.Id == section))
                 {
+                    _terminalSettings = _usageSettings = false;
                     var moved = section != _section;
                     _mode = Mode.Settings;
                     _section = section;
@@ -531,7 +541,7 @@ sealed partial class ConsoleWindow : Window
         var shown = _pages.First(p => p.Id == _section);
         _sectionParent = shown.Parent;
         var sectionsKey = (_ink, string.Join("", _pages.Where(p => p.Parent is null).Select(p => p.Id + "" + p.Title)
-            .Prepend($"{L.Language}|{_terminalSettings}|{shown.Parent ?? _section}")));
+            .Prepend($"{L.Language}|{_terminalSettings}|{_usageSettings}|{shown.Parent ?? _section}")));
         if (_sectionsShown != sectionsKey) RenderSections(shown, sectionsKey);
         if (_terminalSettings)
         {
@@ -539,6 +549,13 @@ sealed partial class ConsoleWindow : Window
             if (rebuild || _terminalPage is null)
                 _terminalPage = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = _terminal.SettingsPage() };
             if (_main.Child != _terminalPage) _main.Child = _terminalPage;
+            return;
+        }
+        if (_usageSettings)
+        {
+            if (rebuild || _usagePage is null)
+                _usagePage = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = new ConsumptionPane(_ink) };
+            if (_main.Child != _usagePage) _main.Child = _usagePage;
             return;
         }
         _view.Show(shown, _ink, rebuild, _pages.FirstOrDefault(p => p.Id == shown.Parent)?.Title);
@@ -552,7 +569,7 @@ sealed partial class ConsoleWindow : Window
         foreach (var page in _pages.Where(p => p.Parent is null))
         {
             var id = page.Id;
-            var current = !_terminalSettings && id == (shown.Parent ?? _section);
+            var current = !_terminalSettings && !_usageSettings && id == (shown.Parent ?? _section);
             var item = Ui.Press(Ui.Text(page.Title, 14.5, current ? _ink.Text : _ink.Secondary), () => Select(id),
                 current ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name: page.Title);
             item.MinHeight = 38;
@@ -569,9 +586,17 @@ sealed partial class ConsoleWindow : Window
         terminal.Padding = new Thickness(12, 0);
         terminal.CornerRadius = new CornerRadius(12);
         if (_terminalSettings) terminal.Background = _ink.Pill;
-        // Sistema va siempre al final: la Terminal, justo antes.
+        // Consumo también es de la Console (lee los archivos de los agentes desde aquí).
+        var usage = Ui.Press(Ui.Text(L.T("Consumo"), 14.5, _usageSettings ? _ink.Text : _ink.Secondary), SelectUsage,
+            _usageSettings ? null : (b, on) => b.Background = on ? _ink.Pill : Brushes.Transparent, name: L.T("Consumo"));
+        usage.MinHeight = 38;
+        usage.Padding = new Thickness(12, 0);
+        usage.CornerRadius = new CornerRadius(12);
+        if (_usageSettings) usage.Background = _ink.Pill;
+        // Sistema va siempre al final: Consumo y la Terminal, justo antes.
         var system = _pages.Where(p => p.Parent is null).ToList().FindIndex(p => p.Id == SystemSection);
         _sections.Children.Insert(system < 0 ? _sections.Children.Count : system, terminal);
+        _sections.Children.Insert(system < 0 ? _sections.Children.Count - 1 : system, usage);
     }
 
     /// <summary>La sección que cierra la lista de Ajustes (SettingsPages.MachinePage).</summary>
@@ -611,8 +636,8 @@ sealed partial class ConsoleWindow : Window
 
     void Select(string id)
     {
-        if ((id == _section && !_terminalSettings) || _pages.All(p => p.Id != id)) return;
-        _terminalSettings = false;
+        if ((id == _section && !_terminalSettings && !_usageSettings) || _pages.All(p => p.Id != id)) return;
+        _terminalSettings = _usageSettings = false;
         _section = id;
         Render(rebuild: true);
         _scroll.Offset = default;
@@ -623,12 +648,25 @@ sealed partial class ConsoleWindow : Window
     {
         if (_terminalSettings) return;
         _terminalSettings = true;
+        _usageSettings = false;
+        Render(rebuild: true);
+    }
+
+    /// <summary>Ajustes › Consumo: el de todos los agentes, por modelo (ConsumptionPane).</summary>
+    internal void SelectUsage()
+    {
+        if (_usageSettings) return;
+        _usageSettings = true;
+        _terminalSettings = false;
         Render(rebuild: true);
     }
 
     /// <summary>Se ve Ajustes › Terminal (y no una de las secciones de la bandeja), y su página.</summary>
     bool _terminalSettings;
     ScrollViewer? _terminalPage;
+    /// <summary>Se ve Ajustes › Consumo, y su página.</summary>
+    bool _usageSettings;
+    ScrollViewer? _usagePage;
 
     void SetMode(Mode mode)
     {

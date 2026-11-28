@@ -17,7 +17,7 @@ namespace Claupet;
 static class OpenCodeReader
 {
     /// <summary>Las tablas de esa versión y qué columnas tienen.</summary>
-    sealed record Layout(string Sessions, string Messages, bool TypeColumn, bool Parent, bool Folder, bool Model);
+    internal sealed record Layout(string Sessions, string Messages, bool TypeColumn, bool Parent, bool Folder, bool Model);
 
     /// <summary>La base de ese agente: $OPENCODE_DB (relativa a su carpeta) u opencode.db.</summary>
     internal static string DbPath(AgentAccount agent) =>
@@ -57,7 +57,7 @@ static class OpenCodeReader
     }
 
     /// <summary>Las tablas que hay: las de OpenCode 2 y, si no, las de antes. null si no es ninguna.</summary>
-    static Layout? Find(SqliteConnection db)
+    internal static Layout? Find(SqliteConnection db)
     {
         foreach (var (sessions, messages) in new[] { ("session_v2", "session_message"), ("session", "message") })
         {

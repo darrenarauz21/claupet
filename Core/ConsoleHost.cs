@@ -74,6 +74,7 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
         _server.Connected += () => app.Post(() =>
         {
             _chatId = null; // la Console dice cuál abre
+            _sentTurns = null; // una Console nueva no tiene ninguna conversación
             PushSettings();
         });
         _server.Received += message => app.Post(() => OnMessage(message));
@@ -102,6 +103,7 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
                 break;
             case ConsoleLink.ChatOpen:
                 _chatId = message.Key is { Length: > 0 } open && Chat(open) is not null ? open : ConsoleLink.QuickChat;
+                _sentTurns = null; // al abrirla, la Console la vuelve a pintar: va entera
                 PushChats();
                 PushChat(_chatId);
                 break;
@@ -110,6 +112,7 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
                 var created = _conversations.Create(message.Key);
                 _chats[created.Id] = SavedTarget(created);
                 _chatId = created.Id;
+                _sentTurns = null;
                 PushChats();
                 PushChat(created.Id);
                 break;
@@ -264,17 +267,26 @@ sealed class ConsoleHost(IConsoleApp app) : IDisposable, IConsoleSurface
         _server.Send(new ConsoleMessage { Type = ConsoleLink.Chats, Chats = chats });
     }
 
-    /// <summary>La conversación abierta en la Console, con lo que va llegando; solo si es la que muestra.</summary>
+    /// <summary>La conversación que la Console ya tiene entera y cuántos turnos tenía (null: hay que mandársela entera).</summary>
+    (string Id, int Turns)? _sentTurns;
+
+    /// <summary>
+    /// La conversación abierta en la Console, con lo que va llegando; solo si es la que muestra. Si desde la última vez solo
+    /// cambió lo que llega (los mismos turnos), va sin los turnos (ChatView.StreamOnly).
+    /// </summary>
     void PushChat(string? id)
     {
         if (id is null || id != _chatId || !_server.IsConnected || Chat(id) is not { } chat) return;
         var title = chat.Log is SavedChat { Conversation: var c } ? c.Title.Length > 0 ? c.Title : L.T("Conversación nueva") : L.T("Conversación rápida");
+        var turns = chat.Log.Turns;
+        var streamOnly = chat.Streaming is not null && _sentTurns == (id, turns.Count);
         _server.Send(new ConsoleMessage
         {
             Type = ConsoleLink.Chat,
-            Chat = new ChatView(id, title, chat.Log.Turns.ToList(), chat.Streaming, chat.Asking, app.ChatModel, app.ReadAloud,
-                id == ConsoleLink.QuickChat ? app.QuickAbout : null),
+            Chat = new ChatView(id, title, streamOnly ? [] : turns.ToList(), chat.Streaming, chat.Asking, app.ChatModel, app.ReadAloud,
+                id == ConsoleLink.QuickChat ? app.QuickAbout : null) { StreamOnly = streamOnly },
         });
+        if (!streamOnly) _sentTurns = (id, turns.Count);
     }
 
     /// <summary>

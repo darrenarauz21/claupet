@@ -204,17 +204,28 @@ sealed partial class TerminalPane
     internal void ReplaceEnded(Tab ended, Tab? opened, string draft)
     {
         opened?.Images.AddRange(ended.Images);
+        // Sigue con el mismo especialista: una conversación retomada ya tiene su nota (salvo que no haya llegado a salir);
+        // una nueva la recibe con el próximo pedido.
+        if (opened is not null && opened != ended && ended.Role is { } role && opened.Agent.Options.Specialist is null)
+        {
+            opened.Role = role;
+            opened.RoleRestore = ended.RoleRestore;
+            opened.RoleNote = ended.RoleNote ?? (opened.Agent.Options.Resume is null ? SpecialistTools.RoleNote(role, null) : null);
+            if (opened.Agent.Options.Kind == AgentKinds.Claude && role is { Agent: AgentKinds.Claude, Model: { } model }) opened.Agent.SetModel(model);
+        }
         // Queda en el lugar de la que reemplaza, no al final de la lista.
         if (opened is not null && opened != ended && _tabs.Remove(opened)) _tabs.Insert(_tabs.IndexOf(ended), opened);
         CloseTab(ended);
+        if (opened is not null && opened.Role is not null && opened == _current) Select(opened);
         _input.Text = draft;
         _input.CaretIndex = draft.Length;
     }
 
     /// <summary>
-    /// Ctrl+V en la caja de un agente: una imagen copiada, o la ruta o la URL de una imagen, se suma al pedido como
-    /// «[Imagen #N]» (como en Rider o en otras consolas), y los demás archivos copiados entran con su ruta; cualquier otro
-    /// texto se pega como siempre.
+    /// Pegar en la caja de un agente (Ctrl+V o el menú de la caja): una imagen copiada, o la ruta o la URL de una imagen, se
+    /// suma al pedido como «[Imagen #N]» (como en Rider o en otras consolas), y los demás archivos copiados entran con su
+    /// ruta. Un texto largo entra como «[Texto #N · 240 líneas]» y se manda entero al enviar (la caja no carga con él); el
+    /// corto se pega como siempre, donde está el cursor y en lugar de lo elegido.
     /// </summary>
     async Task PasteIntoComposerAsync(Tab tab)
     {
@@ -230,15 +241,24 @@ sealed partial class TerminalPane
         }
         else if (PastedImages.Reference(text, tab.Agent.Options.Folder) is { } reference && await PastedImages.LoadAsync(reference) is { } image)
             added = Attach(tab, image);
-        if (added is null)
-        {
-            _input.Paste();
-            return;
-        }
-        var at = Math.Clamp(_input.CaretIndex, 0, _input.Text?.Length ?? 0);
-        _input.Text = (_input.Text ?? "").Insert(at, added);
-        _input.CaretIndex = at + added.Length;
+        else added = LongText.IsLongPaste(text) ? AttachText(tab, text) : text;
+        if (added is null) return;
+        // Si mientras se leía el portapapeles se cambió de pestaña, la marca (y su texto) ya no van a esta caja.
+        if (_current != tab) return;
+        var current = _input.Text ?? "";
+        var start = Math.Clamp(Math.Min(_input.SelectionStart, _input.SelectionEnd), 0, current.Length);
+        var end = Math.Clamp(Math.Max(_input.SelectionStart, _input.SelectionEnd), start, current.Length);
+        _input.Text = current[..start] + added + current[end..];
+        _input.CaretIndex = start + added.Length;
         _input.Focus();
+    }
+
+    /// <summary>El texto largo va con el pedido; devuelve su marca para la caja («[Texto #1 · 240 líneas]», LongText).</summary>
+    static string AttachText(Tab tab, string text)
+    {
+        var marker = LongText.PasteMarker(tab.Pastes.Count + 1, text);
+        tab.Pastes.Add((marker, text));
+        return marker + " ";
     }
 
     /// <summary>La imagen va con el pedido; devuelve su marca para la caja.</summary>

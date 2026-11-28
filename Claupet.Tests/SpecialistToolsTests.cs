@@ -168,6 +168,89 @@ public sealed class SpecialistToolsTests : IDisposable
     }
 
     [Fact]
+    public void LosEspecialistasDeClaudeCodeVanComoSubagentesEnUnArchivo()
+    {
+        Specialists.Save(new Specialist { Id = "cccccccc3333", Name = "Plan", Role = "Tapa el de Claude Code" });
+        Specialists.Save(new Specialist { Id = "dddddddd4444", Name = "Buscador", Role = "Busca", Instructions = "Solo lee.", Effort = "low" });
+        Specialists.Save(new Specialist { Id = "eeeeeeee5555", Name = "buscador", Role = "Otro con el mismo nombre" });
+
+        var subagents = Specialists.Subagents(Specialists.All());
+        // Solo los de Claude Code (Tester es de Codex), sin tapar los que trae Claude Code ni repetir nombres.
+        Assert.Equal(["buscador", "revisor-de-prs"], subagents.Select(s => s.Name).Order());
+        Specialists.Delete(Specialists.Mine().Single(s => s.Id == "eeeeeeee5555"));
+        subagents = Specialists.Subagents(Specialists.All());
+
+        var json = Specialists.SubagentsJson(subagents);
+        Assert.Equal("Cuando haya que revisar un diff", (string?)json["revisor-de-prs"]!["description"]);
+        Assert.Equal("sonnet", (string?)json["revisor-de-prs"]!["model"]);
+        Assert.Equal("inherit", (string?)json["buscador"]!["model"]); // sin modelo, el de la sesión
+        Assert.Equal("low", (string?)json["buscador"]!["effort"]);
+        Assert.Contains("Solo lee.", (string?)json["buscador"]!["prompt"]);
+
+        // En un archivo (el JSON no pasa por cmd.exe); el mismo contenido, el mismo archivo.
+        var file = Specialists.SubagentsFile(subagents)!;
+        Assert.StartsWith(Path.Combine(Specialists.Folder, "sesiones"), file);
+        Assert.Equal(file, Specialists.SubagentsFile(subagents));
+        Assert.Equal("Busca", (string?)JsonNode.Parse(File.ReadAllText(file))!["buscador"]!["description"]);
+        Assert.Null(Specialists.SubagentsFile([]));
+    }
+
+    [Fact]
+    public void ConSubagenteElArrobaTrabajaEnLaSesionYSinElSeDelegaAparte()
+    {
+        var all = Specialists.All();
+        var text = "@revisor revisa y @tester prueba";
+        var subagents = Specialists.Subagents(all);
+        var note = SpecialistTools.Directive(SpecialistTools.Mentions(text, all), subagents)!;
+        // El revisor es subagente de la sesión: va a él. El tester (Codex) no lo es: se delega aparte.
+        Assert.Contains("your subagent \"revisor-de-prs\"", note);
+        Assert.Contains("«Tester» (@tester, id bbbbbbbb2222)", note);
+        Assert.Contains("pedir_a_especialista", note);
+        Assert.Equal(text, Workspace.Strip(text + note));
+
+        var only = SpecialistTools.Directive(SpecialistTools.Mentions("@revisor mira", all), subagents)!;
+        Assert.DoesNotContain("pedir_a_especialista", only);
+        Assert.Contains("pedir_a_especialista", SpecialistTools.SubagentsNote(subagents)); // prefiera sus subagentes a delegar aparte
+        Assert.Null(SpecialistTools.SubagentsNote([]));
+    }
+
+    [Fact]
+    public void ElEspecialistaDeLaPestanaVaUnaVezPorCambio() => Headless.Run(() =>
+    {
+        var all = Specialists.All();
+        var reviewer = all.Single(s => s.Name == "Revisor de PRs");
+        var tester = all.Single(s => s.Name == "Tester");
+        Assert.Contains("«Revisor de PRs»", SpecialistTools.RoleNote(reviewer, null));
+        Assert.Contains("stopped using the specialist «Tester»", SpecialistTools.RoleNote(null, tester));
+        Assert.Null(SpecialistTools.RoleNote(null, null));
+
+        var pane = new TerminalPane();
+        var tab = new TerminalPane.Tab(new TerminalAgent(new AgentOptions(_dir.Path), a => a()), "cuenta");
+        // Elegido: la nota sale con el próximo pedido y no con los siguientes.
+        pane.ChooseRole(tab, reviewer);
+        var first = TerminalPane.SpecialistNotes(tab, "revisa esto")!;
+        Assert.Contains("work as that specialist", first);
+        Assert.Contains("Revisa", first); // su rol e instrucciones
+        Assert.Equal("revisa esto", Workspace.Strip("revisa esto" + first));
+        Assert.Null(TerminalPane.SpecialistNotes(tab, "y esto otro"));
+
+        // Cambiado dos veces antes de escribir: solo el último.
+        pane.ChooseRole(tab, tester);
+        pane.ChooseRole(tab, reviewer);
+        var again = TerminalPane.SpecialistNotes(tab, "sigue")!;
+        Assert.Contains("«Revisor de PRs»", again);
+        Assert.DoesNotContain("«Tester»", again);
+
+        // Quitado después de que la sesión lo supo: que deje su rol. Elegido y quitado sin escribir: nada.
+        pane.ChooseRole(tab, null);
+        Assert.Contains("stopped using", TerminalPane.SpecialistNotes(tab, "listo"));
+        pane.ChooseRole(tab, tester);
+        pane.ChooseRole(tab, null);
+        Assert.Null(TerminalPane.SpecialistNotes(tab, "nada"));
+        Assert.Null(tab.Role);
+    });
+
+    [Fact]
     public void EnLaCajaArrobaMuestraLaListaYLasCorridasSeVenArriba() => Headless.Run(() =>
     {
         var pane = new TerminalPane();

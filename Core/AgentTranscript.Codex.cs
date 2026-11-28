@@ -121,12 +121,12 @@ sealed partial class AgentTranscript
                     Close(changed);
                     say = Add(new AgentBlock { Kind = AgentBlockKind.Say, Id = id, Open = true }, changed);
                 }
-                say.Text += piece;
+                say.Append(piece);
                 Touch(say, changed);
                 break;
             case "item/reasoning/summaryTextDelta" or "item/reasoning/textDelta" when Json.Str(p, "itemId") is { } id && Json.Str(p, "delta") is { } piece:
                 var think = CodexThink(id, changed);
-                think.Text += piece;
+                think.Append(piece);
                 Touch(think, changed);
                 break;
             case "item/commandExecution/outputDelta" when Json.Str(p, "itemId") is { } id && Json.Str(p, "delta") is { } piece

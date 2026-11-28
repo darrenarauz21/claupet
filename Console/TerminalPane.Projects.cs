@@ -110,16 +110,16 @@ sealed partial class TerminalPane
             right.Children.Add(Ui.Text(tabs.Count.ToString(), 11.5, _ink.Tertiary));
             foreach (var tab in tabs.Take(6))
             {
-                var t = tab.Agent.Transcript;
+                // El mismo punto que la fila de la pestaña (Dot): también los shells y lo que corre en segundo plano.
                 var dot = new Border
                 {
                     Width = 6,
                     Height = 6,
                     CornerRadius = new CornerRadius(99),
                     VerticalAlignment = VerticalAlignment.Center,
-                    Background = Waiting(t) ? _ink.Warn : t.Busy ? _ink.Accent : tab.Agent.Running ? _ink.Track : _ink.Hairline,
+                    Background = Dot(tab),
                 };
-                if (t.Busy) Pulse(dot);
+                if (Busy(tab)) Pulse(dot);
                 right.Children.Add(dot);
             }
         }

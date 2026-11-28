@@ -43,12 +43,15 @@ sealed partial class TerminalPane
     /// <summary>Trabajando: Claude Code en un turno o el shell con un comando corriendo.</summary>
     static bool Busy(Tab tab) => tab.Shell is { } shell ? shell.Transcript.Busy : tab.Agent.Transcript.Busy;
 
-    /// <summary>El punto de estado de la pestaña: esperando un permiso, trabajando, abierta o cerrada.</summary>
+    /// <summary>
+    /// El punto de estado de la pestaña: esperando un permiso, trabajando (late), con algo corriendo en segundo plano entre
+    /// turnos (en acento, quieto), abierta o cerrada.
+    /// </summary>
     IBrush Dot(Tab tab)
     {
         if (tab.Shell is { } shell) return shell.Transcript.Busy ? _ink.Accent : shell.Running ? _ink.Track : _ink.Hairline;
         var t = tab.Agent.Transcript;
-        return Waiting(t) ? _ink.Warn : t.Busy ? _ink.Accent : tab.Agent.Running ? _ink.Track : _ink.Hairline;
+        return Waiting(t) ? _ink.Warn : t.Busy || (tab.Agent.Running && t.BackgroundTasks > 0) ? _ink.Accent : tab.Agent.Running ? _ink.Track : _ink.Hairline;
     }
 
     /// <summary>El título de un shell: su último comando o, sin comandos, su nombre.</summary>
